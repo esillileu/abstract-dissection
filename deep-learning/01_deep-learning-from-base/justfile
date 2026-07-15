@@ -1,0 +1,61 @@
+set shell := ["bash", "-cu"]
+
+path := "."
+line_limit := "250"
+
+tree path=".":
+    tree -a -I '__pycache__|*.pyc|.git|.venv|.mypy_cache|.pytest_cache|.ruff_cache' {{path}}
+
+init:
+    uv venv .venv
+    uv sync --extra dev
+
+lint p=path:
+    uv run --extra dev ruff check {{p}}
+
+format p=path:
+    uv run --extra dev ruff format {{p}}
+
+type p=path:
+    uv run --extra dev mypy {{p}}
+
+typecheck:
+    just type "."
+
+test p="tests":
+    uv run --extra dev pytest {{p}}
+
+check p=path:
+    just line
+    just lint {{p}}
+    just type {{p}}
+    just test
+
+run *args:
+    uv run {{args}}
+
+line:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    python3 - <<'PY'
+    from pathlib import Path
+    import sys
+
+    limit = int("{{line_limit}}")
+    exceptions = set(["src/practice/entrypoints/app.py"])
+    offenders = []
+
+    for path in Path("src").rglob("*.py"):
+        path_str = str(path)
+        if path_str in exceptions:
+            continue
+        line_count = len(path.read_text(encoding="utf-8").splitlines())
+        if line_count > limit:
+            offenders.append(f"ERROR: {path_str} ({line_count} lines > {limit})")
+
+    if offenders:
+        print("\n".join(offenders))
+        print("Line limit exceeded")
+        sys.exit(1)
+    PY
