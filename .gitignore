@@ -1,4 +1,100 @@
+# 가상환경
 **/.venv/
-**/.data/
+**/venv/
+**/env/
+
+# Python 캐시/빌드
 **/__pycache__/
-*.pyc
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# 비밀정보
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+credentials.json
+service-account*.json
+secrets.*
+**/.secrets/
+
+# 데이터
+**/.data/
+**/data/raw/
+**/data/interim/
+**/data/processed/
+*.csv
+*.parquet
+*.feather
+*.arrow
+*.h5
+*.hdf5
+*.npy
+*.npz
+
+# 모델/체크포인트
+*.pkl
+*.pickle
+*.pt
+*.pth
+*.ckpt
+*.onnx
+*.safetensors
+*.joblib
+checkpoints/
+weights/
+models/
+
+# 실험 결과
+runs/
+outputs/
+artifacts/
+experiments/results/
+mlruns/
+wandb/
+lightning_logs/
+tensorboard/
+*.tfevents.*
+
+# 로그/임시 파일
+*.log
+logs/
+tmp/
+temp/
+.cache/
+**/.cache/
+
+# 테스트/정적 분석 캐시
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+.hypothesis/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# IDE
+.vscode/
+.idea/
+*.code-workspace
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 패키지 관리자
+pip-wheel-metadata/
