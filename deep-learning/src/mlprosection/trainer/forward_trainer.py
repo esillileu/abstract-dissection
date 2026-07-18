@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import time
+from contextlib import nullcontext
 from typing import TYPE_CHECKING
 
+from mlprosection.profiling import ProfilingConfig
 from tqdm import tqdm
 
 from .base import Trainer
@@ -24,6 +26,7 @@ class ForwardTrainer(Trainer):
         log_interval: int = 20,
         max_grad: float | None = None,
         drop_last: bool | None = False,
+        profiling_config: ProfilingConfig | None = None,
     ):
         super().__init__(
             model=model,
@@ -33,6 +36,7 @@ class ForwardTrainer(Trainer):
             batch_size=batch_size,
             log_interval=log_interval,
             drop_last=drop_last,
+            profiling_config=profiling_config,
         )
         self.max_grad = max_grad
 
@@ -55,15 +59,96 @@ class ForwardTrainer(Trainer):
         max_iters = self.num_batches(data_size)
         total_steps = self.max_epoch * max_iters
 
+        self.detail_profiler.start_run()
         self.pbar = tqdm(total=total_steps, desc="train", unit="step")
-        with self.pbar:
-            for epoch in range(self.max_epoch):
-                self.epoch = epoch + 1
-                idx = xp.random.permutation(xp.arange(data_size))
-                shuffled_x, shuffled_t = x_train[idx], t_train[idx]
-                self.run_epoch(shuffled_x, shuffled_t)
+        try:
+            if self.profiling_config.collect_memory_metrics:
+                self.runtime_monitor.snapshot_memory("run.start", synchronize=True)
+                self.runtime_monitor.snapshot_memory("train.start")
+            self.record_model_metrics()
 
-                if not skip_validation:
-                    self.train = False
-                    self.run_epoch(x_val, t_val)
-                    self.train = True
+            if self.profiling_config.collect_common_metrics:
+                train_timer = self.runtime_monitor.timer(
+                    "train_total",
+                    synchronize=True,
+                )
+            else:
+                train_timer = nullcontext()
+
+            with train_timer:
+                with self.pbar:
+                    for epoch in range(self.max_epoch):
+                        self.epoch = epoch + 1
+                        idx = xp.random.permutation(xp.arange(data_size))
+                        shuffled_x, shuffled_t = x_train[idx], t_train[idx]
+                        self._run_measured_epoch(
+                            "train",
+                            epoch,
+                            shuffled_x,
+                            shuffled_t,
+                        )
+
+                        if not skip_validation:
+                            self.train = False
+                            self._run_measured_epoch(
+                                "eval",
+                                epoch,
+                                x_val,
+                                t_val,
+                            )
+                            self.train = True
+        finally:
+            if self.profiling_config.collect_memory_metrics:
+                self.runtime_monitor.snapshot_memory("train.end", synchronize=True)
+                self.runtime_monitor.snapshot_memory("run.end")
+            self.record_final_memory_metrics()
+            self.detail_profiler.stop_run()
+            self.train = True
+
+    def _run_measured_epoch(
+        self,
+        split: str,
+        epoch_index: int,
+        x: Tensor,
+        t: Tensor,
+    ) -> None:
+        sample_count = len(x)
+        if self.profiling_config.collect_memory_metrics:
+            self.runtime_monitor.snapshot_memory(
+                f"epoch.{epoch_index}.{split}.start",
+                synchronize=True,
+            )
+
+        if self.profiling_config.collect_epoch_metrics:
+            start = time.perf_counter_ns()
+            epoch_timer = self.runtime_monitor.timer(
+                f"epoch.{split}",
+                synchronize=True,
+            )
+        else:
+            start = None
+            epoch_timer = nullcontext()
+
+        with epoch_timer:
+            self.run_epoch(x, t)
+
+        if self.profiling_config.collect_epoch_metrics:
+            self.backend_profiler.synchronize()
+            duration_ms = (time.perf_counter_ns() - start) / 1_000_000
+            self.runtime_monitor.set_metric(
+                f"runtime.epoch.{epoch_index}.{split}_duration_ms",
+                duration_ms,
+            )
+            throughput = 0.0
+            if duration_ms > 0:
+                throughput = sample_count / (duration_ms / 1_000)
+            self.runtime_monitor.set_metric(
+                f"throughput.epoch.{epoch_index}.{split}_samples_per_s",
+                throughput,
+            )
+
+        if self.profiling_config.collect_memory_metrics:
+            self.runtime_monitor.snapshot_memory(
+                f"epoch.{epoch_index}.{split}.end",
+                synchronize=True,
+            )

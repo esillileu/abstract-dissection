@@ -3,8 +3,20 @@ from __future__ import annotations
 import time
 
 from abc import ABC, abstractmethod
+from pathlib import Path
 from typing import List, Iterator, TYPE_CHECKING
 from dataclasses import dataclass, field
+from mlprosection.profiling import ProfilingConfig
+from mlprosection.profiling.backend import create_backend_profiler
+from mlprosection.profiling.controller import ProfilingController
+from mlprosection.profiling.detail import DetailProfiler
+from mlprosection.profiling.monitor import RuntimeMonitor
+from mlprosection.profiling.utils import (
+    count_gradient_bytes,
+    count_optimizer_state_bytes,
+    count_parameter_bytes,
+    count_parameter_elements,
+)
 from .utils import clip_grads
 
 if TYPE_CHECKING:
@@ -29,6 +41,7 @@ class Trainer(ABC):
         batch_size: int = 32,
         log_interval: int = 20,
         drop_last: bool | None = False,
+        profiling_config: ProfilingConfig | None = None,
     ):
         self.model: Layer = model
         self.criterion: Criterion = criterion
@@ -45,6 +58,16 @@ class Trainer(ABC):
 
         self.start_time: float = 0.0
         self.train: bool = True
+        self.profiling_config = profiling_config or ProfilingConfig()
+        self.backend_profiler = create_backend_profiler(self.backend)
+        self.runtime_monitor = RuntimeMonitor(self.backend_profiler)
+        self.profiling_controller = ProfilingController(self.profiling_config)
+        self.detail_profiler = DetailProfiler(
+            self.profiling_config,
+            self.backend_profiler,
+            self.runtime_monitor,
+        )
+        self.global_step = 0
 
     @property
     def backend(self):
@@ -77,19 +100,39 @@ class Trainer(ABC):
             end = start + self.batch_size
             yield x[start:end], t[start:end]
 
-    def step(self, x: Tensor, t: Tensor) -> tuple[Tensor, Tensor]:
-        y = self.model.forward(x)
-        loss = self.criterion.forward(y, t)
-        pred = self.criterion.y if self.criterion.y is not None else y
+    def step(
+        self,
+        x: Tensor,
+        t: Tensor,
+        *,
+        profile: bool = False,
+    ) -> tuple[Tensor, Tensor]:
+        with self.detail_profiler.section("train_step", enabled=profile):
+            with self.detail_profiler.section("forward", enabled=profile):
+                y = self.model.forward(x)
+                loss = self.criterion.forward(y, t)
+            pred = self.criterion.y if self.criterion.y is not None else y
 
-        if self.train:
-            dx = self.criterion.backward()
-            self.model.backward(dx)
+            if self.train:
+                with self.detail_profiler.section("backward", enabled=profile):
+                    dx = self.criterion.backward()
+                    self.model.backward(dx)
 
-            if self.max_grad is not None:
-                clip_grads(self.model.parameters(), self.max_grad)
+                if self.max_grad is not None:
+                    with self.detail_profiler.section(
+                        "gradient_clip",
+                        enabled=profile,
+                    ):
+                        clip_grads(
+                            list(self.model.named_parameters()),
+                            self.max_grad,
+                        )
 
-            self.optimizer.update()
+                with self.detail_profiler.section(
+                    "optimizer_update",
+                    enabled=profile,
+                ):
+                    self.optimizer.update()
 
         return loss, pred
 
@@ -132,14 +175,38 @@ class Trainer(ABC):
         batch_count = 0
 
         for iters, (batch_x, batch_t) in enumerate(self.iter_batches(x, t)):
+            profile_this_step = (
+                self.train
+                and self.profiling_controller.should_profile(self.global_step)
+            )
+            if (
+                self.train
+                and self.profiling_controller.should_sample_memory(self.global_step)
+            ):
+                self.runtime_monitor.update_memory_peaks()
+
+            if profile_this_step and self.profiling_config.profile_memory:
+                self.runtime_monitor.snapshot_memory(
+                    f"profile.step.{self.global_step}.before",
+                    synchronize=True,
+                )
+
             current_size = batch_x.shape[0]
-            loss, y = self.step(batch_x, batch_t)
+            loss, y = self.step(batch_x, batch_t, profile=profile_this_step)
+
+            if profile_this_step and self.profiling_config.profile_memory:
+                self.runtime_monitor.snapshot_memory(
+                    f"profile.step.{self.global_step}.after",
+                    synchronize=True,
+                )
 
             total_loss += loss.data * current_size
             sample_count += current_size
             epoch_sample_count += current_size
             correct_count += self.count_correct(y, batch_t)
             batch_count += 1
+            if self.train:
+                self.global_step += 1
 
             if self.train:
                 self.pbar.update(1)
@@ -168,6 +235,51 @@ class Trainer(ABC):
 
         accuracy = self.compute_accuracy(correct_count, epoch_sample_count)
         self.record_accuracy(accuracy)
+
+    def record_model_metrics(self) -> None:
+        if not self.profiling_config.collect_model_metrics:
+            return
+
+        self.runtime_monitor.set_metric(
+            "model.parameter_count",
+            count_parameter_elements(self.model),
+        )
+        self.runtime_monitor.set_metric(
+            "model.parameter_bytes",
+            count_parameter_bytes(self.model),
+        )
+        self.runtime_monitor.set_metric(
+            "model.gradient_bytes",
+            count_gradient_bytes(self.model),
+        )
+        self.runtime_monitor.set_metric(
+            "optimizer.state_bytes",
+            count_optimizer_state_bytes(self.optimizer),
+        )
+        self.runtime_monitor.set_metric(
+            "profiling.enabled",
+            int(self.profiling_config.enabled),
+        )
+        self.runtime_monitor.set_metric(
+            "profiling.profiled_step_count",
+            self.profiling_config.num_steps if self.profiling_config.enabled else 0,
+        )
+
+    def record_final_memory_metrics(self) -> None:
+        self.runtime_monitor.set_metric(
+            "model.gradient_bytes",
+            count_gradient_bytes(self.model),
+        )
+        self.runtime_monitor.set_metric(
+            "optimizer.state_bytes",
+            count_optimizer_state_bytes(self.optimizer),
+        )
+
+    def profiling_metrics(self) -> dict[str, int | float]:
+        return self.runtime_monitor.metrics()
+
+    def dump_profiling_artifacts(self, output_dir: str | Path) -> list[Path]:
+        return self.detail_profiler.dump_artifacts(output_dir)
 
     def interval_log(
         self,

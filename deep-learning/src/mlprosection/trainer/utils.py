@@ -6,7 +6,11 @@ if TYPE_CHECKING:
     from mlprosection.nn.types import Parameter
 
 
-def clip_grads(params:Sequence[Parameter], max_norm):
+def clip_grads(named_params: Sequence[tuple[str, Parameter]], max_norm):
+    params = [param for _, param in named_params]
+    if not params:
+        return
+
     total_norm = 0
     xp = params[0].backend.xp
 
