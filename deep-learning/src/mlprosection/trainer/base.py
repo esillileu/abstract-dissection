@@ -107,6 +107,9 @@ class Trainer(ABC):
         *,
         profile: bool = False,
     ) -> tuple[Tensor, Tensor]:
+        if hasattr(self.model, "train_flg"):
+            self.model.train_flg = self.train
+
         with self.detail_profiler.section("train_step", enabled=profile):
             with self.detail_profiler.section("forward", enabled=profile):
                 y = self.model.forward(x)

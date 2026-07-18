@@ -149,6 +149,9 @@ def _iter_named_parameters(
     seen: set[int],
 ) -> Iterator[tuple[str, Parameter]]:
     if isinstance(value, Parameter):
+        if not value.requires_grad:
+            return
+
         param_id = id(value)
 
         if param_id in seen:

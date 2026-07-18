@@ -47,10 +47,11 @@ class Momentum(SGD):
             post_step_hooks=post_step_hooks,
         )
         self.m = momentum
-        self.v: Dict[str, Array] = zero_arrays_like_named_params(self.named_params)
+        self.v: Dict[str, Array] = zero_arrays_like_named_params(self.params)
 
     def update_one(self, name: str, param: Parameter) -> None:
-        v = self.v[name] * self.m
+        v = self.v[name]
+        v *= self.m
         v -= self.lr * param.grad
         param.data += v
 
@@ -74,7 +75,8 @@ class Nesterov(Momentum):
         )
 
     def update_one(self, name, param):
-        v = self.v[name] * self.m
+        v = self.v[name]
+        v *= self.m
         v -= self.lr * param.grad
         param.data += self.m * self.m * v
         param.data -= (1 + self.m) * self.lr * param.grad
@@ -96,13 +98,14 @@ class AdaGrad(SGD):
             pre_step_hooks=pre_step_hooks,
             post_step_hooks=post_step_hooks,
         )
-        self.h: Dict[str, Array] = zero_arrays_like_named_params(self.named_params)
+        self.h: Dict[str, Array] = zero_arrays_like_named_params(self.params)
         self.eps = eps
 
     def update_one(self, name, param):
         xp = param.backend.xp
 
-        h = self.h[name] + param.grad * param.grad
+        h = self.h[name]
+        h += param.grad * param.grad
         param.data -= self.lr * param.grad / (xp.sqrt(h) + self.eps)
 
 
@@ -126,9 +129,10 @@ class RMSprop(AdaGrad):
     def update_one(self, name, param):
         xp = param.backend.xp
 
-        h = self.h[name] * self.decay_rate
+        h = self.h[name]
+        h *= self.decay_rate
         h += (1 - self.decay_rate) * param.grad * param.grad
-        param -= self.lr * param.grad / (xp.sqrt(h) + self.eps)
+        param.data -= self.lr * param.grad / (xp.sqrt(h) + self.eps)
 
 
 class Adam(SGD):
@@ -157,10 +161,10 @@ class Adam(SGD):
         self.iter = 0
         self.lr_t = lr
 
-        self.m: Dict[str, Array] = zero_arrays_like_named_params(self.named_params)
-        self.v: Dict[str, Array] = zero_arrays_like_named_params(self.named_params)
+        self.m: Dict[str, Array] = zero_arrays_like_named_params(self.params)
+        self.v: Dict[str, Array] = zero_arrays_like_named_params(self.params)
 
-    def before_update(self) -> None:
+    def before_step(self) -> None:
         self.iter += 1
 
         self.lr_t = (
