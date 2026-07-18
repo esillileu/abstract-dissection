@@ -98,21 +98,15 @@ class Dropout:
 
 
 class BatchNormalization:
-    """
-    http://arxiv.org/abs/1502.03167
-    """
-
     def __init__(self, gamma, beta, momentum=0.9, running_mean=None, running_var=None):
         self.gamma = gamma
         self.beta = beta
         self.momentum = momentum
-        self.input_shape = None  # 합성곱 계층은 4차원, 완전연결 계층은 2차원
+        self.input_shape = None  
 
-        # 시험할 때 사용할 평균과 분산
         self.running_mean = running_mean
         self.running_var = running_var
 
-        # backward 시에 사용할 중간 데이터
         self.batch_size = None
         self.xc = None
         self.std = None
