@@ -1,0 +1,6 @@
+# Downloaded MNIST source archives
+src/mlprosection/datasets/*-ubyte.gz
+
+# Local experiment outputs
+experiments/data/
+experiments/results/
