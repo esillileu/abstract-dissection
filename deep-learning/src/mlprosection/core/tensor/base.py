@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from mlprosection.core.backend import Array, Backend, resolve_backend
+from ..backend import Array, Backend, resolve_backend
 from .mixins import (
     TensorOpsMixin,
     TensorDeviceMixin,
@@ -12,6 +12,8 @@ from .mixins import (
     TensorIndexingMixin,
     TensorShapeMixin,
     TensorReductionMixin,
+    TensorFuncMixin,
+    TensorCreationMixin,
 )
 
 
@@ -22,6 +24,8 @@ class Tensor(
     TensorIndexingMixin,
     TensorShapeMixin,
     TensorReductionMixin,
+    TensorFuncMixin,
+    TensorCreationMixin,
 ):
     __array_priority__ = 1000
 

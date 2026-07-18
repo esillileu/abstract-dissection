@@ -1,10 +1,8 @@
-# scratchdl/tensor/creation.py
-
 from __future__ import annotations
 
 from typing import Any
 
-from mlprosection.core.backend import Backend, get_default_backend
+from ..backend import Backend, get_default_backend
 from .base import Tensor
 
 

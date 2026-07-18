@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from mlprosection.core.backend import Array, assert_same_device
+from ...backend import Array, assert_same_device
 
 if TYPE_CHECKING:
-    from mlprosection.core.tensor.base import Tensor
+    from ..base import Tensor
 
 
 class TensorGradMixin:
@@ -14,11 +14,13 @@ class TensorGradMixin:
             self.grad[...] = 0
 
     def set_grad(self: Tensor, grad: Tensor | Array | None) -> None:
+        from ..base import Tensor
+
         if grad is None:
             self.grad = None
             return
 
-        if isinstance(grad, type(self)):
+        if isinstance(grad, Tensor):
             assert_same_device(self, grad)
             self.grad = grad.data
             return

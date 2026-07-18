@@ -4,7 +4,8 @@ from .grad import TensorGradMixin
 from .shape import TensorShapeMixin
 from .reduction import TensorReductionMixin
 from .indexing import TensorIndexingMixin
-
+from .func import TensorFuncMixin
+from .creation import TensorCreationMixin
 
 __all__ = [
     "TensorOpsMixin",
@@ -12,5 +13,7 @@ __all__ = [
     "TensorGradMixin",
     "TensorShapeMixin",
     "TensorReductionMixin",
-    "TensorIndexingMixin"
+    "TensorIndexingMixin",
+    "TensorFuncMixin",
+    "TensorCreationMixin"
 ]

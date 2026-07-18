@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from mlprosection.core.tensor.base import Tensor
+    from ..base import Tensor
 
 
 class TensorShapeMixin:

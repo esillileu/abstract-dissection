@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from typing import Any, TYPE_CHECKING
 
-from mlprosection.core.backend import Array, Backend, resolve_backend
+from ...backend import Array, Backend, resolve_backend
 
 if TYPE_CHECKING:
-    from mlprosection.core.tensor.base import Tensor
+    from ..base import Tensor
 
 
 class TensorDeviceMixin:

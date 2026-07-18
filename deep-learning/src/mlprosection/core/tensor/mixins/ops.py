@@ -2,15 +2,15 @@ from __future__ import annotations
 
 from typing import Any, TYPE_CHECKING
 
-from mlprosection.core.backend import assert_same_device
+from ...backend import assert_same_device
 
 if TYPE_CHECKING:
-    from mlprosection.core.tensor.base import Tensor
+    from ..base import Tensor
 
 
 class TensorOpsMixin:
     def __add__(self: Tensor, other: Any) -> Tensor:
-        from mlprosection.core.tensor.creation import as_tensor
+        from ..creation import as_tensor
 
         other = as_tensor(other, backend=self.backend)
         assert_same_device(self, other)
@@ -25,7 +25,7 @@ class TensorOpsMixin:
         return self.__add__(other)
 
     def __sub__(self: Tensor, other: Any) -> Tensor:
-        from mlprosection.core.tensor.creation import as_tensor
+        from ..creation import as_tensor
 
         other = as_tensor(other, backend=self.backend)
         assert_same_device(self, other)
@@ -37,7 +37,7 @@ class TensorOpsMixin:
         )
 
     def __rsub__(self: Tensor, other: Any) -> Tensor:
-        from mlprosection.core.tensor.creation import as_tensor
+        from ..creation import as_tensor
 
         other = as_tensor(other, backend=self.backend)
         assert_same_device(self, other)
@@ -49,7 +49,7 @@ class TensorOpsMixin:
         )
 
     def __mul__(self: Tensor, other: Any) -> Tensor:
-        from mlprosection.core.tensor.creation import as_tensor
+        from ..creation import as_tensor
 
         other = as_tensor(other, backend=self.backend)
         assert_same_device(self, other)
@@ -64,7 +64,7 @@ class TensorOpsMixin:
         return self.__mul__(other)
 
     def __truediv__(self: Tensor, other: Any) -> Tensor:
-        from mlprosection.core.tensor.creation import as_tensor
+        from ..creation import as_tensor
 
         other = as_tensor(other, backend=self.backend)
         assert_same_device(self, other)
@@ -76,7 +76,7 @@ class TensorOpsMixin:
         )
 
     def __rtruediv__(self: Tensor, other: Any) -> Tensor:
-        from mlprosection.core.tensor.creation import as_tensor
+        from ..creation import as_tensor
 
         other = as_tensor(other, backend=self.backend)
         assert_same_device(self, other)
@@ -96,7 +96,7 @@ class TensorOpsMixin:
         )
 
     def __matmul__(self: Tensor, other: Any) -> Tensor:
-        from mlprosection.core.tensor.creation import as_tensor
+        from ..creation import as_tensor
 
         other = as_tensor(other, backend=self.backend)
         assert_same_device(self, other)
@@ -108,7 +108,7 @@ class TensorOpsMixin:
         )
 
     def __rmatmul__(self: Tensor, other: Any) -> Tensor:
-        from mlprosection.core.tensor.creation import as_tensor
+        from ..creation import as_tensor
 
         other = as_tensor(other, backend=self.backend)
         assert_same_device(self, other)
@@ -117,4 +117,16 @@ class TensorOpsMixin:
             other.data @ self.data,
             backend=self.backend,
             requires_grad=self.requires_grad or other.requires_grad,
+        )
+
+    def __le__(self: Tensor, other: Any) -> Tensor:
+        from ..creation import as_tensor
+
+        other = as_tensor(other, backend=self.backend)
+        assert_same_device(self, other)
+
+        return type(self)(
+            self.data <= other.data,
+            backend=self.backend,
+            requires_grad=False,
         )
