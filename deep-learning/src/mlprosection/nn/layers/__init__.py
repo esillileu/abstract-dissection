@@ -6,6 +6,22 @@ from .criterion import SigmoidWithLoss, SoftmaxWithLoss
 from .embeding import Embedding
 from .regulizer import Dropout, BatchNormalization
 from .shape import Flatten
+from .time import (
+    GRU,
+    LSTM,
+    RNN,
+    SimpleTimeAffine,
+    SimpleTimeSoftmaxWithLoss,
+    TimeAffine,
+    TimeBiLSTM,
+    TimeDropout,
+    TimeEmbedding,
+    TimeGRU,
+    TimeLSTM,
+    TimeRNN,
+    TimeSigmoidWithLoss,
+    TimeSoftmaxWithLoss,
+)
 
 __all__ = [
     "Layer",
@@ -22,5 +38,19 @@ __all__ = [
     "Dropout",
     "BatchNormalization",
     "MaxPool2D",
-    "Flatten"
+    "Flatten",
+    "RNN",
+    "TimeRNN",
+    "LSTM",
+    "TimeLSTM",
+    "TimeEmbedding",
+    "TimeAffine",
+    "TimeSoftmaxWithLoss",
+    "TimeDropout",
+    "TimeBiLSTM",
+    "TimeSigmoidWithLoss",
+    "GRU",
+    "TimeGRU",
+    "SimpleTimeSoftmaxWithLoss",
+    "SimpleTimeAffine",
 ]
