@@ -78,7 +78,8 @@ def load_data(data_type='train'):
         :param data_type: 데이터 유형: 'train' or 'test' or 'valid (val)'
         :return:
     '''
-    if data_type == 'val': data_type = 'valid'
+    if data_type == 'val':
+        data_type = 'valid'
     save_path = dataset_dir + '/' + save_file[data_type]
 
     word_to_id, id_to_word = load_vocab()
