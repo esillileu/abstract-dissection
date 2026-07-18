@@ -1,0 +1,201 @@
+from __future__ import annotations
+
+import time
+
+from abc import ABC, abstractmethod
+from typing import List, Iterator, TYPE_CHECKING
+from dataclasses import dataclass, field
+from .utils import clip_grads
+
+if TYPE_CHECKING:
+    from mlprosection import Tensor
+    from mlprosection.optim import Optimizer
+    from mlprosection.nn.types import Layer, Criterion
+
+
+@dataclass
+class TVListContainer:
+    train: List = field(default_factory=list)
+    valid: List = field(default_factory=list)
+
+
+class Trainer(ABC):
+    def __init__(
+        self,
+        model: Layer,
+        criterion: Criterion,
+        optimizer: Optimizer,
+        max_epoch: int = 10,
+        batch_size: int = 32,
+        log_interval: int = 20,
+        drop_last: bool | None = False,
+    ):
+        self.model: Layer = model
+        self.criterion: Criterion = criterion
+        self.optimizer: Optimizer = optimizer
+
+        self.max_epoch = max_epoch
+        self.batch_size = batch_size
+        self.log_interval: int = log_interval
+        self.drop_last = drop_last
+
+        self.losses: TVListContainer = TVListContainer()
+        self.accuracies: TVListContainer = TVListContainer()
+        self.logs: TVListContainer = TVListContainer()
+
+        self.start_time: float = 0.0
+        self.train: bool = True
+
+    @property
+    def backend(self):
+        return self.model.backend
+
+    @property
+    def dtype(self):
+        return self.model.dtype
+
+    @abstractmethod
+    def fit(self, *args, **kwargs):
+        raise NotImplementedError
+
+    def plot(self, *args, **kwargs):
+        raise NotImplementedError
+
+    def num_batches(self, data_size: int) -> int:
+        if self.drop_last:
+            return data_size // self.batch_size
+
+        return (data_size + self.batch_size - 1) // self.batch_size
+
+    def iter_batches(self, x, t)-> Iterator[tuple[Tensor, Tensor]]:
+        size = len(x)
+
+        if self.drop_last:
+            size -= size % self.batch_size
+
+        for start in range(0, size, self.batch_size):
+            end = start + self.batch_size
+            yield x[start:end], t[start:end]
+
+    def step(self, x: Tensor, t: Tensor) -> tuple[Tensor, Tensor]:
+        y = self.model.forward(x)
+        loss = self.criterion.forward(y, t)
+        pred = self.criterion.y if self.criterion.y is not None else y
+
+        if self.train:
+            dx = self.criterion.backward()
+            self.model.backward(dx)
+
+            if self.max_grad is not None:
+                clip_grads(self.model.parameters(), self.max_grad)
+
+            self.optimizer.update()
+
+        return loss, pred
+
+    def count_correct(self, y: Tensor, t: Tensor) -> int:
+        y_data = y.data
+        t_data = t.data
+
+        if t_data.size == y_data.size and t_data.ndim > 1:
+            labels = t_data.argmax(axis=1)
+        else:
+            labels = t_data.reshape(-1)
+
+        if y_data.ndim > 1 and y_data.shape[1] > 1:
+            predictions = y_data.argmax(axis=1)
+        else:
+            predictions = (y_data.reshape(-1) >= 0.5).astype(labels.dtype)
+
+        correct = (predictions == labels).sum()
+        return self.backend.scalar_to_int(correct)
+
+    def compute_accuracy(self, correct_count: int, sample_count: int) -> float:
+        if sample_count == 0:
+            return 0.0
+
+        return correct_count / sample_count
+
+    def record_accuracy(self, accuracy: float) -> None:
+        if self.train:
+            self.accuracies.train.append(accuracy)
+        else:
+            self.accuracies.valid.append(accuracy)
+
+    def run_epoch(self, x:Tensor, t:Tensor) -> None:
+        xp = self.backend.xp
+
+        total_loss = xp.asarray(0.0, dtype=x.dtype)
+        sample_count = 0
+        epoch_sample_count = 0
+        correct_count = 0
+        batch_count = 0
+
+        for iters, (batch_x, batch_t) in enumerate(self.iter_batches(x, t)):
+            current_size = batch_x.shape[0]
+            loss, y = self.step(batch_x, batch_t)
+
+            total_loss += loss.data * current_size
+            sample_count += current_size
+            epoch_sample_count += current_size
+            correct_count += self.count_correct(y, batch_t)
+            batch_count += 1
+
+            if self.train:
+                self.pbar.update(1)
+
+            should_log = (
+                self.log_interval is not None and batch_count >= self.log_interval
+            )
+
+            if should_log:
+                self.interval_log(
+                    iters=iters,
+                    total_loss=total_loss,
+                    sample_count=sample_count,
+                )
+
+                total_loss = xp.asarray(0.0, dtype=x.dtype)
+                sample_count = 0
+                batch_count = 0
+
+        if sample_count > 0:
+            self.interval_log(
+                iters=iters,
+                total_loss=total_loss,
+                sample_count=sample_count,
+            )
+
+        accuracy = self.compute_accuracy(correct_count, epoch_sample_count)
+        self.record_accuracy(accuracy)
+
+    def interval_log(
+        self,
+        iters: int,
+        total_loss,
+        sample_count: int,
+    ) -> None:
+        avg_loss = total_loss / sample_count
+        loss_value = float(avg_loss.item())
+
+        elapsed = time.time() - self.start_time
+
+        self.pbar.set_postfix(
+            epoch=f"{self.epoch}/{self.max_epoch}",
+            loss=f"{loss_value:.4f}",
+            elapsed=f"{elapsed:.1f}s",
+        )
+
+        log = {
+            "epoch": self.epoch,
+            "iteration": iters + 1,
+            "loss": loss_value,
+            "elapsed_time": elapsed,
+        }
+
+        if self.train:
+            self.losses.train.append(loss_value)
+            self.logs.train.append(log)
+        else:
+            self.losses.valid.append(loss_value)
+            self.logs.valid.append(log)
