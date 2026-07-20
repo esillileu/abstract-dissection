@@ -7,6 +7,7 @@ from typing import Any
 from mlprosection import Tensor
 from mlprosection.core.backend import Backend, resolve_backend
 from mlprosection.nn.layers import Layer
+from mlprosection.nn.sampling import UnigramSampler
 from mlprosection.nn.types import Parameter
 
 
@@ -21,7 +22,7 @@ class Word2Vec(Layer):
         architecture: str = "cbow",
         objective: str = "negative_sampling",
         negative_samples: int = 5,
-        sampling_distribution: Any | None = None,
+        sampler: UnigramSampler | None = None,
         backend: Backend | str | None = None,
     ) -> None:
         resolved = resolve_backend(backend)
@@ -38,8 +39,13 @@ class Word2Vec(Layer):
         xp = resolved.xp
         self.W_in = Parameter((0.01 * xp.random.randn(vocab_size, embedding_size)).astype(resolved.float_dtype), backend=resolved, name="W_in")
         self.W_out = Parameter((0.01 * xp.random.randn(vocab_size, embedding_size)).astype(resolved.float_dtype), backend=resolved, name="W_out")
-        distribution = xp.ones(vocab_size, dtype=resolved.float_dtype) if sampling_distribution is None else xp.asarray(sampling_distribution, dtype=resolved.float_dtype)
-        self.sampling_distribution = distribution / distribution.sum()
+        self.sampler: UnigramSampler | None = None
+        if objective == "negative_sampling":
+            self.sampler = sampler or UnigramSampler.uniform(vocab_size, backend=resolved)
+            if self.sampler.vocab_size != vocab_size:
+                raise ValueError("sampler vocabulary does not match the model vocabulary")
+            if self.sampler.backend.device != resolved.device:
+                raise ValueError("sampler backend must match the model backend")
         self.cache: list[tuple[Any, Any, Any, Any]] = []
 
     @property
@@ -71,7 +77,9 @@ class Word2Vec(Layer):
             loss = -xp.log(probabilities[xp.arange(len(labels)), labels] + 1e-7).mean()
             self.cache.append((hidden, labels, source, probabilities))
             return float(loss)
-        negatives = xp.random.choice(self.vocab_size, size=(len(labels), self.negative_samples), p=self.sampling_distribution)
+        if self.sampler is None:
+            raise RuntimeError("negative-sampling objective requires a sampler")
+        negatives = self.sampler.sample(labels, sample_size=self.negative_samples)
         candidates = xp.concatenate((labels[:, None], negatives), axis=1)
         scores = xp.sum(hidden[:, None, :] * self.W_out.data[candidates], axis=2)
         targets = xp.zeros_like(scores)

@@ -1,7 +1,7 @@
 kind: word2vec
 dataset: {id: DS-PTB-TRAIN, name: Penn Treebank, window_size: 5}
 loader: {batch_size: 100, shuffle: true}
-model: {family: word2vec, embedding_size: 100, negative_samples: 5}
+model: {family: word2vec, embedding_size: 100, negative_samples: 5, sampler: {algorithm: alias_target_rejection_v1, power: 0.75, replacement: true, excludes_positive: true, rejection_rounds: 4}}
 optimizer: {name: adam, learning_rate: 0.001}
 scheduler: {name: constant}
 loss: {name: normalized_prediction_term_negative_sampling}

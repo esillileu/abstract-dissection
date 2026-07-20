@@ -10,9 +10,10 @@ import numpy as np
 from mlprosection import Tensor
 from mlprosection.datasets import load_ptb, load_sequence
 from mlprosection.nn.model import Word2Vec
+from mlprosection.nn.sampling import UnigramSampler
 from mlprosection.nn.model.recurrent import AttentionSeq2seq, BetterRnnlm, PeekySeq2seq, Rnnlm, Seq2seq, VanillaRnnlm
 from mlprosection.optim.SGD import Adam, SGD
-from mlprosection.optim.transform import ClipGradNorm
+from mlprosection.trainer import InternalLossTrainer, TimeTrainer
 
 from ..contracts import ExperimentResult
 from ..executor import ExperimentContext
@@ -65,48 +66,46 @@ class Word2VecExecutor:
         corpus = ptb["train"]
         window = int(dataset.get("window_size", 5))
         contexts, targets = _contexts_targets(corpus, window)
-        counts = backend.xp.asarray([int((corpus == index).sum()) for index in range(len(ptb["word_to_id"]))], dtype=backend.float_dtype)
-        distribution = counts ** 0.75
+        objective = str(model_config.get("objective", "negative_sampling"))
+        sampler = None
+        if objective == "negative_sampling":
+            sampler_values = _mapping(model_config, "sampler")
+            sampler = UnigramSampler.from_corpus(
+                corpus,
+                vocab_size=len(ptb["word_to_id"]),
+                backend=backend,
+                power=float(sampler_values.get("power", 0.75)),
+                rejection_rounds=int(sampler_values.get("rejection_rounds", 4)),
+            )
+            context.metadata["negative_sampler"] = sampler.metadata
         model = Word2Vec(
             len(ptb["word_to_id"]), int(model_config.get("embedding_size", 100)),
             architecture=str(model_config.get("architecture", "cbow")),
-            objective=str(model_config.get("objective", "negative_sampling")),
+            objective=objective,
             negative_samples=int(model_config.get("negative_samples", 5)),
-            sampling_distribution=distribution, backend=backend,
+            sampler=sampler, backend=backend,
         )
         optimizer = _optimizer(config, model)
         seed_batch_order(backend, streams)
         batch_size, epochs, interval = int(_mapping(config, "loader").get("batch_size", 100)), int(training.get("max_epochs", 10)), int(training.get("log_interval", 1000))
         x = backend.xp.asarray(contexts, dtype=backend.xp.int64)
         t = backend.xp.asarray(targets, dtype=backend.xp.int64)
-        history: list[tuple[str, int, str, float]] = []
-        step = 0
-        for epoch in range(epochs):
-            order = backend.xp.random.permutation(len(x))
-            total = 0.0
-            for start in range(0, len(x) - batch_size + 1, batch_size):
-                indices = order[start:start + batch_size]
-                if model.architecture == "skipgram":
-                    batch_x = Tensor(t[indices], backend=backend)
-                    batch_t = Tensor(x[indices], backend=backend)
-                else:
-                    batch_x = Tensor(x[indices], backend=backend)
-                    batch_t = Tensor(t[indices], backend=backend)
-                loss = model.forward(batch_x, batch_t)
-                model.backward()
-                optimizer.update()
-                step += 1
-                total += float(loss.data)
-                if step % interval == 0:
-                    value = total / interval
-                    history.append(("step", step, "train/normalized_loss", value))
-                    context.emit_metric(step, {"train/normalized_loss": value})
-                    total = 0.0
-            if total:
-                history.append(("epoch", epoch + 1, "train/normalized_loss", total / max(1, step % interval)))
-        final_loss = history[-1][3] if history else 0.0
+        train_x, train_t = (t, x) if model.architecture == "skipgram" else (x, t)
+        trainer = InternalLossTrainer(
+            model,
+            optimizer,
+            max_epoch=epochs,
+            batch_size=batch_size,
+            log_interval=interval,
+            max_grad=_optional_max_grad(config),
+            callbacks=[_Callback(context, loss_metric="train/normalized_loss")],
+        )
+        trainer.fit(Tensor(train_x, backend=backend), Tensor(train_t, backend=backend))
+        history = [("step", int(log["global_step"]), "train/normalized_loss", float(log["loss"])) for log in trainer.logs.train]
+        history.extend(("epoch", epoch, "train/normalized_loss", loss) for epoch, loss in enumerate(trainer.history.epoch_loss, start=1))
+        final_loss = trainer.history.epoch_loss[-1] if trainer.history.epoch_loss else 0.0
         return ExperimentResult(
-            metrics=_final(updates=step, epochs=epochs, samples=len(x) * epochs, **{"final/train/normalized_loss": final_loss}),
+            metrics=_final(updates=trainer.global_step, epochs=trainer.epoch, samples=len(x) * trainer.epoch, **{"final/train/normalized_loss": final_loss}),
             artifact_root=_artifact_root(config), model=model, history=tuple(history),
         )
 
@@ -114,8 +113,6 @@ class Word2VecExecutor:
 @register_executor("language_modeling")
 class LanguageModelExecutor:
     def run(self, config: dict[str, object], context: ExperimentContext) -> ExperimentResult:
-        from mlprosection.trainer.time_trainer import TimeTrainer
-
         backend, streams, runtime = configure_runtime(config)
         context.metadata.update({"runtime": runtime, "seed_streams": asdict(streams)})
         ptb = load_ptb()
@@ -169,40 +166,52 @@ class Seq2SeqExecutor:
         optimizer = _optimizer(config, model)
         seed_batch_order(backend, streams)
         batch_size, epochs = int(loader.get("batch_size", 128)), int(training.get("max_epochs", 10))
+        train_x = Tensor(backend.xp.asarray(x_train, dtype=backend.xp.int64), backend=backend)
+        train_t = Tensor(backend.xp.asarray(t_train, dtype=backend.xp.int64), backend=backend)
+        trainer = InternalLossTrainer(
+            model,
+            optimizer,
+            max_epoch=epochs,
+            batch_size=batch_size,
+            log_interval=int(training.get("log_interval", 20)),
+            max_grad=_optional_max_grad(config, default=5.0),
+            callbacks=[_Callback(context)],
+        )
         history: list[tuple[str, int, str, float]] = []
         for epoch in range(1, epochs + 1):
-            order = backend.xp.random.permutation(len(x_train))
-            total = 0.0
-            count = 0
-            model.train(True)
-            for start in range(0, len(x_train) - batch_size + 1, batch_size):
-                indices = order[start:start + batch_size]
-                loss = model.forward(Tensor(backend.xp.asarray(x_train[indices], dtype=backend.xp.int64), backend=backend), Tensor(backend.xp.asarray(t_train[indices], dtype=backend.xp.int64), backend=backend))
-                model.backward()
-                ClipGradNorm(float(_mapping(config, "policy").get("max_grad", 5.0)))(list(model.named_parameters()))
-                optimizer.update()
-                total += float(loss.data)
-                count += 1
+            trainer.max_epoch = epoch
+            trainer.fit(train_x, train_t)
             exact, token = _seq_accuracy(model, x_test, t_test, data["char_to_id"], backend)
-            train_loss = total / max(count, 1)
+            train_loss = trainer.history.epoch_loss[-1]
             history.extend((("epoch", epoch, "train/loss", train_loss), ("epoch", epoch, "test/exact_match", exact), ("epoch", epoch, "test/token_accuracy", token)))
             context.emit_metric(epoch, {"train/loss": train_loss, "test/exact_match": exact, "test/token_accuracy": token})
         attention_entropy = _save_attention_artifact(model, x_test, t_test, backend, context)
         final_values = {"final/train/loss": history[-3][3], "final/test/exact_match": history[-2][3], "final/test/token_accuracy": history[-1][3]}
         if attention_entropy is not None:
             final_values["final/attention/entropy"] = attention_entropy
-        return ExperimentResult(metrics=_final(updates=count * epochs, epochs=epochs, samples=len(x_train) * epochs, **final_values), artifact_root=_artifact_root(config), model=model, history=tuple(history))
+        return ExperimentResult(metrics=_final(updates=trainer.global_step, epochs=trainer.epoch, samples=len(x_train) * trainer.epoch, **final_values), artifact_root=_artifact_root(config), model=model, history=tuple(history))
 
 
 class _Callback:
-    def __init__(self, context: ExperimentContext) -> None:
+    def __init__(self, context: ExperimentContext, *, loss_metric: str | None = None) -> None:
         self.context = context
+        self.loss_metric = loss_metric
     def on_batch_end(self, *, step: int) -> None:
         pass
     def on_interval(self, *, metrics: dict[str, float]) -> None:
-        self.context.emit_metric(int(metrics["iteration"]), metrics)
+        self.context.emit_metric(int(metrics.get("global_step", metrics["iteration"])), self._map_loss(metrics))
     def on_epoch_end(self, *, epoch: int, metrics: dict[str, float]) -> None:
-        self.context.emit_metric(epoch, metrics)
+        self.context.emit_metric(epoch, self._map_loss(metrics))
+
+    def _map_loss(self, metrics: dict[str, float]) -> dict[str, float]:
+        if self.loss_metric is None:
+            return metrics
+        mapped = dict(metrics)
+        if "loss" in mapped:
+            mapped[self.loss_metric] = mapped.pop("loss")
+        if "train/loss" in mapped:
+            mapped[self.loss_metric] = mapped.pop("train/loss")
+        return mapped
 
 
 def _contexts_targets(corpus, window: int):
@@ -210,6 +219,11 @@ def _contexts_targets(corpus, window: int):
     centers = np.arange(window, len(corpus) - window)
     contexts = np.stack([np.concatenate((corpus[index - window:index], corpus[index + 1:index + window + 1])) for index in centers])
     return contexts, corpus[window:-window]
+
+
+def _optional_max_grad(config: dict[str, object], *, default: float | None = None) -> float | None:
+    value = _mapping(config, "policy").get("max_grad", default)
+    return None if value is None else float(value)
 
 
 def _language_model(alias: str, vocab_size: int, values: dict[str, object], backend):
