@@ -21,6 +21,7 @@ class ForwardTrainer(Trainer):
         criterion: Criterion,
         optimizer: Optimizer,
         max_epoch: int = 10,
+        max_updates: int | None = None,
         batch_size: int = 32,
         log_interval: int = 20,
         max_grad: float | None = None,
@@ -34,6 +35,7 @@ class ForwardTrainer(Trainer):
             criterion=criterion,
             optimizer=optimizer,
             max_epoch=max_epoch,
+            max_updates=max_updates,
             batch_size=batch_size,
             log_interval=log_interval,
             drop_last=drop_last,
@@ -76,6 +78,8 @@ class ForwardTrainer(Trainer):
             with train_timer:
                 start_epoch = int(self.epoch or 0)
                 for epoch in range(start_epoch, self.max_epoch):
+                    if self.max_updates is not None and self.global_step >= self.max_updates:
+                        break
                     self.epoch = epoch + 1
                     idx = xp.random.permutation(xp.arange(data_size))
                     shuffled_x, shuffled_t = x_train[idx], t_train[idx]
@@ -87,6 +91,8 @@ class ForwardTrainer(Trainer):
                         self.train = True
                     if self.on_epoch_checkpoint is not None:
                         self.on_epoch_checkpoint()
+                    if self.max_updates is not None and self.global_step >= self.max_updates:
+                        break
         finally:
             if self.profiling_config.collect_memory_metrics:
                 self.runtime_monitor.snapshot_memory("train.end", synchronize=True)

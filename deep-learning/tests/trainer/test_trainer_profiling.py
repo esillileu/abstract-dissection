@@ -112,3 +112,21 @@ def test_forward_trainer_emits_plain_callback_events() -> None:
     assert [log["global_step"] for log in trainer.logs.train] == [1, 2]
     assert trainer.eval_step == 0
     assert callback.epochs == [(1, {"train/accuracy": 1.0})]
+
+
+def test_forward_trainer_stops_at_max_updates() -> None:
+    trainer = ForwardTrainer(
+        model=IdentityModel(), criterion=SoftmaxWithLoss(), optimizer=DummyOptimizer(),
+        max_epoch=3, max_updates=2, batch_size=2, log_interval=10,
+    )
+    x = Tensor([
+        [0.1, 0.9], [0.8, 0.2], [0.7, 0.3],
+        [0.2, 0.8], [0.1, 0.9], [0.8, 0.2],
+    ])
+    t = Tensor([1, 0, 0, 1, 1, 0])
+
+    trainer.fit(x, t)
+
+    assert trainer.global_step == 2
+    assert trainer.optimizer.update_count == 2
+    assert trainer.epoch == 1
