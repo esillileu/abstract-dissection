@@ -27,7 +27,7 @@ def run_yaml(path: str | Path, *, atomic_run_id: str | None = None, seed: int | 
     runtime = record.runtime()
     context = ExperimentContext(
         emit_metric=lambda step, metrics: runtime.emit_metric(step=step, metrics=metrics),
-        metadata={"checkpoint_root": record.artifact_root / "checkpoints"},
+        metadata={"checkpoint_root": record.local_checkpoint_root, "artifact_root": record.artifact_root},
     )
     with runtime:
         started = time.perf_counter()
@@ -52,12 +52,13 @@ def run_yaml(path: str | Path, *, atomic_run_id: str | None = None, seed: int | 
             final_metrics=result.metrics,
             history_rows=history,
             profiling_metrics=result.profiling_metrics,
-            reproducibility={key: value for key, value in context.metadata.items() if key != "checkpoint_root"},
+            reproducibility={key: value for key, value in context.metadata.items() if key not in {"checkpoint_root", "artifact_root"}},
         )
         errors = runtime.complete(
             artifact_root=record.artifact_root,
             history_rows=history,
             final_metrics=result.metrics,
+            checkpoint_path=record.local_checkpoint_root / "final.npz",
         )
     write_json(
         record.artifact_root / "runtime" / "upload_summary.json",

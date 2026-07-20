@@ -34,7 +34,16 @@ from .runtime import (
 )
 
 
-ARTIFACT_ROOT = Path("experiments/results/mlflow_artifacts")
+# Per-domain run material is deliberately kept outside MLflow's own artifact
+# store. MLflow receives the lightweight record, while the local workspace is
+# pleasant to browse and safe to clean independently.
+ARTIFACT_ROOT = Path("experiments/results")
+
+
+def _storage_domain(value: object) -> str:
+    """Make the tracking experiment safe to use as a local directory name."""
+    name = str(value).strip()
+    return "".join(char if char.isalnum() or char in {"-", "_", "."} else "-" for char in name) or "mlprosection"
 
 
 def seed_config(master_seed: int) -> dict[str, int]:
@@ -56,7 +65,12 @@ class SchemaV1Run:
         self.git_info = current_git_info(str(_section(self.config, "training")["entrypoint"]))
         self.condition = build_condition_config(self.config, self.git_info)
         self.identity = build_identity(self.config, self.condition, self.seeds)
-        self.artifact_root = ARTIFACT_ROOT / self.identity.run_key
+        tracking = _section(self.config, "tracking")
+        self.storage_domain = _storage_domain(
+            tracking.get("experiment", os.getenv("MLFLOW_EXPERIMENT_NAME", "mlprosection"))
+        )
+        self.artifact_root = ARTIFACT_ROOT / self.storage_domain / "mlflow_artifacts" / self.identity.run_key
+        self.local_checkpoint_root = ARTIFACT_ROOT / self.storage_domain / "checkpoints" / self.identity.run_key
 
     def runtime(self, *, model: Any | None = None) -> ExperimentRun:
         tracking = _section(self.config, "tracking")
@@ -81,7 +95,7 @@ class SchemaV1Run:
         history_rows: list[tuple[str, int, str, float]],
         profiling_metrics: dict[str, int | float], reproducibility: dict[str, object] | None = None,
     ) -> None:
-        checkpoint_path, checkpoint_digest = _save_checkpoint(self.artifact_root, model)
+        checkpoint_path, checkpoint_digest = _save_checkpoint(self.local_checkpoint_root, model)
         resolved = {
             **self.condition, "condition_key": self.identity.condition_key,
             "run_key": self.identity.run_key, "seed": self.seeds,
@@ -117,9 +131,10 @@ class SchemaV1Run:
         write_json(self.artifact_root / "profiles/profiling_summary.json", {"schema_version": 1, "enabled": _section(self.config, "profiling").get("enabled", False), "metrics": profiling_metrics})
         write_json(self.artifact_root / "checkpoints/checkpoint_manifest.json", {
             "format": "npz" if checkpoint_path else "none",
-            "final": None if checkpoint_path is None else {"path": str(checkpoint_path), "epoch": _section(self.config, "training").get("max_epochs"), "update": final_metrics.get("final/system/total_updates"), "digest": checkpoint_digest},
+            "local_root": str(self.local_checkpoint_root.resolve()),
+            "final": None if checkpoint_path is None else {"path": str(checkpoint_path.resolve()), "epoch": _section(self.config, "training").get("max_epochs"), "update": final_metrics.get("final/system/total_updates"), "digest": checkpoint_digest},
             "best": None,
-            "epoch_checkpoints": [path.name for path in sorted((self.artifact_root / "checkpoints").glob("epoch-*")) if path.is_dir()],
+            "epoch_checkpoints": [],
             "contains": {"model": checkpoint_path is not None, "optimizer": True, "scheduler": False, "rng_state": True, "training_state": True},
         })
 
@@ -182,7 +197,7 @@ def _section(config: dict[str, object], name: str) -> dict[str, object]:
 def _save_checkpoint(root: Path, model: Any | None) -> tuple[Path | None, str | None]:
     if model is None or not hasattr(model, "save_params_npz"):
         return None, None
-    path = root / "checkpoints" / "final.npz"
+    path = root / "final.npz"
     path.parent.mkdir(parents=True, exist_ok=True)
     model.save_params_npz(path)
     return path, file_digest(path)

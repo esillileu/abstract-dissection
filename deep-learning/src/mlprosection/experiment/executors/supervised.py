@@ -17,7 +17,7 @@ from mlprosection.trainer import ForwardTrainer
 from mlprosection.profiling import profiling_config_from_mapping
 
 from ..contracts import ExperimentResult
-from ..checkpoint import load_epoch_checkpoint, save_epoch_checkpoint
+from ..checkpoint import load_epoch_checkpoint
 from ..executor import ExperimentContext
 from ..metrics import build_final_metrics, epoch_history, evaluation_history, update_history
 from ..registry import register_executor
@@ -45,18 +45,17 @@ class SupervisedClassificationExecutor:
             model.forward(x_train[:1])
         optimizer = _optimizer(str(optimizer_config.get("name", "sgd")), list(model.named_parameters()), float(optimizer_config.get("learning_rate", 0.01)), float(optimizer_config.get("weight_decay", 0.0)))
         checkpoint_config = _mapping(config, "checkpoint")
-        checkpoint_root = Path(str(context.metadata.get("checkpoint_root", "experiments/results/checkpoints")))
         checkpoint_identity = dict(config)
         checkpoint_identity["checkpoint"] = dict(checkpoint_config)
         checkpoint_identity["checkpoint"].pop("resume", None)
         config_digest = hashlib.sha256(json.dumps(checkpoint_identity, sort_keys=True, default=str).encode()).hexdigest()
         max_updates = training_config.get("max_updates")
-        trainer = ForwardTrainer(model, SoftmaxWithLoss().to(model.backend), optimizer, max_epoch=int(training_config.get("max_epochs", 1)), max_updates=None if max_updates is None else int(max_updates), batch_size=int(loader_config.get("batch_size", 32)), log_interval=int(training_config.get("log_interval", 20)), profiling_config=profiling_config_from_mapping(_mapping(config, "profiling")), callbacks=[_Callback(context)], on_epoch_checkpoint=lambda: save_epoch_checkpoint(root=checkpoint_root, model=model, optimizer=optimizer, trainer=trainer, config_digest=config_digest))
+        trainer = ForwardTrainer(model, SoftmaxWithLoss().to(model.backend), optimizer, max_epoch=int(training_config.get("max_epochs", 1)), max_updates=None if max_updates is None else int(max_updates), batch_size=int(loader_config.get("batch_size", 32)), log_interval=int(training_config.get("log_interval", 20)), profiling_config=profiling_config_from_mapping(_mapping(config, "profiling")), callbacks=[_Callback(context)])
         if (resume := checkpoint_config.get("resume")):
             load_epoch_checkpoint(path=str(resume), model=model, optimizer=optimizer, trainer=trainer, config_digest=config_digest)
         seed_batch_order(backend, streams)
         trainer.fit(x_train, t_train, x_test, t_test)
-        trainer.dump_profiling_artifacts(checkpoint_root.parent / "profiles")
+        trainer.dump_profiling_artifacts(Path(str(context.metadata["artifact_root"])) / "profiles")
         profiling = trainer.profiling_metrics()
         metrics = build_final_metrics(
             train_loss=float(trainer.losses.train[-1]), test_loss=float(trainer.losses.valid[-1]),

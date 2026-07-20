@@ -220,9 +220,13 @@ class _Sink:
                 elif kind == "artifact" and client:
                     root = value
                     for path in root.rglob("*"):
-                        is_checkpoint_payload = path.relative_to(root).as_posix() == "checkpoints/final.npz"
-                        if path.is_file() and (self.options.upload_checkpoint or not is_checkpoint_payload):
+                        relative = path.relative_to(root).as_posix()
+                        is_checkpoint_payload = relative.startswith("checkpoints/") and relative != "checkpoints/checkpoint_manifest.json"
+                        should_upload = not is_checkpoint_payload or (self.options.upload_checkpoint and relative == "checkpoints/final.npz")
+                        if path.is_file() and should_upload:
                             client.log_artifact(self.run_id, str(path), artifact_path=str(path.parent.relative_to(root)))
+                elif kind == "checkpoint" and client and self.options.upload_checkpoint:
+                    client.log_artifact(self.run_id, str(value), artifact_path="checkpoints")
             except Exception as exc: self.errors.append(f"MLflow upload failed: {exc}")
             finally: self.events.task_done()
     def _start_mlflow(self):
@@ -303,11 +307,13 @@ class ExperimentRun:
     def emit_metric(self, *, step: int, metrics: dict[str, float], kind: str = "step") -> None:
         """Forward progress to the console only; MLflow metrics upload after training."""
         self.sink.put(("console", _format_progress(step, metrics)), drop=True)
-    def complete(self, *, artifact_root: Path, history_rows: list[tuple[str, int, str, float]], final_metrics: dict[str, float]) -> list[str]:
+    def complete(self, *, artifact_root: Path, history_rows: list[tuple[str, int, str, float]], final_metrics: dict[str, float], checkpoint_path: Path | None = None) -> list[str]:
         self.finished = True
         rows = [(step, f"{step_type}/{metric}", value) for step_type, step, metric, value in history_rows]
         rows.extend((0, key, value) for key, value in final_metrics.items())
-        self.sink.put(("metrics", rows)); self.sink.put(("artifact", artifact_root)); self.sink.put(("stop", "FINISHED")); self.sink.thread.join()
+        self.sink.put(("metrics", rows)); self.sink.put(("artifact", artifact_root))
+        if checkpoint_path is not None and checkpoint_path.is_file(): self.sink.put(("checkpoint", checkpoint_path))
+        self.sink.put(("stop", "FINISHED")); self.sink.thread.join()
         return self.sink.errors
     def __exit__(self, exc_type, exc, traceback) -> bool:
         if exc and not self.finished: self.sink.put(("stop", "FAILED")); self.sink.thread.join()

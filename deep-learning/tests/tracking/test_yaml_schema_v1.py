@@ -27,6 +27,8 @@ def test_yaml_contract_projects_to_the_schema_v1_artifact_tree(tmp_path, monkeyp
     )
 
     assert run.identity.schema_version == 1
+    assert run.artifact_root == tmp_path / "mlprosection" / "mlflow_artifacts" / run.identity.run_key
+    assert run.local_checkpoint_root == tmp_path / "mlprosection" / "checkpoints" / run.identity.run_key
     assert (run.artifact_root / "config/resolved.json").is_file()
     assert (run.artifact_root / "metrics/history.csv").is_file()
     assert "update,20,train/loss,1.5" in (run.artifact_root / "metrics/update_history.csv").read_text()

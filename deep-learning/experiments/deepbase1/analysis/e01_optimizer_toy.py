@@ -10,7 +10,7 @@ import numpy as np
 
 
 DEFAULT_ATOMIC_RUN_IDS = ("TOY-SGD", "TOY-MOM", "TOY-ADAGRAD", "TOY-ADAM")
-DEFAULT_OUTPUT = Path("experiments/results/analysis/e01_optimizer_toy_paths.png")
+DEFAULT_OUTPUT = Path("experiments/deepbase1/results/analysis/e01_optimizer_toy_paths.png")
 
 
 @dataclass(frozen=True)
