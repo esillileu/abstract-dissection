@@ -14,6 +14,8 @@ from .runtime import (
     ExperimentRun,
     RunIdentity,
     RuntimeOptions,
+    build_memory_history_rows,
+    build_runtime_history_rows,
     current_git_info,
     environment_artifacts,
     file_digest,
@@ -108,8 +110,8 @@ class SchemaV1Run:
         write_history_csv(self.artifact_root / "metrics/update_history.csv", run_key=self.identity.run_key, rows=[row for row in history_rows if row[0] == "update"])
         write_history_csv(self.artifact_root / "metrics/epoch_history.csv", run_key=self.identity.run_key, rows=[row for row in history_rows if row[0] == "epoch"])
         write_history_csv(self.artifact_root / "metrics/eval_history.csv", run_key=self.identity.run_key, rows=[row for row in history_rows if row[0] == "eval"])
-        write_runtime_history_csv(self.artifact_root / "metrics/runtime_history.csv", [])
-        write_memory_history_csv(self.artifact_root / "metrics/memory_history.csv", [])
+        write_runtime_history_csv(self.artifact_root / "metrics/runtime_history.csv", build_runtime_history_rows(profiling_metrics))
+        write_memory_history_csv(self.artifact_root / "metrics/memory_history.csv", build_memory_history_rows(profiling_metrics))
         write_json(self.artifact_root / "metrics/final.json", final_metrics)
         write_json(self.artifact_root / "profiles/profiling_summary.json", {"schema_version": 1, "enabled": _section(self.config, "profiling").get("enabled", False), "metrics": profiling_metrics})
         write_json(self.artifact_root / "checkpoints/checkpoint_manifest.json", {
@@ -157,6 +159,7 @@ def build_tags(identity: RunIdentity, config: dict[str, object], git_info: dict[
         "recipe.id": identity.recipe_id, "structure.signature": identity.structure_signature,
         "condition.key": identity.condition_key, "run.key": identity.run_key, "master_seed": str(identity.master_seed),
         "dataset.id": str(_section(config, "dataset").get("id", "")),
+        "model.name": str(_section(config, "model").get("name", _section(config, "model").get("alias", ""))),
         "model.family": str(_section(config, "model").get("family", "")),
         "task.type": str(_section(config, "model").get("task_type", "classification")),
         "trial.status": "running", "trial.attempt": os.getenv("MLFLOW_TRIAL_ATTEMPT", "1"),

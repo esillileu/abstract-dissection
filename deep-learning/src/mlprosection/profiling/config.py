@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
+from typing import Mapping
 
 
 @dataclass(frozen=True)
@@ -26,3 +27,9 @@ class ProfilingConfig:
             raise ValueError("num_steps must be >= 0")
         if self.sample_memory_every_n_steps < 1:
             raise ValueError("sample_memory_every_n_steps must be >= 1")
+
+
+def profiling_config_from_mapping(values: Mapping[str, object]) -> ProfilingConfig:
+    """Build a validated profiling config from a YAML profiling section."""
+    allowed = {field.name for field in fields(ProfilingConfig)}
+    return ProfilingConfig(**{key: value for key, value in values.items() if key in allowed})

@@ -1,4 +1,4 @@
-from mlprosection_mlflow import canonical_json, flatten_dict, make_condition_key, make_run_key
+from mlprosection_mlflow import RunIdentity, build_tags, canonical_json, flatten_dict, make_condition_key, make_run_key
 from mlprosection_mlflow import build_schema_metrics
 
 
@@ -22,6 +22,19 @@ def test_flatten_dict_uses_slash_keys() -> None:
     assert flatten_dict({"model": {"name": "SimpleCNN"}}) == {
         "model/name": "SimpleCNN"
     }
+
+
+def test_build_tags_includes_a_human_readable_model_name() -> None:
+    identity = RunIdentity(1, "mlprosection", ("e02",), "MLP-ADAM-HE", "g02", "RC-MLP", "mlp-v1", "condition", "run", 7)
+
+    tags = build_tags(
+        identity,
+        {"dataset": {"id": "MNIST"}, "model": {"name": "MLP4Hidden", "family": "mlp", "task_type": "classification"}},
+        {"commit": "abc", "branch": "main", "dirty": False, "repository": "repo", "entrypoint": "yaml"},
+        None,
+    )
+
+    assert tags["model.name"] == "MLP4Hidden"
 
 
 def test_build_schema_metrics_maps_runtime_memory_and_profile_metrics() -> None:

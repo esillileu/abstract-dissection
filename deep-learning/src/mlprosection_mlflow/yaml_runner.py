@@ -6,7 +6,7 @@ import time
 from mlprosection.experiment import ExperimentContext, load_yaml, normalize_config, run_config
 
 from .schema_v1 import SchemaV1Run
-from .runtime import build_schema_metrics, write_json
+from .runtime import build_profiling_history_rows, build_schema_metrics, write_json
 
 
 def run_yaml(path: str | Path, *, atomic_run_id: str | None = None, seed: int | None = None, device: str | None = None, resume: str | None = None):
@@ -46,7 +46,7 @@ def run_yaml(path: str | Path, *, atomic_run_id: str | None = None, seed: int | 
             samples_seen=int(result.metrics.get("final/system/samples_seen", 0)),
         ))
         result.metrics["runtime/run_wall_total_s"] = time.perf_counter() - started
-        history = list(result.history)
+        history = [*result.history, *build_profiling_history_rows(result.profiling_metrics)]
         record.write_artifacts(
             model=result.model,
             final_metrics=result.metrics,

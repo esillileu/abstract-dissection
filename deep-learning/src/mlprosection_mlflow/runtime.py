@@ -9,6 +9,7 @@ import hashlib
 import json
 import platform
 import queue
+import re
 import subprocess
 import sys
 import threading
@@ -139,8 +140,37 @@ def build_epoch_metric_rows(*, train_losses: list[float], test_losses: list[floa
     return rows
 
 
-def build_runtime_history_rows(profiling_metrics: dict[str, int | float]) -> list[dict[str, Any]]: return []
-def build_memory_history_rows(profiling_metrics: dict[str, int | float]) -> list[dict[str, Any]]: return [{"timestamp_s": float(i), "cpu_rss_bytes": profiling_metrics.get(f"memory.{name}.cpu.rss_bytes", ""), "gpu_used_bytes": "", "gpu_reserved_bytes": ""} for i, name in enumerate(("run.start", "train.start", "train.end", "run.end"))]
+def build_profiling_history_rows(profiling_metrics: dict[str, int | float]) -> list[tuple[str, int, str, float]]:
+    """Project per-epoch profiler values to MLflow's metric history."""
+    rows: list[tuple[str, int, str, float]] = []
+    for key, value in profiling_metrics.items():
+        duration = re.fullmatch(r"runtime\.epoch\.(\d+)\.(train|eval)_duration_ms", key)
+        throughput = re.fullmatch(r"throughput\.epoch\.(\d+)\.(train|eval)_samples_per_s", key)
+        memory = re.fullmatch(r"memory\.epoch\.(\d+)\.(train|eval)\.(start|end)\.(.+)", key)
+        if duration:
+            rows.append(("epoch", int(duration.group(1)) + 1, f"runtime/{duration.group(2)}_duration_s", float(value) / 1000))
+        elif throughput:
+            rows.append(("epoch", int(throughput.group(1)) + 1, f"throughput/{throughput.group(2)}_samples_per_s", float(value)))
+        elif memory:
+            rows.append(("epoch", int(memory.group(1)) + 1, f"memory/{memory.group(2)}_{memory.group(3)}/{memory.group(4).replace('.', '_')}", float(value)))
+    return rows
+
+
+def build_runtime_history_rows(profiling_metrics: dict[str, int | float]) -> list[dict[str, Any]]:
+    grouped: dict[int, dict[str, Any]] = {}
+    for _, step, metric, value in build_profiling_history_rows(profiling_metrics):
+        row = grouped.setdefault(step, {"step_type": "epoch", "step": step, "train_s": "", "eval_s": "", "checkpoint_s": "", "throughput_samples_per_s": ""})
+        if metric == "runtime/train_duration_s": row["train_s"] = value
+        elif metric == "runtime/eval_duration_s": row["eval_s"] = value
+        elif metric == "throughput/train_samples_per_s": row["throughput_samples_per_s"] = value
+    return [grouped[step] for step in sorted(grouped)]
+
+
+def build_memory_history_rows(profiling_metrics: dict[str, int | float]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for index, key in enumerate(sorted(key for key in profiling_metrics if key.endswith(".cpu.rss_bytes"))):
+        rows.append({"timestamp_s": float(index), "cpu_rss_bytes": profiling_metrics[key], "gpu_used_bytes": "", "gpu_reserved_bytes": ""})
+    return rows
 
 
 class _Sink:
@@ -159,7 +189,11 @@ class _Sink:
             try:
                 if kind == "stop":
                     if self.mlflow:
-                        try: self.mlflow.end_run(status="FINISHED")
+                        status = "FAILED" if self.errors else str(value or "FINISHED")
+                        try:
+                            if client and self.run_id:
+                                client.set_tag(self.run_id, "trial.status", "finished" if status == "FINISHED" else "failed")
+                            self.mlflow.end_run(status=status)
                         except Exception as exc: self.errors.append(f"MLflow finalization failed: {exc}")
                     return
                 if kind == "console": print(value, file=sys.stderr)
@@ -187,14 +221,62 @@ class _Sink:
             return None
         try:
             import mlflow
-            mlflow.set_tracking_uri(self.options.tracking_uri); mlflow.set_experiment(self.options.experiment_name)
-            self.run_id = mlflow.start_run(run_name=self.run_name, tags=self.tags).info.run_id
+            mlflow.set_tracking_uri(self.options.tracking_uri)
+            experiment = mlflow.set_experiment(self.options.experiment_name)
+            client = mlflow.tracking.MlflowClient(tracking_uri=self.options.tracking_uri)
+            parent_run_id = get_or_create_condition_parent(
+                client,
+                experiment_id=experiment.experiment_id,
+                child_tags=self.tags,
+            )
+            child_tags = {
+                **self.tags,
+                "mlflow.parentRunId": parent_run_id,
+                "parent.mlflow_run_id": parent_run_id,
+            }
+            self.run_id = mlflow.start_run(run_name=self.run_name, tags=child_tags).info.run_id
             mlflow.log_params({key: str(value) for key, value in self.params.items() if value is not None})
             self.mlflow = mlflow
-            return mlflow.tracking.MlflowClient(tracking_uri=self.options.tracking_uri)
+            return client
         except Exception as exc:
             self.errors.append(f"MLflow startup failed: {exc}")
             return None
+
+
+def get_or_create_condition_parent(client, *, experiment_id: str, child_tags: dict[str, str]) -> str:
+    """Return the condition parent shared by all seed trials of one condition."""
+    condition_key = child_tags.get("condition.key")
+    if not condition_key:
+        raise ValueError("seed trial tags require condition.key")
+    filter_string = (
+        "tags.`run.type` = 'condition_parent' "
+        f"AND tags.`condition.key` = '{condition_key}'"
+    )
+    parents = client.search_runs(
+        experiment_ids=[experiment_id],
+        filter_string=filter_string,
+        order_by=["attributes.start_time ASC"],
+        max_results=1,
+    )
+    if parents:
+        return parents[0].info.run_id
+
+    parent_tags = {
+        key: value
+        for key, value in child_tags.items()
+        if key not in {
+            "run.key", "master_seed", "trial.status", "trial.attempt",
+            "retry.of", "parent.mlflow_run_id", "mlflow.parentRunId",
+        }
+    }
+    parent_tags.update({
+        "run.type": "condition_parent",
+        "condition.status": "running",
+        "mlflow.runName": child_tags.get("atomic_run.id", f"condition-{condition_key[:12]}"),
+    })
+    parent = client.create_run(experiment_id=experiment_id, tags=parent_tags)
+    client.set_terminated(parent.info.run_id, status="FINISHED")
+    return parent.info.run_id
 
 
 class _Callback:
@@ -214,10 +296,10 @@ class ExperimentRun:
         self.finished = True
         rows = [(step, f"{step_type}/{metric}", value) for step_type, step, metric, value in history_rows]
         rows.extend((0, key, value) for key, value in final_metrics.items())
-        self.sink.put(("metrics", rows)); self.sink.put(("artifact", artifact_root)); self.sink.put(("stop", None)); self.sink.thread.join()
+        self.sink.put(("metrics", rows)); self.sink.put(("artifact", artifact_root)); self.sink.put(("stop", "FINISHED")); self.sink.thread.join()
         return self.sink.errors
     def __exit__(self, exc_type, exc, traceback) -> bool:
-        if exc and not self.finished: self.sink.put(("stop", None)); self.sink.thread.join()
+        if exc and not self.finished: self.sink.put(("stop", "FAILED")); self.sink.thread.join()
         return False
 
 
