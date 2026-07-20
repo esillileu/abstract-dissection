@@ -547,12 +547,12 @@ class TimeSoftmaxWithLoss(Criterion):
 
 class TimeDropout(Layer):
     def __init__(self, dropout_ratio: float = 0.5) -> None:
+        super().__init__()
         self.dropout_ratio = dropout_ratio
         self.mask = None
-        self.train_flg = True
 
     def forward_manual(self, xs: Tensor) -> Tensor:
-        if self.train_flg:
+        if self.training:
             xp = xs.backend.xp
             mask = xp.random.rand(*xs.shape) > self.dropout_ratio
             scale = 1 / (1.0 - self.dropout_ratio)

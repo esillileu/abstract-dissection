@@ -7,11 +7,12 @@ from mlprosection import Tensor
 
 class Dropout(Layer):
     def __init__(self, dropout_ratio=0.5):
+        super().__init__()
         self.dropout_ratio = dropout_ratio
         self.mask = None
 
-    def forward_manual(self, x: Tensor, train_flg=True):
-        if train_flg:
+    def forward_manual(self, x: Tensor):
+        if self.training:
             self.mask = x.backend.xp.random.rand(*x.shape) > self.dropout_ratio
             return x * self.mask
         else:
@@ -29,6 +30,7 @@ class BatchNormalization(Layer):
         momentum: float = 0.9,
         eps: float = 1e-7,
     ) -> None:
+        super().__init__()
         if not 0.0 <= momentum < 1.0:
             raise ValueError("momentum must satisfy 0 <= momentum < 1")
 
@@ -94,7 +96,6 @@ class BatchNormalization(Layer):
     def forward_manual(
         self,
         x: Tensor,
-        train_flg: bool = True,
     ) -> Tensor:
         self.input_shape = x.shape
 
@@ -106,7 +107,7 @@ class BatchNormalization(Layer):
 
         out = self._forward_2d(
             x,
-            train_flg=train_flg,
+            train_flg=self.training,
         )
 
         return out.reshape(*self.input_shape)

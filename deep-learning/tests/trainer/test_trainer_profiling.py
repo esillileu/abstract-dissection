@@ -22,6 +22,22 @@ class DummyOptimizer:
         self.update_count += 1
 
 
+class RecordingCallback:
+    def __init__(self) -> None:
+        self.batch_steps: list[int] = []
+        self.intervals: list[dict[str, float]] = []
+        self.epochs: list[tuple[int, dict[str, float]]] = []
+
+    def on_batch_end(self, *, step: int) -> None:
+        self.batch_steps.append(step)
+
+    def on_interval(self, *, metrics: dict[str, float]) -> None:
+        self.intervals.append(metrics)
+
+    def on_epoch_end(self, *, epoch: int, metrics: dict[str, float]) -> None:
+        self.epochs.append((epoch, metrics))
+
+
 def test_forward_trainer_collects_common_profiling_metrics() -> None:
     trainer = ForwardTrainer(
         model=IdentityModel(),
@@ -78,3 +94,21 @@ def test_forward_trainer_profiles_only_configured_steps() -> None:
     assert "memory.profile.step.1.before.cpu.rss_bytes" in metrics
     assert "memory.profile.step.2.after.cpu.rss_bytes" in metrics
     assert "memory.profile.step.0.before.cpu.rss_bytes" not in metrics
+
+
+def test_forward_trainer_emits_plain_callback_events() -> None:
+    callback = RecordingCallback()
+    trainer = ForwardTrainer(
+        model=IdentityModel(), criterion=SoftmaxWithLoss(), optimizer=DummyOptimizer(),
+        max_epoch=1, batch_size=2, log_interval=1, callbacks=[callback],
+    )
+    x = Tensor([[0.1, 0.9], [0.8, 0.2], [0.7, 0.3], [0.2, 0.8]])
+    t = Tensor([1, 0, 0, 1])
+
+    trainer.fit(x, t)
+
+    assert callback.batch_steps == [1, 2]
+    assert callback.intervals and all("loss" in event for event in callback.intervals)
+    assert [log["global_step"] for log in trainer.logs.train] == [1, 2]
+    assert trainer.eval_step == 0
+    assert callback.epochs == [(1, {"train/accuracy": 1.0})]

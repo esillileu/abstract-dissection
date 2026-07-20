@@ -1,6 +1,5 @@
-from mlprosection.tracking import make_condition_key, make_run_key
-from mlprosection.tracking.mlflow_logger import canonical_json, flatten_dict
-from mlprosection.tracking.schema import build_schema_metrics
+from mlprosection_mlflow import canonical_json, flatten_dict, make_condition_key, make_run_key
+from mlprosection_mlflow import build_schema_metrics
 
 
 def test_canonical_json_is_key_order_invariant() -> None:

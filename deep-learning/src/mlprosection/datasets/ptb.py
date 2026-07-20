@@ -99,6 +99,36 @@ def load_data(data_type='train'):
     return corpus, word_to_id, id_to_word
 
 
+def load_ptb(*, allow_download: bool = False):
+    """Load the repository-cached PTB splits without hidden network access."""
+    required = [save_file["train"], save_file["valid"], save_file["test"], key_file["train"]]
+    missing = [name for name in required if not os.path.exists(os.path.join(dataset_dir, name))]
+    if missing and not allow_download:
+        raise FileNotFoundError(f"PTB cache is incomplete: {', '.join(missing)}")
+    if allow_download:
+        train, word_to_id, id_to_word = load_data("train")
+        valid, _, _ = load_data("valid")
+        test, _, _ = load_data("test")
+    else:
+        vocab_path = os.path.join(dataset_dir, vocab_file)
+        if os.path.exists(vocab_path):
+            with open(vocab_path, "rb") as file:
+                word_to_id, id_to_word = pickle.load(file)
+        else:
+            words = open(os.path.join(dataset_dir, key_file["train"]), encoding="utf-8").read().replace("\n", "<eos>").strip().split()
+            word_to_id = {}
+            id_to_word = {}
+            for word in words:
+                if word not in word_to_id:
+                    index = len(word_to_id)
+                    word_to_id[word] = index
+                    id_to_word[index] = word
+        train = np.load(os.path.join(dataset_dir, save_file["train"]))
+        valid = np.load(os.path.join(dataset_dir, save_file["valid"]))
+        test = np.load(os.path.join(dataset_dir, save_file["test"]))
+    return {"train": train, "valid": valid, "test": test, "word_to_id": word_to_id, "id_to_word": id_to_word}
+
+
 if __name__ == '__main__':
     for data_type in ('train', 'val', 'test'):
         load_data(data_type)

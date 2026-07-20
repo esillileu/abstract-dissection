@@ -20,6 +20,8 @@ def _update_vocab(txt):
 
 
 def load_data(file_name='addition.txt', seed=1984):
+    global id_to_char, char_to_id
+    id_to_char, char_to_id = {}, {}
     file_path = os.path.dirname(os.path.abspath(__file__)) + '/' + file_name
 
     if not os.path.exists(file_path):
@@ -50,9 +52,7 @@ def load_data(file_name='addition.txt', seed=1984):
 
     # 뒤섞기
     indices = numpy.arange(len(x))
-    if seed is not None:
-        numpy.random.seed(seed)
-    numpy.random.shuffle(indices)
+    numpy.random.default_rng(seed).shuffle(indices)
     x = x[indices]
     t = t[indices]
 
@@ -66,3 +66,13 @@ def load_data(file_name='addition.txt', seed=1984):
 
 def get_vocab():
     return char_to_id, id_to_char
+
+
+def load_sequence(file_name: str, *, seed: int):
+    """Return a deterministic character-level split and its vocabulary."""
+    (x_train, t_train), (x_test, t_test) = load_data(file_name, seed=seed)
+    char_to_id_value, id_to_char_value = get_vocab()
+    return {
+        "train": (x_train, t_train), "test": (x_test, t_test),
+        "char_to_id": dict(char_to_id_value), "id_to_char": dict(id_to_char_value),
+    }

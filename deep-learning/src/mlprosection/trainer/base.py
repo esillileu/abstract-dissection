@@ -4,7 +4,7 @@ import time
 
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import List, Iterator, TYPE_CHECKING
+from typing import List, Iterator, TYPE_CHECKING, Iterable
 from dataclasses import dataclass, field
 from mlprosection.profiling import ProfilingConfig
 from mlprosection.profiling.backend import create_backend_profiler
@@ -18,6 +18,7 @@ from mlprosection.profiling.utils import (
     count_parameter_elements,
 )
 from .utils import clip_grads
+from .callbacks import TrainerCallback
 
 if TYPE_CHECKING:
     from mlprosection import Tensor
@@ -42,6 +43,7 @@ class Trainer(ABC):
         log_interval: int = 20,
         drop_last: bool | None = False,
         profiling_config: ProfilingConfig | None = None,
+        callbacks: Iterable[TrainerCallback] | None = None,
     ):
         self.model: Layer = model
         self.criterion: Criterion = criterion
@@ -68,6 +70,8 @@ class Trainer(ABC):
             self.runtime_monitor,
         )
         self.global_step = 0
+        self.eval_step = 0
+        self.callbacks = tuple(callbacks or ())
 
     @property
     def backend(self):
@@ -83,6 +87,31 @@ class Trainer(ABC):
 
     def plot(self, *args, **kwargs):
         raise NotImplementedError
+
+    def state_dict(self) -> dict[str, object]:
+        return {
+            "global_step": self.global_step,
+            "eval_step": self.eval_step,
+            "epoch": getattr(self, "epoch", None),
+            "losses": {"train": list(self.losses.train), "valid": list(self.losses.valid)},
+            "accuracies": {"train": list(self.accuracies.train), "valid": list(self.accuracies.valid)},
+            "logs": {"train": list(self.logs.train), "valid": list(self.logs.valid)},
+        }
+
+    def load_state_dict(self, state: dict[str, object]) -> None:
+        self.global_step = int(state["global_step"])
+        self.eval_step = int(state.get("eval_step", 0))
+        if hasattr(self, "epoch"):
+            self.epoch = state.get("epoch")
+        losses = state.get("losses", {})
+        accuracies = state.get("accuracies", {})
+        logs = state.get("logs", {})
+        if isinstance(losses, dict):
+            self.losses = TVListContainer(list(losses.get("train", [])), list(losses.get("valid", [])))
+        if isinstance(accuracies, dict):
+            self.accuracies = TVListContainer(list(accuracies.get("train", [])), list(accuracies.get("valid", [])))
+        if isinstance(logs, dict):
+            self.logs = TVListContainer(list(logs.get("train", [])), list(logs.get("valid", [])))
 
     def num_batches(self, data_size: int) -> int:
         if self.drop_last:
@@ -107,8 +136,7 @@ class Trainer(ABC):
         *,
         profile: bool = False,
     ) -> tuple[Tensor, Tensor]:
-        if hasattr(self.model, "train_flg"):
-            self.model.train_flg = self.train
+        self.model.train(self.train)
 
         with self.detail_profiler.section("train_step", enabled=profile):
             with self.detail_profiler.section("forward", enabled=profile):
@@ -210,9 +238,7 @@ class Trainer(ABC):
             batch_count += 1
             if self.train:
                 self.global_step += 1
-
-            if self.train:
-                self.pbar.update(1)
+                self._emit_batch_end()
 
             should_log = (
                 self.log_interval is not None and batch_count >= self.log_interval
@@ -238,6 +264,7 @@ class Trainer(ABC):
 
         accuracy = self.compute_accuracy(correct_count, epoch_sample_count)
         self.record_accuracy(accuracy)
+        self._emit_epoch_end(epoch=self.epoch or 0, accuracy=accuracy)
 
     def record_model_metrics(self) -> None:
         if not self.profiling_config.collect_model_metrics:
@@ -295,12 +322,6 @@ class Trainer(ABC):
 
         elapsed = time.time() - self.start_time
 
-        self.pbar.set_postfix(
-            epoch=f"{self.epoch}/{self.max_epoch}",
-            loss=f"{loss_value:.4f}",
-            elapsed=f"{elapsed:.1f}s",
-        )
-
         log = {
             "epoch": self.epoch,
             "iteration": iters + 1,
@@ -309,8 +330,28 @@ class Trainer(ABC):
         }
 
         if self.train:
+            # This is the completed update count, not the per-epoch iteration.
+            # It remains monotonic across epochs and checkpoint resume.
+            log["global_step"] = self.global_step
             self.losses.train.append(loss_value)
             self.logs.train.append(log)
         else:
+            self.eval_step += 1
+            log["eval_step"] = self.eval_step
             self.losses.valid.append(loss_value)
             self.logs.valid.append(log)
+        self._emit_interval(log)
+
+    def _emit_batch_end(self) -> None:
+        for callback in self.callbacks:
+            callback.on_batch_end(step=self.global_step)
+
+    def _emit_interval(self, log: dict[str, float | int]) -> None:
+        metrics = {key: float(value) for key, value in log.items() if isinstance(value, (int, float))}
+        for callback in self.callbacks:
+            callback.on_interval(metrics=metrics)
+
+    def _emit_epoch_end(self, *, epoch: int, accuracy: float) -> None:
+        split = "train" if self.train else "valid"
+        for callback in self.callbacks:
+            callback.on_epoch_end(epoch=epoch, metrics={f"{split}/accuracy": accuracy})

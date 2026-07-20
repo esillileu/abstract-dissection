@@ -18,6 +18,7 @@ NamedParameters: TypeAlias = list[NamedParameter]
 class Layer(ABC):
     def __init__(self, backend: Backend | None = None) -> Backend:
         self._backend = backend or get_default_backend()
+        self.training = True
 
 
     def __call__(self, *args, **kwargs):
@@ -55,6 +56,17 @@ class Layer(ABC):
 
         for value in self.__dict__.values():
             yield from _iter_layers(value, seen)
+
+    def train(self, mode: bool = True) -> Layer:
+        """Set training mode recursively for this layer and its children."""
+        self.training = mode
+        for child in self.children():
+            child.train(mode)
+        return self
+
+    def eval(self) -> Layer:
+        """Set evaluation mode recursively."""
+        return self.train(False)
 
     def zero_grad(self) -> None:
         for _, p in self.named_parameters():

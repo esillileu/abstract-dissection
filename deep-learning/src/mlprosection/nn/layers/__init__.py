@@ -1,7 +1,7 @@
 from .base import Layer
 from .cnn import Conv2D, MaxPool2D
 from .linear import Affine, MatMul
-from .activation import Relu, Sigmoid, Softmax
+from .activation import Relu, Sigmoid, Softmax, Tanh
 from .criterion import SigmoidWithLoss, SoftmaxWithLoss
 from .embeding import Embedding
 from .regulizer import Dropout, BatchNormalization
@@ -31,6 +31,7 @@ __all__ = [
     "Layer",
     "Relu",
     "Sigmoid",
+    "Tanh",
     "Softmax",
     "SigmoidWithLoss",
     "SoftmaxWithLoss",

@@ -42,6 +42,20 @@ class Sigmoid(Activation):
         return dx
 
 
+class Tanh(Activation):
+    def __init__(self):
+        super().__init__()
+        self.out: Tensor | None = None
+
+    def forward_manual(self, x: Tensor):
+        self.out = Tensor(x.backend.xp.tanh(x.data), backend=x.backend)
+        return self.out
+
+    def backward_manual(self, dout: Tensor):
+        assert self.out is not None
+        return dout * (1.0 - self.out * self.out)
+
+
 class Softmax(Activation):
     def __init__(self):
         self.out: Tensor = None
@@ -55,4 +69,3 @@ class Softmax(Activation):
         sumdx = dx.sum(axis=1, keepdims=True)
         dx -= self.out * sumdx
         return dx
-

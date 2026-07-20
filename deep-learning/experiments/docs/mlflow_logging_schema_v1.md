@@ -659,6 +659,10 @@ update/runtime/step_s
 update/runtime/throughput_samples_per_s
 ```
 
+`update/train/loss`는 `train/log_interval` 구간의 sample-weighted 평균 loss다. 각 값의 MLflow step은 해당 구간을 끝낸 단조 증가 `global_step`이며, 학습 중에는 메모리에 누적하고 run 종료 뒤 `log_batch`로 업로드한다.
+
+`eval/valid/loss`는 validation의 `train/log_interval` 구간 평균 loss다. 각 값의 MLflow step은 별도의 단조 증가 `eval_step`이며, `update/*` 축과 섞지 않는다. 이 값도 run 종료 뒤 batch upload한다.
+
 ## 7.3 Epoch metric
 
 ```text

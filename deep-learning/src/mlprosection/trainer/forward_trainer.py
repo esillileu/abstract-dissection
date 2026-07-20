@@ -2,12 +2,11 @@ from __future__ import annotations
 
 import time
 from contextlib import nullcontext
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Iterable, Callable
 
 from mlprosection.profiling import ProfilingConfig
-from tqdm import tqdm
-
 from .base import Trainer
+from .callbacks import TrainerCallback
 
 if TYPE_CHECKING:
     from mlprosection import Tensor
@@ -27,6 +26,8 @@ class ForwardTrainer(Trainer):
         max_grad: float | None = None,
         drop_last: bool | None = False,
         profiling_config: ProfilingConfig | None = None,
+        callbacks: Iterable[TrainerCallback] | None = None,
+        on_epoch_checkpoint: Callable[[], None] | None = None,
     ):
         super().__init__(
             model=model,
@@ -37,11 +38,12 @@ class ForwardTrainer(Trainer):
             log_interval=log_interval,
             drop_last=drop_last,
             profiling_config=profiling_config,
+            callbacks=callbacks,
         )
         self.max_grad = max_grad
 
-        self.pbar: tqdm | None = None
         self.epoch: int | None = None
+        self.on_epoch_checkpoint = on_epoch_checkpoint
 
     def fit(
         self,
@@ -56,11 +58,7 @@ class ForwardTrainer(Trainer):
         skip_validation = x_val is None or t_val is None
 
         data_size = len(x_train)
-        max_iters = self.num_batches(data_size)
-        total_steps = self.max_epoch * max_iters
-
         self.detail_profiler.start_run()
-        self.pbar = tqdm(total=total_steps, desc="train", unit="step")
         try:
             if self.profiling_config.collect_memory_metrics:
                 self.runtime_monitor.snapshot_memory("run.start", synchronize=True)
@@ -76,27 +74,19 @@ class ForwardTrainer(Trainer):
                 train_timer = nullcontext()
 
             with train_timer:
-                with self.pbar:
-                    for epoch in range(self.max_epoch):
-                        self.epoch = epoch + 1
-                        idx = xp.random.permutation(xp.arange(data_size))
-                        shuffled_x, shuffled_t = x_train[idx], t_train[idx]
-                        self._run_measured_epoch(
-                            "train",
-                            epoch,
-                            shuffled_x,
-                            shuffled_t,
-                        )
+                start_epoch = int(self.epoch or 0)
+                for epoch in range(start_epoch, self.max_epoch):
+                    self.epoch = epoch + 1
+                    idx = xp.random.permutation(xp.arange(data_size))
+                    shuffled_x, shuffled_t = x_train[idx], t_train[idx]
+                    self._run_measured_epoch("train", epoch, shuffled_x, shuffled_t)
 
-                        if not skip_validation:
-                            self.train = False
-                            self._run_measured_epoch(
-                                "eval",
-                                epoch,
-                                x_val,
-                                t_val,
-                            )
-                            self.train = True
+                    if not skip_validation:
+                        self.train = False
+                        self._run_measured_epoch("eval", epoch, x_val, t_val)
+                        self.train = True
+                    if self.on_epoch_checkpoint is not None:
+                        self.on_epoch_checkpoint()
         finally:
             if self.profiling_config.collect_memory_metrics:
                 self.runtime_monitor.snapshot_memory("train.end", synchronize=True)

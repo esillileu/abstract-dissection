@@ -1,5 +1,7 @@
 from ..core.tensor import Tensor
 from .mnist import load_mnist as _load_mnist
+from .ptb import load_ptb
+from .sequence import load_sequence
 
 
 def load_mnist(normalize=True, flatten=True, one_hot_label=False, gpu=False):
@@ -9,4 +11,4 @@ def load_mnist(normalize=True, flatten=True, one_hot_label=False, gpu=False):
     )
 
 
-__all__ = ["load_mnist"]
+__all__ = ["load_mnist", "load_ptb", "load_sequence"]

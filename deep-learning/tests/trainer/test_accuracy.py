@@ -30,7 +30,7 @@ def test_run_epoch_records_validation_accuracy_once():
         criterion=SoftmaxWithLoss(),
         optimizer=None,
         batch_size=2,
-        log_interval=None,
+        log_interval=1,
     )
     trainer.train = False
     trainer.pbar = DummyProgress()
@@ -49,3 +49,4 @@ def test_run_epoch_records_validation_accuracy_once():
 
     assert trainer.accuracies.valid == [pytest.approx(1 / 3)]
     assert trainer.accuracies.train == []
+    assert [log["eval_step"] for log in trainer.logs.valid] == [1, 2]
