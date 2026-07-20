@@ -29,8 +29,8 @@ def test_build_tags_includes_a_human_readable_model_name() -> None:
 
     tags = build_tags(
         identity,
-        {"dataset": {"id": "MNIST"}, "model": {"name": "MLP4Hidden", "family": "mlp", "task_type": "classification"}},
-        {"commit": "abc", "branch": "main", "dirty": False, "repository": "repo", "entrypoint": "yaml"},
+        {"kind": "test", "dataset": {"id": "MNIST"}, "model": {"name": "MLP4Hidden", "family": "mlp", "task_type": "classification"}},
+        {"commit": "abc", "branch": "main", "dirty": False, "repository": "repo", "entrypoint": "yaml", "diff_sha256": "diff"},
         None,
     )
 

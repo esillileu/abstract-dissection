@@ -72,6 +72,6 @@ def test_condition_parent_is_created_once_per_condition_key() -> None:
     assert first == second == "parent-1"
     assert client.created_tags == {
         "run.type": "condition_parent", "condition.key": "condition-abc", "atomic_run.id": "MLP-ADAM-HE",
-        "condition.status": "running", "mlflow.runName": "MLP-ADAM-HE",
+        "condition.status": "running", "condition.group.key": "condition-abc", "mlflow.runName": "MLP-ADAM-HE",
     }
     assert client.terminated == [("parent-1", "FINISHED")]

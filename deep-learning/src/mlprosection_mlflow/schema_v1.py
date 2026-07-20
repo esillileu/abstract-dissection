@@ -21,6 +21,7 @@ from .runtime import (
     file_digest,
     flatten_dict,
     make_condition_key,
+    make_parent_group_key,
     make_run_key,
     parameter_manifest,
     pip_freeze,
@@ -148,6 +149,11 @@ def build_identity(config: dict[str, object], condition: dict[str, object], seed
 
 def build_tags(identity: RunIdentity, config: dict[str, object], git_info: dict[str, object], model: Any | None) -> dict[str, str]:
     backend = model.backend if model is not None else get_default_backend()
+    group_params = flatten_dict({
+        **build_condition_config(config, git_info),
+        "policy": _section(config, "policy"),
+        "regularization": _section(config, "regularization"),
+    })
     return {
         "schema.version": "1", "project.name": "mlprosection", "run.type": "seed_trial",
         "code.git_commit": str(git_info["commit"]), "code.git_branch": str(git_info["branch"]),
@@ -157,7 +163,7 @@ def build_tags(identity: RunIdentity, config: dict[str, object], git_info: dict[
         "runtime.platform": os.uname().sysname.lower(), "runtime.python_version": sys.version.split()[0],
         "atomic_run.id": identity.atomic_run_id, "execution_group.id": identity.execution_group_id,
         "recipe.id": identity.recipe_id, "structure.signature": identity.structure_signature,
-        "condition.key": identity.condition_key, "run.key": identity.run_key, "master_seed": str(identity.master_seed),
+        "condition.key": identity.condition_key, "condition.group.key": make_parent_group_key(group_params), "run.key": identity.run_key, "master_seed": str(identity.master_seed),
         "dataset.id": str(_section(config, "dataset").get("id", "")),
         "model.name": str(_section(config, "model").get("name", _section(config, "model").get("alias", ""))),
         "model.family": str(_section(config, "model").get("family", "")),

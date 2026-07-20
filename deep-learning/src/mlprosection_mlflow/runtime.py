@@ -44,6 +44,15 @@ def make_run_key(condition: dict[str, Any], seed: dict[str, Any]) -> str:
     return hashlib.sha256((canonical_json(condition) + canonical_json(seed)).encode()).hexdigest()
 
 
+def make_parent_group_key(params: dict[str, object]) -> str:
+    """Identify a seed group while intentionally ignoring code and seed provenance."""
+    stable = {
+        key: value for key, value in params.items()
+        if not key.startswith("code/") and not key.startswith("seed/")
+    }
+    return hashlib.sha256(canonical_json(stable).encode()).hexdigest()
+
+
 def flatten_dict(value: dict[str, Any], *, prefix: str = "") -> dict[str, Any]:
     output: dict[str, Any] = {}
     for key, child in value.items():
@@ -246,11 +255,12 @@ class _Sink:
 def get_or_create_condition_parent(client, *, experiment_id: str, child_tags: dict[str, str]) -> str:
     """Return the condition parent shared by all seed trials of one condition."""
     condition_key = child_tags.get("condition.key")
-    if not condition_key:
-        raise ValueError("seed trial tags require condition.key")
+    group_key = child_tags.get("condition.group.key", condition_key)
+    if not group_key:
+        raise ValueError("seed trial tags require condition.group.key or condition.key")
     filter_string = (
         "tags.`run.type` = 'condition_parent' "
-        f"AND tags.`condition.key` = '{condition_key}'"
+        f"AND tags.`condition.group.key` = '{group_key}'"
     )
     parents = client.search_runs(
         experiment_ids=[experiment_id],
@@ -272,6 +282,7 @@ def get_or_create_condition_parent(client, *, experiment_id: str, child_tags: di
     parent_tags.update({
         "run.type": "condition_parent",
         "condition.status": "running",
+        "condition.group.key": group_key,
         "mlflow.runName": child_tags.get("atomic_run.id", f"condition-{condition_key[:12]}"),
     })
     parent = client.create_run(experiment_id=experiment_id, tags=parent_tags)

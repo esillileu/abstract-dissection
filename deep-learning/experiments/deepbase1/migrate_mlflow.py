@@ -11,6 +11,7 @@ from pathlib import Path
 from mlprosection_mlflow.runtime import (
     build_profiling_history_rows,
     get_or_create_condition_parent,
+    make_parent_group_key,
     metric_batches,
 )
 
@@ -36,12 +37,18 @@ def main() -> None:
         if not tags.get("condition.key"):
             print(f"skip {child.info.run_id}: missing condition.key")
             continue
+        group_key = make_parent_group_key(child.data.params)
         model_name = child.data.params.get("model/name")
         status = _trial_status(child.info.status)
         if not args.apply:
             print(f"would migrate {child.info.run_id} condition={tags['condition.key'][:12]} status={status}")
             continue
-        parent_id = get_or_create_condition_parent(client, experiment_id=experiment.experiment_id, child_tags=tags)
+        parent_id = get_or_create_condition_parent(
+            client,
+            experiment_id=experiment.experiment_id,
+            child_tags={**tags, "condition.group.key": group_key},
+        )
+        client.set_tag(child.info.run_id, "condition.group.key", group_key)
         client.set_tag(child.info.run_id, "mlflow.parentRunId", parent_id)
         client.set_tag(child.info.run_id, "parent.mlflow_run_id", parent_id)
         client.set_tag(child.info.run_id, "trial.status", status)
