@@ -8,9 +8,9 @@ from pathlib import Path
 from typing import Iterable
 
 
-ANALYSIS_ROOT = Path("experiments/results/analysis")
+ANALYSIS_ROOT = Path("experiments/deepbase1/results/analysis")
 DEFAULT_TRACKING_URI = "http://127.0.0.1:5000"
-DEFAULT_MLFLOW_EXPERIMENT = "mlprosection"
+DEFAULT_MLFLOW_EXPERIMENT = "deepbase1"
 
 
 @dataclass(frozen=True)

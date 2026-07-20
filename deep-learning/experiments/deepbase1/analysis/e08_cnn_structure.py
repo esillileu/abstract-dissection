@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import matplotlib.pyplot as plt
 
-from common import ANALYSIS_ROOT, client, latest_run_ids_for_atomic_ids, load_records, metric_history, parser, print_outputs, save_summary_csv
+from .common import ANALYSIS_ROOT, client, latest_run_ids_for_atomic_ids, load_records, metric_history, parser, print_outputs, save_summary_csv
 
 
 ATOMIC_RUN_IDS = ["CNN-SIMPLE", "CNN-DEEP"]

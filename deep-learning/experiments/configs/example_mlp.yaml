@@ -1,0 +1,95 @@
+kind: supervised_classification
+schema_version: 1
+seed: 0
+atomic_run_id: MLP-ADAM-HE
+experiment_ids: [e02]
+execution_group_id: g02
+recipe_id: RC-MLP
+structure_signature: mnist-mlp-784-100x4-10-relu-v1
+dataset:
+  id: DS-MNIST-FLAT
+  name: MNIST
+  version: official
+  flatten: true
+  train_limit: 60000
+  test_limit: 10000
+  input_shape: [784]
+  target_shape: []
+  num_classes: 10
+  normalization: pixel_0_1
+loader:
+  batch_size: 128
+  shuffle: true
+  drop_last: false
+  sampling_method: permutation_per_epoch
+  num_workers: 0
+model:
+  alias: MLP
+  name: MLP4Hidden
+  family: mlp
+  task_type: classification
+  input_size: 784
+  hidden_sizes: [100, 100, 100, 100]
+  output_size: 10
+  initializer: he
+  activation: relu
+  input_shape: [784]
+  output_shape: [10]
+initializer:
+  name: he
+  fan_mode: fan_in
+  seed: seed/model_init
+optimizer:
+  name: adam
+  learning_rate: 0.001
+scheduler:
+  name: constant
+loss:
+  name: SoftmaxWithLoss
+  reduction: mean
+training:
+  max_epochs: 5
+  max_updates: 2000
+  log_interval: 30
+  log_interval_unit: update
+  entrypoint: experiments/configs/example_mlp.yaml
+evaluation:
+  batch_size: 128
+  use_full_train: true
+  use_full_test: true
+  primary_metric: test/accuracy
+  checkpoint_selection: final
+numerics:
+  dtype: float32
+  compute_dtype: float32
+  parameter_dtype: float32
+  backend: numpy
+  device: cpu
+  deterministic: false
+  nan_policy: fail
+  inf_policy: fail
+  epsilon: 1.0e-7
+checkpoint:
+  save_final: true
+  save_best: false
+  format: npz
+  include_optimizer: false
+  include_scheduler: false
+  include_rng_state: false
+  include_training_state: false
+profiling:
+  enabled: false
+policy:
+  seed_count: 10
+  seed_start: 0
+  paired_execution: true
+  save_final_checkpoint: true
+  save_best_checkpoint: false
+  fail_on_nan: true
+  fail_on_inf: true
+  fail_on_missing_metric: true
+  resume_allowed: true
+  retry_allowed: true
+tracking:
+  enabled: true
+  upload_checkpoint: false

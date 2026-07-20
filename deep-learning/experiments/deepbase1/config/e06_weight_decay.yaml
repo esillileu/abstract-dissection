@@ -1,0 +1,20 @@
+kind: supervised_classification
+dataset: {id: DS-MNIST-300, name: MNIST, flatten: true, train_limit: 300, test_limit: 10000, input_shape: [784], num_classes: 10, normalization: pixel_0_1}
+loader: {batch_size: 100, shuffle: true, drop_last: false, sampling_method: permutation_per_epoch}
+model: {alias: MLP, name: MLP6Hidden, family: mlp, task_type: classification, input_size: 784, hidden_sizes: [100, 100, 100, 100, 100, 100], output_size: 10, initializer: he, activation: relu, input_shape: [784], output_shape: [10], use_batchnorm: false, use_dropout: false}
+initializer: {name: he, seed: seed/model_init}
+scheduler: {name: constant}
+loss: {name: SoftmaxWithLoss, reduction: mean}
+training: {max_epochs: 301, log_interval: 10, entrypoint: experiments/deepbase1/config/e06_weight_decay.yaml}
+evaluation: {batch_size: 100, use_full_train: true, use_full_test: true, primary_metric: test/accuracy, checkpoint_selection: final}
+numerics: {dtype: float32, backend: numpy, device: cpu, deterministic: false, nan_policy: fail, inf_policy: fail}
+checkpoint: {save_final: true, save_best: false, format: npz}
+profiling: {enabled: false}
+policy: {seed_set: research_v1, seed_count: 10, paired_execution: true}
+tracking: {enabled: true, experiment: deepbase1}
+variants:
+  REG-BASE: {atomic_run_id: REG-BASE, experiment_ids: [e06, e07], execution_group_id: g06, recipe_id: RC-REG-WD, structure_signature: mnist-mlp-784-100x6-10-relu-no-dropout-v1, optimizer: {name: sgd, learning_rate: 0.01, weight_decay: 0.0, weight_decay_mode: coupled_l2_gradient}, regularization: {l2_lambda: 0.0, l2_apply_to: weights, dropout_ratio: 0.0}}
+  REG-WD-1E4: {atomic_run_id: REG-WD-1E4, experiment_ids: [e06], execution_group_id: g06, recipe_id: RC-REG-WD, structure_signature: mnist-mlp-784-100x6-10-relu-no-dropout-v1, optimizer: {name: sgd, learning_rate: 0.01, weight_decay: 0.0001, weight_decay_mode: coupled_l2_gradient}, regularization: {l2_lambda: 0.0001, l2_apply_to: weights, dropout_ratio: 0.0}}
+  REG-WD-1E3: {atomic_run_id: REG-WD-1E3, experiment_ids: [e06], execution_group_id: g06, recipe_id: RC-REG-WD, structure_signature: mnist-mlp-784-100x6-10-relu-no-dropout-v1, optimizer: {name: sgd, learning_rate: 0.01, weight_decay: 0.001, weight_decay_mode: coupled_l2_gradient}, regularization: {l2_lambda: 0.001, l2_apply_to: weights, dropout_ratio: 0.0}}
+  REG-WD-1E2: {atomic_run_id: REG-WD-1E2, experiment_ids: [e06], execution_group_id: g06, recipe_id: RC-REG-WD, structure_signature: mnist-mlp-784-100x6-10-relu-no-dropout-v1, optimizer: {name: sgd, learning_rate: 0.01, weight_decay: 0.01, weight_decay_mode: coupled_l2_gradient}, regularization: {l2_lambda: 0.01, l2_apply_to: weights, dropout_ratio: 0.0}}
+  REG-WD-1E1: {atomic_run_id: REG-WD-1E1, experiment_ids: [e06], execution_group_id: g06, recipe_id: RC-REG-WD, structure_signature: mnist-mlp-784-100x6-10-relu-no-dropout-v1, optimizer: {name: sgd, learning_rate: 0.01, weight_decay: 0.1, weight_decay_mode: coupled_l2_gradient}, regularization: {l2_lambda: 0.1, l2_apply_to: weights, dropout_ratio: 0.0}}

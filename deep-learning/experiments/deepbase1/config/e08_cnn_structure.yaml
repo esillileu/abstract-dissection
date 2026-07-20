@@ -1,0 +1,103 @@
+kind: supervised_classification
+dataset:
+  {
+    id: DS-MNIST-IMG,
+    name: MNIST,
+    version: official,
+    flatten: false,
+    train_limit: 60000,
+    test_limit: 10000,
+    input_shape: [1, 28, 28],
+    target_shape: [],
+    num_classes: 10,
+    normalization: pixel_0_1,
+    channel_order: NCHW,
+  }
+loader:
+  {
+    batch_size: 100,
+    shuffle: true,
+    drop_last: false,
+    sampling_method: permutation_per_epoch,
+  }
+initializer: { name: he, fan_mode: fan_in, seed: seed/model_init }
+optimizer:
+  { name: adam, learning_rate: 0.001, beta1: 0.9, beta2: 0.999, eps: 1.0e-7 }
+scheduler: { name: constant }
+loss: { name: SoftmaxWithLoss, reduction: mean }
+training:
+  {
+    max_epochs: 20,
+    log_interval: 10,
+    entrypoint: experiments/deepbase1/config/e08_cnn_structure.yaml,
+  }
+evaluation:
+  {
+    batch_size: 100,
+    use_full_train: true,
+    use_full_test: true,
+    primary_metric: test/accuracy,
+    checkpoint_selection: final,
+  }
+numerics:
+  {
+    dtype: float32,
+    backend: numpy,
+    device: cpu,
+    deterministic: false,
+    nan_policy: fail,
+    inf_policy: fail,
+  }
+checkpoint: { save_final: true, save_best: false, format: npz }
+profiling: { enabled: false }
+policy: {seed_set: research_v1, seed_count: 10, paired_execution: true}
+tracking: { enabled: true, experiment: deepbase1 }
+variants:
+  CNN-SIMPLE:
+    {
+      atomic_run_id: CNN-SIMPLE,
+      experiment_ids: [e08],
+      execution_group_id: g08,
+      recipe_id: RC-CNN,
+      structure_signature: mnist-simpleconvnet-v1,
+      model:
+        {
+          alias: SimpleCNN,
+          name: SimpleConvNet,
+          family: cnn,
+          task_type: classification,
+          input_shape: [1, 28, 28],
+          output_shape: [10],
+          num_conv_layers: 1,
+          activation: relu,
+          normalization: none,
+          use_batchnorm: false,
+          use_dropout: false,
+          "model/flops": 8726000,
+          "model/macs": 4363000,
+        },
+    }
+  CNN-DEEP:
+    {
+      atomic_run_id: CNN-DEEP,
+      experiment_ids: [e08],
+      execution_group_id: g09,
+      recipe_id: RC-CNN,
+      structure_signature: mnist-deepconvnet-v1,
+      model:
+        {
+          alias: DeepCNN,
+          name: DeepConvNet,
+          family: cnn,
+          task_type: classification,
+          input_shape: [1, 28, 28],
+          output_shape: [10],
+          num_conv_layers: 6,
+          activation: relu,
+          normalization: none,
+          use_batchnorm: false,
+          use_dropout: true,
+          "model/flops": 11800000,
+          "model/macs": 5900000,
+        },
+    }

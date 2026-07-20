@@ -2,15 +2,20 @@ from __future__ import annotations
 
 import matplotlib.pyplot as plt
 
-from common import ANALYSIS_ROOT, client, latest_run_ids_for_atomic_ids, load_records, metric_history, parser, print_outputs, save_summary_csv
+from .common import ANALYSIS_ROOT, client, latest_run_ids_for_atomic_ids, load_records, metric_history, parser, print_outputs, save_summary_csv
 
 
-ATOMIC_RUN_IDS = ["REG-BASE", "REG-WD-1E4", "REG-WD-1E3", "REG-WD-1E2", "REG-WD-1E1"]
-OUTPUT = ANALYSIS_ROOT / "e06_weight_decay.png"
+ATOMIC_RUN_IDS = ["REG-BASE", "REG-DO-01", "REG-DO-02", "REG-DO-03", "REG-DO-05"]
+OUTPUT = ANALYSIS_ROOT / "e07_dropout.png"
+
+
+def dropout_label(record) -> str:
+    ratio = record.params.get("regularization/dropout_ratio", "0.0")
+    return f"{record.atomic_run_id} ({ratio})"
 
 
 def main() -> None:
-    args = parser("Render e06 weight decay results.", OUTPUT).parse_args()
+    args = parser("Render e07 dropout results.", OUTPUT).parse_args()
     mlflow_client = client(args.tracking_uri)
     run_ids = args.run_id or latest_run_ids_for_atomic_ids(
         mlflow_client,
@@ -28,23 +33,22 @@ def main() -> None:
         if test:
             axes[0].plot(steps, test, linestyle="--", label=f"{record.atomic_run_id} test", alpha=0.75)
 
-    labels = [record.atomic_run_id for record in records]
-    test_acc = [record.metrics.get("final/test/accuracy", 0.0) for record in records]
-    train_acc = [record.metrics.get("final/train/accuracy", 0.0) for record in records]
-    x = range(len(records))
-    axes[1].bar([value - 0.18 for value in x], train_acc, width=0.36, label="train")
-    axes[1].bar([value + 0.18 for value in x], test_acc, width=0.36, label="test")
-    axes[1].set_xticks(list(x), labels, rotation=25, ha="right")
+    labels = [dropout_label(record) for record in records]
+    gap = [
+        record.metrics.get("final/train/accuracy", 0.0) - record.metrics.get("final/test/accuracy", 0.0)
+        for record in records
+    ]
+    axes[1].bar(range(len(records)), gap)
+    axes[1].set_xticks(list(range(len(records))), labels, rotation=25, ha="right")
 
-    axes[0].set_title("e06 accuracy by epoch")
+    axes[0].set_title("e07 accuracy by epoch")
     axes[0].set_xlabel("epoch")
     axes[0].set_ylabel("accuracy")
     axes[0].grid(alpha=0.25)
-    axes[1].set_title("e06 final accuracy")
-    axes[1].set_ylabel("accuracy")
+    axes[1].set_title("e07 train-test accuracy gap")
+    axes[1].set_ylabel("gap")
     axes[1].grid(axis="y", alpha=0.25)
-    for axis in axes:
-        axis.legend(fontsize=7)
+    axes[0].legend(fontsize=7)
     fig.tight_layout()
     args.output.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(args.output, dpi=160)
@@ -53,7 +57,7 @@ def main() -> None:
     save_summary_csv(
         args.summary_csv,
         records=records,
-        param_keys=["optimizer/weight_decay"],
+        param_keys=["regularization/dropout_ratio"],
         metric_keys=[
             "final/train/loss",
             "final/test/loss",
