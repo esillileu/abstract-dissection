@@ -213,6 +213,14 @@ parent.mlflow_run_id
 running | finished | failed | killed
 ```
 
+## 4.4 Parent-child 생성 규칙
+
+YAML runner는 각 `seed_trial`을 시작하기 전에 같은 experiment에서 `condition.key`가 같은 `condition_parent`를 조회한다. 없으면 parent를 만들고, child에는 MLflow 표준 tag `mlflow.parentRunId`와 조회 편의용 `parent.mlflow_run_id`를 모두 설정한다. 따라서 seed만 다른 실행은 하나의 MLflow parent 아래로 표시된다.
+
+기존 top-level seed run은 재실행하지 않는다. migration으로 parent를 생성한 뒤 각 child에 `mlflow.parentRunId` tag만 추가한다.
+
+기존 deepbase1 run은 먼저 `uv run python -m experiments.deepbase1.migrate_mlflow --experiment deepbase1`으로 dry run을 확인하고, `--apply`로 hierarchy, `model.name`, lifecycle tag 및 artifact에 남은 epoch profiler history를 backfill한다. 이미 `migration.profiling_history.v1=complete`인 run은 다시 기록하지 않는다.
+
 ## 4.4 Analysis 필수 tag
 
 ```text
@@ -660,6 +668,8 @@ update/runtime/throughput_samples_per_s
 ```
 
 `update/train/loss`는 `train/log_interval` 구간의 sample-weighted 평균 loss다. 각 값의 MLflow step은 해당 구간을 끝낸 단조 증가 `global_step`이며, 학습 중에는 메모리에 누적하고 run 종료 뒤 `log_batch`로 업로드한다.
+
+`training.max_updates`가 설정되면 trainer는 해당 global update까지 실행한다. 상한에 도달한 partial epoch도 마지막 interval loss, validation, checkpoint를 기록한 뒤 종료한다.
 
 `eval/valid/loss`는 validation의 `train/log_interval` 구간 평균 loss다. 각 값의 MLflow step은 별도의 단조 증가 `eval_step`이며, `update/*` 축과 섞지 않는다. 이 값도 run 종료 뒤 batch upload한다.
 
