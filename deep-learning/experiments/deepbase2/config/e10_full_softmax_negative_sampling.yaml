@@ -1,0 +1,21 @@
+kind: word2vec
+dataset: {id: DS-PTB-TRAIN, name: Penn Treebank, window_size: 5}
+loader: {batch_size: 100, shuffle: true}
+model: {family: word2vec, embedding_size: 100, architecture: cbow, objective: full_softmax}
+optimizer: {name: adam, learning_rate: 0.001}
+scheduler: {name: constant}
+loss: {name: normalized_prediction_term_full_softmax}
+training: {max_epochs: 10, log_interval: 1000, entrypoint: experiments/deepbase2/config/e10_full_softmax_negative_sampling.yaml}
+evaluation: {primary_metric: final/train/normalized_loss}
+numerics: {dtype: float32, backend: cupy, device: cuda:0, deterministic: true}
+checkpoint: {save_final: true, save_best: false, format: npz}
+profiling: {enabled: true}
+policy: {seed_set: research_v1, seed_count: 10}
+tracking: {enabled: true, experiment: deepbase2}
+variants:
+  W2V-CBOW-FULL:
+    atomic_run_id: W2V-CBOW-FULL
+    experiment_ids: [e10]
+    execution_group_id: g12
+    recipe_id: RC-PTB-CBOW-FULL
+    structure_signature: ptb-cbow-full-softmax-v1
