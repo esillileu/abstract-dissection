@@ -7,6 +7,9 @@ from mlprosection.core.backend import Backend, get_default_backend, resolve_back
 
 from .base import Layer
 from .criterion import Criterion
+from .embeding import Embedding
+from .linear import Affine
+from .regulizer import BatchNormalization, Dropout
 from ..types import Parameter
 
 
@@ -52,6 +55,63 @@ def _make_parameter(
     else:
         data = (scale * xp.random.randn(*shape)).astype(resolved.float_dtype)
     return Parameter(data, backend=resolved, name=name)
+
+
+class TimeLayer(Layer):
+    """Base contract for layers whose leading shape is ``(batch, time, ...)``."""
+
+    time_axis = 1
+
+    def reset_state(self) -> None:
+        """Reset optional state carried between truncated-BPTT batches."""
+
+    def detach_state(self) -> None:
+        """Keep values but clear backward-time caches at a BPTT boundary."""
+
+
+class TimeDistributed(TimeLayer):
+    """Apply one ordinary layer to every timestep with shared parameters.
+
+    The wrapped layer is called once on a flattened ``batch * time`` batch, so
+    its parameter gradients naturally aggregate across all timesteps.
+    """
+
+    def __init__(self, layer: Layer) -> None:
+        super().__init__(layer.backend)
+        self.layer = layer
+        self.input_shape: tuple[int, ...] | None = None
+        self.output_shape: tuple[int, ...] | None = None
+
+    def forward_manual(self, xs: Tensor) -> Tensor:
+        if xs.ndim < 2:
+            raise ValueError("TimeDistributed expects (batch, time, ...) input")
+        self.input_shape = xs.shape
+        flat = Tensor(xs.data.reshape(xs.shape[0] * xs.shape[1], *xs.shape[2:]), backend=xs.backend)
+        output = self.layer.forward(flat)
+        self.output_shape = output.shape[1:]
+        return Tensor(output.data.reshape(xs.shape[0], xs.shape[1], *self.output_shape), backend=output.backend)
+
+    def backward_manual(self, dout: Tensor):
+        if self.input_shape is None or self.output_shape is None:
+            raise RuntimeError("forward must be called before backward")
+        flat = Tensor(dout.data.reshape(self.input_shape[0] * self.input_shape[1], *self.output_shape), backend=dout.backend)
+        dx = self.layer.backward(flat)
+        if dx is None:
+            return None
+        return Tensor(dx.data.reshape(*self.input_shape), backend=dx.backend)
+
+
+class RecurrentTimeLayer(TimeLayer):
+    """Common state lifecycle for recurrent time layers."""
+
+    def __init__(self, *, stateful: bool = False, backend: Backend | str | None = None) -> None:
+        super().__init__(backend)
+        self.stateful = stateful
+
+    def detach_state(self) -> None:
+        layers = getattr(self, "layers", None)
+        if isinstance(layers, list):
+            layers.clear()
 
 
 class RNN(Layer):
@@ -113,7 +173,7 @@ class RNN(Layer):
         return dx, dh_prev
 
 
-class TimeRNN(Layer):
+class TimeRNN(RecurrentTimeLayer):
     def __init__(
         self,
         input_size: int,
@@ -122,7 +182,7 @@ class TimeRNN(Layer):
         stateful: bool = False,
         backend: Backend | str | None = None,
     ) -> None:
-        super().__init__(backend)
+        super().__init__(stateful=stateful, backend=backend)
         self.Wx = _make_parameter(
             (input_size, hidden_size),
             backend=self._backend,
@@ -145,14 +205,13 @@ class TimeRNN(Layer):
         self.layers: list[tuple[Any, Any, Any]] = []
         self.h = None
         self.dh = None
-        self.stateful = stateful
 
     def forward_manual(self, xs: Tensor) -> Tensor:
         xp = xs.backend.xp
         n, time_size, _ = xs.shape
         hidden_size = self.Wh.shape[0]
 
-        if not self.stateful or self.h is None:
+        if not self.stateful or self.h is None or self.h.shape[0] != n:
             self.h = xp.zeros((n, hidden_size), dtype=xs.dtype)
 
         hs = xp.empty((n, time_size, hidden_size), dtype=xs.dtype)
@@ -290,7 +349,7 @@ class LSTM(Layer):
         return dx, dh_prev, dc_prev
 
 
-class TimeLSTM(Layer):
+class TimeLSTM(RecurrentTimeLayer):
     def __init__(
         self,
         input_size: int,
@@ -299,7 +358,7 @@ class TimeLSTM(Layer):
         stateful: bool = False,
         backend: Backend | str | None = None,
     ) -> None:
-        super().__init__(backend)
+        super().__init__(stateful=stateful, backend=backend)
         self.Wx = _make_parameter(
             (input_size, 4 * hidden_size),
             backend=self._backend,
@@ -323,16 +382,15 @@ class TimeLSTM(Layer):
         self.h = None
         self.c = None
         self.dh = None
-        self.stateful = stateful
 
     def forward_manual(self, xs: Tensor) -> Tensor:
         xp = xs.backend.xp
         n, time_size, _ = xs.shape
         hidden_size = self.Wh.shape[0]
 
-        if not self.stateful or self.h is None:
+        if not self.stateful or self.h is None or self.h.shape[0] != n:
             self.h = xp.zeros((n, hidden_size), dtype=xs.dtype)
-        if not self.stateful or self.c is None:
+        if not self.stateful or self.c is None or self.c.shape[0] != n:
             self.c = xp.zeros((n, hidden_size), dtype=xs.dtype)
 
         hs = xp.empty((n, time_size, hidden_size), dtype=xs.dtype)
@@ -411,7 +469,7 @@ class TimeLSTM(Layer):
         self.c = None
 
 
-class TimeEmbedding(Layer):
+class TimeEmbedding(TimeDistributed):
     def __init__(
         self,
         vocab_size: int,
@@ -420,31 +478,19 @@ class TimeEmbedding(Layer):
         backend: Backend | str | None = None,
         weight_scale: float = 0.01,
     ) -> None:
-        super().__init__(backend)
-        self.W = _make_parameter(
-            (vocab_size, wordvec_size),
-            backend=self._backend,
-            scale=weight_scale,
-            name="W",
-        )
-        self.idx = None
+        resolved = resolve_backend(backend) if backend is not None else get_default_backend()
+        layer = Embedding(vocab_size, wordvec_size, backend=resolved)
+        super().__init__(layer)
+        self.weight_scale = weight_scale
+        if weight_scale != 0.01:
+            self.W.data[...] *= weight_scale / 0.01
 
-    def forward_manual(self, xs: Tensor | Any) -> Tensor:
-        idx = _as_index_array(xs, self.backend)
-        self.idx = idx
-        return Tensor(self.W.data[idx], backend=self.backend)
-
-    def backward_manual(self, dout: Tensor) -> None:
-        if self.idx is None:
-            raise RuntimeError("forward must be called before backward")
-
-        xp = self.W.backend.xp
-        self.W.grad[...] = xp.zeros_like(self.W.data)
-        xp.add.at(self.W.grad, self.idx, dout.data)
-        return None
+    @property
+    def W(self) -> Parameter:
+        return self.layer.W
 
 
-class TimeAffine(Layer):
+class TimeAffine(TimeDistributed):
     def __init__(
         self,
         in_features: int,
@@ -455,51 +501,19 @@ class TimeAffine(Layer):
         weight: Parameter | None = None,
         transpose_weight: bool = False,
     ) -> None:
-        super().__init__(backend or (weight.backend if weight is not None else None))
-        scale = weight_scale if weight_scale is not None else 1 / in_features**0.5
-        self.W = weight or _make_parameter(
-            (in_features, out_features),
-            backend=self._backend,
-            scale=scale,
-            name="W",
-        )
-        self.b = _make_parameter(
-            (out_features,),
-            backend=self._backend,
-            scale=1.0,
-            name="b",
-            zeros=True,
-        )
-        self.transpose_weight = transpose_weight
-        self.x = None
+        resolved = backend or (weight.backend if weight is not None else None)
+        layer = Affine(in_features, out_features, backend=resolved, weight=weight, transpose_weight=transpose_weight)
+        super().__init__(layer)
+        if weight_scale is not None and weight is None:
+            self.W.data[...] *= weight_scale / 0.01
 
-    def _weight_data(self):
-        return self.W.data.T if self.transpose_weight else self.W.data
+    @property
+    def W(self) -> Parameter:
+        return self.layer.W
 
-    def forward_manual(self, xs: Tensor) -> Tensor:
-        n, time_size, _ = xs.shape
-        out = xs.data.reshape(n * time_size, -1) @ self._weight_data() + self.b.data
-        self.x = xs
-        return Tensor(out.reshape(n, time_size, -1), backend=xs.backend)
-
-    def backward_manual(self, dout: Tensor) -> Tensor:
-        if self.x is None:
-            raise RuntimeError("forward must be called before backward")
-
-        x = self.x
-        n, time_size, _ = x.shape
-        reshaped_dout = dout.data.reshape(n * time_size, -1)
-        reshaped_x = x.data.reshape(n * time_size, -1)
-
-        self.b.grad[...] = reshaped_dout.sum(axis=0)
-        d_w = reshaped_x.T @ reshaped_dout
-        if self.transpose_weight:
-            self.W.grad[...] = d_w.T
-        else:
-            self.W.grad[...] = d_w
-
-        dx = reshaped_dout @ self._weight_data().T
-        return Tensor(dx.reshape(*x.shape), backend=x.backend)
+    @property
+    def b(self) -> Parameter:
+        return self.layer.b
 
 
 class TimeSoftmaxWithLoss(Criterion):
@@ -545,26 +559,20 @@ class TimeSoftmaxWithLoss(Criterion):
         return Tensor(dx.reshape(n, time_size, vocab_size), backend=backend)
 
 
-class TimeDropout(Layer):
+class TimeDropout(TimeDistributed):
     def __init__(self, dropout_ratio: float = 0.5) -> None:
-        super().__init__()
+        super().__init__(Dropout(dropout_ratio, inverted=True))
         self.dropout_ratio = dropout_ratio
-        self.mask = None
-
-    def forward_manual(self, xs: Tensor) -> Tensor:
-        if self.training:
-            xp = xs.backend.xp
-            mask = xp.random.rand(*xs.shape) > self.dropout_ratio
-            scale = 1 / (1.0 - self.dropout_ratio)
-            self.mask = mask.astype(xs.dtype) * scale
-            return Tensor(xs.data * self.mask, backend=xs.backend)
-        return xs
-
-    def backward_manual(self, dout: Tensor) -> Tensor:
-        return Tensor(dout.data * self.mask, backend=dout.backend)
 
 
-class TimeBiLSTM(Layer):
+class TimeBatchNormalization(TimeDistributed):
+    """Batch-normalize over the flattened batch-and-time population."""
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__(BatchNormalization(**kwargs))
+
+
+class TimeBiLSTM(TimeLayer):
     def __init__(
         self,
         input_size: int,
@@ -604,6 +612,14 @@ class TimeBiLSTM(Layer):
         dx_forward = self.forward_lstm.backward(dout_forward)
         dx_backward = self.backward_lstm.backward(dout_backward[:, ::-1])
         return Tensor(dx_forward.data + dx_backward.data[:, ::-1], backend=dhs.backend)
+
+    def reset_state(self) -> None:
+        self.forward_lstm.reset_state()
+        self.backward_lstm.reset_state()
+
+    def detach_state(self) -> None:
+        self.forward_lstm.detach_state()
+        self.backward_lstm.detach_state()
 
 
 class TimeSigmoidWithLoss(Criterion):
@@ -734,7 +750,7 @@ class GRU(Layer):
         return Tensor(dx, backend=backend), Tensor(dh_prev, backend=backend)
 
 
-class TimeGRU(Layer):
+class TimeGRU(RecurrentTimeLayer):
     def __init__(
         self,
         input_size: int,
@@ -743,7 +759,7 @@ class TimeGRU(Layer):
         stateful: bool = False,
         backend: Backend | str | None = None,
     ) -> None:
-        super().__init__(backend)
+        super().__init__(stateful=stateful, backend=backend)
         self.Wx = _make_parameter(
             (input_size, 3 * hidden_size),
             backend=self._backend,
@@ -759,13 +775,12 @@ class TimeGRU(Layer):
         self.layers: list[tuple[Any, ...]] = []
         self.h = None
         self.dh = None
-        self.stateful = stateful
 
     def forward_manual(self, xs: Tensor) -> Tensor:
         xp = xs.backend.xp
         n, time_size, _ = xs.shape
         hidden_size = self.Wh.shape[0]
-        if not self.stateful or self.h is None:
+        if not self.stateful or self.h is None or self.h.shape[0] != n:
             self.h = xp.zeros((n, hidden_size), dtype=xs.dtype)
 
         hs = xp.empty((n, time_size, hidden_size), dtype=xs.dtype)
@@ -858,6 +873,38 @@ class TimeGRU(Layer):
 
     def reset_state(self) -> None:
         self.h = None
+
+
+class TimeAttention(TimeLayer):
+    """Dot-product attention over encoder and decoder time states."""
+
+    def __init__(self, *, backend: Backend | str | None = None) -> None:
+        super().__init__(backend)
+        self.cache: tuple[Tensor, Tensor] | None = None
+        self.weights = None
+
+    def forward_manual(self, enc_hs: Tensor, dec_hs: Tensor) -> Tensor:
+        xp = enc_hs.backend.xp
+        scores = xp.sum(enc_hs.data[:, None, :, :] * dec_hs.data[:, :, None, :], axis=3)
+        scores -= scores.max(axis=2, keepdims=True)
+        weights = xp.exp(scores)
+        weights /= weights.sum(axis=2, keepdims=True)
+        self.weights = weights
+        self.cache = (enc_hs, dec_hs)
+        context = xp.sum(weights[:, :, :, None] * enc_hs.data[:, None, :, :], axis=2)
+        return Tensor(context, backend=enc_hs.backend)
+
+    def backward_manual(self, dout: Tensor) -> tuple[Tensor, Tensor]:
+        if self.cache is None or self.weights is None:
+            raise RuntimeError("forward must be called before backward")
+        enc_hs, dec_hs = self.cache
+        xp = dout.backend.xp
+        dweights = xp.sum(dout.data[:, :, None, :] * enc_hs.data[:, None, :, :], axis=3)
+        denc = xp.sum(self.weights[:, :, :, None] * dout.data[:, :, None, :], axis=1)
+        dscores = self.weights * (dweights - xp.sum(dweights * self.weights, axis=2, keepdims=True))
+        denc += xp.sum(dscores[:, :, :, None] * dec_hs.data[:, :, None, :], axis=1)
+        ddec = xp.sum(dscores[:, :, :, None] * enc_hs.data[:, None, :, :], axis=2)
+        return Tensor(denc, backend=dout.backend), Tensor(ddec, backend=dout.backend)
 
 
 SimpleTimeSoftmaxWithLoss = TimeSoftmaxWithLoss

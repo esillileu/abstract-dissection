@@ -44,7 +44,11 @@ def load_epoch_checkpoint(*, path: str | Path, model: Layer, optimizer: Any, tra
 
 
 def _save_buffers(model: Layer, path: Path) -> None:
-    arrays = {name: layer.backend.to_numpy(value).copy() for name, layer, attr, value in _buffer_items(model) for attr in [attr]}
+    arrays = {
+        name: layer.backend.to_numpy(value).copy()
+        for name, layer, _attr, value in _buffer_items(model)
+        if value is not None
+    }
     np.savez(path, **arrays)
 
 
@@ -65,7 +69,11 @@ def _buffer_items(root: Layer):
             if id(value) in seen: return
             seen.add(id(value))
             for attr, child in vars(value).items():
-                if attr in {"running_mean", "running_var"} and child is not None:
+                is_normalization_buffer = attr in {"running_mean", "running_var"}
+                is_recurrent_state = (
+                    attr in {"h", "c"} and bool(getattr(value, "stateful", False))
+                )
+                if is_normalization_buffer or is_recurrent_state:
                     yield f"{prefix}/{attr}", value, attr, child
                 yield from walk(child, f"{prefix}/{attr}")
         elif isinstance(value, (list, tuple)):

@@ -3,6 +3,7 @@ from __future__ import annotations
 import numpy as np
 
 from mlprosection import Tensor
+from mlprosection.nn.layers import TimeAttention
 from mlprosection.nn.model import TimeSequential, Word2Vec
 from mlprosection.nn.model.recurrent import AttentionSeq2seq, PeekySeq2seq, VanillaRnnlm
 from mlprosection.optim.SGD import Adam
@@ -50,3 +51,7 @@ def test_peeky_and_attention_seq2seq_support_training_and_decode() -> None:
         decoded = model.generate(xs[:1], start_id=0, sample_size=3)
         assert loss.shape == ()
         assert len(decoded) == 3
+    attention_model = AttentionSeq2seq(
+        vocab_size=6, wordvec_size=3, hidden_size=4, backend="cpu"
+    )
+    assert isinstance(attention_model.decoder.attention, TimeAttention)

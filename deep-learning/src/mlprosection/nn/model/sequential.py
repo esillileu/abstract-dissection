@@ -6,8 +6,8 @@ from ..layers.base import Layer
 
 
 class Sequential(Layer):
-    def __init__(self, *layers: Layer) -> None:
-        super().__init__()
+    def __init__(self, *layers: Layer, backend=None) -> None:
+        super().__init__(backend or (layers[0].backend if layers else None))
         self.layers = list(layers)
 
     def forward_manual(self, x):

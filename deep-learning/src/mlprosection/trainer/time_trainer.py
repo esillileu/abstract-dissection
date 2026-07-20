@@ -1,4 +1,4 @@
-"""Truncated-BPTT trainer shared by language-model experiments."""
+"""Truncated-BPTT specialization of the shared trainer base."""
 
 from __future__ import annotations
 
@@ -9,8 +9,9 @@ from typing import Callable, Iterable
 from mlprosection import Tensor
 from mlprosection.nn.layers import Layer
 from mlprosection.optim import Optimizer
-from mlprosection.optim.transform import ClipGradNorm
+from mlprosection.profiling import ProfilingConfig
 
+from .base import Trainer
 from .callbacks import TrainerCallback
 
 
@@ -22,8 +23,8 @@ class TimeTrainingHistory:
     valid_ppl: list[float] = field(default_factory=list)
 
 
-class TimeTrainer:
-    """Train models exposing ``forward(xs, ts)``/``backward()`` over BPTT batches."""
+class TimeTrainer(Trainer):
+    """Shared trainer state plus BPTT batching and perplexity evaluation."""
 
     def __init__(
         self,
@@ -31,30 +32,32 @@ class TimeTrainer:
         optimizer: Optimizer,
         *,
         max_epoch: int,
+        max_updates: int | None = None,
         batch_size: int,
         time_size: int,
         log_interval: int = 20,
         max_grad: float | None = None,
         callbacks: Iterable[TrainerCallback] | None = None,
-        on_epoch_end: Callable[[int], None] | None = None,
+        on_epoch_checkpoint: Callable[[int], None] | None = None,
+        profiling_config: ProfilingConfig | None = None,
     ) -> None:
-        self.model = model
-        self.optimizer = optimizer
-        self.max_epoch = max_epoch
-        self.batch_size = batch_size
+        super().__init__(
+            model=model,
+            criterion=None,
+            optimizer=optimizer,
+            max_epoch=max_epoch,
+            max_updates=max_updates,
+            batch_size=batch_size,
+            log_interval=log_interval,
+            profiling_config=profiling_config,
+            callbacks=callbacks,
+        )
         self.time_size = time_size
-        self.log_interval = log_interval
         self.max_grad = max_grad
-        self.callbacks = tuple(callbacks or ())
-        self.on_epoch_end = on_epoch_end
+        self.on_epoch_checkpoint = on_epoch_checkpoint
         self.epoch = 0
-        self.global_step = 0
         self.time_index = 0
         self.history = TimeTrainingHistory()
-
-    @property
-    def backend(self):
-        return self.model.backend
 
     def batch(self, xs: Tensor, ts: Tensor) -> tuple[Tensor, Tensor]:
         xp = self.backend.xp
@@ -70,11 +73,13 @@ class TimeTrainer:
         return Tensor(batch_x, backend=self.backend), Tensor(batch_t, backend=self.backend)
 
     def fit(self, xs: Tensor, ts: Tensor) -> TimeTrainingHistory:
-        data_size = len(xs)
-        max_iters = data_size // (self.batch_size * self.time_size)
+        max_iters = len(xs) // (self.batch_size * self.time_size)
         if max_iters < 1:
             raise ValueError("sequence is too short for batch_size * time_size")
+        self.start_time = time.time()
         for epoch in range(self.epoch, self.max_epoch):
+            if self.max_updates is not None and self.global_step >= self.max_updates:
+                break
             self.epoch = epoch + 1
             self.model.train(True)
             total_loss = 0.0
@@ -83,28 +88,33 @@ class TimeTrainer:
                 batch_x, batch_t = self.batch(xs, ts)
                 loss = self.model.forward(batch_x, batch_t)
                 self.model.backward()
-                if self.max_grad is not None:
-                    ClipGradNorm(self.max_grad)(list(self.model.named_parameters()))
+                self.clip_gradients()
                 self.optimizer.update()
+                detach = getattr(self.model, "detach_state", None)
+                if detach is not None:
+                    detach()
                 self.global_step += 1
                 total_loss += float(loss.data)
                 count += 1
-                for callback in self.callbacks:
-                    callback.on_batch_end(step=self.global_step)
+                self._emit_batch_end()
                 if (iteration + 1) % self.log_interval == 0 or iteration + 1 == max_iters:
                     average = total_loss / count
                     ppl = float(self.backend.xp.exp(average))
                     self.history.train_loss.append(average)
                     self.history.train_ppl.append(ppl)
-                    metrics = {"epoch": float(self.epoch), "iteration": float(self.global_step), "loss": average, "perplexity": ppl, "elapsed_time": time.time()}
-                    for callback in self.callbacks:
-                        callback.on_interval(metrics=metrics)
+                    self.losses.train.append(average)
+                    log = {"epoch": float(self.epoch), "iteration": float(self.global_step), "loss": average, "perplexity": ppl, "elapsed_time": time.time() - self.start_time}
+                    self.logs.train.append(log)
+                    self._emit_interval(log)
                     total_loss = 0.0
                     count = 0
-            for callback in self.callbacks:
-                callback.on_epoch_end(epoch=self.epoch, metrics={"train/perplexity": self.history.train_ppl[-1]})
-            if self.on_epoch_end is not None:
-                self.on_epoch_end(self.epoch)
+                if self.max_updates is not None and self.global_step >= self.max_updates:
+                    break
+            self.emit_epoch_metrics(epoch=self.epoch, metrics={"train/perplexity": self.history.train_ppl[-1]})
+            if self.on_epoch_checkpoint is not None:
+                self.on_epoch_checkpoint(self.epoch)
+            if self.max_updates is not None and self.global_step >= self.max_updates:
+                break
         return self.history
 
     def evaluate_perplexity(self, xs: Tensor, ts: Tensor) -> float:
@@ -114,22 +124,23 @@ class TimeTrainer:
         self.model.eval()
         total = 0.0
         count = 0
-        data_size = len(xs)
-        for start in range(0, data_size - self.time_size, self.time_size):
+        for start in range(0, len(xs) - self.time_size, self.time_size):
             batch_x = Tensor(xs.data[start:start + self.time_size][None, :], backend=self.backend)
             batch_t = Tensor(ts.data[start:start + self.time_size][None, :], backend=self.backend)
-            loss = self.model.forward(batch_x, batch_t)
-            total += float(loss.data)
+            total += float(self.model.forward(batch_x, batch_t).data)
             count += 1
         self.model.train(True)
+        if reset is not None:
+            reset()
         return float(self.backend.xp.exp(total / max(count, 1)))
 
     def state_dict(self) -> dict[str, object]:
-        return {"epoch": self.epoch, "global_step": self.global_step, "time_index": self.time_index, "history": self.history.__dict__}
+        state = super().state_dict()
+        state.update({"time_index": self.time_index, "history": self.history.__dict__})
+        return state
 
     def load_state_dict(self, state: dict[str, object]) -> None:
-        self.epoch = int(state.get("epoch", 0))
-        self.global_step = int(state.get("global_step", 0))
+        super().load_state_dict(state)
         self.time_index = int(state.get("time_index", 0))
         history = state.get("history", {})
         if isinstance(history, dict):

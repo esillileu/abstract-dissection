@@ -36,9 +36,10 @@ class Trainer(ABC):
     def __init__(
         self,
         model: Layer,
-        criterion: Criterion,
+        criterion: Criterion | None,
         optimizer: Optimizer,
         max_epoch: int = 10,
+        max_updates: int | None = None,
         batch_size: int = 32,
         log_interval: int = 20,
         drop_last: bool | None = False,
@@ -46,10 +47,11 @@ class Trainer(ABC):
         callbacks: Iterable[TrainerCallback] | None = None,
     ):
         self.model: Layer = model
-        self.criterion: Criterion = criterion
+        self.criterion: Criterion | None = criterion
         self.optimizer: Optimizer = optimizer
 
         self.max_epoch = max_epoch
+        self.max_updates = max_updates
         self.batch_size = batch_size
         self.log_interval: int = log_interval
         self.drop_last = drop_last
@@ -72,6 +74,7 @@ class Trainer(ABC):
         self.global_step = 0
         self.eval_step = 0
         self.callbacks = tuple(callbacks or ())
+        self.max_grad: float | None = None
 
     @property
     def backend(self):
@@ -136,6 +139,8 @@ class Trainer(ABC):
         *,
         profile: bool = False,
     ) -> tuple[Tensor, Tensor]:
+        if self.criterion is None:
+            raise RuntimeError("this trainer requires a specialized step implementation")
         self.model.train(self.train)
 
         with self.detail_profiler.section("train_step", enabled=profile):
@@ -154,10 +159,7 @@ class Trainer(ABC):
                         "gradient_clip",
                         enabled=profile,
                     ):
-                        clip_grads(
-                            list(self.model.named_parameters()),
-                            self.max_grad,
-                        )
+                        self.clip_gradients()
 
                 with self.detail_profiler.section(
                     "optimizer_update",
@@ -166,6 +168,10 @@ class Trainer(ABC):
                     self.optimizer.update()
 
         return loss, pred
+
+    def clip_gradients(self) -> None:
+        if self.max_grad is not None:
+            clip_grads(list(self.model.named_parameters()), self.max_grad)
 
     def count_correct(self, y: Tensor, t: Tensor) -> int:
         y_data = y.data
@@ -254,6 +260,9 @@ class Trainer(ABC):
                 total_loss = xp.asarray(0.0, dtype=x.dtype)
                 sample_count = 0
                 batch_count = 0
+
+            if self.train and self.max_updates is not None and self.global_step >= self.max_updates:
+                break
 
         if sample_count > 0:
             self.interval_log(
@@ -353,5 +362,8 @@ class Trainer(ABC):
 
     def _emit_epoch_end(self, *, epoch: int, accuracy: float) -> None:
         split = "train" if self.train else "valid"
+        self.emit_epoch_metrics(epoch=epoch, metrics={f"{split}/accuracy": accuracy})
+
+    def emit_epoch_metrics(self, *, epoch: int, metrics: dict[str, float]) -> None:
         for callback in self.callbacks:
-            callback.on_epoch_end(epoch=epoch, metrics={f"{split}/accuracy": accuracy})
+            callback.on_epoch_end(epoch=epoch, metrics=metrics)
