@@ -36,8 +36,6 @@ def main() -> None:
     for run in runs:
         if run.data.tags.get("run.type") != "seed_trial" or run.info.status != "FINISHED":
             continue
-        if run.data.tags.get("atomic_run.id") == "REG-BASE":
-            continue
         # Pre-schema runs did not have a deterministic run key. Their MLflow
         # run id is still stable and keeps the preserved final model isolated.
         run_key = run.data.tags.get("run.key") or f"legacy-{run.info.run_id}"
