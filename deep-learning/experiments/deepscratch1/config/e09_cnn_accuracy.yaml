@@ -41,8 +41,8 @@ evaluation:
 numerics:
   {
     dtype: float64,
-    backend: numpy,
-    device: cpu,
+    backend: cupy,
+    device: cuda:0,
     deterministic: false,
     nan_policy: fail,
     inf_policy: fail,

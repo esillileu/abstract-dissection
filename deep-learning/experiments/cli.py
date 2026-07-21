@@ -113,7 +113,7 @@ def _seed_values(domain: str, seed_set: str) -> list[int]:
 
 def _default_device(domain: str, experiment_id: str) -> str:
     if domain == "deepscratch1":
-        return "cuda:0" if experiment_id == "e08" else "cpu"
+        return "cuda:0" if experiment_id in {"e08", "e09"} else "cpu"
     if domain == "deepscratch2":
         return "cuda:0"
     raise ValueError(f"unknown experiment domain: {domain}")

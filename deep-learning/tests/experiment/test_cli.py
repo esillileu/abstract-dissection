@@ -26,6 +26,20 @@ def test_deepscratch1_plan_selects_one_experiment_and_seed_range() -> None:
     assert {plan.device for plan in plans} == {"cpu"}
 
 
+def test_deepscratch1_cnn_plans_default_to_gpu() -> None:
+    plans = build_plans(
+        domain="deepscratch1",
+        experiment_ids=["08", "09"],
+        all_experiments=False,
+        seed_set="research_v1",
+        seed_indexes="0",
+        device=None,
+        overrides={},
+    )
+
+    assert {plan.device for plan in plans} == {"cuda:0"}
+
+
 def test_cli_overrides_change_seed_count_and_are_applied_last() -> None:
     overrides = parse_overrides(["policy.seed_count=2", "training.max_epochs=1"])
     plans = build_plans(
