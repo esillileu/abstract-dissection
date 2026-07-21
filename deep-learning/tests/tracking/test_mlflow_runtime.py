@@ -1,6 +1,65 @@
 from types import SimpleNamespace
 
-from mlprosection_mlflow.runtime import build_profiling_history_rows, get_or_create_condition_parent, metric_batches
+from mlprosection_mlflow.runtime import RuntimeOptions, _Sink, build_profiling_history_rows, get_or_create_condition_parent, metric_batches
+
+
+def test_completed_checkpoint_upload_is_enabled_but_eval_upload_is_disabled_by_default() -> None:
+    options = RuntimeOptions(tracking_uri="http://example.invalid", experiment_name="example")
+
+    assert options.upload_checkpoint is True
+    assert options.upload_eval_checkpoints is False
+
+
+class _ArtifactClient:
+    def __init__(self) -> None:
+        self.files = []
+        self.trees = []
+
+    def log_artifact(self, run_id, path, artifact_path) -> None:
+        self.files.append((run_id, path, artifact_path))
+
+    def log_artifacts(self, run_id, path, artifact_path) -> None:
+        self.trees.append((run_id, path, artifact_path))
+
+
+def test_final_checkpoint_uploads_by_default_but_eval_checkpoint_requires_opt_in(tmp_path, monkeypatch) -> None:
+    final_path = tmp_path / "final.npz"
+    final_path.write_bytes(b"final")
+    eval_path = tmp_path / "epoch-0001"
+    eval_path.mkdir()
+    (eval_path / "model.npz").write_bytes(b"eval")
+    client = _ArtifactClient()
+    sink = _Sink(RuntimeOptions(tracking_uri="http://example.invalid", experiment_name="example"), "run", {}, {})
+    sink.run_id = "run-id"
+    monkeypatch.setattr(sink, "_start_mlflow", lambda: client)
+    sink.put(("checkpoint", (final_path, "final")))
+    sink.put(("checkpoint", (eval_path, "eval")))
+    sink.put(("stop", "FINISHED"))
+
+    sink._consume()
+
+    assert client.files == [("run-id", str(final_path), "checkpoints")]
+    assert client.trees == []
+
+    enabled_client = _ArtifactClient()
+    enabled_sink = _Sink(
+        RuntimeOptions(
+            tracking_uri="http://example.invalid",
+            experiment_name="example",
+            upload_eval_checkpoints=True,
+        ),
+        "run",
+        {},
+        {},
+    )
+    enabled_sink.run_id = "run-id"
+    monkeypatch.setattr(enabled_sink, "_start_mlflow", lambda: enabled_client)
+    enabled_sink.put(("checkpoint", (eval_path, "eval")))
+    enabled_sink.put(("stop", "FINISHED"))
+
+    enabled_sink._consume()
+
+    assert enabled_client.trees == [("run-id", str(eval_path), "checkpoints/epoch-0001")]
 
 
 def test_metric_batches_bounds_each_mlflow_request() -> None:

@@ -8,7 +8,10 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 
+from .common import latest_seeded_records
 
+
+EXPERIMENT_ID = "e01"
 DEFAULT_ATOMIC_RUN_IDS = ("TOY-SGD", "TOY-MOM", "TOY-ADAGRAD", "TOY-ADAM")
 DEFAULT_OUTPUT = Path("experiments/deepbase1/results/analysis/e01_optimizer_toy_paths.png")
 
@@ -23,6 +26,19 @@ class ToyPath:
     objective: list[float]
 
 
+@dataclass(frozen=True)
+class AggregateToyPath:
+    atomic_run_id: str
+    steps: np.ndarray
+    x_mean: np.ndarray
+    x_minimum: np.ndarray
+    x_maximum: np.ndarray
+    y_mean: np.ndarray
+    y_minimum: np.ndarray
+    y_maximum: np.ndarray
+    run_count: int
+
+
 def objective_grid() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     x = np.linspace(-8.0, 8.0, 240)
     y = np.linspace(-3.0, 3.0, 180)
@@ -34,7 +50,7 @@ def objective_grid() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Render e01 optimizer toy paths from MLflow runs.")
     parser.add_argument("--tracking-uri", default=os.getenv("MLFLOW_TRACKING_URI", "http://127.0.0.1:5000"))
-    parser.add_argument("--mlflow-experiment", default=os.getenv("MLFLOW_EXPERIMENT_NAME", "mlprosection"))
+    parser.add_argument("--mlflow-experiment", default=os.getenv("MLFLOW_EXPERIMENT_NAME", "deepbase1"))
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument("--run-id", action="append", default=[], help="MLflow run id to include. May be repeated.")
     parser.add_argument(
@@ -84,57 +100,37 @@ def path_from_run(client, *, run_id: str) -> ToyPath:
     )
 
 
-def latest_run_ids_for_atomic_ids(
-    client,
-    *,
-    experiment_name: str,
-    atomic_run_ids: list[str],
-) -> list[str]:
-    experiment = client.get_experiment_by_name(experiment_name)
-    if experiment is None:
-        raise ValueError(f"MLflow experiment not found: {experiment_name}")
-
-    runs = client.search_runs(
-        experiment_ids=[experiment.experiment_id],
-        order_by=["attributes.start_time DESC"],
-        max_results=1000,
-    )
-    selected: dict[str, str] = {}
-    wanted = set(atomic_run_ids)
-    for run in runs:
-        atomic_run_id = run.data.tags.get("atomic_run.id")
-        if atomic_run_id in wanted and atomic_run_id not in selected:
-            selected[atomic_run_id] = run.info.run_id
-
-    missing = [atomic_run_id for atomic_run_id in atomic_run_ids if atomic_run_id not in selected]
-    if missing:
-        raise ValueError(f"missing MLflow runs for atomic run ids: {', '.join(missing)}")
-    return [selected[atomic_run_id] for atomic_run_id in atomic_run_ids]
+def aggregate_paths(paths: list[ToyPath]) -> list[AggregateToyPath]:
+    result = []
+    for atomic_run_id in DEFAULT_ATOMIC_RUN_IDS:
+        group = [path for path in paths if path.atomic_run_id == atomic_run_id]
+        steps = sorted(set().union(*(path.steps for path in group)))
+        def values(field: str) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+            series = [{step: value for step, value in zip(path.steps, getattr(path, field), strict=True)} for path in group]
+            per_step = [[item[step] for item in series if step in item] for step in steps]
+            return tuple(np.asarray([fn(items) for items in per_step]) for fn in (np.mean, np.min, np.max))
+        x_mean, x_minimum, x_maximum = values("x")
+        y_mean, y_minimum, y_maximum = values("y")
+        result.append(AggregateToyPath(atomic_run_id, np.asarray(steps), x_mean, x_minimum, x_maximum, y_mean, y_minimum, y_maximum, len(group)))
+    return result
 
 
 def render_paths(paths: list[ToyPath], *, output: Path) -> None:
     grid_x, grid_y, z = objective_grid()
-    fig, axes = plt.subplots(nrows=1, ncols=2, figsize=(12, 5))
-
-    contour = axes[0].contour(grid_x, grid_y, z, levels=25, cmap="Greys", linewidths=0.7)
-    axes[0].clabel(contour, inline=True, fontsize=7, fmt="%.1f")
-    for path in paths:
-        axes[0].plot(path.x, path.y, marker="o", markersize=3, linewidth=1.8, label=path.atomic_run_id)
-    axes[0].scatter([0.0], [0.0], marker="x", color="black", s=50, label="optimum")
-    axes[0].set_title(r"Optimizer path on $f(x, y) = x^2 / 20 + y^2$")
-    axes[0].set_xlabel("x")
-    axes[0].set_ylabel("y")
-    axes[0].legend(fontsize=8)
-    axes[0].grid(alpha=0.2)
-
-    for path in paths:
-        axes[1].plot(path.steps, path.objective, marker="o", markersize=3, linewidth=1.8, label=path.atomic_run_id)
-    axes[1].set_title("Objective by update")
-    axes[1].set_xlabel("update")
-    axes[1].set_ylabel("objective")
-    axes[1].set_yscale("log")
-    axes[1].legend(fontsize=8)
-    axes[1].grid(alpha=0.25)
+    fig, axes = plt.subplots(nrows=2, ncols=2, figsize=(10, 9))
+    for axis, path in zip(axes.flat, aggregate_paths(paths), strict=True):
+        contour = axis.contour(grid_x, grid_y, z, levels=25, cmap="Greys", linewidths=0.7)
+        axis.clabel(contour, inline=True, fontsize=7, fmt="%.1f")
+        x_error = np.vstack((path.x_mean - path.x_minimum, path.x_maximum - path.x_mean))
+        y_error = np.vstack((path.y_mean - path.y_minimum, path.y_maximum - path.y_mean))
+        axis.errorbar(path.x_mean, path.y_mean, xerr=x_error, yerr=y_error, fmt="o-", markersize=3, capsize=2, linewidth=1.6, color="tab:red", label=f"mean (n={path.run_count})")
+        axis.scatter([0.0], [0.0], marker="+", color="black", s=50, label="optimum")
+        axis.set_title(path.atomic_run_id)
+        axis.set_xlim(-10, 10)
+        axis.set_ylim(-10, 10)
+        axis.set_xlabel("x")
+        axis.set_ylabel("y")
+        axis.legend(fontsize=7)
 
     fig.tight_layout()
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -151,11 +147,8 @@ def main() -> None:
     run_ids = args.run_id
     if not run_ids:
         atomic_run_ids = args.atomic_run_id or list(DEFAULT_ATOMIC_RUN_IDS)
-        run_ids = latest_run_ids_for_atomic_ids(
-            client=client,
-            experiment_name=args.mlflow_experiment,
-            atomic_run_ids=atomic_run_ids,
-        )
+        grouped = latest_seeded_records(client, experiment_name=args.mlflow_experiment, atomic_run_ids=atomic_run_ids)
+        run_ids = [record.mlflow_run_id for atomic_run_id in atomic_run_ids for record in grouped[atomic_run_id]]
 
     paths = [path_from_run(client=client, run_id=run_id) for run_id in run_ids]
     render_paths(paths=paths, output=args.output)

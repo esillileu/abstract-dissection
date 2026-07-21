@@ -53,7 +53,7 @@ def latest_seeded_runs(mlflow_client, experiment_name: str, atomic_run_ids: list
     selected = {}
     runs = mlflow_client.search_runs([experiment.experiment_id], order_by=["attributes.start_time DESC"], max_results=50_000)
     for run in runs:
-        if run.info.status != "FINISHED":
+        if run.info.status != "FINISHED" or run.data.tags.get("run.type") != "seed_trial":
             continue
         atomic = run.data.tags.get("atomic_run.id")
         seed = run.data.params.get("seed/master", run.data.params.get("seed", run.info.run_id))
@@ -77,16 +77,22 @@ def curve(mlflow_client, runs, metric: str) -> Curve:
             histories.append(values)
     if not histories:
         return Curve(np.array([]), np.array([]), np.array([]), np.array([]), 0)
-    steps = sorted(set.intersection(*(set(values) for values in histories)))
-    matrix = np.asarray([[values[step] for step in steps] for values in histories], dtype=float)
-    return Curve(np.asarray(steps), matrix.mean(axis=0), matrix.min(axis=0), matrix.max(axis=0), len(histories))
+    steps = sorted(set().union(*(set(values) for values in histories)))
+    values_by_step = [[values[step] for values in histories if step in values] for step in steps]
+    return Curve(
+        np.asarray(steps),
+        np.asarray([np.mean(values) for values in values_by_step]),
+        np.asarray([np.min(values) for values in values_by_step]),
+        np.asarray([np.max(values) for values in values_by_step]),
+        len(histories),
+    )
 
 
 def plot_band(axis, value: Curve, *, label: str, marker: str | None = None) -> None:
     if not len(value.steps):
         return
-    axis.plot(value.steps, value.mean, label=f"{label} (n={value.run_count})", marker=marker)
-    axis.fill_between(value.steps, value.minimum, value.maximum, alpha=0.18)
+    errors = np.vstack((value.mean - value.minimum, value.maximum - value.mean))
+    axis.errorbar(value.steps, value.mean, yerr=errors, label=f"{label} (n={value.run_count})", marker=marker, markersize=3, capsize=2, linewidth=1.6)
 
 
 def write_summary(path: Path, grouped, curves: dict[str, Curve], metric: str) -> None:

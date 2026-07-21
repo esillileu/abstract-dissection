@@ -22,19 +22,31 @@ uv sync --extra tracking
 The new catalog records under the MLflow experiment name `deepbase1`.
 
 Run the complete catalog (516 runs) with CPU for MLP/probe experiments and GPU
-for e08 CNN experiments. The runner verifies the MLflow server before starting;
+for e08 CNN experiments. The CLI verifies the MLflow server before starting;
 if it is unavailable, no training run begins.
 
 ```bash
-uv run python -m experiments.deepbase1.run_all
+just exp deepbase1 run --all
 ```
 
-Preview the matrix or run a subset:
+Preview the matrix or select seed-set indexes for a subset:
 
 ```bash
-uv run python -m experiments.deepbase1.run_all --dry-run
-uv run python -m experiments.deepbase1.run_all --experiments e02 e08
+just exp deepbase1 plan --all
+just exp deepbase1 run -e 02 -e 08 --seed 0-4
 ```
+
+Render MLflow-backed analysis figures for every declared experiment, or one
+experiment. Each script declares its own `EXPERIMENT_ID` and the atomic run IDs
+it aggregates, so no run IDs need to be repeated in the CLI command.
+
+```bash
+just exp deepbase1 analyze
+just exp deepbase1 analyze -e 02
+just exp deepbase1 analyze --dry-run
+```
+
+Use `--tracking-uri URL` when MLflow is not running at the default local URL.
 
 The `e01_…` through `e08_…` files are atomic-run catalogs. Select a declared
 condition with `--atomic-run-id`, for example:
@@ -56,9 +68,16 @@ drop-capable console worker. Once training finishes, metric history and final
 metrics are sent to MLflow with bounded `log_batch` requests, followed by the
 artifact upload.
 
-Use the fixed values in `seeds.yaml` for repeated trials. For example,
-`--seed 1208965604` records that value as the master seed and derives the
-remaining named seeds deterministically.
+Checkpoints are stored under `experiments/deepbase1/results/checkpoints/`.
+`checkpoint.save_final` defaults to `true`; its final checkpoint uploads to
+MLflow by default (`tracking.upload_checkpoint: true`). Set
+`checkpoint.save_on_eval: true` to retain resume checkpoints after each
+evaluation. Their MLflow upload remains opt-in via
+`tracking.upload_eval_checkpoints: true`.
+
+Use the fixed values in `seeds.yaml` for repeated trials. The common CLI's
+`--seed 0-4` selects seed-set indexes; omitting it uses the YAML's declared
+`policy.seed_count`.
 
 Set `checkpoint.resume` to an `epoch-XXXX` directory from a prior run to resume
 at the next epoch. The checkpoint must come from the same resolved configuration

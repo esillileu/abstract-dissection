@@ -29,7 +29,8 @@ class RunIdentity:
 @dataclass(frozen=True)
 class RuntimeOptions:
     tracking_uri: str; experiment_name: str; mlflow_enabled: bool = True
-    upload_checkpoint: bool = False; queue_size: int = 256; metric_batch_size: int = 1000
+    upload_checkpoint: bool = True; upload_eval_checkpoints: bool = False
+    queue_size: int = 256; metric_batch_size: int = 1000
 
 
 def canonical_json(value: Any) -> str:
@@ -225,8 +226,22 @@ class _Sink:
                         should_upload = not is_checkpoint_payload or (self.options.upload_checkpoint and relative == "checkpoints/final.npz")
                         if path.is_file() and should_upload:
                             client.log_artifact(self.run_id, str(path), artifact_path=str(path.parent.relative_to(root)))
-                elif kind == "checkpoint" and client and self.options.upload_checkpoint:
-                    client.log_artifact(self.run_id, str(value), artifact_path="checkpoints")
+                elif kind == "checkpoint" and client:
+                    path, checkpoint_kind = value
+                    should_upload = (
+                        checkpoint_kind == "final" and self.options.upload_checkpoint
+                    ) or (
+                        checkpoint_kind == "eval" and self.options.upload_eval_checkpoints
+                    )
+                    if should_upload:
+                        if path.is_dir():
+                            client.log_artifacts(
+                                self.run_id,
+                                str(path),
+                                artifact_path=f"checkpoints/{path.name}",
+                            )
+                        else:
+                            client.log_artifact(self.run_id, str(path), artifact_path="checkpoints")
             except Exception as exc: self.errors.append(f"MLflow upload failed: {exc}")
             finally: self.events.task_done()
     def _start_mlflow(self):
@@ -307,12 +322,14 @@ class ExperimentRun:
     def emit_metric(self, *, step: int, metrics: dict[str, float], kind: str = "step") -> None:
         """Forward progress to the console only; MLflow metrics upload after training."""
         self.sink.put(("console", _format_progress(step, metrics)), drop=True)
+    def emit_checkpoint(self, path: Path, *, checkpoint_kind: str) -> None:
+        self.sink.put(("checkpoint", (path, checkpoint_kind)))
     def complete(self, *, artifact_root: Path, history_rows: list[tuple[str, int, str, float]], final_metrics: dict[str, float], checkpoint_path: Path | None = None) -> list[str]:
         self.finished = True
         rows = [(step, f"{step_type}/{metric}", value) for step_type, step, metric, value in history_rows]
         rows.extend((0, key, value) for key, value in final_metrics.items())
         self.sink.put(("metrics", rows)); self.sink.put(("artifact", artifact_root))
-        if checkpoint_path is not None and checkpoint_path.is_file(): self.sink.put(("checkpoint", checkpoint_path))
+        if checkpoint_path is not None and checkpoint_path.is_file(): self.emit_checkpoint(checkpoint_path, checkpoint_kind="final")
         self.sink.put(("stop", "FINISHED")); self.sink.thread.join()
         return self.sink.errors
     def __exit__(self, exc_type, exc, traceback) -> bool:

@@ -17,7 +17,7 @@ from mlprosection.trainer import ForwardTrainer
 from mlprosection.profiling import profiling_config_from_mapping
 
 from ..contracts import ExperimentResult
-from ..checkpoint import load_epoch_checkpoint
+from ..checkpoint import load_epoch_checkpoint, save_epoch_checkpoint
 from ..executor import ExperimentContext
 from ..metrics import build_final_metrics, epoch_history, evaluation_history, update_history
 from ..registry import register_executor
@@ -50,7 +50,21 @@ class SupervisedClassificationExecutor:
         checkpoint_identity["checkpoint"].pop("resume", None)
         config_digest = hashlib.sha256(json.dumps(checkpoint_identity, sort_keys=True, default=str).encode()).hexdigest()
         max_updates = training_config.get("max_updates")
-        trainer = ForwardTrainer(model, SoftmaxWithLoss().to(model.backend), optimizer, max_epoch=int(training_config.get("max_epochs", 1)), max_updates=None if max_updates is None else int(max_updates), batch_size=int(loader_config.get("batch_size", 32)), log_interval=int(training_config.get("log_interval", 20)), profiling_config=profiling_config_from_mapping(_mapping(config, "profiling")), callbacks=[_Callback(context)])
+        def save_evaluation_checkpoint() -> None:
+            if not bool(checkpoint_config.get("save_on_eval", False)):
+                return
+            path = save_epoch_checkpoint(
+                root=Path(str(context.metadata["checkpoint_root"])),
+                model=model,
+                optimizer=optimizer,
+                trainer=trainer,
+                config_digest=config_digest,
+            )
+            callback = context.metadata.get("record_eval_checkpoint")
+            if callable(callback):
+                callback(path)
+
+        trainer = ForwardTrainer(model, SoftmaxWithLoss().to(model.backend), optimizer, max_epoch=int(training_config.get("max_epochs", 1)), max_updates=None if max_updates is None else int(max_updates), batch_size=int(loader_config.get("batch_size", 32)), log_interval=int(training_config.get("log_interval", 20)), profiling_config=profiling_config_from_mapping(_mapping(config, "profiling")), callbacks=[_Callback(context)], on_epoch_checkpoint=save_evaluation_checkpoint)
         if (resume := checkpoint_config.get("resume")):
             load_epoch_checkpoint(path=str(resume), model=model, optimizer=optimizer, trainer=trainer, config_digest=config_digest)
         seed_batch_order(backend, streams)

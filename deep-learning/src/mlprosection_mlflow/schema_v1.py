@@ -80,7 +80,8 @@ class SchemaV1Run:
                 tracking_uri=str(tracking.get("uri", os.getenv("MLFLOW_TRACKING_URI", "http://127.0.0.1:5000"))),
                 experiment_name=str(tracking.get("experiment", os.getenv("MLFLOW_EXPERIMENT_NAME", "mlprosection"))),
                 mlflow_enabled=bool(tracking.get("enabled", True)),
-                upload_checkpoint=bool(tracking.get("upload_checkpoint", False)),
+                upload_checkpoint=bool(tracking.get("upload_checkpoint", True)),
+                upload_eval_checkpoints=bool(tracking.get("upload_eval_checkpoints", False)),
             ),
             run_name=f"{self.identity.atomic_run_id}-s{self.identity.master_seed:02d}",
             tags=build_tags(self.identity, self.config, self.git_info, model),
@@ -95,8 +96,13 @@ class SchemaV1Run:
         self, *, model: Any | None, final_metrics: dict[str, float],
         history_rows: list[tuple[str, int, str, float]],
         profiling_metrics: dict[str, int | float], reproducibility: dict[str, object] | None = None,
+        evaluation_checkpoints: list[Path] | None = None,
     ) -> None:
-        checkpoint_path, checkpoint_digest = _save_checkpoint(self.local_checkpoint_root, model)
+        checkpoint_path, checkpoint_digest = _save_checkpoint(
+            self.local_checkpoint_root,
+            model,
+            save_final=bool(_section(self.config, "checkpoint").get("save_final", True)),
+        )
         resolved = {
             **self.condition, "condition_key": self.identity.condition_key,
             "run_key": self.identity.run_key, "seed": self.seeds,
@@ -135,7 +141,10 @@ class SchemaV1Run:
             "local_root": str(self.local_checkpoint_root.resolve()),
             "final": None if checkpoint_path is None else {"path": str(checkpoint_path.resolve()), "epoch": _section(self.config, "training").get("max_epochs"), "update": final_metrics.get("final/system/total_updates"), "digest": checkpoint_digest},
             "best": None,
-            "epoch_checkpoints": [],
+            "epoch_checkpoints": [
+                {"path": str(path.resolve())}
+                for path in evaluation_checkpoints or []
+            ],
             "contains": {"model": checkpoint_path is not None, "optimizer": True, "scheduler": False, "rng_state": True, "training_state": True},
         })
 
@@ -195,8 +204,10 @@ def _section(config: dict[str, object], name: str) -> dict[str, object]:
     return value
 
 
-def _save_checkpoint(root: Path, model: Any | None) -> tuple[Path | None, str | None]:
-    if model is None or not hasattr(model, "save_params_npz"):
+def _save_checkpoint(
+    root: Path, model: Any | None, *, save_final: bool,
+) -> tuple[Path | None, str | None]:
+    if not save_final or model is None or not hasattr(model, "save_params_npz"):
         return None, None
     path = root / "final.npz"
     path.parent.mkdir(parents=True, exist_ok=True)

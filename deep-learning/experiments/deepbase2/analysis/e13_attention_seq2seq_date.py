@@ -8,6 +8,9 @@ from .common import ANALYSIS_ROOT, client, latest_seeded_runs, parser
 from .render import render
 
 
+EXPERIMENT_ID = "e13"
+
+
 def main() -> None:
     args = parser("Render e13 date exact-match accuracy.", ANALYSIS_ROOT / "e13_attention_seq2seq_date.png").parse_args()
     mlflow_client = client(args.tracking_uri)

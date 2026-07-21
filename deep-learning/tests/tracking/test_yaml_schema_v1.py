@@ -1,6 +1,12 @@
 from __future__ import annotations
 
-from mlprosection_mlflow.schema_v1 import SchemaV1Run
+from mlprosection_mlflow.schema_v1 import SchemaV1Run, _save_checkpoint
+
+
+class _CheckpointModel:
+    def save_params_npz(self, path) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"checkpoint")
 
 
 def test_yaml_contract_projects_to_the_schema_v1_artifact_tree(tmp_path, monkeypatch) -> None:
@@ -36,3 +42,17 @@ def test_yaml_contract_projects_to_the_schema_v1_artifact_tree(tmp_path, monkeyp
     assert "epoch,1,train/loss,1.0" in (run.artifact_root / "metrics/epoch_history.csv").read_text()
     assert (run.artifact_root / "metrics/final.json").is_file()
     assert (run.artifact_root / "checkpoints/checkpoint_manifest.json").is_file()
+
+
+def test_final_checkpoint_can_be_disabled(tmp_path) -> None:
+    path, digest = _save_checkpoint(tmp_path, _CheckpointModel(), save_final=False)
+
+    assert path is None
+    assert digest is None
+
+
+def test_final_checkpoint_is_saved_by_default(tmp_path) -> None:
+    path, digest = _save_checkpoint(tmp_path, _CheckpointModel(), save_final=True)
+
+    assert path == tmp_path / "final.npz"
+    assert digest is not None

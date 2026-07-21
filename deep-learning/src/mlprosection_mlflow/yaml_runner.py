@@ -9,9 +9,17 @@ from .schema_v1 import SchemaV1Run
 from .runtime import build_profiling_history_rows, build_schema_metrics, write_json
 
 
-def run_yaml(path: str | Path, *, atomic_run_id: str | None = None, seed: int | None = None, device: str | None = None, resume: str | None = None):
+def run_yaml(
+    path: str | Path,
+    *,
+    atomic_run_id: str | None = None,
+    seed: int | None = None,
+    device: str | None = None,
+    resume: str | None = None,
+    overrides: dict[str, object] | None = None,
+):
     """Run YAML and project its result to the schema-v1 MLflow record."""
-    config = normalize_config(load_yaml(path, atomic_run_id=atomic_run_id))
+    config = normalize_config(load_yaml(path, atomic_run_id=atomic_run_id, overrides=overrides))
     if seed is not None:
         config["seed"] = seed
     if device is not None:
@@ -25,9 +33,19 @@ def run_yaml(path: str | Path, *, atomic_run_id: str | None = None, seed: int | 
         checkpoint["resume"] = resume
     record = SchemaV1Run(config)
     runtime = record.runtime()
+    evaluation_checkpoints: list[Path] = []
+
+    def record_eval_checkpoint(path: Path) -> None:
+        evaluation_checkpoints.append(path)
+        runtime.emit_checkpoint(path, checkpoint_kind="eval")
+
     context = ExperimentContext(
         emit_metric=lambda step, metrics: runtime.emit_metric(step=step, metrics=metrics),
-        metadata={"checkpoint_root": record.local_checkpoint_root, "artifact_root": record.artifact_root},
+        metadata={
+            "checkpoint_root": record.local_checkpoint_root,
+            "artifact_root": record.artifact_root,
+            "record_eval_checkpoint": record_eval_checkpoint,
+        },
     )
     with runtime:
         started = time.perf_counter()
@@ -52,7 +70,12 @@ def run_yaml(path: str | Path, *, atomic_run_id: str | None = None, seed: int | 
             final_metrics=result.metrics,
             history_rows=history,
             profiling_metrics=result.profiling_metrics,
-            reproducibility={key: value for key, value in context.metadata.items() if key not in {"checkpoint_root", "artifact_root"}},
+            reproducibility={
+                key: value
+                for key, value in context.metadata.items()
+                if key not in {"checkpoint_root", "artifact_root", "record_eval_checkpoint"}
+            },
+            evaluation_checkpoints=evaluation_checkpoints,
         )
         errors = runtime.complete(
             artifact_root=record.artifact_root,

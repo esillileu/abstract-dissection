@@ -1,0 +1,5 @@
+exp domain command *args:
+    uv run python -m experiments {{domain}} {{command}} {{args}}
+
+mlflow action:
+    if [ "{{action}}" = "up" ]; then docker compose -f infra/mlflow/compose.yaml up -d; elif [ "{{action}}" = "down" ]; then docker compose -f infra/mlflow/compose.yaml down; else echo "usage: just mlflow up|down" >&2; exit 2; fi

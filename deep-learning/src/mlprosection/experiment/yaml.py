@@ -5,7 +5,12 @@ from copy import deepcopy
 from typing import Any
 
 
-def load_yaml(path: str | Path, *, atomic_run_id: str | None = None) -> dict[str, object]:
+def load_yaml(
+    path: str | Path,
+    *,
+    atomic_run_id: str | None = None,
+    overrides: dict[str, object] | None = None,
+) -> dict[str, object]:
     import yaml
 
     with Path(path).open(encoding="utf-8") as file:
@@ -24,6 +29,8 @@ def load_yaml(path: str | Path, *, atomic_run_id: str | None = None) -> dict[str
         value = _merge(value, selected)
     elif atomic_run_id is not None and str(value.get("atomic_run_id")) != atomic_run_id:
         raise ValueError(f"YAML defines atomic_run_id {value.get('atomic_run_id')!r}, not {atomic_run_id!r}")
+    if overrides:
+        value = _merge(value, overrides)
     return value
 
 

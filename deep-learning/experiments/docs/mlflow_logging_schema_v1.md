@@ -219,7 +219,6 @@ YAML runner는 각 `seed_trial`을 시작하기 전에 같은 experiment에서 `
 
 기존 top-level seed run은 재실행하지 않는다. migration으로 parent를 생성한 뒤 각 child에 `mlflow.parentRunId` tag만 추가한다.
 
-기존 deepbase1 run은 먼저 `uv run python -m experiments.deepbase1.migrate_mlflow --experiment deepbase1`으로 dry run을 확인하고, `--apply`로 hierarchy, `model.name`, lifecycle tag 및 artifact에 남은 epoch profiler history를 backfill한다. 이미 `migration.profiling_history.v1=complete`인 run은 다시 기록하지 않는다.
 
 ## 4.4 Analysis 필수 tag
 

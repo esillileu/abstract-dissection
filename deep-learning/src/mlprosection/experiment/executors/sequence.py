@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+import hashlib
+import json
 from pathlib import Path
 
 import numpy as np
@@ -16,6 +18,7 @@ from mlprosection.optim.SGD import Adam, SGD
 from mlprosection.trainer import InternalLossTrainer, TimeTrainer
 
 from ..contracts import ExperimentResult
+from ..checkpoint import save_epoch_checkpoint
 from ..executor import ExperimentContext
 from ..registry import register_executor
 from ..reproducibility import configure_runtime, seed_batch_order
@@ -139,6 +142,7 @@ class LanguageModelExecutor:
             valid_ppl = trainer.evaluate_perplexity(valid, valid_targets)
             test_ppl = trainer.evaluate_perplexity(test, test_targets)
             validation_history.extend((("epoch", target_epoch, "valid/perplexity", valid_ppl), ("epoch", target_epoch, "test/perplexity", test_ppl)))
+            _save_evaluation_checkpoint(config, context, model=model, optimizer=optimizer, trainer=trainer)
             if valid_ppl < best_valid:
                 best_valid = valid_ppl
                 checkpoint_root.mkdir(parents=True, exist_ok=True)
@@ -185,6 +189,7 @@ class Seq2SeqExecutor:
             train_loss = trainer.history.epoch_loss[-1]
             history.extend((("epoch", epoch, "train/loss", train_loss), ("epoch", epoch, "test/exact_match", exact), ("epoch", epoch, "test/token_accuracy", token)))
             context.emit_metric(epoch, {"train/loss": train_loss, "test/exact_match": exact, "test/token_accuracy": token})
+            _save_evaluation_checkpoint(config, context, model=model, optimizer=optimizer, trainer=trainer)
         attention_entropy = _save_attention_artifact(model, x_test, t_test, backend, context)
         final_values = {"final/train/loss": history[-3][3], "final/test/exact_match": history[-2][3], "final/test/token_accuracy": history[-1][3]}
         if attention_entropy is not None:
@@ -224,6 +229,21 @@ def _contexts_targets(corpus, window: int):
 def _optional_max_grad(config: dict[str, object], *, default: float | None = None) -> float | None:
     value = _mapping(config, "policy").get("max_grad", default)
     return None if value is None else float(value)
+
+
+def _save_evaluation_checkpoint(config: dict[str, object], context: ExperimentContext, *, model, optimizer, trainer) -> None:
+    if not bool(_mapping(config, "checkpoint").get("save_on_eval", False)):
+        return
+    checkpoint_config = dict(_mapping(config, "checkpoint"))
+    checkpoint_config.pop("resume", None)
+    identity = dict(config)
+    identity["checkpoint"] = checkpoint_config
+    digest = hashlib.sha256(json.dumps(identity, sort_keys=True, default=str).encode()).hexdigest()
+    root = Path(str(context.metadata["checkpoint_root"]))
+    path = save_epoch_checkpoint(root=root, model=model, optimizer=optimizer, trainer=trainer, config_digest=digest)
+    callback = context.metadata.get("record_eval_checkpoint")
+    if callable(callback):
+        callback(path)
 
 
 def _language_model(alias: str, vocab_size: int, values: dict[str, object], backend):
