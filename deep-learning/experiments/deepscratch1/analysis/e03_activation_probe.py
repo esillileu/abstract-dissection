@@ -13,9 +13,7 @@ from .common import ANALYSIS_ROOT, client, latest_seeded_records, parser, print_
 
 EXPERIMENT_ID = "e03"
 CONFIG = Path("experiments/deepscratch1/config/e03_activation_probe.yaml")
-ACTIVATIONS = ["SIG", "TANH", "RELU"]
-INITIALIZERS = ["STD1", "STD001", "XAVIER", "HE"]
-ATOMIC_RUN_IDS = [f"ACT-{activation}-{initializer}" for activation in ACTIVATIONS for initializer in INITIALIZERS]
+ATOMIC_RUN_IDS = ["ACT-SIG-STD1"]
 OUTPUT = ANALYSIS_ROOT / "e03_activation_probe.png"
 
 
@@ -33,11 +31,12 @@ def activation_layers(atomic_run_id: str, seed: int) -> tuple[str, list[np.ndarr
     width, depth = int(model["width"]), int(model["depth"])
     samples = int(config["dataset"]["train_size"])
     activation = str(model["activation"])
+    dtype = np.dtype(str(config["numerics"]["dtype"]))
     rng = np.random.default_rng(seed)
-    values = rng.standard_normal((samples, width), dtype=np.float32)
+    values = rng.standard_normal((samples, width), dtype=dtype)
     layers = []
     for _ in range(depth):
-        weights = rng.standard_normal((width, width), dtype=np.float32) * _std(str(initializer["name"]), width, initializer)
+        weights = rng.standard_normal((width, width), dtype=dtype) * _std(str(initializer["name"]), width, initializer)
         values = _activate(activation, values @ weights)
         layers.append(values)
     return activation, layers

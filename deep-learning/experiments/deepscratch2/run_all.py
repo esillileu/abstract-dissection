@@ -19,7 +19,7 @@ CONFIG_ROOT = Path("experiments/deepscratch2/config")
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run deepscratch2 YAML experiment matrix.")
-    parser.add_argument("--experiments", nargs="*", default=None, help="Experiment ids, e.g. e09 e11 e13")
+    parser.add_argument("--experiments", nargs="*", default=None, help="Experiment ids, e.g. e01 e03 e05")
     parser.add_argument("--seed-set", default="research_v1")
     parser.add_argument("--device", choices=("cuda:0", "cpu"), default="cuda:0")
     parser.add_argument("--dry-run", action="store_true")

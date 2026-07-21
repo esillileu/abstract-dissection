@@ -109,6 +109,8 @@ class SchemaV1Run:
             "policy": _section(self.config, "policy"),
             "regularization": _section(self.config, "regularization"),
         }
+        if reproducibility and "data" in reproducibility:
+            resolved["runtime_data"] = reproducibility["data"]
         write_json(self.artifact_root / "config/resolved.json", resolved)
         write_json(self.artifact_root / "config/condition.json", self.condition)
         write_json(self.artifact_root / "config/seed.json", self.seeds)

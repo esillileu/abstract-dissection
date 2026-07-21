@@ -4,7 +4,7 @@ import time
 
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import List, Iterator, TYPE_CHECKING, Iterable
+from typing import Callable, List, Iterator, TYPE_CHECKING, Iterable
 from dataclasses import dataclass, field
 from mlprosection.profiling import ProfilingConfig
 from mlprosection.profiling.backend import create_backend_profiler
@@ -75,6 +75,9 @@ class Trainer(ABC):
         self.eval_step = 0
         self.callbacks = tuple(callbacks or ())
         self.max_grad: float | None = None
+        self.record_step_loss = "none"
+        self.step_losses: list[tuple[int, float]] = []
+        self.on_train_step: Callable[[int], None] | None = None
 
     @property
     def backend(self):
@@ -230,6 +233,13 @@ class Trainer(ABC):
 
             current_size = batch_x.shape[0]
             loss, y = self.step(batch_x, batch_t, profile=profile_this_step)
+            if self.train and self.record_step_loss != "none":
+                recorded_loss = loss
+                if self.record_step_loss == "post_update":
+                    if self.criterion is None:
+                        raise RuntimeError("step-loss recording requires a criterion")
+                    recorded_loss = self.criterion.forward(self.model.forward(batch_x), batch_t)
+                self.step_losses.append((self.global_step + 1, float(recorded_loss.data)))
 
             if profile_this_step and self.profiling_config.profile_memory:
                 self.runtime_monitor.snapshot_memory(
@@ -245,6 +255,8 @@ class Trainer(ABC):
             if self.train:
                 self.global_step += 1
                 self._emit_batch_end()
+                if self.on_train_step is not None:
+                    self.on_train_step(self.global_step)
 
             should_log = (
                 self.log_interval is not None and batch_count >= self.log_interval

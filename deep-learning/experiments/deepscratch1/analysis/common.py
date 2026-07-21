@@ -39,10 +39,9 @@ class ErrorBarStyle:
     """Global default for min-max error bars; individual analyses may override it."""
 
     every: int = 5
-    color: str = "0.35"
     line_style: str = ":"
-    line_width: float = 0.5
-    cap_size: float = 0.5
+    line_width: float = 1
+    cap_size: float = 1
 
 
 DEFAULT_ERROR_BARS = ErrorBarStyle()
@@ -157,6 +156,28 @@ def metric_curve(mlflow_client, records: Sequence[RunRecord], metric: str) -> Cu
     return curve_from_histories(histories)
 
 
+def smooth_curve(values: Sequence[float]) -> np.ndarray:
+    """Match the Kaiser-window smoothing used by the book's common.util."""
+    value = np.asarray(values, dtype=float)
+    window_len = 11
+    if len(value) < window_len:
+        return value
+    reflected = np.r_[value[window_len - 1:0:-1], value, value[-1:-window_len:-1]]
+    window = np.kaiser(window_len, 2)
+    smoothed = np.convolve(window / window.sum(), reflected, mode="valid")
+    return smoothed[5:len(smoothed) - 5]
+
+
+def smoothed_step_loss_curve(mlflow_client, records: Sequence[RunRecord]) -> Curve:
+    """Load per-update post-update losses and smooth each seed before aggregation."""
+    histories = []
+    for record in records:
+        _, values = metric_history(mlflow_client, run_id=record.mlflow_run_id, key="update/train/raw_loss")
+        if values:
+            histories.append({index: float(value) for index, value in enumerate(smooth_curve(values))})
+    return curve_from_histories(histories)
+
+
 def curve_from_histories(histories: Sequence[dict[int, float]]) -> Curve:
     if not histories:
         return Curve(np.array([]), np.array([]), np.array([]), np.array([]), 0)
@@ -186,7 +207,8 @@ def plot_curve(axis, value: Curve, *, label: str, linestyle: str = "-", marker: 
         markersize=3,
         markevery=error_bars.every,
         errorevery=error_bars.every,
-        ecolor=error_bars.color,
+        # Let matplotlib inherit the series color, so each error bar stays
+        # visually associated with its own category.
         elinewidth=error_bars.line_width,
         capsize=error_bars.cap_size,
         linewidth=1.6,

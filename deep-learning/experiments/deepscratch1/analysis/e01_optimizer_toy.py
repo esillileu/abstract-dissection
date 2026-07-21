@@ -26,24 +26,12 @@ class ToyPath:
     objective: list[float]
 
 
-@dataclass(frozen=True)
-class AggregateToyPath:
-    atomic_run_id: str
-    steps: np.ndarray
-    x_mean: np.ndarray
-    x_minimum: np.ndarray
-    x_maximum: np.ndarray
-    y_mean: np.ndarray
-    y_minimum: np.ndarray
-    y_maximum: np.ndarray
-    run_count: int
-
-
 def objective_grid() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    x = np.linspace(-8.0, 8.0, 240)
-    y = np.linspace(-3.0, 3.0, 180)
+    x = np.arange(-10.0, 10.0, 0.01)
+    y = np.arange(-5.0, 5.0, 0.01)
     grid_x, grid_y = np.meshgrid(x, y)
     z = grid_x * grid_x / 20.0 + grid_y * grid_y
+    z[z > 7] = 0
     return grid_x, grid_y, z
 
 
@@ -90,47 +78,45 @@ def path_from_run(client, *, run_id: str) -> ToyPath:
     if not steps:
         raise ValueError(f"run {run_id} has no e01 path metrics")
 
+    # The book draws each point before its update. The run records the point
+    # after each update, so prepend the declared initial point and omit the
+    # final recorded point to recover the same 30 plotted positions.
     return ToyPath(
         atomic_run_id=atomic_run_id,
         mlflow_run_id=run_id,
-        steps=steps,
-        x=xs,
-        y=ys,
-        objective=objective,
+        steps=list(range(len(steps))),
+        x=[-7.0, *xs[:-1]],
+        y=[2.0, *ys[:-1]],
+        objective=[49.0 / 20.0 + 4.0, *objective[:-1]],
     )
-
-
-def aggregate_paths(paths: list[ToyPath]) -> list[AggregateToyPath]:
-    result = []
-    for atomic_run_id in DEFAULT_ATOMIC_RUN_IDS:
-        group = [path for path in paths if path.atomic_run_id == atomic_run_id]
-        steps = sorted(set().union(*(path.steps for path in group)))
-        def values(field: str) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-            series = [{step: value for step, value in zip(path.steps, getattr(path, field), strict=True)} for path in group]
-            per_step = [[item[step] for item in series if step in item] for step in steps]
-            return tuple(np.asarray([fn(items) for items in per_step]) for fn in (np.mean, np.min, np.max))
-        x_mean, x_minimum, x_maximum = values("x")
-        y_mean, y_minimum, y_maximum = values("y")
-        result.append(AggregateToyPath(atomic_run_id, np.asarray(steps), x_mean, x_minimum, x_maximum, y_mean, y_minimum, y_maximum, len(group)))
-    return result
 
 
 def render_paths(paths: list[ToyPath], *, output: Path) -> None:
     grid_x, grid_y, z = objective_grid()
-    fig, axes = plt.subplots(nrows=2, ncols=2, figsize=(10, 9))
-    for axis, path in zip(axes.flat, aggregate_paths(paths), strict=True):
-        contour = axis.contour(grid_x, grid_y, z, levels=25, cmap="Greys", linewidths=0.7)
-        axis.clabel(contour, inline=True, fontsize=7, fmt="%.1f")
-        x_error = np.vstack((path.x_mean - path.x_minimum, path.x_maximum - path.x_mean))
-        y_error = np.vstack((path.y_mean - path.y_minimum, path.y_maximum - path.y_mean))
-        axis.errorbar(path.x_mean, path.y_mean, xerr=x_error, yerr=y_error, fmt="o-", markersize=3, capsize=2, linewidth=1.6, color="tab:red", label=f"mean (n={path.run_count})")
-        axis.scatter([0.0], [0.0], marker="+", color="black", s=50, label="optimum")
-        axis.set_title(path.atomic_run_id)
+    paths_by_id = {path.atomic_run_id: path for path in paths}
+    titles = {"TOY-SGD": "SGD", "TOY-MOM": "Momentum", "TOY-ADAGRAD": "AdaGrad", "TOY-ADAM": "Adam"}
+    fig, axes = plt.subplots(nrows=2, ncols=2)
+    for axis, atomic_run_id in zip(axes.flat, DEFAULT_ATOMIC_RUN_IDS, strict=True):
+        path = paths_by_id[atomic_run_id]
+        axis.plot(path.x, path.y, "o-", color="red", ms=2)
+        final_x, final_y = path.x[-1], path.y[-1]
+        axis.annotate(
+            f"({final_x:.2f}, {final_y:.2f})",
+            xy=(final_x, final_y),
+            xytext=(0, 8),
+            textcoords="offset points",
+            ha="center",
+            va="bottom",
+            color="red",
+            fontsize=8,
+        )
+        axis.contour(grid_x, grid_y, z)
         axis.set_xlim(-10, 10)
-        axis.set_ylim(-10, 10)
+        axis.set_ylim(-3, 3)
+        axis.plot(0, 0, "+")
+        axis.set_title(titles[atomic_run_id])
         axis.set_xlabel("x")
         axis.set_ylabel("y")
-        axis.legend(fontsize=7)
 
     fig.tight_layout()
     output.parent.mkdir(parents=True, exist_ok=True)

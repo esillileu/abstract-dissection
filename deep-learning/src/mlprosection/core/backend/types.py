@@ -59,6 +59,6 @@ DeviceTarget: TypeAlias = str | HasDevice
 @dataclass(frozen=True)
 class BackendConfig:
     device: str = "cpu"
-    dtype: FloatDTypeName = "float32"
+    dtype: FloatDTypeName = "float64"
     seed: int | None = None
     profile: bool = False

@@ -8,14 +8,14 @@ from .common import ANALYSIS_ROOT, client, latest_seeded_runs, parser
 from .render import render
 
 
-EXPERIMENT_ID = "e13"
+EXPERIMENT_ID = "e05"
 
 
 def main() -> None:
-    args = parser("Render e13 date exact-match accuracy.", ANALYSIS_ROOT / "e13_attention_seq2seq_date.png").parse_args()
+    args = parser("Render e05 date exact-match accuracy.", ANALYSIS_ROOT / "e05_attention_seq2seq_date.png").parse_args()
     mlflow_client = client(args.tracking_uri)
-    render(mlflow_client=mlflow_client, experiment_name=args.mlflow_experiment, atomic_run_ids=["SEQD-VAN-REV", "SEQD-PEEKY-REV", "SEQD-ATTN-REV"], metric="epoch/test/exact_match", title="e13 date exact match", ylabel="exact-match accuracy", output=args.output, summary_csv=args.summary_csv, marker="o")
-    _render_attention(mlflow_client, args.mlflow_experiment, ANALYSIS_ROOT / "e13_attention_alignment.png")
+    render(mlflow_client=mlflow_client, experiment_name=args.mlflow_experiment, atomic_run_ids=["SEQD-VAN-REV", "SEQD-PEEKY-REV", "SEQD-ATTN-REV"], metric="epoch/test/exact_match", title="e05 date exact match", ylabel="exact-match accuracy", output=args.output, summary_csv=args.summary_csv, marker="o")
+    _render_attention(mlflow_client, args.mlflow_experiment, ANALYSIS_ROOT / "e05_attention_alignment.png")
 
 
 def _render_attention(mlflow_client, experiment_name: str, output: Path) -> None:
@@ -28,7 +28,7 @@ def _render_attention(mlflow_client, experiment_name: str, output: Path) -> None
         image = axis.pcolor(attention, cmap=plt.cm.Greys_r, vmin=0.0, vmax=1.0)
         axis.set_xlabel("encoder character position")
         axis.set_ylabel("decoder character position")
-        axis.set_title("e13 representative attention alignment")
+        axis.set_title("e05 representative attention alignment")
         figure.colorbar(image, ax=axis)
         figure.tight_layout()
         output.parent.mkdir(parents=True, exist_ok=True)

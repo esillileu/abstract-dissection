@@ -21,6 +21,7 @@ class Conv2D(Layer):
         stride: IntPair = 1,
         padding: IntPair = 0,
         bias: bool = True,
+        initializer: str = "he",
         backend: Backend | None = None,
     ) -> None:
         super().__init__(backend)
@@ -34,7 +35,12 @@ class Conv2D(Layer):
 
         kernel_h, kernel_w = self.kernel_size
         fan_in = in_channels * kernel_h * kernel_w
-        scale = (2.0 / fan_in) ** 0.5
+        if initializer == "he":
+            scale = (2.0 / fan_in) ** 0.5
+        elif initializer.startswith("std:"):
+            scale = float(initializer.split(":", 1)[1])
+        else:
+            raise ValueError(f"unknown convolution initializer: {initializer}")
 
         weight = self.backend.xp.random.randn(
             out_channels,

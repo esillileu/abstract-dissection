@@ -26,6 +26,11 @@ class ForwardTrainer(Trainer):
         log_interval: int = 20,
         max_grad: float | None = None,
         drop_last: bool | None = False,
+        sampling_method: str = "permutation_per_epoch",
+        record_step_loss: str = "none",
+        record_first_step_evaluation: bool = False,
+        record_epoch_evaluation: bool = False,
+        record_step_evaluation_interval: int | None = None,
         profiling_config: ProfilingConfig | None = None,
         callbacks: Iterable[TrainerCallback] | None = None,
         on_epoch_checkpoint: Callable[[], None] | None = None,
@@ -43,6 +48,22 @@ class ForwardTrainer(Trainer):
             callbacks=callbacks,
         )
         self.max_grad = max_grad
+        if sampling_method not in {"permutation_per_epoch", "with_replacement"}:
+            raise ValueError(f"unsupported sampling_method: {sampling_method}")
+        if record_step_loss not in {"none", "pre_update", "post_update"}:
+            raise ValueError(f"unsupported record_step_loss mode: {record_step_loss}")
+        self.sampling_method = sampling_method
+        self.record_step_loss = record_step_loss
+        self.step_losses: list[tuple[int, float]] = []
+        self.record_first_step_evaluation = record_first_step_evaluation
+        self.record_epoch_evaluation = record_epoch_evaluation
+        if (
+            record_step_evaluation_interval is not None
+            and record_step_evaluation_interval < 1
+        ):
+            raise ValueError("record_step_evaluation_interval must be positive")
+        self.record_step_evaluation_interval = record_step_evaluation_interval
+        self.graph_evaluations: list[tuple[int, dict[str, float]]] = []
 
         self.epoch: int | None = None
         self.on_epoch_checkpoint = on_epoch_checkpoint
@@ -60,6 +81,25 @@ class ForwardTrainer(Trainer):
         skip_validation = x_val is None or t_val is None
 
         data_size = len(x_train)
+
+        def record_first_step(step: int) -> None:
+            if step == 1:
+                self.graph_evaluations.append((
+                    0,
+                    self._full_evaluation(x_train, t_train, x_val, t_val),
+                ))
+            elif (
+                self.record_step_evaluation_interval
+                and (step - 1) % self.record_step_evaluation_interval == 0
+            ):
+                self.graph_evaluations.append((
+                    step // self.record_step_evaluation_interval,
+                    self._full_evaluation(x_train, t_train, x_val, t_val),
+                ))
+
+        self.on_train_step = (
+            record_first_step if self.record_first_step_evaluation else None
+        )
         self.detail_profiler.start_run()
         try:
             if self.profiling_config.collect_memory_metrics:
@@ -78,12 +118,31 @@ class ForwardTrainer(Trainer):
             with train_timer:
                 start_epoch = int(self.epoch or 0)
                 for epoch in range(start_epoch, self.max_epoch):
-                    if self.max_updates is not None and self.global_step >= self.max_updates:
+                    if (
+                        self.max_updates is not None
+                        and self.global_step >= self.max_updates
+                    ):
                         break
                     self.epoch = epoch + 1
-                    idx = xp.random.permutation(xp.arange(data_size))
+                    if self.sampling_method == "with_replacement":
+                        updates_per_epoch = data_size // self.batch_size
+                        if updates_per_epoch == 0:
+                            raise ValueError(
+                                "dataset is smaller than one training batch"
+                            )
+                        idx = xp.random.randint(
+                            0, data_size, size=updates_per_epoch * self.batch_size
+                        )
+                    else:
+                        idx = xp.random.permutation(xp.arange(data_size))
                     shuffled_x, shuffled_t = x_train[idx], t_train[idx]
                     self._run_measured_epoch("train", epoch, shuffled_x, shuffled_t)
+
+                    if self.record_epoch_evaluation:
+                        self.graph_evaluations.append((
+                            epoch + 1,
+                            self._full_evaluation(x_train, t_train, x_val, t_val),
+                        ))
 
                     if not skip_validation:
                         self.train = False
@@ -91,15 +150,54 @@ class ForwardTrainer(Trainer):
                         self.train = True
                     if self.on_epoch_checkpoint is not None:
                         self.on_epoch_checkpoint()
-                    if self.max_updates is not None and self.global_step >= self.max_updates:
+                    if (
+                        self.max_updates is not None
+                        and self.global_step >= self.max_updates
+                    ):
                         break
         finally:
+            self.on_train_step = None
             if self.profiling_config.collect_memory_metrics:
                 self.runtime_monitor.snapshot_memory("train.end", synchronize=True)
                 self.runtime_monitor.snapshot_memory("run.end")
             self.record_final_memory_metrics()
             self.detail_profiler.stop_run()
             self.train = True
+
+    def _full_evaluation(
+        self,
+        x_train: Tensor,
+        t_train: Tensor,
+        x_test: Tensor | None,
+        t_test: Tensor | None,
+    ) -> dict[str, float]:
+        values = self._evaluate_split(x_train, t_train)
+        if x_test is not None and t_test is not None:
+            values.update({
+                f"test/{key}": value
+                for key, value in self._evaluate_split(x_test, t_test).items()
+            })
+        return {
+            f"train/{key}": value
+            for key, value in values.items()
+            if not key.startswith("test/")
+        } | {key: value for key, value in values.items() if key.startswith("test/")}
+
+    def _evaluate_split(self, x: Tensor, t: Tensor) -> dict[str, float]:
+        was_training = self.train
+        self.model.train(False)
+        total_loss = 0.0
+        samples = 0
+        correct = 0
+        for batch_x, batch_t in self.iter_batches(x, t):
+            y = self.model.forward(batch_x)
+            loss = self.criterion.forward(y, batch_t)
+            batch_size = len(batch_x)
+            total_loss += float(loss.data) * batch_size
+            samples += batch_size
+            correct += self.count_correct(y, batch_t)
+        self.model.train(was_training)
+        return {"loss": total_loss / samples, "accuracy": correct / samples}
 
     def _run_measured_epoch(
         self,

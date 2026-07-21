@@ -60,7 +60,7 @@ def _plans(experiments: list[str] | None, seeds: list[int], device_mode: str):
 def _device_for(experiment_id: str, mode: str) -> str:
     if mode != "auto":
         return mode
-    return "cuda:0" if experiment_id == "e08" else "cpu"
+    return "cpu"
 
 
 def _tracking_uris(plans) -> set[str]:

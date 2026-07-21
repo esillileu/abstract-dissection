@@ -40,7 +40,10 @@ def calculate_fan_in_and_fan_out(tensor: Tensor) -> tuple[int, int]:
     for size in tensor.shape[2:]:
         receptive_field_size *= size
 
-    fan_in = tensor.shape[0] * receptive_field_size
-    fan_out = tensor.shape[1] * receptive_field_size
+    if tensor.ndim == 2:
+        fan_in, fan_out = tensor.shape
+    else:
+        fan_in = tensor.shape[1] * receptive_field_size
+        fan_out = tensor.shape[0] * receptive_field_size
 
     return fan_in, fan_out

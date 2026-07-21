@@ -6,7 +6,7 @@ from .common import ANALYSIS_ROOT, client, latest_seeded_records, metric_curve, 
 
 
 EXPERIMENT_ID = "e06"
-ATOMIC_RUN_IDS = ["REG-BASE", "REG-WD-1E4", "REG-WD-1E3", "REG-WD-1E2", "REG-WD-1E1"]
+ATOMIC_RUN_IDS = ["REG-WD-1E1"]
 OUTPUT = ANALYSIS_ROOT / "e06_weight_decay.png"
 
 
@@ -18,8 +18,8 @@ def main() -> None:
 
     fig, axis = plt.subplots(figsize=(9, 5))
     for atomic_run_id in ATOMIC_RUN_IDS:
-        plot_curve(axis, metric_curve(mlflow_client, grouped[atomic_run_id], "epoch/train/accuracy"), label=f"{atomic_run_id} train", marker="o")
-        plot_curve(axis, metric_curve(mlflow_client, grouped[atomic_run_id], "epoch/test/accuracy"), label=f"{atomic_run_id} test", linestyle="--", marker="s")
+        plot_curve(axis, metric_curve(mlflow_client, grouped[atomic_run_id], "book_epoch/train/accuracy"), label=f"{atomic_run_id} train", marker="o")
+        plot_curve(axis, metric_curve(mlflow_client, grouped[atomic_run_id], "book_epoch/test/accuracy"), label=f"{atomic_run_id} test", linestyle="--", marker="s")
 
     axis.set_title("e06 weight decay")
     axis.set_xlabel("epoch")
