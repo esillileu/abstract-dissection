@@ -30,7 +30,7 @@ def test_cli_overrides_change_seed_count_and_are_applied_last() -> None:
     overrides = parse_overrides(["policy.seed_count=2", "training.max_epochs=1"])
     plans = build_plans(
         domain="deepscratch2",
-        experiment_ids=["09"],
+        experiment_ids=["01"],
         all_experiments=False,
         seed_set="research_v1",
         seed_indexes=None,
@@ -69,14 +69,14 @@ def test_single_execution_mode_does_not_create_seed_repetitions(tmp_path, monkey
 def test_plan_defaults_to_all_experiments(capsys) -> None:
     main(["deepscratch1", "plan"])
 
-    assert "deepscratch1: 516 planned runs" in capsys.readouterr().out
+    assert "deepscratch1: 465 planned runs" in capsys.readouterr().out
 
 
 def test_analysis_discovery_uses_each_module_experiment_id() -> None:
-    plans = build_analysis_plans(domain="deepscratch2", experiment_ids=["13"])
+    plans = build_analysis_plans(domain="deepscratch2", experiment_ids=["05"])
 
     assert [(plan.experiment_id, plan.module_name) for plan in plans] == [
-        ("e13", "experiments.deepscratch2.analysis.e13_attention_seq2seq_date"),
+        ("e05", "experiments.deepscratch2.analysis.e05_attention_seq2seq_date"),
     ]
 
 
