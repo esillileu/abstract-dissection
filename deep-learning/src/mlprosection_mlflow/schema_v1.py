@@ -43,14 +43,23 @@ ARTIFACT_ROOT = Path("experiments")
 def _storage_domain(value: object) -> str:
     """Make the tracking experiment safe to use as a local directory name."""
     name = str(value).strip()
-    return "".join(char if char.isalnum() or char in {"-", "_", "."} else "-" for char in name) or "mlprosection"
+    return (
+        "".join(
+            char if char.isalnum() or char in {"-", "_", "."} else "-" for char in name
+        )
+        or "mlprosection"
+    )
 
 
 def seed_config(master_seed: int) -> dict[str, int]:
     return {
-        "master": master_seed, "model_init": master_seed, "batch_order": master_seed + 10_000,
-        "dropout": master_seed + 20_000, "negative_sampling": master_seed + 30_000,
-        "synthetic_input": master_seed + 40_000, "dataset_split": master_seed,
+        "master": master_seed,
+        "model_init": master_seed,
+        "batch_order": master_seed + 10_000,
+        "dropout": master_seed + 20_000,
+        "negative_sampling": master_seed + 30_000,
+        "synthetic_input": master_seed + 40_000,
+        "dataset_split": master_seed,
         "worker": master_seed + 50_000,
     }
 
@@ -62,12 +71,16 @@ class SchemaV1Run:
         self.config = normalize_config(config)
         self.seed = int(self.config["seed"])
         self.seeds = seed_config(self.seed)
-        self.git_info = current_git_info(str(_section(self.config, "training")["entrypoint"]))
+        self.git_info = current_git_info(
+            str(_section(self.config, "training")["entrypoint"])
+        )
         self.condition = build_condition_config(self.config, self.git_info)
         self.identity = build_identity(self.config, self.condition, self.seeds)
         tracking = _section(self.config, "tracking")
         self.storage_domain = _storage_domain(
-            tracking.get("experiment", os.getenv("MLFLOW_EXPERIMENT_NAME", "mlprosection"))
+            tracking.get(
+                "experiment", os.getenv("MLFLOW_EXPERIMENT_NAME", "mlprosection")
+            )
         )
         domain_root = ARTIFACT_ROOT / self.storage_domain / "results"
         self.artifact_root = domain_root / "mlflow_artifacts" / self.identity.run_key
@@ -77,35 +90,59 @@ class SchemaV1Run:
         tracking = _section(self.config, "tracking")
         return ExperimentRun(
             options=RuntimeOptions(
-                tracking_uri=str(tracking.get("uri", os.getenv("MLFLOW_TRACKING_URI", "http://127.0.0.1:5000"))),
-                experiment_name=str(tracking.get("experiment", os.getenv("MLFLOW_EXPERIMENT_NAME", "mlprosection"))),
+                tracking_uri=(
+                    os.getenv("MLFLOW_TRACKING_URI")
+                    or str(
+                        tracking.get(
+                            "uri",
+                            "http://127.0.0.1:5000",
+                        )
+                    )
+                ),
+                experiment_name=str(
+                    tracking.get(
+                        "experiment",
+                        os.getenv("MLFLOW_EXPERIMENT_NAME", "mlprosection"),
+                    )
+                ),
                 mlflow_enabled=bool(tracking.get("enabled", True)),
                 upload_checkpoint=bool(tracking.get("upload_checkpoint", True)),
-                upload_eval_checkpoints=bool(tracking.get("upload_eval_checkpoints", False)),
+                upload_eval_checkpoints=bool(
+                    tracking.get("upload_eval_checkpoints", False)
+                ),
             ),
             run_name=f"{self.identity.atomic_run_id}-s{self.identity.master_seed:02d}",
             tags=build_tags(self.identity, self.config, self.git_info, model),
             params=flatten_dict({
-                **self.condition, "seed": self.seeds,
+                **self.condition,
+                "seed": self.seeds,
                 "policy": _section(self.config, "policy"),
                 "regularization": _section(self.config, "regularization"),
             }),
         )
 
     def write_artifacts(
-        self, *, model: Any | None, final_metrics: dict[str, float],
+        self,
+        *,
+        model: Any | None,
+        final_metrics: dict[str, float],
         history_rows: list[tuple[str, int, str, float]],
-        profiling_metrics: dict[str, int | float], reproducibility: dict[str, object] | None = None,
+        profiling_metrics: dict[str, int | float],
+        reproducibility: dict[str, object] | None = None,
         evaluation_checkpoints: list[Path] | None = None,
     ) -> None:
         checkpoint_path, checkpoint_digest = _save_checkpoint(
             self.local_checkpoint_root,
             model,
-            save_final=bool(_section(self.config, "checkpoint").get("save_final", True)),
+            save_final=bool(
+                _section(self.config, "checkpoint").get("save_final", True)
+            ),
         )
         resolved = {
-            **self.condition, "condition_key": self.identity.condition_key,
-            "run_key": self.identity.run_key, "seed": self.seeds,
+            **self.condition,
+            "condition_key": self.identity.condition_key,
+            "run_key": self.identity.run_key,
+            "seed": self.seeds,
             "policy": _section(self.config, "policy"),
             "regularization": _section(self.config, "regularization"),
         }
@@ -114,67 +151,177 @@ class SchemaV1Run:
         write_json(self.artifact_root / "config/resolved.json", resolved)
         write_json(self.artifact_root / "config/condition.json", self.condition)
         write_json(self.artifact_root / "config/seed.json", self.seeds)
-        write_json(self.artifact_root / "config/profiling.json", _section(self.config, "profiling"))
-        write_json(self.artifact_root / "reproducibility/runtime.json", reproducibility or {})
+        write_json(
+            self.artifact_root / "config/profiling.json",
+            _section(self.config, "profiling"),
+        )
+        write_json(
+            self.artifact_root / "reproducibility/runtime.json", reproducibility or {}
+        )
         write_json(self.artifact_root / "code/git.json", self.git_info)
         if self.git_info["dirty"]:
             write_git_diff(self.artifact_root / "code/git.diff.patch")
         write_text(self.artifact_root / "environment/python.txt", sys.version)
         write_text(self.artifact_root / "environment/packages.txt", pip_freeze())
-        write_json(self.artifact_root / "environment/system.json", environment_artifacts())
+        write_json(
+            self.artifact_root / "environment/system.json", environment_artifacts()
+        )
         backend = model.backend if model is not None else get_default_backend()
-        write_json(self.artifact_root / "environment/backend.json", {"backend": backend.name, "device": backend.device, "dtype": backend.dtype_name})
-        write_json(self.artifact_root / "environment/device.json", backend.memory_info())
-        write_json(self.artifact_root / "data/dataset_manifest.json", _section(self.config, "dataset"))
-        write_json(self.artifact_root / "model/architecture.json", _section(self.config, "model"))
-        write_text(self.artifact_root / "model/structure.txt", str(model) if model is not None else "")
-        write_json(self.artifact_root / "model/parameter_manifest.json", parameter_manifest(model) if model is not None else [])
-        write_json(self.artifact_root / "model/initialization_manifest.json", _section(self.config, "initializer"))
-        write_history_csv(self.artifact_root / "metrics/history.csv", run_key=self.identity.run_key, rows=history_rows)
-        write_history_csv(self.artifact_root / "metrics/update_history.csv", run_key=self.identity.run_key, rows=[row for row in history_rows if row[0] == "update"])
-        write_history_csv(self.artifact_root / "metrics/epoch_history.csv", run_key=self.identity.run_key, rows=[row for row in history_rows if row[0] == "epoch"])
-        write_history_csv(self.artifact_root / "metrics/eval_history.csv", run_key=self.identity.run_key, rows=[row for row in history_rows if row[0] == "eval"])
-        write_runtime_history_csv(self.artifact_root / "metrics/runtime_history.csv", build_runtime_history_rows(profiling_metrics))
-        write_memory_history_csv(self.artifact_root / "metrics/memory_history.csv", build_memory_history_rows(profiling_metrics))
+        write_json(
+            self.artifact_root / "environment/backend.json",
+            {
+                "backend": backend.name,
+                "device": backend.device,
+                "dtype": backend.dtype_name,
+            },
+        )
+        write_json(
+            self.artifact_root / "environment/device.json", backend.memory_info()
+        )
+        write_json(
+            self.artifact_root / "data/dataset_manifest.json",
+            _section(self.config, "dataset"),
+        )
+        write_json(
+            self.artifact_root / "model/architecture.json",
+            _section(self.config, "model"),
+        )
+        write_text(
+            self.artifact_root / "model/structure.txt",
+            str(model) if model is not None else "",
+        )
+        write_json(
+            self.artifact_root / "model/parameter_manifest.json",
+            parameter_manifest(model) if model is not None else [],
+        )
+        write_json(
+            self.artifact_root / "model/initialization_manifest.json",
+            _section(self.config, "initializer"),
+        )
+        write_history_csv(
+            self.artifact_root / "metrics/history.csv",
+            run_key=self.identity.run_key,
+            rows=history_rows,
+        )
+        write_history_csv(
+            self.artifact_root / "metrics/update_history.csv",
+            run_key=self.identity.run_key,
+            rows=[row for row in history_rows if row[0] == "update"],
+        )
+        write_history_csv(
+            self.artifact_root / "metrics/epoch_history.csv",
+            run_key=self.identity.run_key,
+            rows=[row for row in history_rows if row[0] == "epoch"],
+        )
+        write_history_csv(
+            self.artifact_root / "metrics/eval_history.csv",
+            run_key=self.identity.run_key,
+            rows=[row for row in history_rows if row[0] == "eval"],
+        )
+        write_runtime_history_csv(
+            self.artifact_root / "metrics/runtime_history.csv",
+            build_runtime_history_rows(profiling_metrics),
+        )
+        write_memory_history_csv(
+            self.artifact_root / "metrics/memory_history.csv",
+            build_memory_history_rows(profiling_metrics),
+        )
         write_json(self.artifact_root / "metrics/final.json", final_metrics)
-        write_json(self.artifact_root / "profiles/profiling_summary.json", {"schema_version": 1, "enabled": _section(self.config, "profiling").get("enabled", False), "metrics": profiling_metrics})
-        write_json(self.artifact_root / "checkpoints/checkpoint_manifest.json", {
-            "format": "npz" if checkpoint_path else "none",
-            "local_root": str(self.local_checkpoint_root.resolve()),
-            "final": None if checkpoint_path is None else {"path": str(checkpoint_path.resolve()), "epoch": _section(self.config, "training").get("max_epochs"), "update": final_metrics.get("final/system/total_updates"), "digest": checkpoint_digest},
-            "best": None,
-            "epoch_checkpoints": [
-                {"path": str(path.resolve())}
-                for path in evaluation_checkpoints or []
-            ],
-            "contains": {"model": checkpoint_path is not None, "optimizer": True, "scheduler": False, "rng_state": True, "training_state": True},
-        })
+        write_json(
+            self.artifact_root / "profiles/profiling_summary.json",
+            {
+                "schema_version": 1,
+                "enabled": _section(self.config, "profiling").get("enabled", False),
+                "metrics": profiling_metrics,
+            },
+        )
+        write_json(
+            self.artifact_root / "checkpoints/checkpoint_manifest.json",
+            {
+                "format": "npz" if checkpoint_path else "none",
+                "local_root": str(self.local_checkpoint_root.resolve()),
+                "final": None
+                if checkpoint_path is None
+                else {
+                    "path": str(checkpoint_path.resolve()),
+                    "epoch": _section(self.config, "training").get("max_epochs"),
+                    "update": final_metrics.get("final/system/total_updates"),
+                    "digest": checkpoint_digest,
+                },
+                "best": None,
+                "epoch_checkpoints": [
+                    {"path": str(path.resolve())}
+                    for path in evaluation_checkpoints or []
+                ],
+                "contains": {
+                    "model": checkpoint_path is not None,
+                    "optimizer": True,
+                    "scheduler": False,
+                    "rng_state": True,
+                    "training_state": True,
+                },
+            },
+        )
 
 
-def build_condition_config(config: dict[str, object], git_info: dict[str, object]) -> dict[str, object]:
+def build_condition_config(
+    config: dict[str, object], git_info: dict[str, object]
+) -> dict[str, object]:
     config = normalize_config(config)
     return {
-        "schema_version": 1, "atomic_run_id": config["atomic_run_id"],
-        "execution_group_id": config["execution_group_id"], "recipe_id": config["recipe_id"],
+        "schema_version": 1,
+        "atomic_run_id": config["atomic_run_id"],
+        "execution_group_id": config["execution_group_id"],
+        "recipe_id": config["recipe_id"],
         "structure_signature": config["structure_signature"],
-        "code": {"git_commit": git_info["commit"], "git_diff_sha256": git_info["diff_sha256"], "entrypoint": git_info["entrypoint"]},
-        **{key: _section(config, key) for key in (
-            "dataset", "loader", "model", "initializer", "optimizer", "scheduler", "loss",
-            "training", "evaluation", "numerics", "checkpoint", "profiling",
-        )},
+        "code": {
+            "git_commit": git_info["commit"],
+            "git_diff_sha256": git_info["diff_sha256"],
+            "entrypoint": git_info["entrypoint"],
+        },
+        **{
+            key: _section(config, key)
+            for key in (
+                "dataset",
+                "loader",
+                "model",
+                "initializer",
+                "optimizer",
+                "scheduler",
+                "loss",
+                "training",
+                "evaluation",
+                "numerics",
+                "checkpoint",
+                "profiling",
+            )
+        },
     }
 
 
-def build_identity(config: dict[str, object], condition: dict[str, object], seeds: dict[str, int]) -> RunIdentity:
+def build_identity(
+    config: dict[str, object], condition: dict[str, object], seeds: dict[str, int]
+) -> RunIdentity:
     return RunIdentity(
-        schema_version=1, project_name="mlprosection", experiment_ids=tuple(config["experiment_ids"]),
-        atomic_run_id=str(config["atomic_run_id"]), execution_group_id=str(config["execution_group_id"]),
-        recipe_id=str(config["recipe_id"]), structure_signature=str(config["structure_signature"]),
-        condition_key=make_condition_key(condition), run_key=make_run_key(condition, seeds), master_seed=seeds["master"],
+        schema_version=1,
+        project_name="mlprosection",
+        experiment_ids=tuple(config["experiment_ids"]),
+        atomic_run_id=str(config["atomic_run_id"]),
+        execution_group_id=str(config["execution_group_id"]),
+        recipe_id=str(config["recipe_id"]),
+        structure_signature=str(config["structure_signature"]),
+        condition_key=make_condition_key(condition),
+        run_key=make_run_key(condition, seeds),
+        master_seed=seeds["master"],
     )
 
 
-def build_tags(identity: RunIdentity, config: dict[str, object], git_info: dict[str, object], model: Any | None) -> dict[str, str]:
+def build_tags(
+    identity: RunIdentity,
+    config: dict[str, object],
+    git_info: dict[str, object],
+    model: Any | None,
+) -> dict[str, str]:
     backend = model.backend if model is not None else get_default_backend()
     group_params = flatten_dict({
         **build_condition_config(config, git_info),
@@ -182,21 +329,39 @@ def build_tags(identity: RunIdentity, config: dict[str, object], git_info: dict[
         "regularization": _section(config, "regularization"),
     })
     return {
-        "schema.version": "1", "project.name": "mlprosection", "run.type": "seed_trial",
-        "code.git_commit": str(git_info["commit"]), "code.git_branch": str(git_info["branch"]),
-        "code.git_dirty": str(git_info["dirty"]).lower(), "code.repository": str(git_info["repository"]),
-        "code.entrypoint": str(git_info["entrypoint"]), "code.runner_version": "1",
-        "runtime.backend": backend.name, "runtime.device_type": "cuda" if backend.is_gpu else "cpu",
-        "runtime.platform": os.uname().sysname.lower(), "runtime.python_version": sys.version.split()[0],
-        "atomic_run.id": identity.atomic_run_id, "execution_group.id": identity.execution_group_id,
-        "recipe.id": identity.recipe_id, "structure.signature": identity.structure_signature,
-        "condition.key": identity.condition_key, "condition.group.key": make_parent_group_key(group_params), "run.key": identity.run_key, "master_seed": str(identity.master_seed),
+        "schema.version": "1",
+        "project.name": "mlprosection",
+        "run.type": "seed_trial",
+        "code.git_commit": str(git_info["commit"]),
+        "code.git_branch": str(git_info["branch"]),
+        "code.git_dirty": str(git_info["dirty"]).lower(),
+        "code.repository": str(git_info["repository"]),
+        "code.entrypoint": str(git_info["entrypoint"]),
+        "code.runner_version": "1",
+        "runtime.backend": backend.name,
+        "runtime.device_type": "cuda" if backend.is_gpu else "cpu",
+        "runtime.platform": os.uname().sysname.lower(),
+        "runtime.python_version": sys.version.split()[0],
+        "atomic_run.id": identity.atomic_run_id,
+        "execution_group.id": identity.execution_group_id,
+        "recipe.id": identity.recipe_id,
+        "structure.signature": identity.structure_signature,
+        "condition.key": identity.condition_key,
+        "condition.group.key": make_parent_group_key(group_params),
+        "run.key": identity.run_key,
+        "master_seed": str(identity.master_seed),
         "dataset.id": str(_section(config, "dataset").get("id", "")),
-        "model.name": str(_section(config, "model").get("name", _section(config, "model").get("alias", ""))),
+        "model.name": str(
+            _section(config, "model").get(
+                "name", _section(config, "model").get("alias", "")
+            )
+        ),
         "model.family": str(_section(config, "model").get("family", "")),
         "task.type": str(_section(config, "model").get("task_type", "classification")),
-        "trial.status": "running", "trial.attempt": os.getenv("MLFLOW_TRIAL_ATTEMPT", "1"),
-        "retry.of": os.getenv("MLFLOW_RETRY_OF", ""), "parent.mlflow_run_id": os.getenv("MLFLOW_PARENT_RUN_ID", ""),
+        "trial.status": "running",
+        "trial.attempt": os.getenv("MLFLOW_TRIAL_ATTEMPT", "1"),
+        "retry.of": os.getenv("MLFLOW_RETRY_OF", ""),
+        "parent.mlflow_run_id": os.getenv("MLFLOW_PARENT_RUN_ID", ""),
     }
 
 
@@ -207,7 +372,10 @@ def _section(config: dict[str, object], name: str) -> dict[str, object]:
 
 
 def _save_checkpoint(
-    root: Path, model: Any | None, *, save_final: bool,
+    root: Path,
+    model: Any | None,
+    *,
+    save_final: bool,
 ) -> tuple[Path | None, str | None]:
     if not save_final or model is None or not hasattr(model, "save_params_npz"):
         return None, None

@@ -230,7 +230,8 @@ def _require_mlflow_server(plans: list[RunPlan], overrides: dict[str, object]) -
         config = load_yaml(plan.path, atomic_run_id=plan.atomic_run_id, overrides=overrides)
         tracking = config.get("tracking", {})
         if isinstance(tracking, dict) and tracking.get("enabled", True):
-            uris.add(str(tracking.get("uri", os.getenv("MLFLOW_TRACKING_URI", "http://127.0.0.1:5000"))))
+            uri = os.getenv("MLFLOW_TRACKING_URI") or str(tracking.get("uri", "http://127.0.0.1:5000", ))
+            uris.add(uri)
     for uri in sorted(uris):
         try:
             with urlopen(f"{uri.rstrip('/')}/health", timeout=5) as response:

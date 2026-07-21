@@ -14,7 +14,7 @@ services:
       - --artifacts-destination
       - /mlflow-data/artifacts
       - --allowed-hosts
-      - localhost:5000,127.0.0.1:5000
+      - localhost:5000,127.0.0.1:5000,*.trycloudflare.com
     ports:
       - "127.0.0.1:5000:5000"
     volumes:
