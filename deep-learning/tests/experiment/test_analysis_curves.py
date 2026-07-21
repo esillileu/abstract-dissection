@@ -5,7 +5,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parents[2]))
 
-from experiments.deepbase1.analysis.common import curve_from_histories
+from experiments.deepscratch1.analysis.common import curve_from_histories
 
 
 def test_curve_uses_mean_and_min_max_for_each_available_log_step() -> None:

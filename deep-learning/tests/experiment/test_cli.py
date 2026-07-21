@@ -11,9 +11,9 @@ def test_seed_index_ranges_are_deduplicated() -> None:
     assert parse_seed_indexes("0-2,1,4", count=5) == [0, 1, 2, 4]
 
 
-def test_deepbase1_plan_selects_one_experiment_and_seed_range() -> None:
+def test_deepscratch1_plan_selects_one_experiment_and_seed_range() -> None:
     plans = build_plans(
-        domain="deepbase1",
+        domain="deepscratch1",
         experiment_ids=["01"],
         all_experiments=False,
         seed_set="research_v1",
@@ -29,7 +29,7 @@ def test_deepbase1_plan_selects_one_experiment_and_seed_range() -> None:
 def test_cli_overrides_change_seed_count_and_are_applied_last() -> None:
     overrides = parse_overrides(["policy.seed_count=2", "training.max_epochs=1"])
     plans = build_plans(
-        domain="deepbase2",
+        domain="deepscratch2",
         experiment_ids=["09"],
         all_experiments=False,
         seed_set="research_v1",
@@ -67,23 +67,23 @@ def test_single_execution_mode_does_not_create_seed_repetitions(tmp_path, monkey
 
 
 def test_plan_defaults_to_all_experiments(capsys) -> None:
-    main(["deepbase1", "plan"])
+    main(["deepscratch1", "plan"])
 
-    assert "deepbase1: 516 planned runs" in capsys.readouterr().out
+    assert "deepscratch1: 516 planned runs" in capsys.readouterr().out
 
 
 def test_analysis_discovery_uses_each_module_experiment_id() -> None:
-    plans = build_analysis_plans(domain="deepbase2", experiment_ids=["13"])
+    plans = build_analysis_plans(domain="deepscratch2", experiment_ids=["13"])
 
     assert [(plan.experiment_id, plan.module_name) for plan in plans] == [
-        ("e13", "experiments.deepbase2.analysis.e13_attention_seq2seq_date"),
+        ("e13", "experiments.deepscratch2.analysis.e13_attention_seq2seq_date"),
     ]
 
 
 def test_analysis_dry_run_lists_selected_script(capsys) -> None:
-    main(["deepbase1", "analyze", "-e", "01", "--dry-run"])
+    main(["deepscratch1", "analyze", "-e", "01", "--dry-run"])
 
-    assert "e01 experiments.deepbase1.analysis.e01_optimizer_toy" in capsys.readouterr().out
+    assert "e01 experiments.deepscratch1.analysis.e01_optimizer_toy" in capsys.readouterr().out
 
 
 def test_analysis_arguments_are_forwarded(monkeypatch) -> None:
@@ -91,7 +91,7 @@ def test_analysis_arguments_are_forwarded(monkeypatch) -> None:
     monkeypatch.setattr(cli.subprocess, "run", lambda command, check: seen.append((command, check)))
 
     cli.run_analysis_plans(
-        build_analysis_plans(domain="deepbase1", experiment_ids=["03"]),
+        build_analysis_plans(domain="deepscratch1", experiment_ids=["03"]),
         tracking_uri="http://example.test",
         analysis_args=["--layout", "individual"],
     )

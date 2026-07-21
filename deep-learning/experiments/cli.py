@@ -112,9 +112,9 @@ def _seed_values(domain: str, seed_set: str) -> list[int]:
 
 
 def _default_device(domain: str, experiment_id: str) -> str:
-    if domain == "deepbase1":
+    if domain == "deepscratch1":
         return "cuda:0" if experiment_id == "e08" else "cpu"
-    if domain == "deepbase2":
+    if domain == "deepscratch2":
         return "cuda:0"
     raise ValueError(f"unknown experiment domain: {domain}")
 
@@ -263,7 +263,7 @@ def _print_analysis_plans(plans: list[AnalysisPlan]) -> None:
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("domain", choices=("deepbase1", "deepbase2"))
+    parser.add_argument("domain", choices=("deepscratch1", "deepscratch2"))
     parser.add_argument("command", choices=("plan", "run", "analyze"))
     selection = parser.add_mutually_exclusive_group()
     selection.add_argument("--all", action="store_true")

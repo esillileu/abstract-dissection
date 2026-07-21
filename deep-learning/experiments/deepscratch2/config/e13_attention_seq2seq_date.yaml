@@ -1,0 +1,17 @@
+kind: seq2seq
+dataset: {id: DS-SEQ-DATE, file: date.txt, name: character date conversion, reverse: true}
+loader: {batch_size: 128, shuffle: true}
+optimizer: {name: adam, learning_rate: 0.001}
+scheduler: {name: constant}
+loss: {name: time_softmax_cross_entropy}
+training: {max_epochs: 10, entrypoint: experiments/deepscratch2/config/e13_attention_seq2seq_date.yaml}
+evaluation: {primary_metric: final/test/exact_match, decode: greedy}
+numerics: {dtype: float32, backend: cupy, device: cuda:0, deterministic: true}
+checkpoint: {save_final: true, save_best: true, format: npz}
+profiling: {enabled: true}
+policy: {seed_set: research_v1, seed_count: 10, max_grad: 5.0}
+tracking: {enabled: true, experiment: deepscratch2}
+variants:
+  SEQD-VAN-REV: {atomic_run_id: SEQD-VAN-REV, experiment_ids: [e13], execution_group_id: g19, recipe_id: RC-DATE-VANILLA, structure_signature: date-vanilla-seq2seq-v1, model: {alias: Seq2seq, wordvec_size: 16, hidden_size: 256}}
+  SEQD-PEEKY-REV: {atomic_run_id: SEQD-PEEKY-REV, experiment_ids: [e13], execution_group_id: g20, recipe_id: RC-DATE-PEEKY, structure_signature: date-peeky-seq2seq-v1, model: {alias: PeekySeq2seq, wordvec_size: 16, hidden_size: 256}}
+  SEQD-ATTN-REV: {atomic_run_id: SEQD-ATTN-REV, experiment_ids: [e13], execution_group_id: g21, recipe_id: RC-DATE-ATTENTION, structure_signature: date-attention-seq2seq-v1, model: {alias: AttentionSeq2seq, wordvec_size: 16, hidden_size: 256}}
