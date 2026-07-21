@@ -6,6 +6,8 @@ dataset:
     version: official,
     flatten: false,
     train_limit: 60000,
+    validation_size: 1000,
+    validation_seed: 20260808,
     test_limit: 10000,
     input_shape: [1, 28, 28],
     target_shape: [],
@@ -26,8 +28,10 @@ scheduler: { name: constant }
 loss: { name: SoftmaxWithLoss, reduction: mean }
 training:
   {
-    max_epochs: 20,
-    log_interval: 10,
+    max_epochs: 2,
+    log_interval: 20,
+    record_first_validation_evaluation: true,
+    record_step_validation_interval: 20,
     entrypoint: experiments/deepscratch1/config/e09_cnn_accuracy.yaml,
   }
 evaluation:

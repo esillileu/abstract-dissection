@@ -47,11 +47,15 @@ class SupervisedClassificationExecutor:
         if transform_metadata["name"] == "pixel_permutation":
             permutation = transform_metadata.pop("permutation")
             x_train, x_test = _permute_pixels(x_train, permutation), _permute_pixels(x_test, permutation)
+        x_train, t_train, x_valid, t_valid, validation_metadata = _validation_probe(
+            dataset=dataset, backend=backend, x_train=x_train, t_train=t_train,
+            artifact_root=Path(str(context.metadata["artifact_root"])),
+        )
         context.metadata["data"] = {
             "cache_path": mnist_cache_path,
             "cache_sha256": _file_digest(Path(mnist_cache_path)),
             "train_samples": len(x_train), "test_samples": len(x_test), "flatten": flatten,
-            "input_transform": transform_metadata,
+            "input_transform": transform_metadata, "validation": validation_metadata,
         }
         model = _model(model_config)
         if any(isinstance(layer, BatchNormalization) for layer in model.children()):
@@ -63,7 +67,11 @@ class SupervisedClassificationExecutor:
         checkpoint_identity["checkpoint"].pop("resume", None)
         config_digest = hashlib.sha256(json.dumps(checkpoint_identity, sort_keys=True, default=str).encode()).hexdigest()
         max_updates = training_config.get("max_updates")
+        epoch_test_metrics: list[dict[str, float]] = []
         def save_evaluation_checkpoint() -> None:
+            # Full official-test evaluation is intentionally epoch-bound.  The
+            # frequent curve uses only the fixed validation probe.
+            epoch_test_metrics.append(trainer._evaluate_split(x_test, t_test))
             if not bool(checkpoint_config.get("save_on_eval", False)):
                 return
             path = save_epoch_checkpoint(
@@ -77,16 +85,16 @@ class SupervisedClassificationExecutor:
             if callable(callback):
                 callback(path)
 
-        trainer = ForwardTrainer(model, SoftmaxWithLoss().to(model.backend), optimizer, max_epoch=int(training_config.get("max_epochs", 1)), max_updates=None if max_updates is None else int(max_updates), batch_size=int(loader_config.get("batch_size", 32)), log_interval=int(training_config.get("log_interval", 20)), drop_last=bool(loader_config.get("drop_last", False)), sampling_method=str(loader_config.get("sampling_method", "permutation_per_epoch")), record_step_loss=str(training_config.get("record_step_loss", "none")), record_first_step_evaluation=bool(training_config.get("record_first_step_evaluation", False)), record_epoch_evaluation=bool(training_config.get("record_epoch_evaluation", False)), record_step_evaluation_interval=training_config.get("record_step_evaluation_interval"), profiling_config=profiling_config_from_mapping(_mapping(config, "profiling")), callbacks=[_Callback(context)], on_epoch_checkpoint=save_evaluation_checkpoint)
+        trainer = ForwardTrainer(model, SoftmaxWithLoss().to(model.backend), optimizer, max_epoch=int(training_config.get("max_epochs", 1)), max_updates=None if max_updates is None else int(max_updates), batch_size=int(loader_config.get("batch_size", 32)), log_interval=int(training_config.get("log_interval", 20)), drop_last=bool(loader_config.get("drop_last", False)), sampling_method=str(loader_config.get("sampling_method", "permutation_per_epoch")), record_step_loss=str(training_config.get("record_step_loss", "none")), record_first_step_evaluation=bool(training_config.get("record_first_step_evaluation", False)), record_epoch_evaluation=bool(training_config.get("record_epoch_evaluation", False)), record_step_evaluation_interval=training_config.get("record_step_evaluation_interval"), record_first_validation_evaluation=bool(training_config.get("record_first_validation_evaluation", False)), record_step_validation_interval=training_config.get("record_step_validation_interval"), profiling_config=profiling_config_from_mapping(_mapping(config, "profiling")), callbacks=[_Callback(context)], on_epoch_checkpoint=save_evaluation_checkpoint)
         if (resume := checkpoint_config.get("resume")):
             load_epoch_checkpoint(path=str(resume), model=model, optimizer=optimizer, trainer=trainer, config_digest=config_digest)
         seed_batch_order(backend, streams)
-        trainer.fit(x_train, t_train, x_test, t_test)
+        trainer.fit(x_train, t_train, x_valid, t_valid)
         trainer.dump_profiling_artifacts(Path(str(context.metadata["artifact_root"])) / "profiles")
         profiling = trainer.profiling_metrics()
         metrics = build_final_metrics(
-            train_loss=float(trainer.losses.train[-1]), test_loss=float(trainer.losses.valid[-1]),
-            train_accuracy=float(trainer.accuracies.train[-1]), test_accuracy=float(trainer.accuracies.valid[-1]),
+            train_loss=float(trainer.losses.train[-1]), test_loss=float(epoch_test_metrics[-1]["loss"]),
+            train_accuracy=float(trainer.accuracies.train[-1]), test_accuracy=float(epoch_test_metrics[-1]["accuracy"]),
             profiling_metrics=profiling, total_updates=trainer.global_step,
             completed_epochs=int(training_config.get("max_epochs", 1)), samples_seen=len(x_train) * int(training_config.get("max_epochs", 1)),
         )
@@ -95,13 +103,11 @@ class SupervisedClassificationExecutor:
         history += [("book_epoch", step, key, value) for step, metrics in trainer.graph_evaluations for key, value in metrics.items()]
         legacy_evaluations = evaluation_history(valid_logs=trainer.logs.valid)
         history += legacy_evaluations
-        # This executor evaluates the configured MNIST test split.  Preserve
-        # the historical valid spelling while making its true split explicit.
-        history += [(kind, step, "test/loss", value) for kind, step, _metric, value in legacy_evaluations]
-        history += epoch_history(
-            train_losses=trainer.losses.train, test_losses=trainer.losses.valid,
-            train_accuracies=trainer.accuracies.train, test_accuracies=trainer.accuracies.valid,
-        )
+        history += [("eval", eval_step, metric, value) for eval_step, global_step, metrics in trainer.validation_evaluations for metric, value in {**metrics, "global_update": float(global_step)}.items()]
+        history += epoch_history(train_losses=trainer.losses.train, test_losses=[], train_accuracies=trainer.accuracies.train, test_accuracies=[])
+        history += [("epoch", index, "valid/loss", float(value)) for index, value in enumerate(trainer.losses.valid)]
+        history += [("epoch", index, "valid/accuracy", float(value)) for index, value in enumerate(trainer.accuracies.valid)]
+        history += [("epoch", index, f"test/{metric}", float(value)) for index, values in enumerate(epoch_test_metrics) for metric, value in values.items()]
         return ExperimentResult(metrics=metrics, artifact_root=_artifact_root(config), model=model, history=tuple(history), profiling_metrics=profiling)
 
 
@@ -193,3 +199,19 @@ def _apply_input_transform(*, dataset: dict[str, object], backend, x_train, x_te
 def _permute_pixels(x, permutation):
     original_shape = x.shape
     return x.reshape(len(x), -1)[:, permutation].reshape(original_shape)
+
+
+def _validation_probe(*, dataset: dict[str, object], backend, x_train, t_train, artifact_root: Path):
+    size = int(dataset.get("validation_size", 0))
+    if size == 0:
+        return x_train, t_train, None, None, {"size": 0}
+    if not 0 < size < len(x_train):
+        raise ValueError("dataset.validation_size must be between 1 and train size - 1")
+    seed = int(dataset.get("validation_seed", 0))
+    indices = np.random.default_rng(seed).permutation(len(x_train))
+    valid_indices, train_indices = indices[:size], indices[size:]
+    target = artifact_root / "data" / "validation_indices.npy"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    np.save(target, valid_indices)
+    xp = backend.xp
+    return (x_train[xp.asarray(train_indices)], t_train[xp.asarray(train_indices)], x_train[xp.asarray(valid_indices)], t_train[xp.asarray(valid_indices)], {"size": size, "seed": seed, "artifact": str(target.relative_to(artifact_root)), "sha256": hashlib.sha256(valid_indices.tobytes()).hexdigest()})

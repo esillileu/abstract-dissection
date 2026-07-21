@@ -31,6 +31,8 @@ class ForwardTrainer(Trainer):
         record_first_step_evaluation: bool = False,
         record_epoch_evaluation: bool = False,
         record_step_evaluation_interval: int | None = None,
+        record_first_validation_evaluation: bool = False,
+        record_step_validation_interval: int | None = None,
         profiling_config: ProfilingConfig | None = None,
         callbacks: Iterable[TrainerCallback] | None = None,
         on_epoch_checkpoint: Callable[[], None] | None = None,
@@ -64,6 +66,11 @@ class ForwardTrainer(Trainer):
             raise ValueError("record_step_evaluation_interval must be positive")
         self.record_step_evaluation_interval = record_step_evaluation_interval
         self.graph_evaluations: list[tuple[int, dict[str, float]]] = []
+        if record_step_validation_interval is not None and record_step_validation_interval < 1:
+            raise ValueError("record_step_validation_interval must be positive")
+        self.record_first_validation_evaluation = record_first_validation_evaluation
+        self.record_step_validation_interval = record_step_validation_interval
+        self.validation_evaluations: list[tuple[int, int, dict[str, float]]] = []
 
         self.epoch: int | None = None
         self.on_epoch_checkpoint = on_epoch_checkpoint
@@ -97,8 +104,30 @@ class ForwardTrainer(Trainer):
                     self._full_evaluation(x_train, t_train, x_val, t_val),
                 ))
 
+        def record_validation(step: int) -> None:
+            if skip_validation:
+                return
+            should_record = (
+                self.record_first_validation_evaluation and step == 1
+            ) or (
+                self.record_step_validation_interval is not None
+                and step % self.record_step_validation_interval == 0
+            )
+            if should_record:
+                values = self._evaluate_split(x_val, t_val)
+                self.validation_evaluations.append((
+                    len(self.validation_evaluations), step,
+                    {f"valid/{key}": value for key, value in values.items()},
+                ))
+
+        step_recorders = []
+        if self.record_first_step_evaluation:
+            step_recorders.append(record_first_step)
+        if self.record_first_validation_evaluation or self.record_step_validation_interval:
+            step_recorders.append(record_validation)
         self.on_train_step = (
-            record_first_step if self.record_first_step_evaluation else None
+            (lambda step: [recorder(step) for recorder in step_recorders])
+            if step_recorders else None
         )
         self.detail_profiler.start_run()
         try:

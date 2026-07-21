@@ -64,12 +64,25 @@ def test_e08_models_are_parameter_matched() -> None:
     assert sum(parameter.data.size for _, parameter in cnn_model.named_parameters()) == 433_890
 
 
-def test_e09_deep_cnn_recipe_matches_the_book_training_budget() -> None:
+def test_e09_deep_cnn_recipe_uses_short_curve_measurement_budget() -> None:
     deep = normalize_config(load_yaml(E09_CONFIG, atomic_run_id="CNN-DEEP-ACCURACY"))
 
-    assert deep["training"]["max_epochs"] == 20
+    assert deep["training"]["max_epochs"] == 2
+    assert deep["training"]["record_step_validation_interval"] == 20
     assert deep["loader"]["sampling_method"] == "with_replacement"
     assert _model(deep["model"])
+
+
+def test_e08_and_e09_use_the_same_fixed_validation_probe() -> None:
+    e08 = normalize_config(load_yaml(E08_CONFIG, atomic_run_id="CNN-SIMPLE"))
+    e09 = normalize_config(load_yaml(E09_CONFIG, atomic_run_id="CNN-DEEP-ACCURACY"))
+
+    for config in (e08, e09):
+        assert config["dataset"]["validation_size"] == 1_000
+        assert config["dataset"]["validation_seed"] == 20260808
+        assert config["training"]["max_epochs"] == 2
+        assert config["training"]["record_first_validation_evaluation"] is True
+        assert config["training"]["record_step_validation_interval"] == 20
 
 
 def test_pixel_permutation_is_shape_invariant_and_artifacted(tmp_path: Path) -> None:
