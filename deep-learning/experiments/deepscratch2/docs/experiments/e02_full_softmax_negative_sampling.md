@@ -1,10 +1,10 @@
-# e10. Full softmax-Negative sampling
+# e02. Full softmax-Negative sampling
 
 ## 1. 실험 정의
 
 | 항목 | 내용 |
 |---|---|
-| 실험 ID | `e10` |
+| 실험 ID | `e02` |
 | 데이터·태스크 | PTB CBOW 중심어 예측 |
 | 실험 목적 | 출력 objective만 바꿨을 때 계산시간, 메모리, 임베딩 품질 trade-off를 확인한다. |
 | 사전 가설 | negative sampling은 full softmax보다 빠르고 메모리 사용이 작으며 품질 감소는 제한적이다. |

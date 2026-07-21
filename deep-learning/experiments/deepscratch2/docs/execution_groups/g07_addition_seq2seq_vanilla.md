@@ -1,26 +1,27 @@
-# g21. date_seq2seq_attention
+# g07. addition_seq2seq_vanilla
 
 ## 구조 서명
 
-`date-attention-seq2seq-v1`
+`addition-vanilla-seq2seq-v1`
 
 ## 묶음 기준
 
-Attention 구조
+입력 순서만 변경
 
 ## 공통 실행 설정
 
-DS-SEQ-DATE, Attention, embedding16, hidden256, 10 epochs
+DS-SEQ-ADD, embedding16, hidden128, batch128, 25 epochs, Adam .001
 
 ## 원자 조건
 
 | Atomic run ID | Override |
 |---|---|
-| `SEQD-ATTN-REV` | reverse=true |
+| `SEQA-VAN-FWD` | reverse=false |
+| `SEQA-VAN-REV` | reverse=true |
 
 ## 사용 실험
 
-e13
+e04
 
 ## 실행 정책
 

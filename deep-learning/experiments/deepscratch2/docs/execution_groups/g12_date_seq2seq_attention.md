@@ -1,26 +1,26 @@
-# g13. rnnlm_vanilla_rnn
+# g12. date_seq2seq_attention
 
 ## 구조 서명
 
-`ptb-rnnlm-rnn100-v1`
+`date-attention-seq2seq-v1`
 
 ## 묶음 기준
 
-recurrent cell이 LSTM과 다름
+Attention 구조
 
 ## 공통 실행 설정
 
-Embedding100-RNN100-TimeAffine; SGD 20; BPTT35; 4 epochs
+DS-SEQ-DATE, Attention, embedding16, hidden256, 10 epochs
 
 ## 원자 조건
 
 | Atomic run ID | Override |
 |---|---|
-| `LM-RNN-C025` | vanilla RNN; max_grad=.25 |
+| `SEQD-ATTN-REV` | reverse=true |
 
 ## 사용 실험
 
-e11
+e05
 
 ## 실행 정책
 

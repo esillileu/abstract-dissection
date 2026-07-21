@@ -1,26 +1,26 @@
-# g18. addition_seq2seq_attention
+# g04. rnnlm_vanilla_rnn
 
 ## 구조 서명
 
-`addition-attention-seq2seq-v1`
+`ptb-rnnlm-rnn100-v1`
 
 ## 묶음 기준
 
-Attention layer 추가
+recurrent cell이 LSTM과 다름
 
 ## 공통 실행 설정
 
-DS-SEQ-ADD, Attention encoder-decoder, embedding16, hidden128, 25 epochs
+Embedding100-RNN100-TimeAffine; SGD 20; BPTT35; 4 epochs
 
 ## 원자 조건
 
 | Atomic run ID | Override |
 |---|---|
-| `SEQA-ATTN-REV` | reverse=true |
+| `LM-RNN-C025` | vanilla RNN; max_grad=.25 |
 
 ## 사용 실험
 
-e12
+e03
 
 ## 실행 정책
 

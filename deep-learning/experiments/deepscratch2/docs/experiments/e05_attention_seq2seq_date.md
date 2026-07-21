@@ -1,10 +1,10 @@
-# e13. Attention Seq2seq
+# e05. Attention Seq2seq
 
 ## 1. 실험 정의
 
 | 항목 | 내용 |
 |---|---|
-| 실험 ID | `e13` |
+| 실험 ID | `e05` |
 | 데이터·태스크 | `date.txt` character-level 날짜 형식 변환 |
 | 실험 목적 | Attention이 fixed-length representation 병목을 완화하고 alignment를 학습하는지 확인한다. |
 | 사전 가설 | Attention은 Vanilla와 Peeky보다 빠르게 높은 exact-match에 도달하고 해석 가능한 alignment를 만든다. |

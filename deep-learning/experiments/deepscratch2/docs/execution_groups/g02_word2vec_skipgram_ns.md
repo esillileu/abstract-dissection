@@ -1,4 +1,4 @@
-# g11. word2vec_skipgram_ns
+# g02. word2vec_skipgram_ns
 
 ## 구조 서명
 
@@ -20,7 +20,7 @@ PTB, window 5, embedding 100, batch 100, Adam .001, 10 epochs
 
 ## 사용 실험
 
-e09
+e01
 
 ## 실행 정책
 

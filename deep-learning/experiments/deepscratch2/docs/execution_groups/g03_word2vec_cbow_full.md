@@ -1,26 +1,26 @@
-# g14. rnnlm_basic_lstm
+# g03. word2vec_cbow_full
 
 ## 구조 서명
 
-`ptb-rnnlm-lstm100-v1`
+`ptb-cbow-full-softmax-v1`
 
 ## 묶음 기준
 
-기본 LSTM 기준
+출력층과 loss 구조가 NS와 달라 분리
 
 ## 공통 실행 설정
 
-Embedding100-LSTM100-TimeAffine; SGD 20; BPTT35; 4 epochs
+PTB, window 5, embedding 100, batch 100, Adam .001, 10 epochs
 
 ## 원자 조건
 
 | Atomic run ID | Override |
 |---|---|
-| `LM-LSTM-C025` | LSTM; max_grad=.25 |
+| `W2V-CBOW-FULL` | CBOW; full vocabulary softmax |
 
 ## 사용 실험
 
-e11
+e02
 
 ## 실행 정책
 

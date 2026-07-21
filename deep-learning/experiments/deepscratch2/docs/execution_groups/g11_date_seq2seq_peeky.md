@@ -1,27 +1,26 @@
-# g16. addition_seq2seq_vanilla
+# g11. date_seq2seq_peeky
 
 ## 구조 서명
 
-`addition-vanilla-seq2seq-v1`
+`date-peeky-seq2seq-v1`
 
 ## 묶음 기준
 
-입력 순서만 변경
+Peeky 구조
 
 ## 공통 실행 설정
 
-DS-SEQ-ADD, embedding16, hidden128, batch128, 25 epochs, Adam .001
+DS-SEQ-DATE, Peeky, embedding16, hidden256, 10 epochs
 
 ## 원자 조건
 
 | Atomic run ID | Override |
 |---|---|
-| `SEQA-VAN-FWD` | reverse=false |
-| `SEQA-VAN-REV` | reverse=true |
+| `SEQD-PEEKY-REV` | reverse=true |
 
 ## 사용 실험
 
-e12
+e05
 
 ## 실행 정책
 

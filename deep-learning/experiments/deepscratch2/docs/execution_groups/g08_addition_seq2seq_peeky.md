@@ -1,4 +1,4 @@
-# g17. addition_seq2seq_peeky
+# g08. addition_seq2seq_peeky
 
 ## 구조 서명
 
@@ -6,7 +6,7 @@
 
 ## 묶음 기준
 
-Peeky connection 추가로 g16과 분리
+Peeky connection 추가로 g07과 분리
 
 ## 공통 실행 설정
 
@@ -21,7 +21,7 @@ DS-SEQ-ADD, Peeky decoder/output, embedding16, hidden128, 25 epochs
 
 ## 사용 실험
 
-e12
+e04
 
 ## 실행 정책
 

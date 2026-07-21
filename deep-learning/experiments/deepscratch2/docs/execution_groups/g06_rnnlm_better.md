@@ -1,26 +1,26 @@
-# g10. word2vec_cbow_ns
+# g06. rnnlm_better
 
 ## 구조 서명
 
-`ptb-cbow-negative-sampling-v1`
+`ptb-better-rnnlm-v1`
 
 ## 묶음 기준
 
-CBOW + NS
+레이어 수·용량·훈련 정책이 모두 달라 분리
 
 ## 공통 실행 설정
 
-PTB, window 5, embedding 100, batch 100, Adam .001, 10 epochs
+Embedding650, 2xLSTM650, dropout .5, weight tying, best-valid checkpoint
 
 ## 원자 조건
 
 | Atomic run ID | Override |
 |---|---|
-| `W2V-CBOW-NS` | CBOW; negative sampling=5 |
+| `LM-BETTER` | 2xLSTM650; dropout; tying; LR decay |
 
 ## 사용 실험
 
-e09, e10
+e03
 
 ## 실행 정책
 

@@ -1,26 +1,26 @@
-# g12. word2vec_cbow_full
+# g09. addition_seq2seq_attention
 
 ## 구조 서명
 
-`ptb-cbow-full-softmax-v1`
+`addition-attention-seq2seq-v1`
 
 ## 묶음 기준
 
-출력층과 loss 구조가 NS와 달라 분리
+Attention layer 추가
 
 ## 공통 실행 설정
 
-PTB, window 5, embedding 100, batch 100, Adam .001, 10 epochs
+DS-SEQ-ADD, Attention encoder-decoder, embedding16, hidden128, 25 epochs
 
 ## 원자 조건
 
 | Atomic run ID | Override |
 |---|---|
-| `W2V-CBOW-FULL` | CBOW; full vocabulary softmax |
+| `SEQA-ATTN-REV` | reverse=true |
 
 ## 사용 실험
 
-e10
+e04
 
 ## 실행 정책
 

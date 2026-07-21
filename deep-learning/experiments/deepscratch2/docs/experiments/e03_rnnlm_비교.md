@@ -1,10 +1,10 @@
-# e11. RNNLM 비교
+# e03. RNNLM 비교
 
 ## 1. 실험 정의
 
 | 항목 | 내용 |
 |---|---|
-| 실험 ID | `e11` |
+| 실험 ID | `e03` |
 | 데이터·태스크 | PTB next-token language modeling |
 | 실험 목적 | vanilla RNN, LSTM, BetterRnnlm의 perplexity와 비용 차이를 한 흐름에서 비교한다. |
 | 사전 가설 | LSTM은 vanilla RNN보다 낮은 PPL을 보이고 BetterRnnlm은 가장 낮은 PPL을 달성한다. |

@@ -1,26 +1,26 @@
-# g20. date_seq2seq_peeky
+# g05. rnnlm_basic_lstm
 
 ## 구조 서명
 
-`date-peeky-seq2seq-v1`
+`ptb-rnnlm-lstm100-v1`
 
 ## 묶음 기준
 
-Peeky 구조
+기본 LSTM 기준
 
 ## 공통 실행 설정
 
-DS-SEQ-DATE, Peeky, embedding16, hidden256, 10 epochs
+Embedding100-LSTM100-TimeAffine; SGD 20; BPTT35; 4 epochs
 
 ## 원자 조건
 
 | Atomic run ID | Override |
 |---|---|
-| `SEQD-PEEKY-REV` | reverse=true |
+| `LM-LSTM-C025` | LSTM; max_grad=.25 |
 
 ## 사용 실험
 
-e13
+e03
 
 ## 실행 정책
 

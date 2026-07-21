@@ -1,10 +1,10 @@
-# e12. Seq2seq 입력 반전과 구조 비교
+# e04. Seq2seq 입력 반전과 구조 비교
 
 ## 1. 실험 정의
 
 | 항목 | 내용 |
 |---|---|
-| 실험 ID | `e12` |
+| 실험 ID | `e04` |
 | 데이터·태스크 | `addition.txt` character-level 덧셈 답 생성 |
 | 실험 목적 | 입력 반전과 Peeky·Attention 구조가 exact-match 학습에 미치는 영향을 한 실험에서 비교한다. |
 | 사전 가설 | reverse가 forward보다 유리하고, Peeky와 Attention은 vanilla보다 context 전달을 개선한다. |

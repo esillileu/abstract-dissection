@@ -1,4 +1,4 @@
-# g19. date_seq2seq_vanilla
+# g10. date_seq2seq_vanilla
 
 ## 구조 서명
 
@@ -20,7 +20,7 @@ DS-SEQ-DATE, embedding16, hidden256, batch128, 10 epochs
 
 ## 사용 실험
 
-e13
+e05
 
 ## 실행 정책
 
