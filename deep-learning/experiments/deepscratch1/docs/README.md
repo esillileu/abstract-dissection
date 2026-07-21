@@ -2,6 +2,8 @@
 
 이 디렉터리는 『밑바닥부터 시작하는 딥러닝』 1권을 재현하는 `deepscratch1` 실험 도메인의 설계·실행 문서를 소유한다. 실행 설정은 인접한 [`../config/`](../config/)에, 분석 코드는 [`../analysis/`](../analysis/)에 있다.
 
+- [책 원본 대비 차이](difference.md)
+
 ## 실험 설계
 
 - [e01 Optimizer 목적함수 경로](experiments/e01_optimizer_toy_목적함수_경로.md)

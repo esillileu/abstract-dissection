@@ -1,4 +1,4 @@
-# deepscratch1와 책 원본의 그래프·실행 차이
+# 원본 대비 그래프·실행 차이
 
 비교 대상은 `01_deep-learning-from-base/WegraLee-deep-learning-from-scratch`의 ch06~ch08
 실행 코드다. 모델 구조와 학습률, batch size, float64, 복원추출 설정처럼 현재 일치하는
