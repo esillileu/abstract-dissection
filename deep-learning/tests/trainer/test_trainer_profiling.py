@@ -130,3 +130,32 @@ def test_forward_trainer_stops_at_max_updates() -> None:
     assert trainer.global_step == 2
     assert trainer.optimizer.update_count == 2
     assert trainer.epoch == 1
+
+
+def test_forward_trainer_records_post_update_loss_for_each_step() -> None:
+    trainer = ForwardTrainer(
+        model=IdentityModel(), criterion=SoftmaxWithLoss(), optimizer=DummyOptimizer(),
+        max_epoch=1, batch_size=2, log_interval=10, record_step_loss="post_update",
+    )
+    x = Tensor([[0.1, 0.9], [0.8, 0.2], [0.7, 0.3], [0.2, 0.8]])
+    t = Tensor([1, 0, 0, 1])
+
+    trainer.fit(x, t)
+
+    assert [step for step, _ in trainer.step_losses] == [1, 2]
+    assert all(loss > 0 for _, loss in trainer.step_losses)
+
+
+def test_forward_trainer_records_first_step_and_epoch_full_evaluations() -> None:
+    trainer = ForwardTrainer(
+        model=IdentityModel(), criterion=SoftmaxWithLoss(), optimizer=DummyOptimizer(),
+        max_epoch=1, batch_size=2, log_interval=10,
+        record_first_step_evaluation=True, record_epoch_evaluation=True,
+    )
+    x = Tensor([[0.1, 0.9], [0.8, 0.2], [0.7, 0.3], [0.2, 0.8]])
+    t = Tensor([1, 0, 0, 1])
+
+    trainer.fit(x, t, x, t)
+
+    assert [step for step, _ in trainer.graph_evaluations] == [0, 1]
+    assert all("train/accuracy" in metrics and "test/accuracy" in metrics for _, metrics in trainer.graph_evaluations)
