@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import matplotlib.pyplot as plt
 
-from .common import ANALYSIS_ROOT, client, latest_seeded_records, metric_curve, parser, plot_curve, print_outputs, save_summary_csv
+from .common import ANALYSIS_ROOT, ErrorBarStyle, client, latest_seeded_records, metric_curve, parser, plot_curve, print_outputs, save_summary_csv
 
 
 EXPERIMENT_ID = "e02"
 ATOMIC_RUN_IDS = ["MLP-SGD-HE", "MLP-MOM-HE", "MLP-ADAGRAD-HE", "MLP-ADAM-HE"]
 OUTPUT = ANALYSIS_ROOT / "e02_mnist_mlp_optimizer.png"
+ERROR_BARS = ErrorBarStyle(every=5)
 
 
 def main() -> None:
@@ -18,7 +19,7 @@ def main() -> None:
 
     fig, axis = plt.subplots(figsize=(9, 5))
     for atomic_run_id in ATOMIC_RUN_IDS:
-        plot_curve(axis, metric_curve(mlflow_client, grouped[atomic_run_id], "update/train/loss"), label=atomic_run_id, marker="o")
+        plot_curve(axis, metric_curve(mlflow_client, grouped[atomic_run_id], "update/train/loss"), label=atomic_run_id, marker="o", error_bars=ERROR_BARS)
 
     axis.set_title("e02 optimizer comparison")
     axis.set_xlabel("update")

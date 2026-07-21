@@ -34,6 +34,20 @@ class Curve:
     run_count: int
 
 
+@dataclass(frozen=True)
+class ErrorBarStyle:
+    """Global default for min-max error bars; individual analyses may override it."""
+
+    every: int = 5
+    color: str = "0.35"
+    line_style: str = ":"
+    line_width: float = 0.45
+    cap_size: float = 0.0
+
+
+DEFAULT_ERROR_BARS = ErrorBarStyle()
+
+
 def parser(description: str, default_output: Path) -> argparse.ArgumentParser:
     argument_parser = argparse.ArgumentParser(description=description)
     argument_parser.add_argument("--tracking-uri", default=os.getenv("MLFLOW_TRACKING_URI", DEFAULT_TRACKING_URI))
@@ -157,11 +171,29 @@ def curve_from_histories(histories: Sequence[dict[int, float]]) -> Curve:
     )
 
 
-def plot_curve(axis, value: Curve, *, label: str, linestyle: str = "-", marker: str | None = None) -> None:
+def plot_curve(axis, value: Curve, *, label: str, linestyle: str = "-", marker: str | None = None, error_bars: ErrorBarStyle = DEFAULT_ERROR_BARS) -> None:
     if not len(value.steps):
         return
+    if error_bars.every < 1:
+        raise ValueError("error bar interval must be at least one logged point")
     errors = np.maximum(0.0, np.vstack((value.mean - value.minimum, value.maximum - value.mean)))
-    axis.errorbar(value.steps, value.mean, yerr=errors, linestyle=linestyle, marker=marker, markersize=3, capsize=2, linewidth=1.6, label=f"{label} (n={value.run_count})")
+    container = axis.errorbar(
+        value.steps,
+        value.mean,
+        yerr=errors,
+        linestyle=linestyle,
+        marker=marker,
+        markersize=3,
+        markevery=error_bars.every,
+        errorevery=error_bars.every,
+        ecolor=error_bars.color,
+        elinewidth=error_bars.line_width,
+        capsize=error_bars.cap_size,
+        linewidth=1.6,
+        label=f"{label} (n={value.run_count})",
+    )
+    for bars in container[2]:
+        bars.set_linestyle(error_bars.line_style)
 
 
 def save_summary_csv(

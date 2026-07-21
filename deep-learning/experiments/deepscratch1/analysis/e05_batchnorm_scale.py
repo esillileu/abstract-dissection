@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import matplotlib.pyplot as plt
 
-from .common import ANALYSIS_ROOT, client, latest_seeded_records, metric_curve, parser, plot_curve, print_outputs, save_summary_csv
+from .common import ANALYSIS_ROOT, ErrorBarStyle, client, latest_seeded_records, metric_curve, parser, plot_curve, print_outputs, save_summary_csv
 
 
 EXPERIMENT_ID = "e05"
 ATOMIC_RUN_IDS = [f"BN-OFF-{index:02d}" for index in range(1, 17)] + [f"BN-ON-{index:02d}" for index in range(1, 17)]
 OUTPUT = ANALYSIS_ROOT / "e05_batchnorm_scale.png"
+ERROR_BARS = ErrorBarStyle(every=2)
 
 
 def scale_value(record) -> float:
@@ -24,8 +25,8 @@ def main() -> None:
     for index, axis in enumerate(axes.flat, start=1):
         off_id, on_id = f"BN-OFF-{index:02d}", f"BN-ON-{index:02d}"
         scale = scale_value(grouped[on_id][0])
-        plot_curve(axis, metric_curve(mlflow_client, grouped[on_id], "epoch/train/accuracy"), label="Batch Normalization", marker="o")
-        plot_curve(axis, metric_curve(mlflow_client, grouped[off_id], "epoch/train/accuracy"), label="Normal (without BatchNorm)", linestyle="--", marker="s")
+        plot_curve(axis, metric_curve(mlflow_client, grouped[on_id], "epoch/train/accuracy"), label="Batch Normalization", marker="o", error_bars=ERROR_BARS)
+        plot_curve(axis, metric_curve(mlflow_client, grouped[off_id], "epoch/train/accuracy"), label="Normal (without BatchNorm)", linestyle="--", marker="s", error_bars=ERROR_BARS)
         axis.set_title(f"W: {scale:g}")
         axis.set_ylim(0, 1)
         axis.grid(alpha=0.25)
