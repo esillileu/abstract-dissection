@@ -1,26 +1,23 @@
 kind: supervised_classification
 dataset:
   {
-    id: DS-MNIST-IMG,
+    id: DS-MNIST,
     name: MNIST,
     version: official,
-    flatten: false,
     train_limit: 60000,
     test_limit: 10000,
-    input_shape: [1, 28, 28],
     target_shape: [],
     num_classes: 10,
     normalization: pixel_0_1,
-    channel_order: NCHW,
+    input_transform: { name: identity },
   }
 loader:
   {
     batch_size: 100,
     shuffle: true,
     drop_last: false,
-    sampling_method: permutation_per_epoch,
+    sampling_method: with_replacement,
   }
-initializer: { name: he, fan_mode: fan_in, seed: seed/model_init }
 optimizer:
   { name: adam, learning_rate: 0.001, beta1: 0.9, beta2: 0.999, eps: 1.0e-7 }
 scheduler: { name: constant }
@@ -41,7 +38,7 @@ evaluation:
   }
 numerics:
   {
-    dtype: float32,
+    dtype: float64,
     backend: numpy,
     device: cpu,
     deterministic: false,
@@ -50,16 +47,74 @@ numerics:
   }
 checkpoint: { save_final: true, save_best: false, format: npz }
 profiling: { enabled: false }
-policy: {seed_set: research_v1, seed_count: 10, paired_execution: true}
+policy: { seed_set: research_v1, seed_count: 10, paired_execution: true }
 tracking: { enabled: true, experiment: deepscratch1 }
 variants:
+  NN-MATCHED:
+    {
+      atomic_run_id: NN-MATCHED,
+      experiment_ids: [e08],
+      execution_group_id: g09,
+      recipe_id: RC-NN-MATCHED,
+      structure_signature: mnist-mlp-489-100-v1,
+      dataset: { flatten: true, input_shape: [784] },
+      initializer: { name: he, fan_mode: fan_in, seed: seed/model_init },
+      model:
+        {
+          alias: MLP,
+          name: ParameterMatchedNN,
+          family: mlp,
+          task_type: classification,
+          input_shape: [784],
+          output_shape: [10],
+          num_hidden_layers: 2,
+          activation: relu,
+          normalization: none,
+          use_batchnorm: false,
+          use_dropout: false,
+          input_size: 784,
+          hidden_sizes: [489, 100],
+          output_size: 10,
+          initializer: he,
+        },
+    }
+  NN-MATCHED-PERMUTED:
+    {
+      atomic_run_id: NN-MATCHED-PERMUTED,
+      experiment_ids: [e08],
+      execution_group_id: g09,
+      recipe_id: RC-NN-MATCHED,
+      structure_signature: mnist-mlp-489-100-v1,
+      dataset: { flatten: true, input_shape: [784], input_transform: { name: pixel_permutation, seed: 20260808 } },
+      initializer: { name: he, fan_mode: fan_in, seed: seed/model_init },
+      model:
+        {
+          alias: MLP,
+          name: ParameterMatchedNN,
+          family: mlp,
+          task_type: classification,
+          input_shape: [784],
+          output_shape: [10],
+          num_hidden_layers: 2,
+          activation: relu,
+          normalization: none,
+          use_batchnorm: false,
+          use_dropout: false,
+          input_size: 784,
+          hidden_sizes: [489, 100],
+          output_size: 10,
+          initializer: he,
+        },
+    }
   CNN-SIMPLE:
     {
       atomic_run_id: CNN-SIMPLE,
       experiment_ids: [e08],
       execution_group_id: g08,
-      recipe_id: RC-CNN,
+      recipe_id: RC-CNN-S,
       structure_signature: mnist-simpleconvnet-v1,
+      dataset: { flatten: false, input_shape: [1, 28, 28] },
+      initializer: { name: "std:0.01", fan_mode: fan_in, seed: seed/model_init },
       model:
         {
           alias: SimpleCNN,
@@ -73,31 +128,47 @@ variants:
           normalization: none,
           use_batchnorm: false,
           use_dropout: false,
-          "model/flops": 8726000,
-          "model/macs": 4363000,
+          input_channels: 1,
+          image_size: 28,
+          num_classes: 10,
+          conv_channels: 30,
+          kernel_size: 5,
+          stride: 1,
+          padding: 0,
+          hidden_size: 100,
+          initializer: "std:0.01",
         },
     }
-  CNN-DEEP:
+  CNN-SIMPLE-PERMUTED:
     {
-      atomic_run_id: CNN-DEEP,
+      atomic_run_id: CNN-SIMPLE-PERMUTED,
       experiment_ids: [e08],
-      execution_group_id: g09,
-      recipe_id: RC-CNN,
-      structure_signature: mnist-deepconvnet-v1,
+      execution_group_id: g08,
+      recipe_id: RC-CNN-S,
+      structure_signature: mnist-simpleconvnet-v1,
+      dataset: { flatten: false, input_shape: [1, 28, 28], input_transform: { name: pixel_permutation, seed: 20260808 } },
+      initializer: { name: "std:0.01", fan_mode: fan_in, seed: seed/model_init },
       model:
         {
-          alias: DeepCNN,
-          name: DeepConvNet,
+          alias: SimpleCNN,
+          name: SimpleConvNet,
           family: cnn,
           task_type: classification,
           input_shape: [1, 28, 28],
           output_shape: [10],
-          num_conv_layers: 6,
+          num_conv_layers: 1,
           activation: relu,
           normalization: none,
           use_batchnorm: false,
-          use_dropout: true,
-          "model/flops": 11800000,
-          "model/macs": 5900000,
+          use_dropout: false,
+          input_channels: 1,
+          image_size: 28,
+          num_classes: 10,
+          conv_channels: 30,
+          kernel_size: 5,
+          stride: 1,
+          padding: 0,
+          hidden_size: 100,
+          initializer: "std:0.01",
         },
     }

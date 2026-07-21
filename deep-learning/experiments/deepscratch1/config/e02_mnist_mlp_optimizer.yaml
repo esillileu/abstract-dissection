@@ -17,7 +17,7 @@ loader:
     batch_size: 128,
     shuffle: true,
     drop_last: false,
-    sampling_method: permutation_per_epoch,
+    sampling_method: with_replacement,
     num_workers: 0,
   }
 model:
@@ -41,6 +41,7 @@ training:
   {
     max_epochs: 5,
     max_updates: 2000,
+    record_step_loss: post_update,
     log_interval: 30,
     log_interval_unit: update,
     entrypoint: experiments/deepscratch1/config/e02_mnist_mlp_optimizer.yaml,
@@ -55,9 +56,9 @@ evaluation:
   }
 numerics:
   {
-    dtype: float32,
-    compute_dtype: float32,
-    parameter_dtype: float32,
+    dtype: float64,
+    compute_dtype: float64,
+    parameter_dtype: float64,
     backend: numpy,
     device: cpu,
     deterministic: false,

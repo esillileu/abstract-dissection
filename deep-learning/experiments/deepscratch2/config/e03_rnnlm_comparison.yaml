@@ -4,7 +4,7 @@ loader: {batch_size: 20, time_size: 35}
 optimizer: {name: sgd, learning_rate: 20.0}
 scheduler: {name: validation_decay, factor: 0.25}
 loss: {name: time_softmax_cross_entropy}
-training: {max_epochs: 4, log_interval: 20, entrypoint: experiments/deepscratch2/config/e11_rnnlm_comparison.yaml}
+training: {max_epochs: 4, log_interval: 20, entrypoint: experiments/deepscratch2/config/e03_rnnlm_comparison.yaml}
 evaluation: {primary_metric: final/test/perplexity}
 numerics: {dtype: float32, backend: cupy, device: cuda:0, deterministic: true}
 checkpoint: {save_final: true, save_best: true, format: npz}
@@ -14,22 +14,22 @@ tracking: {enabled: true, experiment: deepscratch2}
 variants:
   LM-RNN-C025:
     atomic_run_id: LM-RNN-C025
-    experiment_ids: [e11]
-    execution_group_id: g13
+    experiment_ids: [e03]
+    execution_group_id: g04
     recipe_id: RC-PTB-RNN100
     structure_signature: ptb-rnnlm-rnn100-v1
     model: {alias: VanillaRnnlm, wordvec_size: 100, hidden_size: 100}
   LM-LSTM-C025:
     atomic_run_id: LM-LSTM-C025
-    experiment_ids: [e11]
-    execution_group_id: g14
+    experiment_ids: [e03]
+    execution_group_id: g05
     recipe_id: RC-PTB-LSTM100
     structure_signature: ptb-rnnlm-lstm100-v1
     model: {alias: Rnnlm, wordvec_size: 100, hidden_size: 100}
   LM-BETTER:
     atomic_run_id: LM-BETTER
-    experiment_ids: [e11]
-    execution_group_id: g15
+    experiment_ids: [e03]
+    execution_group_id: g06
     recipe_id: RC-PTB-BETTER-RNNLM
     structure_signature: ptb-better-rnnlm-v1
     model: {alias: BetterRnnlm, wordvec_size: 650, hidden_size: 650, dropout_ratio: 0.5}

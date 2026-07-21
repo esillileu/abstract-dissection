@@ -1,13 +1,13 @@
 kind: supervised_classification
 dataset: {id: DS-MNIST-FLAT, name: MNIST, flatten: true, train_limit: 60000, test_limit: 10000, input_shape: [784], num_classes: 10, normalization: pixel_0_1}
-loader: {batch_size: 128, shuffle: true, drop_last: false, sampling_method: permutation_per_epoch}
+loader: {batch_size: 128, shuffle: true, drop_last: false, sampling_method: with_replacement}
 model: {alias: MLP, name: MLP4Hidden, family: mlp, task_type: classification, input_size: 784, hidden_sizes: [100, 100, 100, 100], output_size: 10, activation: relu, input_shape: [784], output_shape: [10], use_batchnorm: false, use_dropout: false}
 optimizer: {name: sgd, learning_rate: 0.01}
 scheduler: {name: constant}
 loss: {name: SoftmaxWithLoss, reduction: mean}
-training: {max_epochs: 5, max_updates: 2000, log_interval: 30, entrypoint: experiments/deepscratch1/config/e04_mnist_mlp_initializer.yaml}
+training: {max_epochs: 5, max_updates: 2000, log_interval: 30, record_step_loss: post_update, entrypoint: experiments/deepscratch1/config/e04_mnist_mlp_initializer.yaml}
 evaluation: {batch_size: 128, use_full_train: true, use_full_test: true, primary_metric: test/accuracy, checkpoint_selection: final}
-numerics: {dtype: float32, backend: numpy, device: cpu, deterministic: false, nan_policy: fail, inf_policy: fail, epsilon: 1.0e-7}
+numerics: {dtype: float64, backend: numpy, device: cpu, deterministic: false, nan_policy: fail, inf_policy: fail, epsilon: 1.0e-7}
 checkpoint: {save_final: true, save_best: false, format: npz}
 profiling: {enabled: false}
 policy: {seed_set: research_v1, seed_count: 10, paired_execution: true}

@@ -1,6 +1,6 @@
 # deepscratch2 YAML experiment catalog
 
-The catalog contains e09–e13 PTB and character sequence experiments. Every
+The catalog contains e01–e05 PTB and character sequence experiments. Every
 configuration records to the MLflow experiment named `deepscratch2`.
 
 Start MLflow before a non-dry run:
@@ -49,6 +49,6 @@ Run one declared condition:
 
 ```bash
 uv run python -m experiments.run_yaml \
-  experiments/deepscratch2/config/e11_rnnlm_comparison.yaml \
+  experiments/deepscratch2/config/e03_rnnlm_comparison.yaml \
   --atomic-run-id LM-LSTM-C025 --seed 1208965604 --device cuda:0
 ```
