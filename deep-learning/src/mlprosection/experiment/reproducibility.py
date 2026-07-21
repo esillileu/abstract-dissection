@@ -33,7 +33,7 @@ def configure_runtime(config: dict[str, object]) -> tuple[Backend, SeedStreams, 
     np.random.seed(streams.master)
     os.environ.setdefault("PYTHONHASHSEED", str(streams.master))
     device = str(numerics.get("device", "cpu"))
-    dtype = str(numerics.get("dtype", "float32"))
+    dtype = str(numerics.get("dtype", "float64"))
     backend = make_backend(BackendConfig(device=device, dtype=dtype, seed=streams.model_init))
     set_default_backend(backend)
     compatibility = "exact"

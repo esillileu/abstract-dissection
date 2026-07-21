@@ -22,6 +22,7 @@ class Word2Vec(Layer):
         architecture: str = "cbow",
         objective: str = "negative_sampling",
         negative_samples: int = 5,
+        loss_reduction: str = "mean",
         sampler: UnigramSampler | None = None,
         backend: Backend | str | None = None,
     ) -> None:
@@ -31,11 +32,14 @@ class Word2Vec(Layer):
             raise ValueError("architecture must be 'cbow' or 'skipgram'")
         if objective not in {"full_softmax", "negative_sampling"}:
             raise ValueError("objective must be 'full_softmax' or 'negative_sampling'")
+        if loss_reduction not in {"mean", "sum"}:
+            raise ValueError("loss_reduction must be 'mean' or 'sum'")
         self.vocab_size = vocab_size
         self.embedding_size = embedding_size
         self.architecture = architecture
         self.objective = objective
         self.negative_samples = negative_samples
+        self.loss_reduction = loss_reduction
         xp = resolved.xp
         self.W_in = Parameter((0.01 * xp.random.randn(vocab_size, embedding_size)).astype(resolved.float_dtype), backend=resolved, name="W_in")
         self.W_out = Parameter((0.01 * xp.random.randn(vocab_size, embedding_size)).astype(resolved.float_dtype), backend=resolved, name="W_out")
@@ -64,7 +68,7 @@ class Word2Vec(Layer):
             centers = indices.reshape(-1)
             context_targets = targets if targets.ndim == 2 else targets[:, None]
             losses = [self._objective(self.W_in.data[centers], context_targets[:, column], centers) for column in range(context_targets.shape[1])]
-            loss = sum(losses) / len(losses)
+            loss = sum(losses) if self.loss_reduction == "sum" else sum(losses) / len(losses)
         return Tensor(xp.asarray(loss, dtype=self.backend.float_dtype), backend=self.backend)
 
     def _objective(self, hidden, labels, source) -> float:
@@ -85,7 +89,8 @@ class Word2Vec(Layer):
         targets = xp.zeros_like(scores)
         targets[:, 0] = 1
         probabilities = 1 / (1 + xp.exp(-scores))
-        loss = -(targets * xp.log(probabilities + 1e-7) + (1 - targets) * xp.log(1 - probabilities + 1e-7)).mean()
+        terms = -(targets * xp.log(probabilities + 1e-7) + (1 - targets) * xp.log(1 - probabilities + 1e-7))
+        loss = terms.mean() if self.loss_reduction == "mean" else terms.sum(axis=1).mean()
         self.cache.append((hidden, candidates, source, (probabilities, targets)))
         return float(loss)
 
@@ -105,7 +110,8 @@ class Word2Vec(Layer):
             else:
                 candidates = labels_or_candidates
                 probabilities, targets = values
-                gradient = (probabilities - targets) * scale / probabilities.size
+                denominator = probabilities.size if self.loss_reduction == "mean" else probabilities.shape[0]
+                gradient = (probabilities - targets) * scale / denominator
                 xp.add.at(self.W_out.grad, candidates, gradient[:, :, None] * hidden[:, None, :])
                 dhidden = xp.sum(gradient[:, :, None] * self.W_out.data[candidates], axis=1)
             if self.architecture == "cbow":

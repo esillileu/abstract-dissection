@@ -17,12 +17,13 @@ class ActivationProbeExecutor:
         model, initializer = _mapping(config, "model"), _mapping(config, "initializer")
         width, depth, samples = int(model.get("width", 100)), int(model.get("depth", 5)), int(_mapping(config, "dataset").get("train_size", 1000))
         activation, name = str(model.get("activation", "relu")), str(initializer.get("name", "he"))
+        dtype = np.dtype(str(_mapping(config, "numerics").get("dtype", "float64")))
         rng = np.random.default_rng(int(config.get("seed", 0)))
-        values = rng.standard_normal((samples, width), dtype=np.float32)
+        values = rng.standard_normal((samples, width), dtype=dtype)
         history: list[tuple[str, int, str, float]] = []; final: dict[str, float] = {"final/status/success": 1.0, "final/status/nan_detected": 0.0, "final/status/inf_detected": 0.0, "final/status/diverged": 0.0, "final/system/total_updates": 0.0, "final/system/completed_epochs": 0.0, "final/system/samples_seen": float(samples)}
         first_std = 0.0; max_saturation = max_zero = mean_shift = 0.0
         for index in range(depth):
-            std = _std(name, width, initializer); weights = rng.standard_normal((width, width), dtype=np.float32) * std
+            std = _std(name, width, initializer); weights = rng.standard_normal((width, width), dtype=dtype) * std
             values = _activate(activation, values @ weights)
             stats = _stats(values, activation)
             first_std = stats["std"] if index == 0 else first_std; max_saturation = max(max_saturation, stats["saturation_ratio"]); max_zero = max(max_zero, stats["zero_ratio"]); mean_shift += abs(stats["mean"])

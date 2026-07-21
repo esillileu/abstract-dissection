@@ -7,6 +7,8 @@ from dataclasses import asdict
 import hashlib
 import json
 
+import numpy as np
+
 from mlprosection.datasets import load_mnist
 from mlprosection.datasets.mnist import save_file as mnist_cache_path
 from mlprosection.nn.layers import BatchNormalization, SoftmaxWithLoss
@@ -35,15 +37,26 @@ class SupervisedClassificationExecutor:
         (x_train, t_train), (x_test, t_test) = load_mnist(flatten=flatten, gpu=gpu)
         if (limit := dataset.get("train_limit")) is not None: x_train, t_train = x_train[:int(limit)], t_train[:int(limit)]
         if (limit := dataset.get("test_limit")) is not None: x_test, t_test = x_test[:int(limit)], t_test[:int(limit)]
+        transform_metadata = _apply_input_transform(
+            dataset=dataset,
+            backend=backend,
+            x_train=x_train,
+            x_test=x_test,
+            artifact_root=Path(str(context.metadata["artifact_root"])),
+        )
+        if transform_metadata["name"] == "pixel_permutation":
+            permutation = transform_metadata.pop("permutation")
+            x_train, x_test = _permute_pixels(x_train, permutation), _permute_pixels(x_test, permutation)
         context.metadata["data"] = {
             "cache_path": mnist_cache_path,
             "cache_sha256": _file_digest(Path(mnist_cache_path)),
             "train_samples": len(x_train), "test_samples": len(x_test), "flatten": flatten,
+            "input_transform": transform_metadata,
         }
         model = _model(model_config)
         if any(isinstance(layer, BatchNormalization) for layer in model.children()):
             model.forward(x_train[:1])
-        optimizer = _optimizer(str(optimizer_config.get("name", "sgd")), list(model.named_parameters()), float(optimizer_config.get("learning_rate", 0.01)), float(optimizer_config.get("weight_decay", 0.0)))
+        optimizer = _optimizer(optimizer_config, list(model.named_parameters()))
         checkpoint_config = _mapping(config, "checkpoint")
         checkpoint_identity = dict(config)
         checkpoint_identity["checkpoint"] = dict(checkpoint_config)
@@ -64,7 +77,7 @@ class SupervisedClassificationExecutor:
             if callable(callback):
                 callback(path)
 
-        trainer = ForwardTrainer(model, SoftmaxWithLoss().to(model.backend), optimizer, max_epoch=int(training_config.get("max_epochs", 1)), max_updates=None if max_updates is None else int(max_updates), batch_size=int(loader_config.get("batch_size", 32)), log_interval=int(training_config.get("log_interval", 20)), profiling_config=profiling_config_from_mapping(_mapping(config, "profiling")), callbacks=[_Callback(context)], on_epoch_checkpoint=save_evaluation_checkpoint)
+        trainer = ForwardTrainer(model, SoftmaxWithLoss().to(model.backend), optimizer, max_epoch=int(training_config.get("max_epochs", 1)), max_updates=None if max_updates is None else int(max_updates), batch_size=int(loader_config.get("batch_size", 32)), log_interval=int(training_config.get("log_interval", 20)), drop_last=bool(loader_config.get("drop_last", False)), sampling_method=str(loader_config.get("sampling_method", "permutation_per_epoch")), record_step_loss=str(training_config.get("record_step_loss", "none")), record_first_step_evaluation=bool(training_config.get("record_first_step_evaluation", False)), record_epoch_evaluation=bool(training_config.get("record_epoch_evaluation", False)), record_step_evaluation_interval=training_config.get("record_step_evaluation_interval"), profiling_config=profiling_config_from_mapping(_mapping(config, "profiling")), callbacks=[_Callback(context)], on_epoch_checkpoint=save_evaluation_checkpoint)
         if (resume := checkpoint_config.get("resume")):
             load_epoch_checkpoint(path=str(resume), model=model, optimizer=optimizer, trainer=trainer, config_digest=config_digest)
         seed_batch_order(backend, streams)
@@ -78,7 +91,13 @@ class SupervisedClassificationExecutor:
             completed_epochs=int(training_config.get("max_epochs", 1)), samples_seen=len(x_train) * int(training_config.get("max_epochs", 1)),
         )
         history = update_history(train_logs=trainer.logs.train)
-        history += evaluation_history(valid_logs=trainer.logs.valid)
+        history += [("update", step, "train/raw_loss", loss) for step, loss in trainer.step_losses]
+        history += [("book_epoch", step, key, value) for step, metrics in trainer.graph_evaluations for key, value in metrics.items()]
+        legacy_evaluations = evaluation_history(valid_logs=trainer.logs.valid)
+        history += legacy_evaluations
+        # This executor evaluates the configured MNIST test split.  Preserve
+        # the historical valid spelling while making its true split explicit.
+        history += [(kind, step, "test/loss", value) for kind, step, _metric, value in legacy_evaluations]
         history += epoch_history(
             train_losses=trainer.losses.train, test_losses=trainer.losses.valid,
             train_accuracies=trainer.accuracies.train, test_accuracies=trainer.accuracies.valid,
@@ -109,12 +128,15 @@ def _model(config: dict[str, object]):
     raise ValueError(f"unknown model alias: {name}")
 
 
-def _optimizer(name: str, params, learning_rate: float, weight_decay: float):
+def _optimizer(config: dict[str, object], params):
+    name = str(config.get("name", "sgd"))
+    learning_rate = float(config.get("learning_rate", 0.01))
+    weight_decay = float(config.get("weight_decay", 0.0))
     hooks = [L2Regularization(weight_decay)] if weight_decay else None
     if name == "sgd": return SGD(params, lr=learning_rate, pre_step_hooks=hooks)
-    if name == "momentum": return Momentum(params, lr=learning_rate, momentum=0.9, pre_step_hooks=hooks)
-    if name == "adagrad": return AdaGrad(params, lr=learning_rate, pre_step_hooks=hooks)
-    if name == "adam": return Adam(params, lr=learning_rate, pre_step_hooks=hooks)
+    if name == "momentum": return Momentum(params, lr=learning_rate, momentum=float(config.get("momentum", 0.9)), pre_step_hooks=hooks)
+    if name == "adagrad": return AdaGrad(params, lr=learning_rate, eps=float(config.get("eps", 1e-7)), pre_step_hooks=hooks)
+    if name == "adam": return Adam(params, lr=learning_rate, beta1=float(config.get("beta1", 0.9)), beta2=float(config.get("beta2", 0.999)), eps=float(config.get("eps", 1e-7)), pre_step_hooks=hooks)
     raise ValueError(f"unknown optimizer: {name}")
 
 
@@ -135,3 +157,39 @@ def _file_digest(path: Path) -> str:
         for chunk in iter(lambda: file.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _apply_input_transform(*, dataset: dict[str, object], backend, x_train, x_test, artifact_root: Path) -> dict[str, object]:
+    """Create deterministic, data-only transforms without consuming training RNG streams."""
+    transform = dataset.get("input_transform", {"name": "identity"})
+    if not isinstance(transform, dict):
+        raise ValueError("dataset.input_transform must be a mapping")
+    name = str(transform.get("name", "identity"))
+    if name == "identity":
+        return {"name": name}
+    if name != "pixel_permutation":
+        raise ValueError(f"unknown dataset input transform: {name}")
+    if len(x_train.shape) not in {2, 4} or len(x_test.shape) != len(x_train.shape):
+        raise ValueError("pixel_permutation requires flat MNIST or NCHW image tensors")
+    feature_count = int(np.prod(x_train.shape[1:]))
+    if feature_count != int(np.prod(x_test.shape[1:])):
+        raise ValueError("train and test tensors must have the same feature count")
+    seed = int(transform["seed"])
+    permutation = np.random.default_rng(seed).permutation(feature_count).astype(np.int64)
+    digest = hashlib.sha256(permutation.tobytes()).hexdigest()
+    target = artifact_root / "data" / "pixel_permutation.npy"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    np.save(target, permutation)
+    return {
+        "name": name,
+        "seed": seed,
+        "feature_count": feature_count,
+        "sha256": digest,
+        "artifact": str(target.relative_to(artifact_root)),
+        "permutation": backend.xp.asarray(permutation),
+    }
+
+
+def _permute_pixels(x, permutation):
+    original_shape = x.shape
+    return x.reshape(len(x), -1)[:, permutation].reshape(original_shape)
