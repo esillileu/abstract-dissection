@@ -1,5 +1,7 @@
 # e01. Optimizer 목적함수 경로
 
+<!-- Domain: deepscratch1 -->
+
 ## 1. 실험 정의
 
 | 항목 | 내용 |

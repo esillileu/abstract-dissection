@@ -1,29 +1,31 @@
-# g07. regularization_dropout
+# g01. toy_optimizer
+
+<!-- Domain: deepscratch1 -->
 
 ## 구조 서명
 
-`mnist-mlp-784-100x6-10-relu-dropout-v1`
+`analytic-toy-v1`
 
 ## 묶음 기준
 
-Dropout 레이어 추가로 g06과 구조 분리
+결정적 실행
 
 ## 공통 실행 설정
 
-DS-MNIST-300, dropout after each hidden ReLU, He, SGD .01, 301 epochs
+목적함수 `x^2/20+y^2`, init `(-7,2)`, 30 updates, float64
 
 ## 원자 조건
 
 | Atomic run ID | Override |
 |---|---|
-| `REG-DO-01` | dropout=.1 |
-| `REG-DO-02` | dropout=.2 |
-| `REG-DO-03` | dropout=.3 |
-| `REG-DO-05` | dropout=.5 |
+| `TOY-SGD` | SGD lr=.95 |
+| `TOY-MOM` | Momentum lr=.1 momentum=.9 |
+| `TOY-ADAGRAD` | AdaGrad lr=1.5 eps=1e-7 |
+| `TOY-ADAM` | Adam lr=.3 beta1=.9 beta2=.999 eps=1e-7 |
 
 ## 사용 실험
 
-e07
+e01
 
 ## 실행 정책
 

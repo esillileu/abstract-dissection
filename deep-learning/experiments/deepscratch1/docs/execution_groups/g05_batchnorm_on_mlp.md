@@ -1,5 +1,7 @@
 # g05. batchnorm_on_mlp
 
+<!-- Domain: deepscratch1 -->
+
 ## 구조 서명
 
 `mnist-mlp-784-100x5-10-bn-relu-v1`

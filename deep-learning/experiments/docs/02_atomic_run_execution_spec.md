@@ -14,7 +14,7 @@ Analysis = 여러 Parent condition의 child 결과 조회
 - atomic run ID 하나는 seed를 제외한 완전한 조건 하나다.
 - 모든 확률적 atomic run은 child seed `0..9`를 요구한다.
 - `RC-TOY` canonical은 결정적이므로 child를 만들지 않는다.
-- `DTYPE-*`는 training이 아닌 derived evaluation이며 같은 seed의 `CNN-DEEP` checkpoint를 참조한다.
+- `DTYPE-*`는 training이 아닌 derived evaluation이며, e08과 분리된 legacy `CNN-DEEP` source run의 같은-seed checkpoint를 참조한다.
 - Registry는 총 85개 atomic condition으로 구성된다: 결정적 toy 4개, seed 반복 training/probe 78개(780 children), derived dtype evaluation 3개(30 children).
 
 ## 2. 설정 해석 규칙
@@ -74,7 +74,7 @@ synthetic_input_seed  = master_seed + 40_000
 - training metric과 evaluation metric의 step 기준을 분리한다.
 - final test는 지정된 evaluation mode에서 전체 test set을 사용한다.
 - `LM-BETTER`는 best validation PPL checkpoint를 저장하고 해당 checkpoint로 test를 1회 평가한다.
-- `CNN-DEEP`은 모든 child의 final checkpoint를 저장해 e09가 참조하도록 한다.
+- e09가 참조하는 `CNN-DEEP`은 e08과 분리된 legacy source run이며, 모든 child의 final checkpoint를 저장해야 한다.
 - 기타 run은 resolved config, metrics CSV, 요약 JSON, 환경 정보와 최종 또는 best checkpoint를 저장한다.
 
 ### 3.5 실패 및 재시도
@@ -208,8 +208,10 @@ synthetic_input_seed  = master_seed + 40_000
 
 | Atomic run ID | Recipe | Resolved override | Dependency |
 | --- | --- | --- | --- |
-| CNN-SIMPLE | RC-CNN-S | none | none |
-| CNN-DEEP | RC-CNN-D | none | none |
+| NN-MATCHED | RC-NN-MATCHED | original MNIST | none |
+| NN-MATCHED-PERMUTED | RC-NN-MATCHED | shared fixed pixel permutation | same-seed `NN-MATCHED` |
+| CNN-SIMPLE | RC-CNN-S | original MNIST | none |
+| CNN-SIMPLE-PERMUTED | RC-CNN-S | shared fixed pixel permutation | same-seed `CNN-SIMPLE` |
 | DTYPE-F64 | RC-DTYPE | dtype=float64 | source child CNN-DEEP with same seed |
 | DTYPE-F32 | RC-DTYPE | dtype=float32 | source child CNN-DEEP with same seed |
 | DTYPE-F16 | RC-DTYPE | dtype=float16 | source child CNN-DEEP with same seed |
@@ -358,7 +360,7 @@ plots/                         # optional per child; required at aggregate
 | e05 | BN-OFF-01..16, BN-ON-01..16 | epochs 0..19 |
 | e06 | REG-BASE, REG-WD-1E4, REG-WD-1E3, REG-WD-1E2, REG-WD-1E1 | epochs 0..200 |
 | e07 | REG-BASE, REG-DO-01, REG-DO-02, REG-DO-03, REG-DO-05 | epochs 0..300 |
-| e08 | CNN-SIMPLE, CNN-DEEP | epochs 0..19 + full test |
+| e08 | NN-MATCHED, NN-MATCHED-PERMUTED, CNN-SIMPLE, CNN-SIMPLE-PERMUTED | epochs 0..19 + full test |
 | e09 | DTYPE-F64, DTYPE-F32, DTYPE-F16 | full test + benchmark samples |
 | e10 | W2V-CBOW-NS, W2V-SG-NS | epochs 0..9 |
 | e11 | W2V-CBOW-FULL, W2V-CBOW-NS | epochs 0..9 |

@@ -1,5 +1,7 @@
 # e05. BatchNorm-초기화 scale
 
+<!-- Domain: deepscratch1 -->
+
 ## 1. 실험 정의
 
 | 항목 | 내용 |

@@ -1,29 +1,32 @@
-# g01. toy_optimizer
+# g06. regularization_no_dropout
+
+<!-- Domain: deepscratch1 -->
 
 ## 구조 서명
 
-`analytic-toy-v1`
+`mnist-mlp-784-100x6-10-relu-no-dropout-v1`
 
 ## 묶음 기준
 
-결정적 실행
+L2는 loss/gradient 항만 변경
 
 ## 공통 실행 설정
 
-목적함수 `x^2/20+y^2`, init `(-7,2)`, 30 updates, float64
+DS-MNIST-300, He, SGD .01, batch 100, 301 epochs
 
 ## 원자 조건
 
 | Atomic run ID | Override |
 |---|---|
-| `TOY-SGD` | SGD lr=.95 |
-| `TOY-MOM` | Momentum lr=.1 momentum=.9 |
-| `TOY-ADAGRAD` | AdaGrad lr=1.5 eps=1e-7 |
-| `TOY-ADAM` | Adam lr=.3 beta1=.9 beta2=.999 eps=1e-7 |
+| `REG-BASE` | lambda=0 |
+| `REG-WD-1E4` | lambda=1e-4 |
+| `REG-WD-1E3` | lambda=1e-3 |
+| `REG-WD-1E2` | lambda=1e-2 |
+| `REG-WD-1E1` | lambda=1e-1 |
 
 ## 사용 실험
 
-e01
+e06, e07 baseline
 
 ## 실행 정책
 

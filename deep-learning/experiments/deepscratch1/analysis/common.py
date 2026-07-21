@@ -41,8 +41,8 @@ class ErrorBarStyle:
     every: int = 5
     color: str = "0.35"
     line_style: str = ":"
-    line_width: float = 0.45
-    cap_size: float = 0.0
+    line_width: float = 0.5
+    cap_size: float = 0.5
 
 
 DEFAULT_ERROR_BARS = ErrorBarStyle()

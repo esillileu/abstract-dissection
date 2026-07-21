@@ -1,5 +1,7 @@
 # e03. 초기화별 activation 분포
 
+<!-- Domain: deepscratch1 -->
+
 ## 1. 실험 정의
 
 | 항목 | 내용 |

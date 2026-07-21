@@ -1,5 +1,7 @@
 # g03. activation_probe
 
+<!-- Domain: deepscratch1 -->
+
 ## 구조 서명
 
 `activation-probe-100x5-v1`

@@ -47,7 +47,7 @@
 | e05 | BatchNorm과 초기화 scale 민감도 | MNIST 분류·학습 안정성 | BatchNorm × weight scale | BN-OFF-01..16, BN-ON-01..16 |
 | e06 | Weight decay 과적합 억제 | 저데이터 MNIST 분류 | weight decay λ | REG-BASE, REG-WD-* |
 | e07 | Dropout 과적합 억제 | 저데이터 MNIST 분류 | dropout ratio | REG-BASE, REG-DO-* |
-| e08 | CNN 구조 비교 | MNIST 이미지 분류 | architecture recipe | CNN-SIMPLE, CNN-DEEP |
+| e08 | 공간적 배치 활용 비교 | MNIST 이미지 분류 | model × pixel layout | NN-MATCHED, NN-MATCHED-PERMUTED, CNN-SIMPLE, CNN-SIMPLE-PERMUTED |
 | e09 | 추론 정밀도 비교 | MNIST 추론 평가 | inference dtype | DTYPE-F64, DTYPE-F32, DTYPE-F16 |
 | e10 | CBOW vs Skip-gram | PTB 단어 임베딩 | architecture | W2V-CBOW-NS, W2V-SG-NS |
 | e11 | Full softmax vs Negative Sampling | PTB 단어 임베딩 | objective | W2V-CBOW-FULL, W2V-CBOW-NS |
@@ -158,25 +158,25 @@
 | 재현 기준 | 패턴 재현. ratio 0의 median train accuracy `>=.98`. `.1–.3` 중 하나가 baseline gap을 20% 이상 줄이며 test accuracy를 유지 또는 개선. `.5`는 중간 ratio보다 train accuracy 또는 수렴 속도가 낮아지는 패턴을 허용한다. |
 | 분석 시행 세트 | `REG-BASE`, `REG-DO-01`, `REG-DO-02`, `REG-DO-03`, `REG-DO-05` |
 
-### e08. CNN 구조 깊이에 따른 MNIST 성능 비교
+### e08. MNIST 공간적 배치 활용 비교
 
 | 항목 | 정의 |
 | --- | --- |
-| 데이터·태스크 | MNIST `(1,28,28)`. 10-class 이미지 분류. |
-| 실험 목적 | 책의 SimpleConvNet과 DeepConvNet 전체 recipe가 정확도와 계산비용에서 보이는 차이를 재현한다. |
-| 사전 가설 | DeepConvNet은 더 큰 계산비용을 사용하지만 SimpleConvNet보다 높은 정확도를 달성한다. |
-| 독립변인 | architecture recipe `{SimpleConvNet,DeepConvNet}`. |
-| 고정변수 | MNIST split, Adam `lr=.001`, batch 100, 20 epochs, 평가 방식. 단, 모델별 초기화·dropout·채널 구성은 recipe 일부로서 다르다. |
-| 종속변인 | train/test accuracy, loss, parameter count, MACs/FLOPs, epoch time, inference throughput, peak memory. |
-| 목적 확인을 위한 분석 | 정확도뿐 아니라 비용-성능 trade-off를 함께 비교한다. 이 결과를 순수한 depth 인과효과가 아니라 architecture recipe 비교로 해석한다. |
-| 재현 기준 | 수치·방향 재현. DeepConvNet 10-seed median test accuracy `>=99.0%`, SimpleConvNet 운영 목표 `>=98.5%`. Deep이 paired mean 기준 Simple보다 `>=.2%p` 높아야 한다. |
-| 분석 시행 세트 | `CNN-SIMPLE`, `CNN-DEEP` |
+| 데이터·태스크 | 원본 및 고정 pixel-permuted MNIST. 10-class 이미지 분류. |
+| 실험 목적 | parameter-matched NN과 책의 SimpleConvNet이 원본 공간 배치와 깨진 공간 배치에서 보이는 학습 curve 차이를 비교한다. |
+| 사전 가설 | 고정 pixel permutation은 SimpleConvNet의 test accuracy curve를 ParameterMatchedNN보다 크게 악화시킨다. |
+| 독립변인 | model `{ParameterMatchedNN, SimpleConvNet}` × input `{original, pixel-permuted}`. |
+| 고정변수 | 약 433.9K parameters, 학습 가능 계층 3개, Adam `lr=.001`, batch 100, 20 epochs, replacement sampling, full train/test epoch 평가. |
+| 종속변인 | full-test accuracy curve, 마지막 epoch test accuracy의 paired permutation drop. |
+| 목적 확인을 위한 분석 | 모델별 원본·순열 test accuracy curve를 주 분석으로 보고, 마지막 epoch의 동일-seed drop 표로 이를 보조한다. 절대 구조 차이를 순수한 convolution 효과로 해석하지 않는다. |
+| 재현 기준 | SimpleConvNet 원본의 test accuracy가 약 98.96% 범위를 반복 편차 내에서 재현되고, 네 조건 모두에서 paired curve를 산출한다. |
+| 분석 시행 세트 | `NN-MATCHED`, `NN-MATCHED-PERMUTED`, `CNN-SIMPLE`, `CNN-SIMPLE-PERMUTED` |
 
 ### e09. 추론 정밀도 float64/float32/float16 비교
 
 | 항목 | 정의 |
 | --- | --- |
-| 데이터·태스크 | e08 DeepConvNet의 seed별 checkpoint와 MNIST test 10,000. 추론 평가. |
+| 데이터·태스크 | 독립적으로 보존할 DeepConvNet source run의 seed별 checkpoint와 MNIST test 10,000. 추론 평가. 현재 e08의 공간 배치 비교 run은 이 source가 아니다. |
 | 실험 목적 | 동일한 학습 결과를 낮은 dtype으로 변환했을 때 예측 및 정확도가 보존되는지, 성능 이점이 있는지 평가한다. |
 | 사전 가설 | float32와 float16은 float64 기준 예측을 거의 보존하지만, 속도 이점은 backend와 hardware에 따라 달라진다. |
 | 독립변인 | inference dtype `{float64,float32,float16}`. |
@@ -300,7 +300,7 @@
 
 ## 5. 해석 제한
 
-- e08은 depth만 통제한 실험이 아니라 SimpleConvNet과 DeepConvNet의 전체 architecture recipe 비교다.
+- e08은 절대 구조 성능 비교가 아니라, 각 모델 내부의 original/pixel-permuted learning curve 차이를 주 분석으로 하는 공간적 배치 활용 실험이다.
 - e14는 BetterRnnlm 구성요소 각각의 ablation이 아니라 전체 model/training recipe 비교다.
 - e09의 속도 결과는 dtype 자체뿐 아니라 NumPy/CuPy, CPU/GPU, kernel 지원과 hardware에 의존한다.
 - e10의 CBOW와 Skip-gram raw loss는 예측 항의 개수가 달라 직접 비교하지 않는다.

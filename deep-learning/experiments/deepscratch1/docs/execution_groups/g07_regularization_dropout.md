@@ -1,26 +1,31 @@
-# g08. simple_convnet
+# g07. regularization_dropout
+
+<!-- Domain: deepscratch1 -->
 
 ## 구조 서명
 
-`mnist-simpleconvnet-v1`
+`mnist-mlp-784-100x6-10-relu-dropout-v1`
 
 ## 묶음 기준
 
-단일 구조
+Dropout 레이어 추가로 g06과 구조 분리
 
 ## 공통 실행 설정
 
-Conv30 5x5-ReLU-Pool-FC100-ReLU-FC10; Adam .001; 20 epochs
+DS-MNIST-300, dropout after each hidden ReLU, He, SGD .01, 301 epochs
 
 ## 원자 조건
 
 | Atomic run ID | Override |
 |---|---|
-| `CNN-SIMPLE` | 공식 SimpleConvNet recipe |
+| `REG-DO-01` | dropout=.1 |
+| `REG-DO-02` | dropout=.2 |
+| `REG-DO-03` | dropout=.3 |
+| `REG-DO-05` | dropout=.5 |
 
 ## 사용 실험
 
-e08
+e07
 
 ## 실행 정책
 

@@ -1,5 +1,7 @@
 # e02. Optimizer MNIST 학습
 
+<!-- Domain: deepscratch1 -->
+
 ## 1. 실험 정의
 
 | 항목 | 내용 |
