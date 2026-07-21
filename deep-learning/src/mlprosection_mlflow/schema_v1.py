@@ -37,7 +37,7 @@ from .runtime import (
 # Per-domain run material is deliberately kept outside MLflow's own artifact
 # store. MLflow receives the lightweight record, while the local workspace is
 # pleasant to browse and safe to clean independently.
-ARTIFACT_ROOT = Path("experiments/results")
+ARTIFACT_ROOT = Path("experiments")
 
 
 def _storage_domain(value: object) -> str:
@@ -69,8 +69,9 @@ class SchemaV1Run:
         self.storage_domain = _storage_domain(
             tracking.get("experiment", os.getenv("MLFLOW_EXPERIMENT_NAME", "mlprosection"))
         )
-        self.artifact_root = ARTIFACT_ROOT / self.storage_domain / "mlflow_artifacts" / self.identity.run_key
-        self.local_checkpoint_root = ARTIFACT_ROOT / self.storage_domain / "checkpoints" / self.identity.run_key
+        domain_root = ARTIFACT_ROOT / self.storage_domain / "results"
+        self.artifact_root = domain_root / "mlflow_artifacts" / self.identity.run_key
+        self.local_checkpoint_root = domain_root / "checkpoints" / self.identity.run_key
 
     def runtime(self, *, model: Any | None = None) -> ExperimentRun:
         tracking = _section(self.config, "tracking")

@@ -12,7 +12,7 @@ from mlflow.entities import ViewType
 
 
 LEGACY_ROOT = Path("experiments/results/mlflow_artifacts")
-RESULTS_ROOT = Path("experiments/results")
+EXPERIMENTS_ROOT = Path("experiments")
 
 
 def _domain(name: str) -> str:
@@ -37,7 +37,7 @@ def main() -> None:
             if not run_key:
                 continue
             source = LEGACY_ROOT / run_key
-            target = RESULTS_ROOT / _domain(experiment_name) / "mlflow_artifacts" / run_key
+            target = EXPERIMENTS_ROOT / _domain(experiment_name) / "results" / "mlflow_artifacts" / run_key
             if not source.is_dir() or target.exists():
                 continue
             print(f"{source} -> {target}")

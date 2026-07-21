@@ -13,8 +13,7 @@ from mlflow.entities import ViewType
 
 
 ROOT = Path("experiments")
-LEGACY_ARTIFACT_ROOT = ROOT / "results/mlflow_artifacts"
-DOMAIN_ROOT = ROOT / "results/deepbase1"
+DOMAIN_ROOT = ROOT / "deepbase1/results"
 LOCAL_ROOT = DOMAIN_ROOT / "checkpoints"
 REMOTE_ROOT = ROOT / "data/artifacts"
 
@@ -40,8 +39,6 @@ def main() -> None:
         # run id is still stable and keeps the preserved final model isolated.
         run_key = run.data.tags.get("run.key") or f"legacy-{run.info.run_id}"
         source = DOMAIN_ROOT / "mlflow_artifacts" / run_key / "checkpoints" / "final.npz"
-        if not source.is_file():
-            source = LEGACY_ARTIFACT_ROOT / run_key / "checkpoints" / "final.npz"
         target = LOCAL_ROOT / run_key / "final.npz"
         remote = REMOTE_ROOT / str(experiment.experiment_id) / run.info.run_id / "artifacts" / "checkpoints"
         print(f"{run.info.run_id} {source} -> {target}")
