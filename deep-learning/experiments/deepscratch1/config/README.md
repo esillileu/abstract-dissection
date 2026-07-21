@@ -22,7 +22,7 @@ uv sync --extra tracking
 The new catalog records under the MLflow experiment name `deepscratch1`.
 
 Run the complete catalog (516 runs) with CPU for MLP/probe experiments and GPU
-for e08 CNN experiments. The CLI verifies the MLflow server before starting;
+for e08/e09 CNN experiments. The CLI verifies the MLflow server before starting;
 if it is unavailable, no training run begins.
 
 ```bash
@@ -33,7 +33,7 @@ Preview the matrix or select seed-set indexes for a subset:
 
 ```bash
 just exp deepscratch1 plan --all
-just exp deepscratch1 run -e 02 -e 08 --seed 0-4
+just exp deepscratch1 run -e 02 -e 08 -e 09 --seed 0-4
 ```
 
 Render MLflow-backed analysis figures for every declared experiment, or one
@@ -48,7 +48,7 @@ just exp deepscratch1 analyze --dry-run
 
 Use `--tracking-uri URL` when MLflow is not running at the default local URL.
 
-The `e01_…` through `e08_…` files are atomic-run catalogs. Select a declared
+The `e01_…` through `e09_…` files are atomic-run catalogs. Select a declared
 condition with `--atomic-run-id`, for example:
 
 ```bash
