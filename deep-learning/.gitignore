@@ -5,4 +5,7 @@ src/mlprosection/datasets/*-ubyte.gz
 experiments/data/
 experiments/results/
 
+# Local MLflow server state (SQLite backend and served artifacts)
+infra/mlflow/data/
+
 *.tar.gz

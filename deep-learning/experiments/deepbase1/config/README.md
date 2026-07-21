@@ -6,11 +6,17 @@ All deepbase1 experiment YAML lives in this directory. Run one configuration wit
 uv run python -m experiments.run_yaml experiments/deepbase1/config/e02_mnist_mlp_optimizer.yaml --atomic-run-id MLP-ADAM-HE --seed 1208965604 --device cpu
 ```
 
-Start the local MLflow UI against the persistent experiment database first:
+Start the local MLflow server first:
+
+```bash
+docker compose -f infra/mlflow/compose.yaml up -d
+```
+
+The SQLite backend and served artifacts are persisted under `infra/mlflow/data/`.
+Install the tracking extra once before running experiments:
 
 ```bash
 uv sync --extra tracking
-uv run mlflow server --backend-store-uri sqlite:///experiments/data/mlflow.db --serve-artifacts --artifacts-destination file://$PWD/experiments/data/artifacts --host 127.0.0.1 --port 5000
 ```
 
 The new catalog records under the MLflow experiment name `deepbase1`.

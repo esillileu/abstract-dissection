@@ -6,12 +6,14 @@ configuration records to the MLflow experiment named `deepbase2`.
 Start MLflow before a non-dry run:
 
 ```bash
+docker compose -f infra/mlflow/compose.yaml up -d
+```
+
+The SQLite backend and served artifacts are persisted under `infra/mlflow/data/`.
+Install the tracking extra once before running experiments:
+
+```bash
 uv sync --extra tracking
-uv run mlflow server \
-  --backend-store-uri sqlite:///experiments/data/mlflow.db \
-  --serve-artifacts \
-  --artifacts-destination file://$PWD/experiments/data/artifacts \
-  --host 127.0.0.1 --port 5000
 ```
 
 Preview the 140-run matrix without starting training:
