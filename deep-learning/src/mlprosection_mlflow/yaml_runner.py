@@ -5,6 +5,7 @@ from pathlib import Path
 import time
 
 from mlprosection.experiment import ExperimentContext, run_config
+from mlprosection.experiment.progress import ProgressReporter
 
 from .schema_v1 import SchemaV1Run
 from .runtime import build_profiling_metric_rows, build_schema_metrics, write_json
@@ -20,6 +21,7 @@ def run_yaml(
     overrides: dict[str, object] | None = None,
     executor_module: str | None = None,
     spec_module: str | None = None,
+    progress_reporter: ProgressReporter | None = None,
 ):
     """Run a domain YAML and upload the CSV-backed record to MLflow."""
     if spec_module is None:
@@ -44,6 +46,8 @@ def run_yaml(
         checkpoint["resume"] = resume
     record = SchemaV1Run(config)
     runtime = record.runtime()
+    if progress_reporter is not None:
+        runtime.sink.console_writer = progress_reporter.write
     evaluation_checkpoints: list[Path] = []
 
     def record_eval_checkpoint(path: Path) -> None:
@@ -56,6 +60,7 @@ def run_yaml(
             "checkpoint_root": record.local_checkpoint_root,
             "artifact_root": record.artifact_root,
             "record_eval_checkpoint": record_eval_checkpoint,
+            **({} if progress_reporter is None else {"progress_reporter": progress_reporter}),
         },
     )
     with runtime:
@@ -85,7 +90,7 @@ def run_yaml(
             reproducibility={
                 key: value
                 for key, value in context.metadata.items()
-                if key not in {"checkpoint_root", "artifact_root", "record_eval_checkpoint"}
+                if key not in {"checkpoint_root", "artifact_root", "record_eval_checkpoint", "progress_reporter"}
             },
             evaluation_checkpoints=evaluation_checkpoints,
         )

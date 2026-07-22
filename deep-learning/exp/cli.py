@@ -17,6 +17,7 @@ from urllib.request import urlopen
 import yaml
 
 from mlprosection.core.backend import BackendConfig, make_backend
+from mlprosection.experiment.progress import ProgressManager, RunProgressContext
 from mlprosection_mlflow import run_yaml
 
 
@@ -198,6 +199,25 @@ def _print_plans(plans: list[RunPlan]) -> None:
         print(f"{plan.experiment_id} {plan.path.name} {plan.atomic_run_id} seed={'single' if plan.seed is None else plan.seed} device={plan.device}")
 
 
+def _progress_context(plan: RunPlan, *, index: int, count: int, overrides: dict[str, object]) -> RunProgressContext:
+    config = parse_domain_run_spec(
+        plan.domain,
+        plan.path,
+        atomic_run_id=plan.atomic_run_id,
+        overrides=overrides,
+    ).to_executor_config()
+    training = config.get("training", {})
+    total_updates = None
+    if isinstance(training, dict) and training.get("max_updates") is not None:
+        total_updates = int(training["max_updates"])
+    return RunProgressContext(
+        label=f"{plan.experiment_id}/{plan.atomic_run_id}/s{'single' if plan.seed is None else plan.seed}",
+        index=index,
+        count=count,
+        total_updates=total_updates,
+    )
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("domain", choices=tuple(DOMAIN_EXECUTOR_MODULES))
@@ -210,6 +230,8 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--device", choices=("cpu", "cuda:0"))
     parser.add_argument("--set", dest="override_values", action="append", default=[], metavar="KEY=VALUE")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--progress", choices=("auto", "none", "line", "tqdm"), default="auto")
+    parser.add_argument("--progress-every", type=int, default=10)
     args = parser.parse_args(argv)
     try:
         overrides = parse_overrides(args.override_values)
@@ -222,7 +244,31 @@ def main(argv: list[str] | None = None) -> None:
             return
         _require_mlflow_server(plans, overrides)
         _require_devices(plans)
-        for plan in plans:
-            run_yaml(plan.path, atomic_run_id=plan.atomic_run_id, seed=plan.seed, device=plan.device, overrides=overrides, executor_module=DOMAIN_EXECUTOR_MODULES[plan.domain], spec_module=DOMAIN_SPEC_MODULES[plan.domain])
+        progress = ProgressManager(
+            mode=args.progress,
+            every=args.progress_every,
+            total_runs=len(plans),
+        )
+        try:
+            for index, plan in enumerate(plans, start=1):
+                progress_context = _progress_context(plan, index=index, count=len(plans), overrides=overrides)
+                reporter = progress.reporter(progress_context)
+                progress.on_run_start(progress_context)
+                try:
+                    run_yaml(
+                        plan.path,
+                        atomic_run_id=plan.atomic_run_id,
+                        seed=plan.seed,
+                        device=plan.device,
+                        overrides=overrides,
+                        executor_module=DOMAIN_EXECUTOR_MODULES[plan.domain],
+                        spec_module=DOMAIN_SPEC_MODULES[plan.domain],
+                        progress_reporter=reporter,
+                    )
+                finally:
+                    reporter.close()
+                    progress.on_run_end()
+        finally:
+            progress.close()
     except ValueError as exc:
         parser.error(str(exc))

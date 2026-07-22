@@ -142,6 +142,7 @@ class SupervisedClassificationExecutor:
             terminal_requests=lambda _event: scheduled_requests(schedule.get("on_train_end")),
             after_epoch=after_epoch,
             device_timer=_device_timer(config, backend),
+            progress=context.metadata.get("progress_reporter"),
         )
         trainer = ForwardTrainer(
             model,

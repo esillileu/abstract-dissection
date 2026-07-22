@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Callable, Literal, Protocol, TypeVar
 
 from mlprosection.events import EpochEvent, SourceObjectiveSample, TrainEndEvent, TrainingWindowEvent, UpdateEvent
+from mlprosection.experiment.progress import NullProgressReporter, ProgressReporter
 from mlprosection.profiling.backend import DeviceTimer, DeviceTimingToken, NullDeviceTimer
 
 @dataclass(frozen=True)
@@ -50,6 +51,7 @@ class EventExperimentExecutor:
         after_evaluation: Callable[[EvaluationRequest, object, str, int], None] | None = None,
         after_epoch: Callable[[EpochEvent], None] | None = None,
         device_timer: DeviceTimer | None = None,
+        progress: ProgressReporter | None = None,
     ) -> None:
         self.records = records
         self._evaluate = evaluate
@@ -60,6 +62,7 @@ class EventExperimentExecutor:
         self._after_evaluation = after_evaluation or (lambda _request, _result, _axis, _step: None)
         self._after_epoch = after_epoch or (lambda _event: None)
         self._device_timer = device_timer or NullDeviceTimer()
+        self._progress = progress or NullProgressReporter()
         self._window_start_update: int | None = None
         self._window_started_ns: int | None = None
         self._window_device_token: DeviceTimingToken | None = None
@@ -86,6 +89,7 @@ class EventExperimentExecutor:
 
     def on_update(self, event: UpdateEvent) -> None:
         self.records.on_update(event)
+        self._progress.on_update(event)
         requests = self._update_requests(event)
         if requests:
             self._close_window(end_update=event.update, closed_by="probe", requests=requests, epoch=event.epoch)
@@ -102,6 +106,7 @@ class EventExperimentExecutor:
 
     def on_epoch(self, event: EpochEvent) -> None:
         self.records.on_epoch(event)
+        self._progress.on_epoch(event)
         requests = self._epoch_requests(event)
         self._close_window(
             end_update=event.end_update,
@@ -116,6 +121,7 @@ class EventExperimentExecutor:
 
     def on_train_end(self, event: TrainEndEvent) -> None:
         self.records.on_train_end(event)
+        self._progress.on_train_end(event)
         requests = self._terminal_requests(event)
         if self._window_start_update is not None and self._window_start_update <= event.update:
             self._close_window(end_update=event.update, closed_by="terminal", requests=requests, epoch=event.epoch)

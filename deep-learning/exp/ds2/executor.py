@@ -185,6 +185,7 @@ class Word2VecExecutor:
             records=records_sink, evaluate=lambda _request: None,
             source_curve=_source_curve_from_objective(config),
             device_timer=_device_timer(config, backend),
+            progress=context.metadata.get("progress_reporter"),
         )
         trainer = Word2VecTrainer(
             model, optimizer, max_epochs=epochs, batch_size=batch_size,
@@ -282,6 +283,7 @@ class LanguageModelExecutor:
             epoch_requests=epoch_requests, after_evaluation=after_evaluation,
             source_curve=_source_curve_from_objective(config),
             device_timer=_device_timer(config, backend),
+            progress=context.metadata.get("progress_reporter"),
         )
         with training_summary(monitor):
             records = controller.run(lambda: trainer.fit(train, train_targets))
@@ -392,6 +394,7 @@ class Seq2SeqExecutor:
             epoch_requests=lambda _event: (request,),
             after_evaluation=after_evaluation,
             device_timer=_device_timer(config, backend),
+            progress=context.metadata.get("progress_reporter"),
         )
         with training_summary(monitor):
             records = controller.run(lambda: trainer.fit(train_x, train_t))

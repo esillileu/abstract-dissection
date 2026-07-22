@@ -185,7 +185,7 @@ def build_memory_history_rows(profiling_metrics: dict[str, int | float]) -> list
 
 class _Sink:
     def __init__(self, options: RuntimeOptions, run_name: str, tags: dict[str, str], params: dict[str, object]) -> None:
-        self.options, self.run_name, self.tags, self.params = options, run_name, tags, params; self.events: queue.Queue[tuple[str, Any]] = queue.Queue(options.queue_size); self.errors: list[str] = []; self.mlflow = None; self.run_id = None; self.thread = None
+        self.options, self.run_name, self.tags, self.params = options, run_name, tags, params; self.events: queue.Queue[tuple[str, Any]] = queue.Queue(options.queue_size); self.errors: list[str] = []; self.mlflow = None; self.run_id = None; self.thread = None; self.console_writer = None
     def start(self) -> None:
         self.thread = threading.Thread(target=self._consume, daemon=True); self.thread.start()
     def put(self, event: tuple[str, Any], drop: bool = False) -> None:
@@ -206,7 +206,9 @@ class _Sink:
                             self.mlflow.end_run(status=status)
                         except Exception as exc: self.errors.append(f"MLflow finalization failed: {exc}")
                     return
-                if kind == "console": print(value, file=sys.stderr)
+                if kind == "console":
+                    if self.console_writer is not None: self.console_writer(str(value))
+                    else: print(value, file=sys.stderr)
                 elif kind == "metric":
                     step, metrics = value
                     print(_format_progress(step, metrics), file=sys.stderr)
