@@ -1,8 +1,0 @@
-# 실험 공용 문서
-
-도메인이 소유하는 실험 설계와 실행 그룹 문서는 각 도메인 디렉터리에 둔다.
-
-- [deepscratch1 문서](../deepscratch1/docs/README.md)
-- [deepscratch2 문서](../deepscratch2/docs/README.md)
-
-이 디렉터리에는 여러 도메인이 공유하는 MLflow 스키마·런타임 명세와, 아직 도메인으로 이전되지 않은 문서만 둔다.
