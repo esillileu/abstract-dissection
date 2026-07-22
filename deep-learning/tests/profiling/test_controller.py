@@ -42,3 +42,10 @@ def test_controller_memory_sampling_can_be_disabled() -> None:
     )
 
     assert controller.should_sample_memory(0) is False
+
+
+def test_controller_zero_memory_interval_keeps_only_boundary_snapshots() -> None:
+    controller = ProfilingController(ProfilingConfig(sample_memory_every_n_steps=0))
+
+    assert controller.should_sample_memory(0) is False
+    assert controller.should_sample_memory(100) is False

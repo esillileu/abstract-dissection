@@ -326,6 +326,80 @@ class Trainer(ABC):
             count_optimizer_state_bytes(self.optimizer),
         )
 
+    def start_profiling_run(self) -> None:
+        """Start the common telemetry lifecycle used by non-forward trainers."""
+        self.detail_profiler.start_run()
+        if self.profiling_config.collect_memory_metrics:
+            self.runtime_monitor.snapshot_memory("run.start", synchronize=True)
+            self.runtime_monitor.snapshot_memory("train.start")
+        self.record_model_metrics()
+
+    def finish_profiling_run(self) -> None:
+        """Persist final common telemetry after a specialized training loop."""
+        if self.profiling_config.collect_memory_metrics:
+            self.runtime_monitor.snapshot_memory("train.end", synchronize=True)
+            self.runtime_monitor.snapshot_memory("run.end")
+        self.record_final_memory_metrics()
+        self.detail_profiler.stop_run()
+
+    def begin_profiled_epoch(self, *, split: str, epoch_index: int) -> int | None:
+        if self.profiling_config.collect_memory_metrics:
+            self.runtime_monitor.snapshot_memory(
+                f"epoch.{epoch_index}.{split}.start", synchronize=True
+            )
+        if not self.profiling_config.collect_epoch_metrics:
+            return None
+        return time.perf_counter_ns()
+
+    def finish_profiled_epoch(
+        self,
+        *,
+        split: str,
+        epoch_index: int,
+        sample_count: int,
+        started_ns: int | None,
+    ) -> None:
+        if started_ns is not None:
+            self.backend_profiler.synchronize()
+            duration_ms = (time.perf_counter_ns() - started_ns) / 1_000_000
+            self.runtime_monitor.set_metric(
+                f"runtime.epoch.{epoch_index}.{split}_duration_ms", duration_ms
+            )
+            self.runtime_monitor.set_metric(
+                f"throughput.epoch.{epoch_index}.{split}_samples_per_s",
+                0.0 if duration_ms <= 0 else sample_count / (duration_ms / 1_000),
+            )
+        if self.profiling_config.collect_memory_metrics:
+            self.runtime_monitor.snapshot_memory(
+                # The elapsed-time branch already synchronized the current stream.
+                f"epoch.{epoch_index}.{split}.end", synchronize=started_ns is None
+            )
+
+    def internal_loss_step(self, x: Tensor, t: Tensor) -> Tensor:
+        """Run a model-owned loss update with the standard detailed telemetry."""
+        profile = self.profiling_controller.should_profile(self.global_step)
+        if self.profiling_controller.should_sample_memory(self.global_step):
+            self.runtime_monitor.update_memory_peaks()
+        if profile and self.profiling_config.profile_memory:
+            self.runtime_monitor.snapshot_memory(
+                f"profile.step.{self.global_step}.before", synchronize=True
+            )
+        with self.detail_profiler.section("train_step", enabled=profile):
+            with self.detail_profiler.section("forward", enabled=profile):
+                loss = self.model.forward(x, t)
+            with self.detail_profiler.section("backward", enabled=profile):
+                self.model.backward()
+            if self.max_grad is not None:
+                with self.detail_profiler.section("gradient_clip", enabled=profile):
+                    self.clip_gradients()
+            with self.detail_profiler.section("optimizer_update", enabled=profile):
+                self.optimizer.update()
+        if profile and self.profiling_config.profile_memory:
+            self.runtime_monitor.snapshot_memory(
+                f"profile.step.{self.global_step}.after", synchronize=True
+            )
+        return loss
+
     def profiling_metrics(self) -> dict[str, int | float]:
         return self.runtime_monitor.metrics()
 

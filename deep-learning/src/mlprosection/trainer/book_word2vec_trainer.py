@@ -7,6 +7,7 @@ import time
 from mlprosection import Tensor
 from mlprosection.nn.layers import Layer
 from mlprosection.optim import Optimizer
+from mlprosection.profiling import ProfilingConfig
 
 from .internal_loss_trainer import InternalLossHistory, InternalLossTrainer
 
@@ -31,6 +32,7 @@ class BookWord2VecTrainer(InternalLossTrainer):
         log_interval: int = 20,
         max_grad: float | None = None,
         callbacks=None,
+        profiling_config: ProfilingConfig | None = None,
     ) -> None:
         if prediction_term_count < 1:
             raise ValueError("prediction_term_count must be at least 1")
@@ -44,6 +46,7 @@ class BookWord2VecTrainer(InternalLossTrainer):
             max_grad=max_grad,
             drop_last=True,
             callbacks=callbacks,
+            profiling_config=profiling_config,
         )
         self.prediction_term_count = prediction_term_count
 
@@ -57,59 +60,65 @@ class BookWord2VecTrainer(InternalLossTrainer):
         self.train = True
         interval_total = 0.0
         interval_count = 0
-        for epoch_index in range(self.epoch, self.max_epoch):
-            if self.max_updates is not None and self.global_step >= self.max_updates:
-                break
-            self.epoch = epoch_index + 1
-            self.model.train(True)
-            order = self.backend.xp.random.permutation(len(xs))
-            shuffled_x, shuffled_t = xs[order], ts[order]
-            epoch_total = 0.0
-            epoch_count = 0
-
-            for iteration, (batch_x, batch_t) in enumerate(self.iter_batches(shuffled_x, shuffled_t)):
-                loss = self.model.forward(batch_x, batch_t)
-                self.model.backward()
-                self.clip_gradients()
-                self.optimizer.update()
-
-                self.global_step += 1
-                value = float(loss.data)
-                epoch_total += value
-                epoch_count += 1
-                interval_total += value
-                interval_count += 1
-                self._emit_batch_end()
-
-                if iteration % self.log_interval == 0:
-                    average = interval_total / interval_count
-                    self.history.interval_loss.append(average)
-                    self.losses.train.append(average)
-                    log = {
-                        "epoch": self.epoch,
-                        "iteration": iteration + 1,
-                        "global_step": self.global_step,
-                        "loss": average,
-                        "normalized_loss": average / self.prediction_term_count,
-                        "elapsed_time": time.time() - self.start_time,
-                    }
-                    self.logs.train.append(log)
-                    self._emit_interval(log)
-                    interval_total = 0.0
-                    interval_count = 0
-
+        self.start_profiling_run()
+        try:
+            for epoch_index in range(self.epoch, self.max_epoch):
                 if self.max_updates is not None and self.global_step >= self.max_updates:
                     break
+                self.epoch = epoch_index + 1
+                self.model.train(True)
+                order = self.backend.xp.random.permutation(len(xs))
+                shuffled_x, shuffled_t = xs[order], ts[order]
+                epoch_total = 0.0
+                epoch_count = 0
+                started_ns = self.begin_profiled_epoch(split="train", epoch_index=epoch_index)
 
-            epoch_loss = epoch_total / epoch_count
-            self.history.epoch_loss.append(epoch_loss)
-            self.emit_epoch_metrics(
-                epoch=self.epoch,
-                metrics={
-                    "train/loss": epoch_loss,
-                    "train/normalized_loss": epoch_loss / self.prediction_term_count,
-                },
-            )
-            if self.max_updates is not None and self.global_step >= self.max_updates:
-                break
+                for iteration, (batch_x, batch_t) in enumerate(self.iter_batches(shuffled_x, shuffled_t)):
+                    loss = self.internal_loss_step(batch_x, batch_t)
+
+                    self.global_step += 1
+                    value = float(loss.data)
+                    epoch_total += value
+                    epoch_count += 1
+                    interval_total += value
+                    interval_count += 1
+                    self._emit_batch_end()
+
+                    if iteration % self.log_interval == 0:
+                        average = interval_total / interval_count
+                        self.history.interval_loss.append(average)
+                        self.losses.train.append(average)
+                        log = {
+                            "epoch": self.epoch,
+                            "iteration": iteration + 1,
+                            "global_step": self.global_step,
+                            "loss": average,
+                            "normalized_loss": average / self.prediction_term_count,
+                            "elapsed_time": time.time() - self.start_time,
+                        }
+                        self.logs.train.append(log)
+                        self._emit_interval(log)
+                        interval_total = 0.0
+                        interval_count = 0
+
+                    if self.max_updates is not None and self.global_step >= self.max_updates:
+                        break
+
+                epoch_loss = epoch_total / epoch_count
+                self.history.epoch_loss.append(epoch_loss)
+                self.emit_epoch_metrics(
+                    epoch=self.epoch,
+                    metrics={
+                        "train/loss": epoch_loss,
+                        "train/normalized_loss": epoch_loss / self.prediction_term_count,
+                    },
+                )
+                self.finish_profiled_epoch(
+                    split="train", epoch_index=epoch_index,
+                    sample_count=epoch_count * self.batch_size, started_ns=started_ns,
+                )
+                if self.max_updates is not None and self.global_step >= self.max_updates:
+                    break
+        finally:
+            self.finish_profiling_run()
         return self.history

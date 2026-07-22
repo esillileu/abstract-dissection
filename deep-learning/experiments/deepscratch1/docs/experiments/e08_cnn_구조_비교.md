@@ -11,7 +11,7 @@
 | 실험 목적       | 원본 이미지와 고정 픽셀 순열 이미지에서 ParameterMatchedNN과 SimpleConvNet의 학습 성능을 비교하여 CNN이 이미지의 공간적 배치를 학습에 활용하는지 확인한다. |
 | 사전 가설       | 고정 픽셀 순열 적용 시 SimpleConvNet의 accuracy와 학습 효율 감소 폭이 ParameterMatchedNN보다 크게 나타난다.                                                |
 | 독립변인        | 모델 구조: ParameterMatchedNN, SimpleConvNet / 입력 조건: 원본, 고정 픽셀 순열                                                                             |
-| 고정변수        | MNIST split, 약 433.9K parameters, 학습 가능 계층 3개, Adam lr=.001, batch 100, 20 epochs, full train/test epoch 평가, replacement sampling               |
+| 고정변수        | MNIST split, 약 433.9K parameters, 학습 가능 계층 3개, Adam lr=.001, batch 100, 2 epochs, full-test epoch 평가, replacement sampling               |
 | 종속변인·관찰값 | epoch별 full-test accuracy curve, 마지막 epoch test accuracy의 paired permutation drop                                                                     |
 
 ## 2. 비교 모델

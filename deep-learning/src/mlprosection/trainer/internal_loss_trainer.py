@@ -71,59 +71,65 @@ class InternalLossTrainer(Trainer):
 
         self.start_time = time.time()
         self.train = True
-        for epoch_index in range(self.epoch, self.max_epoch):
-            if self.max_updates is not None and self.global_step >= self.max_updates:
-                break
-            self.epoch = epoch_index + 1
-            self.model.train(True)
-            order = self.backend.xp.random.permutation(len(xs))
-            shuffled_x, shuffled_t = xs[order], ts[order]
-            epoch_total = 0.0
-            epoch_samples = 0
-            interval_total = 0.0
-            interval_samples = 0
-
-            for iteration, (batch_x, batch_t) in enumerate(self.iter_batches(shuffled_x, shuffled_t), start=1):
-                loss = self.model.forward(batch_x, batch_t)
-                self.model.backward()
-                self.clip_gradients()
-                self.optimizer.update()
-
-                self.global_step += 1
-                batch_samples = len(batch_x)
-                loss_value = float(loss.data)
-                epoch_total += loss_value * batch_samples
-                epoch_samples += batch_samples
-                interval_total += loss_value * batch_samples
-                interval_samples += batch_samples
-                self._emit_batch_end()
-
-                if iteration % self.log_interval == 0 or iteration == self.num_batches(len(xs)):
-                    average = interval_total / interval_samples
-                    self.history.interval_loss.append(average)
-                    self.losses.train.append(average)
-                    log = {
-                        "epoch": self.epoch,
-                        "iteration": iteration,
-                        "global_step": self.global_step,
-                        "loss": average,
-                        "elapsed_time": time.time() - self.start_time,
-                    }
-                    self.logs.train.append(log)
-                    self._emit_interval(log)
-                    interval_total = 0.0
-                    interval_samples = 0
-
+        self.start_profiling_run()
+        try:
+            for epoch_index in range(self.epoch, self.max_epoch):
                 if self.max_updates is not None and self.global_step >= self.max_updates:
                     break
+                self.epoch = epoch_index + 1
+                self.model.train(True)
+                order = self.backend.xp.random.permutation(len(xs))
+                shuffled_x, shuffled_t = xs[order], ts[order]
+                epoch_total = 0.0
+                epoch_samples = 0
+                interval_total = 0.0
+                interval_samples = 0
+                started_ns = self.begin_profiled_epoch(split="train", epoch_index=epoch_index)
 
-            epoch_loss = epoch_total / epoch_samples
-            self.history.epoch_loss.append(epoch_loss)
-            self.emit_epoch_metrics(epoch=self.epoch, metrics={"train/loss": epoch_loss})
-            if self.on_epoch_checkpoint is not None:
-                self.on_epoch_checkpoint(self.epoch)
-            if self.max_updates is not None and self.global_step >= self.max_updates:
-                break
+                for iteration, (batch_x, batch_t) in enumerate(self.iter_batches(shuffled_x, shuffled_t), start=1):
+                    loss = self.internal_loss_step(batch_x, batch_t)
+
+                    self.global_step += 1
+                    batch_samples = len(batch_x)
+                    loss_value = float(loss.data)
+                    epoch_total += loss_value * batch_samples
+                    epoch_samples += batch_samples
+                    interval_total += loss_value * batch_samples
+                    interval_samples += batch_samples
+                    self._emit_batch_end()
+
+                    if iteration % self.log_interval == 0 or iteration == self.num_batches(len(xs)):
+                        average = interval_total / interval_samples
+                        self.history.interval_loss.append(average)
+                        self.losses.train.append(average)
+                        log = {
+                            "epoch": self.epoch,
+                            "iteration": iteration,
+                            "global_step": self.global_step,
+                            "loss": average,
+                            "elapsed_time": time.time() - self.start_time,
+                        }
+                        self.logs.train.append(log)
+                        self._emit_interval(log)
+                        interval_total = 0.0
+                        interval_samples = 0
+
+                    if self.max_updates is not None and self.global_step >= self.max_updates:
+                        break
+
+                epoch_loss = epoch_total / epoch_samples
+                self.history.epoch_loss.append(epoch_loss)
+                self.emit_epoch_metrics(epoch=self.epoch, metrics={"train/loss": epoch_loss})
+                self.finish_profiled_epoch(
+                    split="train", epoch_index=epoch_index, sample_count=epoch_samples,
+                    started_ns=started_ns,
+                )
+                if self.on_epoch_checkpoint is not None:
+                    self.on_epoch_checkpoint(self.epoch)
+                if self.max_updates is not None and self.global_step >= self.max_updates:
+                    break
+        finally:
+            self.finish_profiling_run()
         return self.history
 
     def state_dict(self) -> dict[str, object]:

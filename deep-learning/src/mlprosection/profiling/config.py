@@ -18,6 +18,7 @@ class ProfilingConfig:
     collect_epoch_metrics: bool = True
     collect_memory_metrics: bool = True
     collect_model_metrics: bool = True
+    # Zero disables per-update peak sampling while retaining run/epoch snapshots.
     sample_memory_every_n_steps: int = 1
 
     def __post_init__(self) -> None:
@@ -25,8 +26,8 @@ class ProfilingConfig:
             raise ValueError("start_step must be >= 0")
         if self.num_steps < 0:
             raise ValueError("num_steps must be >= 0")
-        if self.sample_memory_every_n_steps < 1:
-            raise ValueError("sample_memory_every_n_steps must be >= 1")
+        if self.sample_memory_every_n_steps < 0:
+            raise ValueError("sample_memory_every_n_steps must be >= 0")
 
 
 def profiling_config_from_mapping(values: Mapping[str, object]) -> ProfilingConfig:

@@ -24,9 +24,9 @@ def test_profiling_config_rejects_negative_num_steps() -> None:
         ProfilingConfig(num_steps=-1)
 
 
-def test_profiling_config_rejects_invalid_memory_interval() -> None:
+def test_profiling_config_rejects_negative_memory_interval() -> None:
     with pytest.raises(ValueError):
-        ProfilingConfig(sample_memory_every_n_steps=0)
+        ProfilingConfig(sample_memory_every_n_steps=-1)
 
 
 def test_profiling_config_is_frozen() -> None:

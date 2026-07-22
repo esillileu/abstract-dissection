@@ -18,7 +18,10 @@ class ProfilingController:
         return start <= global_step < end
 
     def should_sample_memory(self, global_step: int) -> bool:
-        if not self.config.collect_memory_metrics:
+        if (
+            not self.config.collect_memory_metrics
+            or self.config.sample_memory_every_n_steps == 0
+        ):
             return False
 
         return global_step % self.config.sample_memory_every_n_steps == 0

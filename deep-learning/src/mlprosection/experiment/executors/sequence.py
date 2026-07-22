@@ -15,6 +15,7 @@ from mlprosection.nn.model import Word2Vec
 from mlprosection.nn.sampling import UnigramSampler
 from mlprosection.nn.model.recurrent import AttentionSeq2seq, BetterRnnlm, PeekySeq2seq, Rnnlm, Seq2seq, VanillaRnnlm
 from mlprosection.optim.SGD import Adam, SGD
+from mlprosection.profiling import profiling_config_from_mapping
 from mlprosection.trainer import BookWord2VecTrainer, InternalLossTrainer, TimeTrainer
 
 from ..contracts import ExperimentResult
@@ -104,6 +105,7 @@ class Word2VecExecutor:
                 log_interval=interval,
                 max_grad=_optional_max_grad(config),
                 prediction_term_count=_word2vec_prediction_term_count(model, window),
+                profiling_config=profiling_config_from_mapping(_mapping(config, "profiling")),
                 callbacks=[_Callback(context, loss_metric="train/book_loss")],
             )
         else:
@@ -114,9 +116,12 @@ class Word2VecExecutor:
                 batch_size=batch_size,
                 log_interval=interval,
                 max_grad=_optional_max_grad(config),
+                profiling_config=profiling_config_from_mapping(_mapping(config, "profiling")),
                 callbacks=[_Callback(context, loss_metric="train/normalized_loss")],
             )
         trainer.fit(Tensor(train_x, backend=backend), Tensor(train_t, backend=backend))
+        trainer.dump_profiling_artifacts(Path(str(context.metadata["artifact_root"])) / "profiles")
+        profiling = trainer.profiling_metrics()
         history = []
         for log in trainer.logs.train:
             step = int(log["global_step"])
@@ -146,6 +151,7 @@ class Word2VecExecutor:
         return ExperimentResult(
             metrics=_final(updates=trainer.global_step, epochs=trainer.epoch, samples=len(x) * trainer.epoch, **final_metrics),
             artifact_root=_artifact_root(config), model=model, history=tuple(history),
+            profiling_metrics=profiling,
         )
 
 
@@ -162,7 +168,7 @@ class LanguageModelExecutor:
         train = Tensor(backend.xp.asarray(ptb["train"][:-1], dtype=backend.xp.int64), backend=backend)
         train_targets = Tensor(backend.xp.asarray(ptb["train"][1:], dtype=backend.xp.int64), backend=backend)
         max_epochs = int(training.get("max_epochs", 4))
-        trainer = TimeTrainer(model, optimizer, max_epoch=max_epochs, batch_size=int(loader.get("batch_size", 20)), time_size=int(loader.get("time_size", 35)), log_interval=int(training.get("log_interval", 20)), max_grad=float(_mapping(config, "policy").get("max_grad", 0.25)), callbacks=[_Callback(context)])
+        trainer = TimeTrainer(model, optimizer, max_epoch=max_epochs, batch_size=int(loader.get("batch_size", 20)), time_size=int(loader.get("time_size", 35)), log_interval=int(training.get("log_interval", 20)), max_grad=float(_mapping(config, "policy").get("max_grad", 0.25)), profiling_config=profiling_config_from_mapping(_mapping(config, "profiling")), callbacks=[_Callback(context)])
         valid = Tensor(backend.xp.asarray(ptb["valid"][:-1], dtype=backend.xp.int64), backend=backend)
         valid_targets = Tensor(backend.xp.asarray(ptb["valid"][1:], dtype=backend.xp.int64), backend=backend)
         test = Tensor(backend.xp.asarray(ptb["test"][:-1], dtype=backend.xp.int64), backend=backend)
@@ -188,11 +194,13 @@ class LanguageModelExecutor:
             elif str(model_config.get("alias")) == "BetterRnnlm":
                 optimizer.lr /= float(_mapping(config, "scheduler").get("factor", 4.0))
         trainer.max_epoch = max_epochs
+        trainer.dump_profiling_artifacts(Path(str(context.metadata["artifact_root"])) / "profiles")
+        profiling = trainer.profiling_metrics()
         history = [("step", index + 1, "train/perplexity", value) for index, value in enumerate(trainer.history.train_ppl)]
         history += [("update", index + 1, "train/ppl", value) for index, value in enumerate(trainer.history.train_ppl)]
         history += [("epoch", step, metric.replace("perplexity", "ppl"), value) for _kind, step, metric, value in validation_history]
         history += validation_history
-        return ExperimentResult(metrics=_final(updates=trainer.global_step, epochs=trainer.epoch, samples=len(train) * trainer.epoch, **{"final/train/perplexity": trainer.history.train_ppl[-1], "final/valid/perplexity": valid_ppl, "final/test/perplexity": test_ppl, "final/train/ppl": trainer.history.train_ppl[-1], "final/valid/ppl": valid_ppl, "final/test/ppl": test_ppl, "final/best_valid_ppl": best_valid, "final/best_valid_epoch": float(best_valid_epoch)}), artifact_root=_artifact_root(config), model=model, history=tuple(history))
+        return ExperimentResult(metrics=_final(updates=trainer.global_step, epochs=trainer.epoch, samples=len(train) * trainer.epoch, **{"final/train/perplexity": trainer.history.train_ppl[-1], "final/valid/perplexity": valid_ppl, "final/test/perplexity": test_ppl, "final/train/ppl": trainer.history.train_ppl[-1], "final/valid/ppl": valid_ppl, "final/test/ppl": test_ppl, "final/best_valid_ppl": best_valid, "final/best_valid_epoch": float(best_valid_epoch)}), artifact_root=_artifact_root(config), model=model, history=tuple(history), profiling_metrics=profiling)
 
 
 @register_executor("seq2seq")
@@ -229,6 +237,7 @@ class Seq2SeqExecutor:
             batch_size=batch_size,
             log_interval=int(training.get("log_interval", 20)),
             max_grad=_optional_max_grad(config, default=5.0),
+            profiling_config=profiling_config_from_mapping(_mapping(config, "profiling")),
             callbacks=[_Callback(context)],
         )
         history: list[tuple[str, int, str, float]] = []
@@ -240,12 +249,18 @@ class Seq2SeqExecutor:
             history.extend((("epoch", epoch, "train/loss", train_loss), ("epoch", epoch, "test/exact_match", exact), ("epoch", epoch, "test/token_accuracy", token)))
             context.emit_metric(epoch, {"train/loss": train_loss, "test/exact_match": exact, "test/token_accuracy": token})
             _save_evaluation_checkpoint(config, context, model=model, optimizer=optimizer, trainer=trainer)
+        history += [
+            ("update", int(log["global_step"]), "train/loss", float(log["loss"]))
+            for log in trainer.logs.train
+        ]
         attention_entropy = _save_attention_artifact(model, x_test, t_test, backend, context)
+        trainer.dump_profiling_artifacts(Path(str(context.metadata["artifact_root"])) / "profiles")
+        profiling = trainer.profiling_metrics()
         final_values = {"final/train/loss": history[-3][3], "final/test/exact_match": history[-2][3], "final/test/token_accuracy": history[-1][3]}
         if attention_entropy is not None:
             final_values["final/attention/entropy"] = attention_entropy
             final_values["final/attention/entropy_mean"] = attention_entropy
-        return ExperimentResult(metrics=_final(updates=trainer.global_step, epochs=trainer.epoch, samples=len(x_train) * trainer.epoch, **final_values), artifact_root=_artifact_root(config), model=model, history=tuple(history))
+        return ExperimentResult(metrics=_final(updates=trainer.global_step, epochs=trainer.epoch, samples=len(x_train) * trainer.epoch, **final_values), artifact_root=_artifact_root(config), model=model, history=tuple(history), profiling_metrics=profiling)
 
 
 class _Callback:

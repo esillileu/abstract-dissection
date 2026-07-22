@@ -77,44 +77,51 @@ class TimeTrainer(Trainer):
         if max_iters < 1:
             raise ValueError("sequence is too short for batch_size * time_size")
         self.start_time = time.time()
-        for epoch in range(self.epoch, self.max_epoch):
-            if self.max_updates is not None and self.global_step >= self.max_updates:
-                break
-            self.epoch = epoch + 1
-            self.model.train(True)
-            total_loss = 0.0
-            count = 0
-            for iteration in range(max_iters):
-                batch_x, batch_t = self.batch(xs, ts)
-                loss = self.model.forward(batch_x, batch_t)
-                self.model.backward()
-                self.clip_gradients()
-                self.optimizer.update()
-                detach = getattr(self.model, "detach_state", None)
-                if detach is not None:
-                    detach()
-                self.global_step += 1
-                total_loss += float(loss.data)
-                count += 1
-                self._emit_batch_end()
-                if (iteration + 1) % self.log_interval == 0 or iteration + 1 == max_iters:
-                    average = total_loss / count
-                    ppl = float(self.backend.xp.exp(average))
-                    self.history.train_loss.append(average)
-                    self.history.train_ppl.append(ppl)
-                    self.losses.train.append(average)
-                    log = {"epoch": float(self.epoch), "iteration": float(self.global_step), "loss": average, "perplexity": ppl, "elapsed_time": time.time() - self.start_time}
-                    self.logs.train.append(log)
-                    self._emit_interval(log)
-                    total_loss = 0.0
-                    count = 0
+        self.start_profiling_run()
+        try:
+            for epoch in range(self.epoch, self.max_epoch):
                 if self.max_updates is not None and self.global_step >= self.max_updates:
                     break
-            self.emit_epoch_metrics(epoch=self.epoch, metrics={"train/perplexity": self.history.train_ppl[-1]})
-            if self.on_epoch_checkpoint is not None:
-                self.on_epoch_checkpoint(self.epoch)
-            if self.max_updates is not None and self.global_step >= self.max_updates:
-                break
+                self.epoch = epoch + 1
+                self.model.train(True)
+                total_loss = 0.0
+                count = 0
+                started_ns = self.begin_profiled_epoch(split="train", epoch_index=epoch)
+                for iteration in range(max_iters):
+                    batch_x, batch_t = self.batch(xs, ts)
+                    loss = self.internal_loss_step(batch_x, batch_t)
+                    detach = getattr(self.model, "detach_state", None)
+                    if detach is not None:
+                        detach()
+                    self.global_step += 1
+                    total_loss += float(loss.data)
+                    count += 1
+                    self._emit_batch_end()
+                    if (iteration + 1) % self.log_interval == 0 or iteration + 1 == max_iters:
+                        average = total_loss / count
+                        ppl = float(self.backend.xp.exp(average))
+                        self.history.train_loss.append(average)
+                        self.history.train_ppl.append(ppl)
+                        self.losses.train.append(average)
+                        log = {"epoch": float(self.epoch), "iteration": float(self.global_step), "loss": average, "perplexity": ppl, "elapsed_time": time.time() - self.start_time}
+                        self.logs.train.append(log)
+                        self._emit_interval(log)
+                        total_loss = 0.0
+                        count = 0
+                    if self.max_updates is not None and self.global_step >= self.max_updates:
+                        break
+                self.emit_epoch_metrics(epoch=self.epoch, metrics={"train/perplexity": self.history.train_ppl[-1]})
+                self.finish_profiled_epoch(
+                    split="train", epoch_index=epoch,
+                    sample_count=max_iters * self.batch_size * self.time_size,
+                    started_ns=started_ns,
+                )
+                if self.on_epoch_checkpoint is not None:
+                    self.on_epoch_checkpoint(self.epoch)
+                if self.max_updates is not None and self.global_step >= self.max_updates:
+                    break
+        finally:
+            self.finish_profiling_run()
         return self.history
 
     def evaluate_perplexity(self, xs: Tensor, ts: Tensor) -> float:

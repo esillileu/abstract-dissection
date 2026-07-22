@@ -7,9 +7,9 @@
 | 항목 | 내용 |
 | --- | --- |
 | 데이터·태스크 | 공식 MNIST train 60,000 / test 10,000, 이미지 10-class 분류 |
-| 실험 목적 | 책의 SimpleConvNet과 DeepConvNet 학습 recipe를 그대로 사용해 규정 test accuracy 도달 여부와 학습 곡선을 확인한다. |
+| 실험 목적 | 책의 SimpleConvNet과 DeepConvNet 구조·optimizer recipe를 사용해, 2-epoch 측정 예산에서 규정 test accuracy 도달 여부와 학습 곡선을 확인한다. |
 | 독립변인 | architecture recipe: SimpleConvNet, DeepConvNet |
-| 고정변수 | Adam `lr=.001`, batch 100, replacement sampling, 20 epochs, float64 CPU |
+| 고정변수 | Adam `lr=.001`, batch 100, replacement sampling, 2 epochs, float64 CUDA |
 | 규정 성능 | SimpleConvNet final full-test accuracy `>=98.96%`; DeepConvNet final full-test accuracy `>=99.38%` |
 | 주 분석 | epoch별 full-test accuracy graph |
 
