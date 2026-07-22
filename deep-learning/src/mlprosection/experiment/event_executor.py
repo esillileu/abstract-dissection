@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Callable, Literal, Protocol, TypeVar
 
 from mlprosection.events import EpochEvent, SourceObjectiveSample, TrainEndEvent, TrainingWindowEvent, UpdateEvent
+from mlprosection.profiling.backend import DeviceTimer, DeviceTimingToken, NullDeviceTimer
 
 @dataclass(frozen=True)
 class EvaluationRequest:
@@ -48,6 +49,7 @@ class EventExperimentExecutor:
         source_curve: Callable[[SourceObjectiveSample], dict[str, object] | None] | None = None,
         after_evaluation: Callable[[EvaluationRequest, object, str, int], None] | None = None,
         after_epoch: Callable[[EpochEvent], None] | None = None,
+        device_timer: DeviceTimer | None = None,
     ) -> None:
         self.records = records
         self._evaluate = evaluate
@@ -57,12 +59,15 @@ class EventExperimentExecutor:
         self._source_curve = source_curve or (lambda _event: None)
         self._after_evaluation = after_evaluation or (lambda _request, _result, _axis, _step: None)
         self._after_epoch = after_epoch or (lambda _event: None)
+        self._device_timer = device_timer or NullDeviceTimer()
         self._window_start_update: int | None = None
         self._window_started_ns: int | None = None
+        self._window_device_token: DeviceTimingToken | None = None
 
     def begin(self, *, start_update: int = 1) -> None:
         self._window_start_update = start_update
         self._window_started_ns = time.perf_counter_ns()
+        self._window_device_token = self._device_timer.start()
 
     def run(self, train: Callable[[], None], *, start_update: int = 1) -> RecordSink:
         """Run a prepared Trainer through the common event lifecycle.
@@ -99,6 +104,9 @@ class EventExperimentExecutor:
             requests=requests,
             epoch=event.epoch,
         )
+        flush = getattr(self.records, "flush", None)
+        if callable(flush):
+            flush()
         self._after_epoch(event)
 
     def on_train_end(self, event: TrainEndEvent) -> None:
@@ -123,16 +131,25 @@ class EventExperimentExecutor:
         if self._window_start_update > end_update:
             self._record_evaluations(requests, axis="epoch" if closed_by == "epoch_end" else "update", axis_step=epoch if closed_by == "epoch_end" else end_update, update=end_update, epoch=epoch)
             return
+        train_device_token = self._window_device_token
+        self._device_timer.stop(train_device_token)
         train_ns = time.perf_counter_ns() - self._window_started_ns
         evaluate_started = time.perf_counter_ns()
+        eval_device_token = self._device_timer.start() if requests else None
         axis = "epoch" if closed_by == "epoch_end" else "update"
         self._record_evaluations(requests, axis=axis, axis_step=epoch if axis == "epoch" else end_update, update=end_update, epoch=epoch)
+        if eval_device_token is not None:
+            self._device_timer.stop(eval_device_token)
         eval_ns = time.perf_counter_ns() - evaluate_started if requests else None
+        train_device_ns = self._device_timer.elapsed_ns(train_device_token)
+        eval_device_ns = self._device_timer.elapsed_ns(eval_device_token)
         self.records.add_timing_window(TrainingWindowEvent(
             start_update=self._window_start_update, end_update=end_update,
             update_count=end_update - self._window_start_update + 1,
             closed_by=closed_by, train_wall_time_ns=train_ns,
             eval_wall_time_ns=eval_ns,
+            train_device_time_ns=train_device_ns,
+            eval_device_time_ns=eval_device_ns,
         ))
         self.begin(start_update=end_update + 1)
 

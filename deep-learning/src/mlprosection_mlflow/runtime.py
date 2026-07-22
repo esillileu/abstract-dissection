@@ -71,10 +71,10 @@ def write_text(path: Path, value: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True); path.write_text(value, encoding="utf-8")
 
 
-def write_history_csv(path: Path, *, run_key: str, rows: list[tuple[str, int, str, float]]) -> None:
+def write_metric_rows_csv(path: Path, *, run_key: str, rows: list[tuple[int, str, float]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8", newline="") as file:
-        writer = csv.writer(file); writer.writerow(["run_key", "step_type", "step", "metric", "value", "timestamp"])
+        writer = csv.writer(file); writer.writerow(["run_key", "step", "metric", "value", "timestamp"])
         for row in rows: writer.writerow([run_key, *row, time.time()])
 
 
@@ -150,25 +150,25 @@ def build_epoch_metric_rows(*, train_losses: list[float], test_losses: list[floa
     return rows
 
 
-def build_profiling_history_rows(profiling_metrics: dict[str, int | float]) -> list[tuple[str, int, str, float]]:
-    """Project per-epoch profiler values to MLflow's metric history."""
-    rows: list[tuple[str, int, str, float]] = []
+def build_profiling_metric_rows(profiling_metrics: dict[str, int | float]) -> list[tuple[int, str, float]]:
+    """Project per-epoch profiler values to direct MLflow metric rows."""
+    rows: list[tuple[int, str, float]] = []
     for key, value in profiling_metrics.items():
         duration = re.fullmatch(r"runtime\.epoch\.(\d+)\.(train|eval)_duration_ms", key)
         throughput = re.fullmatch(r"throughput\.epoch\.(\d+)\.(train|eval)_samples_per_s", key)
         memory = re.fullmatch(r"memory\.epoch\.(\d+)\.(train|eval)\.(start|end)\.(.+)", key)
         if duration:
-            rows.append(("epoch", int(duration.group(1)) + 1, f"runtime/{duration.group(2)}_duration_s", float(value) / 1000))
+            rows.append((int(duration.group(1)) + 1, f"epoch/runtime/{duration.group(2)}_duration_s", float(value) / 1000))
         elif throughput:
-            rows.append(("epoch", int(throughput.group(1)) + 1, f"throughput/{throughput.group(2)}_samples_per_s", float(value)))
+            rows.append((int(throughput.group(1)) + 1, f"epoch/throughput/{throughput.group(2)}_samples_per_s", float(value)))
         elif memory:
-            rows.append(("epoch", int(memory.group(1)) + 1, f"memory/{memory.group(2)}_{memory.group(3)}/{memory.group(4).replace('.', '_')}", float(value)))
+            rows.append((int(memory.group(1)) + 1, f"epoch/memory/{memory.group(2)}_{memory.group(3)}/{memory.group(4).replace('.', '_')}", float(value)))
     return rows
-
 
 def build_runtime_history_rows(profiling_metrics: dict[str, int | float]) -> list[dict[str, Any]]:
     grouped: dict[int, dict[str, Any]] = {}
-    for _, step, metric, value in build_profiling_history_rows(profiling_metrics):
+    for step, key, value in build_profiling_metric_rows(profiling_metrics):
+        _, metric = key.split("/", 1)
         row = grouped.setdefault(step, {"step_type": "epoch", "step": step, "train_s": "", "eval_s": "", "checkpoint_s": "", "throughput_samples_per_s": ""})
         if metric == "runtime/train_duration_s": row["train_s"] = value
         elif metric == "runtime/eval_duration_s": row["eval_s"] = value
@@ -324,9 +324,9 @@ class ExperimentRun:
         self.sink.put(("console", _format_progress(step, metrics)), drop=True)
     def emit_checkpoint(self, path: Path, *, checkpoint_kind: str) -> None:
         self.sink.put(("checkpoint", (path, checkpoint_kind)))
-    def complete(self, *, artifact_root: Path, history_rows: list[tuple[str, int, str, float]], final_metrics: dict[str, float], checkpoint_path: Path | None = None) -> list[str]:
+    def complete(self, *, artifact_root: Path, metric_rows: list[tuple[int, str, float]], final_metrics: dict[str, float], checkpoint_path: Path | None = None) -> list[str]:
         self.finished = True
-        rows = [(step, f"{step_type}/{metric}", value) for step_type, step, metric, value in history_rows]
+        rows = list(metric_rows)
         rows.extend((0, key, value) for key, value in final_metrics.items())
         self.sink.put(("metrics", rows)); self.sink.put(("artifact", artifact_root))
         if checkpoint_path is not None and checkpoint_path.is_file(): self.emit_checkpoint(checkpoint_path, checkpoint_kind="final")

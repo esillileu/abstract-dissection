@@ -18,9 +18,9 @@ from .runtime import (
     parameter_manifest,
     pip_freeze,
     write_git_diff,
-    write_history_csv,
     write_json,
     write_memory_history_csv,
+    write_metric_rows_csv,
     write_runtime_history_csv,
     write_text,
 )
@@ -32,7 +32,7 @@ __all__ = [
     "build_memory_history_rows", "build_runtime_history_rows", "build_schema_metrics",
     "canonical_json", "current_git_info", "environment_artifacts", "file_digest",
     "flatten_dict", "make_condition_key", "make_run_key", "parameter_manifest",
-    "pip_freeze", "write_git_diff", "write_history_csv", "write_json",
+    "pip_freeze", "write_git_diff", "write_metric_rows_csv", "write_json",
     "write_memory_history_csv", "write_runtime_history_csv", "write_text",
     "run_yaml",
 ]

@@ -26,8 +26,8 @@ from .runtime import (
     parameter_manifest,
     pip_freeze,
     write_git_diff,
-    write_history_csv,
     write_json,
+    write_metric_rows_csv,
     write_memory_history_csv,
     write_runtime_history_csv,
     write_text,
@@ -126,7 +126,7 @@ class SchemaV1Run:
         *,
         model: Any | None,
         final_metrics: dict[str, float],
-        history_rows: list[tuple[str, int, str, float]],
+        metric_rows: list[tuple[int, str, float]],
         profiling_metrics: dict[str, int | float],
         reproducibility: dict[str, object] | None = None,
         evaluation_checkpoints: list[Path] | None = None,
@@ -198,25 +198,10 @@ class SchemaV1Run:
             self.artifact_root / "model/initialization_manifest.json",
             _section(self.config, "initializer"),
         )
-        write_history_csv(
-            self.artifact_root / "metrics/history.csv",
+        write_metric_rows_csv(
+            self.artifact_root / "metrics/metrics.csv",
             run_key=self.identity.run_key,
-            rows=history_rows,
-        )
-        write_history_csv(
-            self.artifact_root / "metrics/update_history.csv",
-            run_key=self.identity.run_key,
-            rows=[row for row in history_rows if row[0] == "update"],
-        )
-        write_history_csv(
-            self.artifact_root / "metrics/epoch_history.csv",
-            run_key=self.identity.run_key,
-            rows=[row for row in history_rows if row[0] == "epoch"],
-        )
-        write_history_csv(
-            self.artifact_root / "metrics/eval_history.csv",
-            run_key=self.identity.run_key,
-            rows=[row for row in history_rows if row[0] == "eval"],
+            rows=metric_rows,
         )
         write_runtime_history_csv(
             self.artifact_root / "metrics/runtime_history.csv",

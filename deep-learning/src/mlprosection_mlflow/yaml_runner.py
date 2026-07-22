@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import importlib
 from pathlib import Path
 import time
 
-from mlprosection.experiment import ExperimentContext, load_yaml, normalize_config, run_config
+from mlprosection.experiment import ExperimentContext, run_config
 
 from .schema_v1 import SchemaV1Run
-from .runtime import build_profiling_history_rows, build_schema_metrics, write_json
+from .runtime import build_profiling_metric_rows, build_schema_metrics, write_json
 
 
 def run_yaml(
@@ -18,9 +19,18 @@ def run_yaml(
     resume: str | None = None,
     overrides: dict[str, object] | None = None,
     executor_module: str | None = None,
+    spec_module: str | None = None,
 ):
-    """Run YAML and project its result to the schema-v1 MLflow record."""
-    config = normalize_config(load_yaml(path, atomic_run_id=atomic_run_id, overrides=overrides))
+    """Run a domain YAML and upload the CSV-backed record to MLflow."""
+    if spec_module is None:
+        if executor_module == "exp.ds1.executor":
+            spec_module = "exp.ds1.spec"
+        elif executor_module == "exp.ds2.executor":
+            spec_module = "exp.ds2.spec"
+        else:
+            raise ValueError("run_yaml requires a domain spec_module")
+    parser = importlib.import_module(spec_module)
+    config = parser.parse_run_spec(path, atomic_run_id=atomic_run_id, overrides=overrides).to_executor_config()
     if seed is not None:
         config["seed"] = seed
     if device is not None:
@@ -66,11 +76,11 @@ def run_yaml(
             samples_seen=int(result.metrics.get("final/system/samples_seen", 0)),
         ))
         result.metrics["runtime/run_wall_total_s"] = time.perf_counter() - started
-        history = [*result.history, *build_profiling_history_rows(result.profiling_metrics)]
+        metric_rows = [*result.metric_rows, *build_profiling_metric_rows(result.profiling_metrics)]
         record.write_artifacts(
             model=result.model,
             final_metrics=result.metrics,
-            history_rows=history,
+            metric_rows=metric_rows,
             profiling_metrics=result.profiling_metrics,
             reproducibility={
                 key: value
@@ -81,7 +91,7 @@ def run_yaml(
         )
         errors = runtime.complete(
             artifact_root=record.artifact_root,
-            history_rows=history,
+            metric_rows=metric_rows,
             final_metrics=result.metrics,
             checkpoint_path=record.local_checkpoint_root / "final.npz",
         )

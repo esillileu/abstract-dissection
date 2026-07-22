@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass
 from typing import Protocol
 
 import psutil
@@ -21,6 +22,69 @@ class BackendProfiler(Protocol):
 
     def memory_stats(self) -> dict[str, MetricValue]:
         ...
+
+
+class DeviceTimingToken(Protocol):
+    """Backend-owned token for an in-flight device timing window."""
+
+
+class DeviceTimer(Protocol):
+    """Lightweight backend device timer for executor-owned windows."""
+
+    def start(self) -> DeviceTimingToken | None:
+        ...
+
+    def stop(self, token: DeviceTimingToken | None) -> None:
+        ...
+
+    def elapsed_ns(self, token: DeviceTimingToken | None) -> int | None:
+        ...
+
+
+class NullDeviceTimer:
+    """Timer for CPU and non-profiled runs; never reports device time."""
+
+    def start(self) -> None:
+        return None
+
+    def stop(self, token: DeviceTimingToken | None) -> None:
+        return None
+
+    def elapsed_ns(self, token: DeviceTimingToken | None) -> None:
+        return None
+
+
+@dataclass
+class CuPyDeviceTimingToken:
+    start_event: object
+    end_event: object | None = None
+
+
+class CuPyDeviceTimer:
+    """CUDA event timer that synchronizes once when elapsed time is requested."""
+
+    def __init__(self, cupy_module) -> None:
+        self.cp = cupy_module
+
+    def start(self) -> CuPyDeviceTimingToken:
+        event = self.cp.cuda.Event()
+        event.record()
+        return CuPyDeviceTimingToken(start_event=event)
+
+    def stop(self, token: DeviceTimingToken | None) -> None:
+        if not isinstance(token, CuPyDeviceTimingToken):
+            return None
+        event = self.cp.cuda.Event()
+        event.record()
+        token.end_event = event
+        return None
+
+    def elapsed_ns(self, token: DeviceTimingToken | None) -> int | None:
+        if not isinstance(token, CuPyDeviceTimingToken) or token.end_event is None:
+            return None
+        token.end_event.synchronize()
+        elapsed_ms = self.cp.cuda.get_elapsed_time(token.start_event, token.end_event)
+        return int(round(float(elapsed_ms) * 1_000_000))
 
 
 class NumPyBackendProfiler:
@@ -94,3 +158,16 @@ def create_backend_profiler(backend) -> BackendProfiler:
         return CuPyBackendProfiler(backend.xp)
 
     raise ValueError(f"Unsupported backend for profiling: {backend_name}")
+
+
+def create_device_timer(backend, *, enabled: bool = False) -> DeviceTimer:
+    """Create an opt-in device timer for executor-owned timing windows."""
+
+    if not enabled:
+        return NullDeviceTimer()
+
+    backend_name = getattr(backend, "name", None)
+    if backend_name == "cupy" and bool(getattr(backend, "is_gpu", False)):
+        return CuPyDeviceTimer(backend.xp)
+
+    return NullDeviceTimer()

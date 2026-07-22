@@ -13,5 +13,5 @@ class ExperimentResult:
     artifact_root: Path
     model: Any | None = None
     artifacts: tuple[Path, ...] = field(default_factory=tuple)
-    history: tuple[tuple[str, int, str, float], ...] = field(default_factory=tuple)
+    metric_rows: tuple[tuple[int, str, float], ...] = field(default_factory=tuple)
     profiling_metrics: dict[str, int | float] = field(default_factory=dict)

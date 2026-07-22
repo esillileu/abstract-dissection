@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from mlprosection_mlflow.runtime import RuntimeOptions, _Sink, build_profiling_history_rows, get_or_create_condition_parent, metric_batches
+from mlprosection_mlflow.runtime import RuntimeOptions, _Sink, build_profiling_metric_rows, get_or_create_condition_parent, metric_batches
 
 
 def test_completed_checkpoint_upload_is_enabled_but_eval_upload_is_disabled_by_default() -> None:
@@ -81,8 +81,8 @@ def test_metric_batches_rejects_an_invalid_batch_size() -> None:
         raise AssertionError("expected metric batch size validation")
 
 
-def test_profiling_history_projects_epoch_runtime_and_throughput() -> None:
-    rows = build_profiling_history_rows({
+def test_profiling_metrics_project_epoch_runtime_and_throughput() -> None:
+    rows = build_profiling_metric_rows({
         "runtime.epoch.0.train_duration_ms": 1_500,
         "runtime.epoch.0.eval_duration_ms": 200,
         "throughput.epoch.0.train_samples_per_s": 512,
@@ -90,10 +90,10 @@ def test_profiling_history_projects_epoch_runtime_and_throughput() -> None:
     })
 
     assert rows == [
-        ("epoch", 1, "runtime/train_duration_s", 1.5),
-        ("epoch", 1, "runtime/eval_duration_s", 0.2),
-        ("epoch", 1, "throughput/train_samples_per_s", 512.0),
-        ("epoch", 1, "memory/train_start/cpu_rss_bytes", 64.0),
+        (1, "epoch/runtime/train_duration_s", 1.5),
+        (1, "epoch/runtime/eval_duration_s", 0.2),
+        (1, "epoch/throughput/train_samples_per_s", 512.0),
+        (1, "epoch/memory/train_start/cpu_rss_bytes", 64.0),
     ]
 
 

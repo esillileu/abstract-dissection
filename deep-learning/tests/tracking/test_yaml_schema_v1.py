@@ -24,10 +24,10 @@ def test_yaml_contract_projects_to_the_schema_v1_artifact_tree(tmp_path, monkeyp
     run.write_artifacts(
         model=None,
         final_metrics={"final/status/success": 1.0},
-        history_rows=[
-            ("update", 20, "train/loss", 1.5),
-            ("eval", 1, "valid/loss", 1.25),
-            ("epoch", 1, "train/loss", 1.0),
+        metric_rows=[
+            (20, "update/train/loss", 1.5),
+            (1, "update/eval_valid/loss", 1.25),
+            (1, "epoch/train/loss", 1.0),
         ],
         profiling_metrics={},
     )
@@ -36,10 +36,11 @@ def test_yaml_contract_projects_to_the_schema_v1_artifact_tree(tmp_path, monkeyp
     assert run.artifact_root == tmp_path / "mlprosection" / "results" / "mlflow_artifacts" / run.identity.run_key
     assert run.local_checkpoint_root == tmp_path / "mlprosection" / "results" / "checkpoints" / run.identity.run_key
     assert (run.artifact_root / "config/resolved.json").is_file()
-    assert (run.artifact_root / "metrics/history.csv").is_file()
-    assert "update,20,train/loss,1.5" in (run.artifact_root / "metrics/update_history.csv").read_text()
-    assert "eval,1,valid/loss,1.25" in (run.artifact_root / "metrics/eval_history.csv").read_text()
-    assert "epoch,1,train/loss,1.0" in (run.artifact_root / "metrics/epoch_history.csv").read_text()
+    assert (run.artifact_root / "metrics/metrics.csv").is_file()
+    metrics_text = (run.artifact_root / "metrics/metrics.csv").read_text()
+    assert "20,update/train/loss,1.5" in metrics_text
+    assert "1,update/eval_valid/loss,1.25" in metrics_text
+    assert "1,epoch/train/loss,1.0" in metrics_text
     assert (run.artifact_root / "metrics/final.json").is_file()
     assert (run.artifact_root / "checkpoints/checkpoint_manifest.json").is_file()
 
