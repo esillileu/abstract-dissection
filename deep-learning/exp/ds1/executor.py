@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 from dataclasses import asdict
+import csv
 import hashlib
 import json
-import time
 
 import numpy as np
 
@@ -17,7 +17,6 @@ from mlprosection.nn.model import DeepCNN, MLP, SimpleCNN
 from mlprosection.optim.SGD import AdaGrad, Adam, Momentum, SGD
 from mlprosection.optim.transform import L2Regularization
 from mlprosection.trainer import ForwardTrainer
-from mlprosection.events import EpochEvent, TrainEndEvent, TrainingWindowEvent, UpdateEvent
 
 from mlprosection.experiment.checkpoint import load_epoch_checkpoint, save_epoch_checkpoint
 from mlprosection.experiment.contracts import ExperimentResult
@@ -26,8 +25,18 @@ from mlprosection.experiment.executor import ExperimentContext
 from mlprosection.experiment.metrics import build_final_metrics
 from mlprosection.experiment.registry import register_executor
 from mlprosection.experiment.reproducibility import configure_runtime, seed_batch_order
+from mlprosection.profiling.backend import create_device_timer
 
 from .records import DS1Records
+
+
+def get_observation_executor(config: dict[str, object]):
+    group_id = str(config.get("execution_group_id", ""))
+    if group_id == "GO01":
+        return OptimizerTrajectoryObservationExecutor()
+    if group_id == "GO02":
+        return ActivationObservationExecutor()
+    raise ValueError(f"unknown DS1 observation group: {group_id}")
 
 
 @register_executor("supervised_classification")
@@ -55,20 +64,12 @@ class SupervisedClassificationExecutor:
             dataset=dataset, backend=backend, x_train=x_train, t_train=t_train,
             artifact_root=Path(str(context.metadata["artifact_root"])),
         )
-        x_train_probe, t_train_probe, train_probe_metadata = _train_evaluation_probe(
-            dataset=dataset,
-            training=training_config,
-            backend=backend,
-            x_train=x_train,
-            t_train=t_train,
-            artifact_root=Path(str(context.metadata["artifact_root"])),
-        )
         context.metadata["data"] = {
             "cache_path": mnist_cache_path,
             "cache_sha256": _file_digest(Path(mnist_cache_path)),
             "train_samples": len(x_train), "test_samples": len(x_test), "flatten": flatten,
             "input_transform": transform_metadata, "validation": validation_metadata,
-            "train_evaluation": train_probe_metadata,
+            "evaluation_sources": _mapping(config, "evaluation").get("sources", ()),
         }
         model = _model(model_config)
         if any(isinstance(layer, BatchNormalization) for layer in model.children()):
@@ -82,25 +83,16 @@ class SupervisedClassificationExecutor:
         max_updates = training_config.get("max_updates")
         trainer_holder: dict[str, ForwardTrainer] = {}
         evaluation_config = _mapping(config, "evaluation")
-        valid_request = None if x_valid is None or t_valid is None else EvaluationRequest(
-            "mnist-valid", "valid", (x_valid, t_valid), ("loss", "accuracy"),
-        )
-        train_request = None if x_train_probe is None or t_train_probe is None else EvaluationRequest(
-            "mnist-train-probe", "train", (x_train_probe, t_train_probe), ("loss", "accuracy"),
-        )
-        test_request = EvaluationRequest("mnist-test-full", "test", (x_test, t_test), ("loss", "accuracy"))
-        test_probe_size = evaluation_config.get("test_probe_size")
-        test_probe_request = test_request if test_probe_size is None else EvaluationRequest(
-            "mnist-test-probe", "test", (x_test[:int(test_probe_size)], t_test[:int(test_probe_size)]), ("loss", "accuracy"),
-        )
         schedule = _mapping(evaluation_config, "schedule")
-        request_by_set = {
-            "valid": valid_request,
-            "train-first-300": train_request,
-            "train-first-1000": train_request,
-            "test-full": test_request,
-            "test-first-1000": test_probe_request,
-        }
+        request_by_set = _evaluation_requests(
+            evaluation=evaluation_config,
+            x_train=x_train,
+            t_train=t_train,
+            x_valid=x_valid,
+            t_valid=t_valid,
+            x_test=x_test,
+            t_test=t_test,
+        )
         seen_epochs: set[int] = set()
 
         def scheduled_requests(spec: object):
@@ -117,31 +109,37 @@ class SupervisedClassificationExecutor:
             update_spec = schedule.get("on_update")
             if isinstance(update_spec, dict):
                 every = update_spec.get("every")
-                should = bool(update_spec.get("first", False) and event.update == 1)
-                should |= every is not None and event.update % int(every) == 0
+                start = int(update_spec.get("start", 1 if update_spec.get("first", False) else int(every or event.update)))
+                stop = update_spec.get("stop")
+                if stop is not None and event.update > int(stop):
+                    return ()
+                should = event.update == start
+                should |= every is not None and event.update >= start and (event.update - start) % int(every) == 0
                 if should:
                     return scheduled_requests(update_spec)
             first_epoch_spec = schedule.get("on_epoch_first_update")
             if isinstance(first_epoch_spec, dict) and event.epoch not in seen_epochs:
                 seen_epochs.add(event.epoch)
                 return scheduled_requests(first_epoch_spec)
-            interval = training_config.get("record_step_validation_interval")
-            should = bool(training_config.get("record_first_validation_evaluation", False) and event.update == 1)
-            should |= interval is not None and event.update % int(interval) == 0
-            if not should:
-                return ()
-            return tuple(request for request in (valid_request, train_request if bool(training_config.get("record_step_train_evaluation", False)) else None) if request is not None)
+            return ()
         def after_epoch(event):
             if bool(checkpoint_config.get("save_on_eval", False)):
+                records_sink.flush()
                 path = save_epoch_checkpoint(root=Path(str(context.metadata["checkpoint_root"])), model=model, optimizer=optimizer, trainer=trainer_holder["trainer"], config_digest=config_digest)
+                records_sink.add_checkpoint(update=event.end_update, epoch=event.epoch, kind="eval", path=path, sha256=_path_digest(path))
+                records_sink.flush()
                 callback = context.metadata.get("record_eval_checkpoint")
                 if callable(callback):
                     callback(path)
+        artifact_root = Path(str(context.metadata["artifact_root"]))
+        records_sink = DS1Records()
+        records_sink.bind_artifact_root(artifact_root)
         events = EventExperimentExecutor(
-            records=DS1Records(), evaluate=evaluate_request, update_requests=update_requests,
+            records=records_sink, evaluate=evaluate_request, update_requests=update_requests,
             epoch_requests=lambda _event: scheduled_requests(schedule.get("on_epoch_end")),
             terminal_requests=lambda _event: scheduled_requests(schedule.get("on_train_end")),
             after_epoch=after_epoch,
+            device_timer=_device_timer(config, backend),
         )
         trainer = ForwardTrainer(
             model,
@@ -159,7 +157,7 @@ class SupervisedClassificationExecutor:
             load_epoch_checkpoint(path=str(resume), model=model, optimizer=optimizer, trainer=trainer, config_digest=config_digest)
         seed_batch_order(backend, streams)
         records = events.run(lambda: trainer.fit(x_train, t_train), start_update=trainer.global_step + 1)
-        records.write_csv(Path(str(context.metadata["artifact_root"])))
+        records.flush()
         final_train = trainer.evaluate(x_train, t_train)
         final_test = trainer.evaluate(x_test, t_test)
         profiling: dict[str, int | float] = {}
@@ -169,96 +167,102 @@ class SupervisedClassificationExecutor:
             profiling_metrics=profiling, total_updates=trainer.global_step,
             completed_epochs=trainer.epoch, samples_seen=sum(int(row["batch_size"]) for row in records.updates),
         )
-        history = list(records.history_rows())
-        return ExperimentResult(metrics=metrics, artifact_root=_artifact_root(config), model=model, history=tuple(history), profiling_metrics=profiling)
-
-
-class _SupervisedEvents:
-    """Executor-owned DS1 schedule adapter for the event-based trainer."""
-
-    def __init__(self, *, context, training, x_valid, t_valid, x_train_probe, t_train_probe, x_test, t_test, checkpoint_config, checkpoint_identity, model, optimizer):
-        self.context, self.training = context, training
-        self.x_valid, self.t_valid = x_valid, t_valid
-        self.x_train_probe, self.t_train_probe = x_train_probe, t_train_probe
-        self.x_test, self.t_test = x_test, t_test
-        self.checkpoint_config, self.checkpoint_identity = checkpoint_config, checkpoint_identity
-        self.model, self.optimizer, self.trainer = model, optimizer, None
-        self.updates: list[UpdateEvent] = []
-        self.history: list[tuple[str, int, str, float]] = []
-        self.epoch_test_metrics = []
-        self.timing_windows: list[TrainingWindowEvent] = []
-        self._window_start_update: int | None = None
-        self._window_started_ns: int | None = None
-
-    def begin_timing_window(self, *, start_update: int) -> None:
-        self._window_start_update = start_update
-        self._window_started_ns = time.perf_counter_ns()
-
-    def on_update(self, event: UpdateEvent) -> None:
-        self.updates.append(event)
-        interval = self.training.get("record_step_validation_interval")
-        should_evaluate = bool(self.training.get("record_first_validation_evaluation", False) and event.update == 1)
-        should_evaluate |= interval is not None and event.update % int(interval) == 0
-        if should_evaluate:
-            self._close_timing_window(event, closed_by="probe", evaluate=True)
-
-    def on_epoch(self, event: EpochEvent) -> None:
-        assert self.trainer is not None
-        if self._window_start_update is not None and self._window_start_update <= event.end_update:
-            self._close_timing_window(event, closed_by="epoch_end", evaluate=False)
-        values = self.trainer.evaluate(self.x_test, self.t_test)
-        self.epoch_test_metrics.append(values)
-        self.history.extend(("epoch", event.epoch, f"test/{name}", float(value)) for name, value in {"loss": values.loss, "accuracy": values.accuracy}.items() if value is not None)
-        if bool(self.checkpoint_config.get("save_on_eval", False)):
-            path = save_epoch_checkpoint(root=Path(str(self.context.metadata["checkpoint_root"])), model=self.model, optimizer=self.optimizer, trainer=self.trainer, config_digest=self.checkpoint_identity)
-            callback = self.context.metadata.get("record_eval_checkpoint")
-            if callable(callback):
-                callback(path)
-
-    def on_train_end(self, event: TrainEndEvent) -> None:
-        if self._window_start_update is not None and self._window_start_update <= event.update:
-            self._close_timing_window(event, closed_by="terminal", evaluate=False)
-
-    def _evaluate_probe(self, event: UpdateEvent) -> None:
-        assert self.trainer is not None
-        if self.x_valid is not None and self.t_valid is not None:
-            self._append_evaluation(event.update, "valid", self.trainer.evaluate(self.x_valid, self.t_valid))
-        if bool(self.training.get("record_step_train_evaluation", False)):
-            if self.x_train_probe is None or self.t_train_probe is None:
-                raise ValueError("step train evaluation requires a train probe")
-            self._append_evaluation(event.update, "train", self.trainer.evaluate(self.x_train_probe, self.t_train_probe))
-
-    def _append_evaluation(self, step: int, split: str, values) -> None:
-        for name, value in {"loss": values.loss, "accuracy": values.accuracy}.items():
-            if value is not None:
-                self.history.append(("eval", step, f"{split}/{name}", float(value)))
-
-    def _close_timing_window(self, event, *, closed_by, evaluate: bool) -> None:
-        assert self._window_start_update is not None
-        assert self._window_started_ns is not None
-        train_wall_time_ns = time.perf_counter_ns() - self._window_started_ns
-        eval_started_ns = time.perf_counter_ns()
-        if evaluate:
-            self._evaluate_probe(event)
-        eval_wall_time_ns = time.perf_counter_ns() - eval_started_ns if evaluate else None
-        end_update = self._event_update(event)
-        self.timing_windows.append(
-            TrainingWindowEvent(
-                start_update=self._window_start_update,
-                end_update=end_update,
-                update_count=end_update - self._window_start_update + 1,
-                closed_by=closed_by,
-                train_wall_time_ns=train_wall_time_ns,
-                eval_wall_time_ns=eval_wall_time_ns,
-            )
+        return ExperimentResult(
+            metrics=metrics,
+            artifact_root=_artifact_root(config),
+            model=model,
+            metric_rows=records.mlflow_metric_rows(),
+            profiling_metrics=profiling,
         )
-        self.begin_timing_window(start_update=end_update + 1)
 
-    @staticmethod
-    def _event_update(event) -> int:
-        if isinstance(event, UpdateEvent | TrainEndEvent):
-            return event.update
-        return event.end_update
+class OptimizerTrajectoryObservationExecutor:
+    def run(self, config: dict[str, object], context: ExperimentContext) -> ExperimentResult:
+        artifact_root = Path(str(context.metadata.get("artifact_root", _artifact_root(config))))
+        observations = artifact_root / "observations"
+        observations.mkdir(parents=True, exist_ok=True)
+        optimizer = str(_mapping(config, "optimizer").get("name", "toy_sgd"))
+        lr = float(_mapping(config, "optimizer").get("learning_rate", 0.95))
+        max_updates = int(_mapping(config, "training").get("max_updates", 30))
+        x, y = -7.0, 2.0
+        vx = vy = gx2 = gy2 = mx = my = ux = uy = 0.0
+        beta1, beta2, eps, momentum = 0.9, 0.999, 1e-7, 0.9
+        rows = []
+        for update in range(max_updates):
+            objective = x * x / 20.0 + y * y
+            grad_x, grad_y = x / 10.0, 2.0 * y
+            rows.append({"update": update, "x": x, "y": y, "objective": objective, "grad_x": grad_x, "grad_y": grad_y})
+            name = optimizer.lower().removeprefix("toy_").replace("-", "_")
+            if name == "momentum":
+                vx = momentum * vx - lr * grad_x
+                vy = momentum * vy - lr * grad_y
+                x += vx
+                y += vy
+            elif name == "adagrad":
+                gx2 += grad_x * grad_x
+                gy2 += grad_y * grad_y
+                x -= lr * grad_x / (np.sqrt(gx2) + eps)
+                y -= lr * grad_y / (np.sqrt(gy2) + eps)
+            elif name == "adam":
+                step = update + 1
+                mx = beta1 * mx + (1 - beta1) * grad_x
+                my = beta1 * my + (1 - beta1) * grad_y
+                ux = beta2 * ux + (1 - beta2) * grad_x * grad_x
+                uy = beta2 * uy + (1 - beta2) * grad_y * grad_y
+                x -= lr * (mx / (1 - beta1 ** step)) / (np.sqrt(ux / (1 - beta2 ** step)) + eps)
+                y -= lr * (my / (1 - beta1 ** step)) / (np.sqrt(uy / (1 - beta2 ** step)) + eps)
+            elif name == "sgd":
+                x -= lr * grad_x
+                y -= lr * grad_y
+            else:
+                raise ValueError(f"unknown toy optimizer: {optimizer}")
+        _write_rows(observations / "trajectory.csv", rows, ["update", "x", "y", "objective", "grad_x", "grad_y"])
+        records = DS1Records()
+        records.bind_artifact_root(artifact_root)
+        records.flush()
+        return ExperimentResult(
+            metrics={"final/status/success": 1.0, "final/system/total_updates": float(max_updates), "final/system/completed_epochs": 0.0, "final/system/samples_seen": 0.0},
+            artifact_root=artifact_root,
+            metric_rows=tuple((int(row["update"]), f"update/trajectory/{key}", float(row[key])) for row in rows for key in ("x", "y", "objective", "grad_x", "grad_y")),
+        )
+
+
+class ActivationObservationExecutor:
+    def run(self, config: dict[str, object], context: ExperimentContext) -> ExperimentResult:
+        artifact_root = Path(str(context.metadata.get("artifact_root", _artifact_root(config))))
+        observations = artifact_root / "observations"
+        observations.mkdir(parents=True, exist_ok=True)
+        model_config = _mapping(config, "model")
+        seed = int(_mapping(config, "dataset").get("input_seed", 40402))
+        model_seed = int(model_config.get("model_seed", 40403))
+        rng = np.random.default_rng(seed)
+        weight_rng = np.random.default_rng(model_seed)
+        x = rng.normal(size=(1000, 100))
+        activation = str(model_config.get("activation", "relu"))
+        initializer = str(model_config.get("initializer", "he"))
+        hist_rows = []
+        summary_rows = []
+        for layer in range(1, int(model_config.get("depth", 5)) + 1):
+            w = weight_rng.normal(scale=_initializer_scale(initializer, x.shape[1]), size=(x.shape[1], int(model_config.get("width", 100))))
+            x = _activation(x @ w, activation)
+            hist, edges = np.histogram(x, bins=50)
+            for index, count in enumerate(hist):
+                hist_rows.append({"layer": layer, "bin_index": index, "bin_left": edges[index], "bin_right": edges[index + 1], "count": int(count), "sample_count": int(x.size)})
+            summary_rows.append({"layer": layer, "mean": float(x.mean()), "std": float(x.std()), "min": float(x.min()), "max": float(x.max()), "zero_ratio": float((x == 0).mean()), "sample_count": int(x.size)})
+        _write_rows(observations / "activation_histogram.csv", hist_rows, ["layer", "bin_index", "bin_left", "bin_right", "count", "sample_count"])
+        _write_rows(observations / "activation_summary.csv", summary_rows, ["layer", "mean", "std", "min", "max", "zero_ratio", "sample_count"])
+        records = DS1Records()
+        records.bind_artifact_root(artifact_root)
+        records.flush()
+        return ExperimentResult(
+            metrics={"final/status/success": 1.0, "final/system/total_updates": 0.0, "final/system/completed_epochs": 0.0, "final/system/samples_seen": 1000.0},
+            artifact_root=artifact_root,
+            metric_rows=tuple((0, f"observation/activation/layer_{row['layer']}/{key}", float(row[key])) for row in summary_rows for key in ("mean", "std", "zero_ratio")),
+        )
+
+
+def _device_timer(config: dict[str, object], backend):
+    profiling = _mapping(config, "profiling")
+    return create_device_timer(backend, enabled=bool(profiling.get("device_timing", False)))
 
 
 def _model(config: dict[str, object]):
@@ -300,12 +304,80 @@ def _artifact_root(config: dict[str, object]) -> Path:
     return Path(str(run.get("artifact_root", "exp/ds1/results/runs"))) / str(run.get("name", config["kind"]))
 
 
+def _evaluation_requests(*, evaluation: dict[str, object], x_train, t_train, x_valid, t_valid, x_test, t_test) -> dict[str, EvaluationRequest]:
+    raw_sources = evaluation.get("sources", ())
+    if not isinstance(raw_sources, list | tuple):
+        raise ValueError("evaluation.sources must be a list")
+    requests: dict[str, EvaluationRequest] = {}
+    for source in raw_sources:
+        if not isinstance(source, dict):
+            raise ValueError("evaluation source must be a mapping")
+        source_id = str(source["id"])
+        split = str(source["split"])
+        kind = str(source["kind"])
+        if split == "train":
+            x, t = x_train, t_train
+        elif split == "valid":
+            if x_valid is None or t_valid is None:
+                continue
+            x, t = x_valid, t_valid
+        elif split == "test":
+            x, t = x_test, t_test
+        else:
+            raise ValueError(f"unsupported evaluation source split: {split}")
+        if kind == "first_n":
+            count = int(source["count"])
+            x, t = x[:count], t[:count]
+        elif kind != "full":
+            raise ValueError(f"unsupported evaluation source kind: {kind}")
+        requests[source_id] = EvaluationRequest(source_id, split, (x, t), ("loss", "accuracy"))
+    return requests
+
+
 def _file_digest(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as file:
         for chunk in iter(lambda: file.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _path_digest(path: Path) -> str:
+    if path.is_file():
+        return _file_digest(path)
+    digest = hashlib.sha256()
+    for child in sorted(item for item in path.rglob("*") if item.is_file()):
+        digest.update(child.relative_to(path).as_posix().encode())
+        digest.update(_file_digest(child).encode())
+    return digest.hexdigest()
+
+
+def _write_rows(path: Path, rows: list[dict[str, object]], columns: list[str]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="") as file:
+        writer = csv.DictWriter(file, fieldnames=columns)
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def _initializer_scale(initializer: str, fan_in: int) -> float:
+    if initializer == "he":
+        return float(np.sqrt(2.0 / fan_in))
+    if initializer == "xavier":
+        return float(np.sqrt(1.0 / fan_in))
+    if initializer.startswith("std:"):
+        return float(initializer.split(":", 1)[1])
+    return 1.0
+
+
+def _activation(value: np.ndarray, name: str) -> np.ndarray:
+    if name == "relu":
+        return np.maximum(0.0, value)
+    if name == "sigmoid":
+        return 1.0 / (1.0 + np.exp(-value))
+    if name == "tanh":
+        return np.tanh(value)
+    raise ValueError(f"unknown activation: {name}")
 
 
 def _apply_input_transform(*, dataset: dict[str, object], backend, x_train, x_test, artifact_root: Path) -> dict[str, object]:
@@ -358,18 +430,3 @@ def _validation_probe(*, dataset: dict[str, object], backend, x_train, t_train, 
     np.save(target, valid_indices)
     xp = backend.xp
     return (x_train[xp.asarray(train_indices)], t_train[xp.asarray(train_indices)], x_train[xp.asarray(valid_indices)], t_train[xp.asarray(valid_indices)], {"size": size, "seed": seed, "artifact": str(target.relative_to(artifact_root)), "sha256": hashlib.sha256(valid_indices.tobytes()).hexdigest()})
-
-
-def _train_evaluation_probe(*, dataset: dict[str, object], training: dict[str, object], backend, x_train, t_train, artifact_root: Path):
-    if not bool(training.get("record_step_train_evaluation", False)):
-        return None, None, {"enabled": False, "size": 0}
-    size = int(dataset.get("train_evaluation_size", 1_000))
-    if not 0 < size <= len(x_train):
-        raise ValueError("dataset.train_evaluation_size must be between 1 and train size")
-    seed = int(dataset.get("train_evaluation_seed", 0))
-    indices = np.random.default_rng(seed).permutation(len(x_train))[:size]
-    target = artifact_root / "data" / "train_evaluation_indices.npy"
-    target.parent.mkdir(parents=True, exist_ok=True)
-    np.save(target, indices)
-    xp = backend.xp
-    return (x_train[xp.asarray(indices)], t_train[xp.asarray(indices)], {"enabled": True, "size": size, "seed": seed, "artifact": str(target.relative_to(artifact_root)), "sha256": hashlib.sha256(indices.tobytes()).hexdigest()})

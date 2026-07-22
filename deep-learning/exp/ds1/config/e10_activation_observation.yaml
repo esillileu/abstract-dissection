@@ -1,0 +1,29 @@
+domain: ds1
+kind: observation
+run: {experiment_id: e10, group_id: GO02, protocol: activation distribution observation, recipe_id: ds1-go02-activation-observation, structure_signature: synthetic-100x5-bias0}
+execution: {mode: seeded, default_device: cpu}
+seed_policy: {seed_set: research_v1, seed_count: 1, paired_execution: true}
+dataset: {id: SYNTH-NORMAL-1000x100, source: synthetic_normal, input_seed: 40402, sample_count: 1000, input_width: 100}
+loader: {}
+model: {family: mlp_observation, width: 100, depth: 5, bias: 0.0, model_seed: 40403}
+optimizer: {}
+loss: {name: none}
+budget: {}
+recording: {evaluation_sources: [], triggers: [], outputs: [observations/activation_histogram.csv, observations/activation_summary.csv]}
+numerics: {dtype: float64, backend: numpy, device: cpu}
+checkpoint: {save_final: false, save_on_eval: false, format: none}
+profiling: {enabled: false}
+tracking: {enabled: true, experiment: ds1, upload_checkpoint: false}
+variants:
+  ACT-SIGMOID-STD001: {model: {activation: sigmoid, initializer: 'std:0.01'}}
+  ACT-SIGMOID-XAVIER: {model: {activation: sigmoid, initializer: xavier}}
+  ACT-SIGMOID-HE: {model: {activation: sigmoid, initializer: he}}
+  ACT-SIGMOID-STD1: {model: {activation: sigmoid, initializer: 'std:1.0'}}
+  ACT-TANH-STD001: {model: {activation: tanh, initializer: 'std:0.01'}}
+  ACT-TANH-XAVIER: {model: {activation: tanh, initializer: xavier}}
+  ACT-TANH-HE: {model: {activation: tanh, initializer: he}}
+  ACT-TANH-STD1: {model: {activation: tanh, initializer: 'std:1.0'}}
+  ACT-RELU-STD001: {model: {activation: relu, initializer: 'std:0.01'}}
+  ACT-RELU-XAVIER: {model: {activation: relu, initializer: xavier}}
+  ACT-RELU-HE: {model: {activation: relu, initializer: he}}
+  ACT-RELU-STD1: {model: {activation: relu, initializer: 'std:1.0'}}

@@ -4,9 +4,8 @@ from pathlib import Path
 
 import yaml
 
-from mlprosection.experiment import load_yaml, normalize_config
-
 from exp.ds1.executor import _model
+from exp.ds1.spec import parse_run_spec
 
 
 CONFIG_ROOT = Path("exp/ds1/config")
@@ -20,7 +19,8 @@ def test_all_ds1_variants_resolve_and_build_the_declared_model() -> None:
         variants = source["variants"]
         assert isinstance(variants, dict)
         for atomic_run_id in variants:
-            config = normalize_config(load_yaml(path, atomic_run_id=atomic_run_id))
-            _model(config["model"])
+            config = parse_run_spec(path, atomic_run_id=atomic_run_id).to_executor_config()
+            if config["kind"] == "supervised_classification":
+                _model(config["model"])
             count += 1
-    assert count == 49
+    assert count == 65

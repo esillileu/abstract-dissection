@@ -1,0 +1,21 @@
+domain: ds1
+kind: observation
+run: {experiment_id: e09, group_id: GO01, protocol: optimizer trajectory observation, recipe_id: ds1-go01-optimizer-trajectory, structure_signature: anisotropic-quadratic-v1}
+execution: {mode: seeded, default_device: cpu}
+seed_policy: {seed_set: research_v1, seed_count: 1, paired_execution: true}
+dataset: {id: TOY-QUADRATIC, source: analytic, objective: x2_over_20_plus_y2, init: [-7.0, 2.0]}
+loader: {}
+model: {objective_id: anisotropic_quadratic_v1}
+optimizer: {learning_rate: 0.95}
+loss: {name: analytic_objective, reduction: scalar, phase: pre_update}
+budget: {max_updates: 30}
+recording: {evaluation_sources: [], triggers: [], outputs: [observations/trajectory.csv]}
+numerics: {dtype: float64, backend: numpy, device: cpu}
+checkpoint: {save_final: false, save_on_eval: false, format: none}
+profiling: {enabled: false}
+tracking: {enabled: true, experiment: ds1, upload_checkpoint: false}
+variants:
+  TOY-SGD: {optimizer: {name: toy_sgd}}
+  TOY-MOMENTUM: {optimizer: {name: toy_momentum, momentum: 0.9}}
+  TOY-ADAGRAD: {optimizer: {name: toy_adagrad}}
+  TOY-ADAM: {optimizer: {name: toy_adam}}

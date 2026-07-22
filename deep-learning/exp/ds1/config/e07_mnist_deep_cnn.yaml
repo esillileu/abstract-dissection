@@ -1,16 +1,25 @@
-# e07 = GT07: book DeepConvNet recipe.
+domain: ds1
 kind: supervised_classification
-dataset: {id: mnist-image-full, name: MNIST, flatten: false, train_limit: 60000, test_limit: 10000}
+run: {experiment_id: e07, group_id: GT07, protocol: MNIST DeepConvNet, recipe_id: ds1-gt07-deep-cnn, structure_signature: mnist-deepcnn-6conv-fc50}
+execution: {mode: seeded, default_device: cpu}
+seed_policy: {seed_set: research_v1, seed_count: 10, paired_execution: true}
+dataset: {id: mnist-image-full, source: mnist, flatten: false, train_limit: 60000, test_limit: 10000}
 loader: {batch_size: 100, drop_last: false, sampling_method: with_replacement}
 model: {alias: DeepCNN, input_channels: 1, image_size: 28, num_classes: 10, channels: [16, 32, 64], hidden_size: 50, dropout_ratio: 0.5, initializer: he}
 optimizer: {name: adam, learning_rate: 0.001}
-loss: {name: SoftmaxWithLoss, reduction: mean}
-training: {max_epochs: 20, entrypoint: exp/ds1/config/e07_mnist_deep_cnn.yaml}
-evaluation: {primary_metric: test/accuracy, schedule: {on_epoch_first_update: {sets: [train-first-1000, test-first-1000]}, on_train_end: {sets: [test-full]}}}
+loss: {name: SoftmaxWithLoss, reduction: mean, phase: post_update}
+budget: {max_epochs: 20}
+recording:
+  evaluation_sources:
+    - {id: mnist-train-first-1000, split: train, kind: first_n, count: 1000}
+    - {id: mnist-test-first-1000, split: test, kind: first_n, count: 1000}
+    - {id: mnist-test-full, split: test, kind: full}
+  triggers:
+    - {type: epoch_first_update, sources: [mnist-train-first-1000, mnist-test-first-1000]}
+    - {type: terminal, sources: [mnist-test-full]}
 numerics: {dtype: float64, backend: numpy, device: cpu}
 checkpoint: {save_final: true, save_on_eval: false, format: npz}
 profiling: {enabled: false}
-policy: {seed_set: research_v1, seed_count: 10, paired_execution: true}
 tracking: {enabled: true, experiment: ds1, upload_checkpoint: false}
 variants:
-  CNN-DEEP-BOOK: {atomic_run_id: CNN-DEEP-BOOK, experiment_ids: [e07], execution_group_id: GT07, recipe_id: ds1-gt07-deep-cnn, structure_signature: mnist-deepcnn-6conv-fc50}
+  CNN-DEEP-BOOK: {}

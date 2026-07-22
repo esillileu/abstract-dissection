@@ -32,6 +32,34 @@
 | `GT07` | MNIST DeepConvNet               | MNIST image full train/test, DeepConvNet, Adam `.001`, batch 100, 20 epochs                    | 없음                                  |            1 |
 | `GT08` | MNIST spatial-layout comparison | MNIST full train/test, Adam `.001`, batch 100, replacement sampling, 2 epochs, 10 paired seeds | architecture × input transform        |            4 |
 
+## 현재 executor 재현 상태
+
+이 표는 문서의 **목표 protocol**이 아니라, 2026-07-22 현재
+`exp/ds1/executor.py`와 `exp/ds1/config/`으로 실제 실행할 때의 상태다. `부분`
+그룹의 결과는 해당 원본 그래프의 완전 재현으로 사용하면 안 된다.
+
+| 그룹 | 상태 | 현재 가능한 범위 | 재현되지 않는 사항 |
+| --- | --- | --- | --- |
+| `GO01` | 미구현 | 없음 | active catalog/executor가 없다. analytic trajectory artifact와 4 optimizer 조건 모두 없다. |
+| `GO02` | 미구현 | 없음 | active catalog/executor가 없다. activation histogram/summary artifact와 12 조건 모두 없다. |
+| `GT01` | 완료 | 4 optimizer, 2,000 post-update loss, paired seed | schedule상 중간 accuracy는 요구하지 않는다. |
+| `GT02` | 완료 | 3 initializer, 2,000 post-update loss, paired seed | schedule상 중간 accuracy는 요구하지 않는다. |
+| `GT03` | 완료 | 2 weight-decay 조건, 601 updates, `1,4,7,...` cadence, train-first-300/test-full 평가 | 없음. |
+| `GT04` | 완료 | 2 dropout 조건, epoch 첫 update에서 train-first-300/test-full 평가 | 없음. |
+| `GT05` | 완료 | 32 BatchNorm×scale 조건, 20 epochs, `1,11,21,...,191` cadence, train-first-1000 평가 | 없음. |
+| `GT06` | 완료 | SimpleCNN, 20 epochs, epoch-first train-first-1000/test-first-1000, terminal test-full 평가 | 없음. |
+| `GT07` | 완료 | DeepCNN, 20 epochs, epoch-first train-first-1000/test-first-1000, terminal test-full 평가 | 없음. |
+| `GT08` | 완료 | 4 spatial/input-transform 조건, paired seed, epoch-end test-full 평가 | 없음. |
+
+### 공통 구현 제한
+
+- `updates.csv`/`evaluations.csv`/`timing_windows.csv`는 256-record, epoch 종료,
+  checkpoint 직전, run 종료에 flush한다.
+- `checkpoints.csv`는 schema header와 checkpoint hash를 기록한다.
+- GPU profile-mode device timing은 아직 구현되지 않았다.
+
+완전 재현을 위한 남은 우선순위는 profile-mode device-timing record 순서다.
+
 ## GO01 — optimizer trajectory observation
 
 | atomic run ID  | optimizer                        |
