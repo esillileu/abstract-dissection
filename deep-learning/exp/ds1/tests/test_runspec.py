@@ -38,6 +38,22 @@ def test_gt06_and_gt07_runspec_declare_fixed_first_1000_sources() -> None:
         assert sources["mnist-test-full"].kind == "full"
 
 
+def test_gt08_runspec_declares_20_update_train_and_test_cadence() -> None:
+    spec = parse_run_spec("exp/ds1/config/e08_mnist_spatial_layout.yaml", atomic_run_id="NN-MATCHED")
+    sources = {source.id: source for source in spec.evaluation_sources}
+
+    assert spec.identity.group_id == "GT08"
+    assert sources["mnist-train-full"].split == "train"
+    assert sources["mnist-train-full"].kind == "full"
+    assert sources["mnist-test-full"].split == "test"
+    assert sources["mnist-test-full"].kind == "full"
+    assert spec.triggers[0].type == "updates"
+    assert (spec.triggers[0].start, spec.triggers[0].every, spec.triggers[0].stop) == (20, 20, None)
+    assert spec.triggers[0].sources == ("mnist-train-full", "mnist-test-full")
+    assert spec.triggers[1].type == "epoch_end"
+    assert spec.triggers[1].sources == ("mnist-test-full",)
+
+
 def test_ds1_runspec_allows_device_timing_profiling_policy() -> None:
     spec = parse_run_spec(
         "exp/ds1/config/e01_mnist_optimizer.yaml",

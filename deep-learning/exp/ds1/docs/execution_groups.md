@@ -49,7 +49,7 @@
 | `GT05` | 완료 | 32 BatchNorm×scale 조건, 20 epochs, `1,11,21,...,191` cadence, train-first-1000 평가 | 없음. |
 | `GT06` | 완료 | SimpleCNN, 20 epochs, epoch-first train-first-1000/test-first-1000, terminal test-full 평가 | 없음. |
 | `GT07` | 완료 | DeepCNN, 20 epochs, epoch-first train-first-1000/test-first-1000, terminal test-full 평가 | 없음. |
-| `GT08` | 완료 | 4 spatial/input-transform 조건, paired seed, epoch-end test-full 평가 | 없음. |
+| `GT08` | 완료 | 4 spatial/input-transform 조건, paired seed, 20-update train-full/test-full 평가, epoch-end test-full 평가 | 없음. |
 
 ### 공통 구현 제한
 
