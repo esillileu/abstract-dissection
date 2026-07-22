@@ -23,6 +23,7 @@ from mlprosection.experiment.contracts import ExperimentResult
 from mlprosection.experiment.event_executor import EvaluationRequest, EventExperimentExecutor
 from mlprosection.experiment.executor import ExperimentContext
 from mlprosection.experiment.metrics import build_final_metrics
+from mlprosection.experiment.profiling import create_runtime_monitor, training_summary
 from mlprosection.experiment.registry import register_executor
 from mlprosection.experiment.reproducibility import configure_runtime, seed_batch_order
 from mlprosection.profiling.backend import create_device_timer
@@ -134,6 +135,7 @@ class SupervisedClassificationExecutor:
         artifact_root = Path(str(context.metadata["artifact_root"]))
         records_sink = DS1Records()
         records_sink.bind_artifact_root(artifact_root)
+        monitor = create_runtime_monitor(backend, _mapping(config, "profiling"))
         events = EventExperimentExecutor(
             records=records_sink, evaluate=evaluate_request, update_requests=update_requests,
             epoch_requests=lambda _event: scheduled_requests(schedule.get("on_epoch_end")),
@@ -156,11 +158,12 @@ class SupervisedClassificationExecutor:
         if (resume := checkpoint_config.get("resume")):
             load_epoch_checkpoint(path=str(resume), model=model, optimizer=optimizer, trainer=trainer, config_digest=config_digest)
         seed_batch_order(backend, streams)
-        records = events.run(lambda: trainer.fit(x_train, t_train), start_update=trainer.global_step + 1)
+        with training_summary(monitor):
+            records = events.run(lambda: trainer.fit(x_train, t_train), start_update=trainer.global_step + 1)
         records.flush()
         final_train = trainer.evaluate(x_train, t_train)
         final_test = trainer.evaluate(x_test, t_test)
-        profiling: dict[str, int | float] = {}
+        profiling = monitor.metrics()
         metrics = build_final_metrics(
             train_loss=final_train.loss, test_loss=final_test.loss,
             train_accuracy=final_train.accuracy, test_accuracy=final_test.accuracy,

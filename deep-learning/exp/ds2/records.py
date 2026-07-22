@@ -109,6 +109,10 @@ class DS2Records:
                 rows.append((int(row["update"]), "update/train/lr", row["lr"]))
         for row in self.evaluations:
             rows.append((int(row["axis_step"]), f"{row['axis']}/eval_{row['split']}/{row['metric']}", float(row["value"])))
+        for row in self.source_curves:
+            metric_name = _source_curve_metric_name(str(row.get("metric", "")))
+            if metric_name is not None:
+                rows.append((int(row["plot_index"]), metric_name, float(row["value"])))
         for window in self.timing_windows:
             rows.append((window.end_update, "update/runtime/window/train_wall_time_ms", window.train_wall_time_ns / 1_000_000))
             if window.train_device_time_ns is not None:
@@ -128,7 +132,7 @@ class DS2Records:
         self._write(artifact_root / "timing_windows.csv", [{"start_update": item.start_update, "end_update": item.end_update, "update_count": item.update_count, "closed_by": item.closed_by, "train_wall_time_ns": item.train_wall_time_ns, "train_device_time_ns": item.train_device_time_ns, "eval_wall_time_ns": item.eval_wall_time_ns, "eval_device_time_ns": item.eval_device_time_ns} for item in self.timing_windows], columns=["start_update", "end_update", "update_count", "closed_by", "train_wall_time_ns", "train_device_time_ns", "eval_wall_time_ns", "eval_device_time_ns"])
         observations = artifact_root / "observations"
         observations.mkdir(exist_ok=True)
-        self._write(observations / "source_curves.csv", self.source_curves, columns=["series_id", "plot_index", "update_end", "epoch", "value"])
+        self._write(observations / "source_curves.csv", self.source_curves, columns=["series_id", "plot_index", "update_start", "update_end", "epoch_start", "epoch_end", "unit", "unit_count", "metric", "reducer", "value"])
         self._write(observations / "predictions.csv", self.predictions, columns=["example_id", "source", "target", "prediction", "exact_match"])
         self._write(observations / "attention.csv", self.attention, columns=["example_id", "decode_step", "encoder_position", "weight"])
         if self.attention_render is not None:
@@ -154,10 +158,20 @@ class DS2Records:
             writer = csv.DictWriter(file, fieldnames=columns)
             writer.writeheader()
             for row in rows:
-                writer.writerow({key: DS2Records._csv_value(value) for key, value in row.items()})
+                writer.writerow({key: DS2Records._csv_value(row.get(key, "")) for key in columns})
 
     @staticmethod
     def _csv_value(value: object) -> object:
         if hasattr(value, "backend") and hasattr(value, "data"):
             return value.backend.scalar_to_float(value.data)
         return value
+
+
+def _source_curve_metric_name(metric: str) -> str | None:
+    if metric == "loss":
+        return "series/train/loss"
+    if metric == "perplexity":
+        return "series/train/perplexity"
+    if metric == "exact_match_accuracy":
+        return "series/eval_test/exact_match_accuracy"
+    return None

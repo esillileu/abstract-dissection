@@ -25,6 +25,7 @@ from mlprosection.experiment.contracts import ExperimentResult
 from mlprosection.experiment.checkpoint import load_epoch_checkpoint, save_epoch_checkpoint
 from mlprosection.experiment.event_executor import EvaluationRequest, EventExperimentExecutor
 from mlprosection.experiment.executor import ExperimentContext
+from mlprosection.experiment.profiling import create_runtime_monitor, training_summary
 from mlprosection.experiment.registry import register_executor
 from mlprosection.experiment.reproducibility import configure_runtime, seed_batch_order
 from mlprosection.profiling.backend import create_device_timer
@@ -99,26 +100,44 @@ def _source_curve_from_objective(config: dict[str, object]):
     if every < 1:
         return lambda _event: None
     kind = str(curve.get("kind", "interval_mean_loss"))
+    reducer = str(curve.get("reducer", "mean"))
+    metric = "perplexity" if kind == "train_perplexity" else "loss"
+    unit = "token" if kind == "train_perplexity" else "example"
     total = None
     count = 0
+    unit_count = 0
+    update_start = None
+    epoch_start = None
 
     def reduce(event):
-        nonlocal total, count
+        nonlocal total, count, unit_count, update_start, epoch_start
+        if update_start is None:
+            update_start = event.update
+            epoch_start = event.epoch
         total = event.objective.data if total is None else total + event.objective.data
         count += 1
+        unit_count += int(event.unit_count)
         if event.local_iteration % every != 0:
             return None
         value = event.objective.backend.scalar_to_float(total / count)
-        total, count = None, 0
         if kind == "train_perplexity":
             value = float(event.objective.backend.xp.exp(value))
-        return {
+        point = {
             "series_id": kind,
             "plot_index": event.update - 1,
+            "update_start": update_start,
             "update_end": event.update,
-            "epoch": event.epoch,
+            "epoch_start": epoch_start,
+            "epoch_end": event.epoch,
+            "unit": unit,
+            "unit_count": unit_count,
+            "metric": metric,
+            "reducer": reducer,
             "value": value,
         }
+        total, count, unit_count = None, 0, 0
+        update_start, epoch_start = None, None
+        return point
 
     return reduce
 
@@ -161,6 +180,7 @@ class Word2VecExecutor:
         artifact_root = _artifact_root(config, context)
         records_sink = DS2Records()
         records_sink.bind_artifact_root(artifact_root)
+        monitor = create_runtime_monitor(backend, _mapping(config, "profiling"))
         controller = EventExperimentExecutor(
             records=records_sink, evaluate=lambda _request: None,
             source_curve=_source_curve_from_objective(config),
@@ -170,17 +190,19 @@ class Word2VecExecutor:
             model, optimizer, max_epochs=epochs, batch_size=batch_size,
             max_grad=_optional_max_grad(config), event_receivers=[controller],
         )
-        records = controller.run(
-            lambda: trainer.fit(Tensor(train_x, backend=backend), Tensor(train_t, backend=backend)),
-            start_update=trainer.global_step + 1,
-        )
+        with training_summary(monitor):
+            records = controller.run(
+                lambda: trainer.fit(Tensor(train_x, backend=backend), Tensor(train_t, backend=backend)),
+                start_update=trainer.global_step + 1,
+            )
         records.flush()
         final_loss = float(records.updates[-1]["loss"].backend.scalar_to_float(records.updates[-1]["loss"].data)) if records.updates else 0.0
         final_metrics = {"final/train/loss": final_loss}
+        profiling_metrics = monitor.metrics()
         return ExperimentResult(
             metrics=_final(updates=trainer.global_step, epochs=trainer.epoch, samples=len(x) * trainer.epoch, **final_metrics),
             artifact_root=artifact_root, model=model, metric_rows=records.mlflow_metric_rows(),
-            profiling_metrics={},
+            profiling_metrics=profiling_metrics,
         )
 
 
@@ -233,6 +255,7 @@ class LanguageModelExecutor:
         artifact_root = _artifact_root(config, context)
         records_sink = DS2Records()
         records_sink.bind_artifact_root(artifact_root)
+        monitor = create_runtime_monitor(backend, _mapping(config, "profiling"))
         def after_evaluation(request, result, _axis, step):
             nonlocal valid_ppl, test_ppl, best_valid, best_valid_epoch, selected_checkpoint_path
             if request.split == "valid":
@@ -260,7 +283,8 @@ class LanguageModelExecutor:
             source_curve=_source_curve_from_objective(config),
             device_timer=_device_timer(config, backend),
         )
-        records = controller.run(lambda: trainer.fit(train, train_targets))
+        with training_summary(monitor):
+            records = controller.run(lambda: trainer.fit(train, train_targets))
         records.flush()
         if test_at_end or test_ppl == float("inf"):
             if bool(_mapping(config, "checkpoint").get("save_best", False)):
@@ -282,12 +306,13 @@ class LanguageModelExecutor:
                 "final/best_valid_ppl": best_valid,
                 "final/best_valid_epoch": float(best_valid_epoch),
             })
+        profiling_metrics = monitor.metrics()
         return ExperimentResult(
             metrics=_final(updates=trainer.global_step, epochs=trainer.epoch, samples=len(train) * trainer.epoch, **final_metrics),
             artifact_root=artifact_root,
             model=model,
             metric_rows=records.mlflow_metric_rows(),
-            profiling_metrics={},
+            profiling_metrics=profiling_metrics,
         )
 
 
@@ -327,6 +352,7 @@ class Seq2SeqExecutor:
         artifact_root = _artifact_root(config, context)
         records = DS2Records()
         records.bind_artifact_root(artifact_root)
+        monitor = create_runtime_monitor(backend, _mapping(config, "profiling"))
         checkpoint_config = _mapping(config, "checkpoint")
         config_digest = _config_digest(config)
         best_exact = -1.0
@@ -337,8 +363,14 @@ class Seq2SeqExecutor:
                 records.add_source_curve({
                     "series_id": "full_test_exact_match",
                     "plot_index": step - 1,
+                    "update_start": trainer.global_step,
                     "update_end": trainer.global_step,
-                    "epoch": step,
+                    "epoch_start": step,
+                    "epoch_end": step,
+                    "unit": "sequence",
+                    "unit_count": result.example_count,
+                    "metric": "exact_match_accuracy",
+                    "reducer": "identity",
                     "value": result.exact_match_accuracy,
                 })
                 if bool(checkpoint_config.get("save_best", False)) and result.exact_match_accuracy > best_exact:
@@ -361,7 +393,8 @@ class Seq2SeqExecutor:
             after_evaluation=after_evaluation,
             device_timer=_device_timer(config, backend),
         )
-        records = controller.run(lambda: trainer.fit(train_x, train_t))
+        with training_summary(monitor):
+            records = controller.run(lambda: trainer.fit(train_x, train_t))
         _record_seq_predictions(records, model, x_test, t_test, data["char_to_id"], data["id_to_char"], backend, _mapping(config, "recording"))
         records.flush()
         last_evaluation = records.evaluations[-2:] if len(records.evaluations) >= 2 else []
@@ -373,7 +406,7 @@ class Seq2SeqExecutor:
             artifact_root=artifact_root,
             model=model,
             metric_rows=records.mlflow_metric_rows(),
-            profiling_metrics={},
+            profiling_metrics=monitor.metrics(),
         )
 
 

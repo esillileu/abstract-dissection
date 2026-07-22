@@ -76,7 +76,12 @@ class EventExperimentExecutor:
         is intentionally independent of Word2Vec/LM/Seq2seq data shapes.
         """
         self.begin(start_update=start_update)
-        train()
+        try:
+            train()
+        finally:
+            flush = getattr(self.records, "flush", None)
+            if callable(flush):
+                flush()
         return self.records
 
     def on_update(self, event: UpdateEvent) -> None:

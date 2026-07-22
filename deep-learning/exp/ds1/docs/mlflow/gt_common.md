@@ -20,6 +20,38 @@
 
 전체 resolved config와 seed·split checksum은 `manifest.json` artifact에 기록한다.
 
+## MLflow metric 목록
+
+- `final/status/*` - run 성공 여부와 NaN/Inf/divergence flag.
+- `final/system/*` - 총 update 수, 완료 epoch 수, 처리 sample 수.
+- `final/train/loss`, `final/test/loss` - run 종료 후 full train/test loss.
+- `final/train/accuracy`, `final/test/accuracy` - run 종료 후 full train/test accuracy.
+- `runtime/run_wall_total_s` - YAML runner 기준 전체 run wall time.
+- `runtime/train_total_s` - executor가 trainer fit 구간에서 측정한 전체 train wall time.
+- `memory/cpu_rss_start_bytes`, `memory/cpu_rss_end_bytes`, `memory/cpu_rss_peak_sampled_bytes` - profiling summary에서 투영한 CPU RSS 시작/종료/peak sampled memory.
+- `update/train/loss`, `update/train/lr` - 각 optimizer update 직후 post-update loss와 learning rate.
+- `{update,epoch,terminal}/eval_{train,valid,test}/{loss,accuracy}` - evaluation schedule이 요청한 split별 evaluation result.
+- `update/runtime/window/{train,eval}_wall_time_ms` - timing window의 host wall time. step은 `end_update`.
+- `update/runtime/window/{train,eval}_device_time_ms` - CUDA profile-mode device time. 값이 있을 때만 기록한다.
+
+## MLflow artifact 목록
+
+- `updates.csv` - update별 raw train loss/lr history.
+- `evaluations.csv` - schedule 기반 train/valid/test evaluation history.
+- `timing_windows.csv` - probe/epoch/terminal timing window history.
+- `checkpoints.csv` - executor가 기록한 checkpoint index와 digest.
+- `config/resolved.json`, `config/condition.json`, `config/seed.json`, `config/profiling.json` - resolved run condition, seed stream, profiling config.
+- `reproducibility/runtime.json` - 실제 runtime/backend/seed/data metadata.
+- `code/git.json`, `code/git.diff.patch` - git commit/dirty 상태와 dirty diff. diff는 dirty run에서만 기록한다.
+- `environment/*.json`, `environment/*.txt` - Python, package, system, backend, device metadata.
+- `data/dataset_manifest.json` - dataset section과 data selection metadata.
+- `model/architecture.json`, `model/structure.txt`, `model/parameter_manifest.json`, `model/initialization_manifest.json` - model config, structure text, parameter manifest, initializer metadata.
+- `metrics/metrics.csv`, `metrics/final.json` - MLflow metric row mirror와 final scalar metric snapshot.
+- `metrics/runtime_history.csv`, `metrics/memory_history.csv` - profiling metrics에서 만든 runtime/memory history artifact.
+- `profiles/profiling_summary.json` - `ExperimentResult.profiling_metrics` 전체 summary.
+- `checkpoints/checkpoint_manifest.json` - checkpoint payload 위치, digest, 포함 state manifest.
+- `checkpoints/final.npz` - final checkpoint payload. `tracking.upload_checkpoint`가 true일 때 MLflow artifact로 업로드한다.
+
 ## 매 update 기록
 
 Trainer는 optimizer update가 끝난 직후 동일 batch에서 post-update loss를 계산한다.

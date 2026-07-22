@@ -56,9 +56,9 @@
 - `updates.csv`/`evaluations.csv`/`timing_windows.csv`는 256-record, epoch 종료,
   checkpoint 직전, run 종료에 flush한다.
 - `checkpoints.csv`는 schema header와 checkpoint hash를 기록한다.
-- GPU profile-mode device timing은 아직 구현되지 않았다.
+- GPU profile-mode device timing은 CUDA event 기반 window timing으로 기록한다.
 
-완전 재현을 위한 남은 우선순위는 profile-mode device-timing record 순서다.
+완전 재현을 위한 남은 우선순위는 문서 스키마와 artifact 검증을 계속 맞추는 것이다.
 
 ## GO01 — optimizer trajectory observation
 

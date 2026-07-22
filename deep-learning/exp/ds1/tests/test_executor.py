@@ -58,6 +58,9 @@ def test_supervised_executor_consumes_forward_events_for_updates_evaluation_and_
     assert "update/train/loss" in metric_names
     assert "update/eval_train/loss" in metric_names
     assert result.metrics["final/system/total_updates"] == 2.0
+    assert "runtime.train_total.count" in result.profiling_metrics
+    assert "memory.run.start.cpu.rss_bytes" in result.profiling_metrics
+    assert "memory.run.end.cpu.rss_bytes" in result.profiling_metrics
 
 
 def test_ds1_run_spec_rejects_legacy_trainer_policy(tmp_path) -> None:

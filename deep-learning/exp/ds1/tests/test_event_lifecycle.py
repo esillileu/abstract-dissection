@@ -92,3 +92,25 @@ def test_event_executor_leaves_eval_timing_empty_without_evaluation_request() ->
     assert window.train_device_time_ns == 42
     assert window.eval_wall_time_ns is None
     assert window.eval_device_time_ns is None
+
+
+def test_event_executor_flushes_records_when_train_raises() -> None:
+    class Records(DS1Records):
+        def __init__(self) -> None:
+            super().__init__()
+            self.flush_count = 0
+
+        def flush(self) -> None:
+            self.flush_count += 1
+
+    records = Records()
+    executor = EventExperimentExecutor(records=records, evaluate=lambda _request: None)
+
+    try:
+        executor.run(lambda: (_ for _ in ()).throw(RuntimeError("boom")))
+    except RuntimeError as exc:
+        assert str(exc) == "boom"
+    else:
+        raise AssertionError("expected train exception")
+
+    assert records.flush_count == 1

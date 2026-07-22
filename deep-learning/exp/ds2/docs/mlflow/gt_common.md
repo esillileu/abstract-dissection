@@ -2,6 +2,46 @@
 
 모든 `GT01`–`GT07` trial의 params/tags: `group_id`, `atomic_run_id`, `master_seed`, `model_signature`, `dataset_id`, `split_id`, `resolved_config_sha256`, `evaluation_schedule_id`, `source_curve_schedule_id`, `loss_phase=post_update`, `loss_reduction=mean`.
 
+## MLflow metric 목록
+
+- `final/status/*` - run 성공 여부와 NaN/Inf/divergence flag.
+- `final/system/*` - 총 update 수, 완료 epoch 수, 처리 sample/token/sequence 수.
+- `final/train/loss` - Word2Vec/Seq2seq final train loss.
+- `final/train/perplexity`, `final/test/perplexity`, `final/{train,test}/ppl` - language modeling final perplexity.
+- `final/valid/perplexity`, `final/valid/ppl`, `final/best_valid_ppl`, `final/best_valid_epoch` - validation-selected LM recipe summary. valid evaluation이 있을 때만 기록한다.
+- `final/test/exact_match`, `final/test/token` - Seq2seq final exact-match/token accuracy projection.
+- `runtime/run_wall_total_s` - YAML runner 기준 전체 run wall time.
+- `runtime/train_total_s` - executor가 trainer fit 구간에서 측정한 전체 train wall time.
+- `memory/cpu_rss_start_bytes`, `memory/cpu_rss_end_bytes`, `memory/cpu_rss_peak_sampled_bytes` - profiling summary에서 투영한 CPU RSS 시작/종료/peak sampled memory.
+- `update/train/loss`, `update/train/lr` - 각 optimizer update 직후 post-update loss와 learning rate.
+- `{epoch,terminal}/eval_{valid,test}/{loss,perplexity,exact_match_accuracy,token_accuracy}` - LM/Seq2seq evaluation schedule이 요청한 long-form evaluation result.
+- `series/train/loss` - `observations/source_curves.csv`의 source objective loss. step은 `plot_index`.
+- `series/train/perplexity` - `observations/source_curves.csv`의 source objective perplexity. step은 `plot_index`.
+- `series/eval_test/exact_match_accuracy` - Seq2seq epoch exact-match source curve. step은 `plot_index`.
+- `update/runtime/window/{train,eval}_wall_time_ms` - timing window의 host wall time. step은 `end_update`.
+- `update/runtime/window/{train,eval}_device_time_ms` - CUDA profile-mode device time. 값이 있을 때만 기록한다.
+
+## MLflow artifact 목록
+
+- `updates.csv` - update별 raw train loss/lr history.
+- `evaluations.csv` - split/metric long-form evaluation history.
+- `timing_windows.csv` - source-curve/evaluation probe, epoch, terminal timing window history.
+- `checkpoints.csv` - executor가 기록한 selected/eval checkpoint index와 digest.
+- `observations/source_curves.csv` - 원본 graph/console series 재현용 source curve history.
+- `observations/predictions.csv` - Seq2seq prediction examples.
+- `observations/attention.csv`, `observations/attention_render.json` - attention alignment observation weights와 render metadata.
+- `config/resolved.json`, `config/condition.json`, `config/seed.json`, `config/profiling.json` - resolved run condition, seed stream, profiling config.
+- `reproducibility/runtime.json` - 실제 runtime/backend/seed/data metadata.
+- `code/git.json`, `code/git.diff.patch` - git commit/dirty 상태와 dirty diff. diff는 dirty run에서만 기록한다.
+- `environment/*.json`, `environment/*.txt` - Python, package, system, backend, device metadata.
+- `data/dataset_manifest.json` - dataset section과 data selection metadata.
+- `model/architecture.json`, `model/structure.txt`, `model/parameter_manifest.json`, `model/initialization_manifest.json` - model config, structure text, parameter manifest, initializer metadata.
+- `metrics/metrics.csv`, `metrics/final.json` - MLflow metric row mirror와 final scalar metric snapshot.
+- `metrics/runtime_history.csv`, `metrics/memory_history.csv` - profiling metrics에서 만든 runtime/memory history artifact.
+- `profiles/profiling_summary.json` - `ExperimentResult.profiling_metrics` 전체 summary.
+- `checkpoints/checkpoint_manifest.json` - checkpoint payload 위치, digest, 포함 state manifest.
+- `checkpoints/final.npz` - final checkpoint payload. `tracking.upload_checkpoint`가 true일 때 MLflow artifact로 업로드한다.
+
 | artifact 열 | MLflow metric | step |
 | --- | --- | ---: |
 | `updates.csv.loss` | `update/train/loss` | update |
