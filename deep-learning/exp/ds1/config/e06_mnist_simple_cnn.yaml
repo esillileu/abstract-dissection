@@ -1,7 +1,7 @@
 domain: ds1
 kind: supervised_classification
 run: {experiment_id: e06, group_id: GT06, protocol: MNIST SimpleConvNet, recipe_id: ds1-gt06-simple-cnn, structure_signature: mnist-simplecnn-c30-fc100}
-execution: {mode: seeded, default_device: cpu}
+execution: {mode: seeded, default_device: cuda:0}
 seed_policy: {seed_set: research_v1, seed_count: 10, paired_execution: true}
 dataset: {id: mnist-image-full, source: mnist, flatten: false, train_limit: 60000, test_limit: 10000}
 loader: {batch_size: 100, drop_last: false, sampling_method: with_replacement}
@@ -17,7 +17,7 @@ recording:
   triggers:
     - {type: epoch_first_update, sources: [mnist-train-first-1000, mnist-test-first-1000]}
     - {type: terminal, sources: [mnist-test-full]}
-numerics: {dtype: float64, backend: numpy, device: cpu}
+numerics: {dtype: float64, backend: cupy, device: cuda:0}
 checkpoint: {save_final: true, save_on_eval: false, format: npz}
 profiling: {enabled: false}
 tracking: {enabled: true, experiment: ds1, upload_checkpoint: false}

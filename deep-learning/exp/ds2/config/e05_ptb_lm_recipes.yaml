@@ -1,7 +1,7 @@
 domain: ds2
 kind: language_modeling
 run: {experiment_id: e05, group_id: GT05, protocol: PTB LM recipe comparison, recipe_id: ds2-gt05-ptb-lm, structure_signature: ptb-lm-650}
-execution: {mode: seeded, default_device: cpu}
+execution: {mode: seeded, default_device: cuda:0}
 seed_policy: {seed_set: research_v1, seed_count: 10, paired_execution: true, max_grad: 0.25}
 dataset: {id: DS-PTB, source: ptb}
 loader: {batch_size: 20, time_size: 35}
@@ -14,7 +14,7 @@ recording:
   evaluations:
     - {axis: epoch, every: 1, sources: [valid]}
     - {axis: terminal, sources: [test]}
-numerics: {dtype: float32, backend: numpy, device: cpu, deterministic: true}
+numerics: {dtype: float32, backend: cupy, device: cuda:0, deterministic: true}
 checkpoint: {save_final: true, save_best: true, format: npz}
 profiling: {enabled: false}
 tracking: {enabled: true, experiment: ds2}

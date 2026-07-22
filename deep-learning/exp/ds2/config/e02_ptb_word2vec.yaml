@@ -1,7 +1,7 @@
 domain: ds2
 kind: word2vec
 run: {experiment_id: e02, group_id: GT02, protocol: PTB Word2Vec, recipe_id: ds2-gt02-ptb-word2vec, structure_signature: ptb-word2vec-w5-e100}
-execution: {mode: seeded, default_device: cpu}
+execution: {mode: seeded, default_device: cuda:0}
 seed_policy: {seed_set: research_v1, seed_count: 10, paired_execution: true}
 dataset: {id: DS-PTB-TRAIN, source: ptb_train, window_size: 5}
 loader: {batch_size: 100, drop_last: true}
@@ -12,7 +12,7 @@ budget: {max_epochs: 10}
 recording:
   source_curve: {kind: interval_mean_loss, every_updates: 20, reducer: mean, plot_index: zero_based_append}
   evaluations: []
-numerics: {dtype: float32, backend: numpy, device: cpu, deterministic: true}
+numerics: {dtype: float32, backend: cupy, device: cuda:0, deterministic: true}
 checkpoint: {save_final: true, save_best: false, format: npz}
 profiling: {enabled: false}
 tracking: {enabled: true, experiment: ds2}

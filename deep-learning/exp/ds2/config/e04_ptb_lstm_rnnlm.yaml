@@ -1,7 +1,7 @@
 domain: ds2
 kind: language_modeling
 run: {experiment_id: e04, group_id: GT04, protocol: PTB LSTM RNNLM, recipe_id: ds2-gt04-ptb-lstm, structure_signature: ptb-lstm-100}
-execution: {mode: seeded, default_device: cpu}
+execution: {mode: seeded, default_device: cuda:0}
 seed_policy: {seed_set: research_v1, seed_count: 10, paired_execution: true, max_grad: 0.25}
 dataset: {id: DS-PTB, source: ptb}
 loader: {batch_size: 20, time_size: 35}
@@ -13,7 +13,7 @@ budget: {max_epochs: 4}
 recording:
   source_curve: {kind: train_perplexity, every_updates: 20, reducer: exp_token_weighted_mean, plot_index: zero_based_append}
   evaluations: [{axis: terminal, sources: [test]}]
-numerics: {dtype: float32, backend: numpy, device: cpu, deterministic: true}
+numerics: {dtype: float32, backend: cupy, device: cuda:0, deterministic: true}
 checkpoint: {save_final: true, save_best: false, format: npz}
 profiling: {enabled: false}
 tracking: {enabled: true, experiment: ds2}

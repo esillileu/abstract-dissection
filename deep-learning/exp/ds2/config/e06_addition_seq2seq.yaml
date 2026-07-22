@@ -1,7 +1,7 @@
 domain: ds2
 kind: seq2seq
 run: {experiment_id: e06, group_id: GT06, protocol: addition Seq2seq, recipe_id: ds2-gt06-addition, structure_signature: addition-seq2seq}
-execution: {mode: seeded, default_device: cpu}
+execution: {mode: seeded, default_device: cuda:0}
 seed_policy: {seed_set: research_v1, seed_count: 10, paired_execution: true, max_grad: 5.0}
 dataset: {id: DS-SEQ-ADD, source: sequence, file: addition.txt, split_seed: 1984, split_algorithm: legacy_numpy_randomstate}
 loader: {batch_size: 128}
@@ -12,7 +12,7 @@ recording:
   source_curve: {kind: full_test_exact_match, every_epochs: 1, reducer: identity, plot_index: epoch_minus_one}
   evaluations: [{axis: epoch, every: 1, sources: [test]}]
   predictions: {split: test, count: 10, decode: greedy}
-numerics: {dtype: float32, backend: numpy, device: cpu, deterministic: true}
+numerics: {dtype: float32, backend: cupy, device: cuda:0, deterministic: true}
 checkpoint: {save_final: true, save_best: true, format: npz}
 profiling: {enabled: false}
 tracking: {enabled: true, experiment: ds2}

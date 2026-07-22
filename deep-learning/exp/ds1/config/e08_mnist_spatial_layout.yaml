@@ -1,7 +1,7 @@
 domain: ds1
 kind: supervised_classification
 run: {experiment_id: e08, group_id: GT08, protocol: MNIST spatial-layout comparison, recipe_id: ds1-gt08-spatial-layout, structure_signature: mnist-spatial-layout}
-execution: {mode: seeded, default_device: cpu}
+execution: {mode: seeded, default_device: cuda:0}
 seed_policy: {seed_set: research_v1, seed_count: 10, paired_execution: true}
 dataset: {id: mnist-full, source: mnist, train_limit: 60000, test_limit: 10000}
 loader: {batch_size: 100, drop_last: false, sampling_method: with_replacement}
@@ -13,7 +13,7 @@ recording:
     - {id: mnist-test-full, split: test, kind: full}
   triggers:
     - {type: epoch_end, sources: [mnist-test-full]}
-numerics: {dtype: float64, backend: numpy, device: cpu}
+numerics: {dtype: float64, backend: cupy, device: cuda:0}
 checkpoint: {save_final: true, save_on_eval: false, format: npz}
 profiling: {enabled: false}
 tracking: {enabled: true, experiment: ds1, upload_checkpoint: false}

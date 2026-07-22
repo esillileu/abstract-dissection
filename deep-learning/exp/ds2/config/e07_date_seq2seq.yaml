@@ -1,7 +1,7 @@
 domain: ds2
 kind: seq2seq
 run: {experiment_id: e07, group_id: GT07, protocol: date Seq2seq, recipe_id: ds2-gt07-date, structure_signature: date-seq2seq}
-execution: {mode: seeded, default_device: cpu}
+execution: {mode: seeded, default_device: cuda:0}
 seed_policy: {seed_set: research_v1, seed_count: 10, paired_execution: true, max_grad: 5.0}
 dataset: {id: DS-SEQ-DATE, source: sequence, file: date.txt, reverse: true, split_seed: 1984, split_algorithm: legacy_numpy_randomstate}
 loader: {batch_size: 128}
@@ -13,7 +13,7 @@ recording:
   evaluations: [{axis: epoch, every: 1, sources: [test]}]
   predictions: {split: test, count: 10, decode: greedy}
   attention: {selection_seed: 1984, count: 5}
-numerics: {dtype: float32, backend: numpy, device: cpu, deterministic: true}
+numerics: {dtype: float32, backend: cupy, device: cuda:0, deterministic: true}
 checkpoint: {save_final: true, save_best: true, format: npz}
 profiling: {enabled: false}
 tracking: {enabled: true, experiment: ds2}

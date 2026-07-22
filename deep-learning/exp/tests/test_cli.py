@@ -11,6 +11,8 @@ def test_ds1_catalog_plans_all_variants_for_one_seed() -> None:
 
     assert len(plans) == 65
     assert {plan.seed for plan in plans} == {1}
+    assert {plan.device for plan in plans if plan.experiment_id in {"e06", "e07", "e08"}} == {"cuda:0"}
+    assert {plan.device for plan in plans if plan.experiment_id in {"e01", "e02", "e03", "e04", "e05", "e09", "e10"}} == {"cpu"}
 
 
 def test_ds2_catalog_plans_all_variants_for_one_seed() -> None:
@@ -21,3 +23,5 @@ def test_ds2_catalog_plans_all_variants_for_one_seed() -> None:
 
     assert len(plans) == 19
     assert {plan.seed for plan in plans} == {1}
+    assert {plan.device for plan in plans if plan.experiment_id != "e08"} == {"cuda:0"}
+    assert {plan.device for plan in plans if plan.experiment_id == "e08"} == {"cpu"}

@@ -1,7 +1,7 @@
 domain: ds2
 kind: language_modeling
 run: {experiment_id: e03, group_id: GT03, protocol: small-corpus RNNLM, recipe_id: ds2-gt03-small-rnnlm, structure_signature: ptb1000-vanilla-rnn-100}
-execution: {mode: seeded, default_device: cpu}
+execution: {mode: seeded, default_device: cuda:0}
 seed_policy: {seed_set: research_v1, seed_count: 10, paired_execution: true}
 dataset: {id: DS-PTB-TRAIN-1000, source: ptb, train_limit: 1000}
 loader: {batch_size: 10, time_size: 5}
@@ -13,7 +13,7 @@ budget: {max_epochs: 100}
 recording:
   source_curve: {kind: train_perplexity, every_updates: 20, reducer: exp_token_weighted_mean, plot_index: zero_based_append}
   evaluations: [{axis: terminal, sources: [test]}]
-numerics: {dtype: float32, backend: numpy, device: cpu, deterministic: true}
+numerics: {dtype: float32, backend: cupy, device: cuda:0, deterministic: true}
 checkpoint: {save_final: true, save_best: false, format: npz}
 profiling: {enabled: false}
 tracking: {enabled: true, experiment: ds2}
