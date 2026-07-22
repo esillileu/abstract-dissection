@@ -12,7 +12,7 @@
 
 ## 공통 실행 설정
 
-Flatten-FC489-ReLU-FC100-ReLU-FC10; Adam .001; batch 100; 20 epochs
+Flatten-FC489-ReLU-FC100-ReLU-FC10; Adam .001; batch 100; 2 epochs
 
 ## 원자 조건
 
