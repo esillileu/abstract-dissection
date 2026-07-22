@@ -343,6 +343,7 @@ def build_tags(
         "runtime.platform": os.uname().sysname.lower(),
         "runtime.python_version": sys.version.split()[0],
         "atomic_run.id": identity.atomic_run_id,
+        "experiment.ids": ",".join(identity.experiment_ids),
         "execution_group.id": identity.execution_group_id,
         "recipe.id": identity.recipe_id,
         "structure.signature": identity.structure_signature,

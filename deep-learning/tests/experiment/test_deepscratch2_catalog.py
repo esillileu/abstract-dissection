@@ -9,11 +9,11 @@ import yaml
 CONFIG_ROOT = Path("experiments/deepscratch2/config")
 
 
-def test_deepscratch2_catalog_declares_150_seeded_runs() -> None:
+def test_deepscratch2_catalog_declares_200_seeded_runs() -> None:
     seeds = yaml.safe_load((CONFIG_ROOT / "seeds.yaml").read_text())["seed_sets"]["research_v1"]["values"]
     configs = [yaml.safe_load(path.read_text()) for path in CONFIG_ROOT.glob("e[0-9][0-9]_*.yaml")]
 
-    assert sum(len(config["variants"]) * config["policy"]["seed_count"] for config in configs) == 150
+    assert sum(len(config["variants"]) * config["policy"]["seed_count"] for config in configs) == 200
     assert len(seeds) == 10
     assert all(config["tracking"]["experiment"] == "deepscratch2" for config in configs)
 
@@ -42,6 +42,17 @@ def test_e03_better_rnnlm_uses_the_book_learning_rate_decay_divisor() -> None:
     config = yaml.safe_load((CONFIG_ROOT / "e03_rnnlm_comparison.yaml").read_text())
 
     assert config["scheduler"] == {"name": "validation_decay", "factor": 4.0}
+
+
+def test_book_baseline_extensions_use_their_declared_toy_settings() -> None:
+    word2vec = yaml.safe_load((CONFIG_ROOT / "e06_word2vec_toy_full_softmax.yaml").read_text())
+    rnnlm = yaml.safe_load((CONFIG_ROOT / "e07_rnnlm_small_corpus.yaml").read_text())
+
+    assert word2vec["dataset"]["text"] == "You say goodbye and I say hello."
+    assert word2vec["training"]["max_epochs"] == 1000
+    assert rnnlm["dataset"]["train_limit"] == 1000
+    assert rnnlm["loader"] == {"batch_size": 10, "time_size": 5}
+    assert rnnlm["optimizer"]["learning_rate"] == 0.1
 
 
 def test_sequence_books_use_the_original_fixed_split() -> None:

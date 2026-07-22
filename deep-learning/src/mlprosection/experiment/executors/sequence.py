@@ -66,8 +66,7 @@ class Word2VecExecutor:
         backend, streams, runtime = configure_runtime(config)
         context.metadata.update({"runtime": runtime, "seed_streams": asdict(streams)})
         dataset, model_config, training = (_mapping(config, key) for key in ("dataset", "model", "training"))
-        ptb = load_ptb()
-        corpus = ptb["train"]
+        corpus, word_to_id = _word2vec_corpus(_mapping(config, "dataset"))
         window = int(dataset.get("window_size", 5))
         contexts, targets = _contexts_targets(corpus, window)
         objective = str(model_config.get("objective", "negative_sampling"))
@@ -76,14 +75,14 @@ class Word2VecExecutor:
             sampler_values = _mapping(model_config, "sampler")
             sampler = UnigramSampler.from_corpus(
                 corpus,
-                vocab_size=len(ptb["word_to_id"]),
+                vocab_size=len(word_to_id),
                 backend=backend,
                 power=float(sampler_values.get("power", 0.75)),
                 rejection_rounds=int(sampler_values.get("rejection_rounds", 4)),
             )
             context.metadata["negative_sampler"] = sampler.metadata
         model = Word2Vec(
-            len(ptb["word_to_id"]), int(model_config.get("embedding_size", 100)),
+            len(word_to_id), int(model_config.get("embedding_size", 100)),
             architecture=str(model_config.get("architecture", "cbow")),
             objective=objective,
             negative_samples=int(model_config.get("negative_samples", 5)),
@@ -162,13 +161,15 @@ class LanguageModelExecutor:
         context.metadata.update({"runtime": runtime, "seed_streams": asdict(streams)})
         ptb = load_ptb()
         model_config, loader, training = (_mapping(config, key) for key in ("model", "loader", "training"))
+        dataset, evaluation = _mapping(config, "dataset"), _mapping(config, "evaluation")
         model = _language_model(str(model_config.get("alias")), len(ptb["word_to_id"]), model_config, backend)
         optimizer = _optimizer(config, model)
         seed_batch_order(backend, streams)
-        train = Tensor(backend.xp.asarray(ptb["train"][:-1], dtype=backend.xp.int64), backend=backend)
-        train_targets = Tensor(backend.xp.asarray(ptb["train"][1:], dtype=backend.xp.int64), backend=backend)
+        train_corpus = ptb["train"][:int(dataset.get("train_limit", len(ptb["train"])))]
+        train = Tensor(backend.xp.asarray(train_corpus[:-1], dtype=backend.xp.int64), backend=backend)
+        train_targets = Tensor(backend.xp.asarray(train_corpus[1:], dtype=backend.xp.int64), backend=backend)
         max_epochs = int(training.get("max_epochs", 4))
-        trainer = TimeTrainer(model, optimizer, max_epoch=max_epochs, batch_size=int(loader.get("batch_size", 20)), time_size=int(loader.get("time_size", 35)), log_interval=int(training.get("log_interval", 20)), max_grad=float(_mapping(config, "policy").get("max_grad", 0.25)), profiling_config=profiling_config_from_mapping(_mapping(config, "profiling")), callbacks=[_Callback(context)])
+        trainer = TimeTrainer(model, optimizer, max_epoch=max_epochs, batch_size=int(loader.get("batch_size", 20)), time_size=int(loader.get("time_size", 35)), log_interval=int(training.get("log_interval", 20)), max_grad=_optional_max_grad(config, default=0.25), profiling_config=profiling_config_from_mapping(_mapping(config, "profiling")), callbacks=[_Callback(context)])
         valid = Tensor(backend.xp.asarray(ptb["valid"][:-1], dtype=backend.xp.int64), backend=backend)
         valid_targets = Tensor(backend.xp.asarray(ptb["valid"][1:], dtype=backend.xp.int64), backend=backend)
         test = Tensor(backend.xp.asarray(ptb["test"][:-1], dtype=backend.xp.int64), backend=backend)
@@ -178,21 +179,31 @@ class LanguageModelExecutor:
         best_valid = float("inf")
         best_valid_epoch = 0
         validation_history: list[tuple[str, int, str, float]] = []
+        valid_every_epochs = int(evaluation.get("valid_every_epochs", 1))
+        test_every_epochs = int(evaluation.get("test_every_epochs", 1))
+        test_at_end = bool(evaluation.get("test_at_end", False))
         checkpoint_root = Path(str(context.metadata.get("checkpoint_root", "experiments/results/checkpoints")))
         for target_epoch in range(1, max_epochs + 1):
             trainer.max_epoch = target_epoch
             trainer.fit(train, train_targets)
-            valid_ppl = trainer.evaluate_perplexity(valid, valid_targets)
-            test_ppl = trainer.evaluate_perplexity(test, test_targets)
-            validation_history.extend((("epoch", target_epoch, "valid/perplexity", valid_ppl), ("epoch", target_epoch, "test/perplexity", test_ppl)))
+            evaluated_valid = valid_every_epochs > 0 and target_epoch % valid_every_epochs == 0
+            if evaluated_valid:
+                valid_ppl = trainer.evaluate_perplexity(valid, valid_targets)
+                validation_history.append(("epoch", target_epoch, "valid/perplexity", valid_ppl))
+            if test_every_epochs > 0 and target_epoch % test_every_epochs == 0:
+                test_ppl = trainer.evaluate_perplexity(test, test_targets)
+                validation_history.append(("epoch", target_epoch, "test/perplexity", test_ppl))
             _save_evaluation_checkpoint(config, context, model=model, optimizer=optimizer, trainer=trainer)
-            if valid_ppl < best_valid:
+            if evaluated_valid and valid_ppl < best_valid:
                 best_valid = valid_ppl
                 best_valid_epoch = target_epoch
                 checkpoint_root.mkdir(parents=True, exist_ok=True)
                 model.save_params_npz(checkpoint_root / "best.npz")
-            elif str(model_config.get("alias")) == "BetterRnnlm":
+            elif evaluated_valid and str(model_config.get("alias")) == "BetterRnnlm" and str(_mapping(config, "scheduler").get("name", "constant")) == "validation_decay":
                 optimizer.lr /= float(_mapping(config, "scheduler").get("factor", 4.0))
+        if test_at_end or test_ppl == float("inf"):
+            test_ppl = trainer.evaluate_perplexity(test, test_targets)
+            validation_history.append(("epoch", max_epochs, "test/perplexity", test_ppl))
         trainer.max_epoch = max_epochs
         trainer.dump_profiling_artifacts(Path(str(context.metadata["artifact_root"])) / "profiles")
         profiling = trainer.profiling_metrics()
@@ -200,7 +211,20 @@ class LanguageModelExecutor:
         history += [("update", index + 1, "train/ppl", value) for index, value in enumerate(trainer.history.train_ppl)]
         history += [("epoch", step, metric.replace("perplexity", "ppl"), value) for _kind, step, metric, value in validation_history]
         history += validation_history
-        return ExperimentResult(metrics=_final(updates=trainer.global_step, epochs=trainer.epoch, samples=len(train) * trainer.epoch, **{"final/train/perplexity": trainer.history.train_ppl[-1], "final/valid/perplexity": valid_ppl, "final/test/perplexity": test_ppl, "final/train/ppl": trainer.history.train_ppl[-1], "final/valid/ppl": valid_ppl, "final/test/ppl": test_ppl, "final/best_valid_ppl": best_valid, "final/best_valid_epoch": float(best_valid_epoch)}), artifact_root=_artifact_root(config), model=model, history=tuple(history), profiling_metrics=profiling)
+        final_metrics = {
+            "final/train/perplexity": trainer.history.train_ppl[-1],
+            "final/test/perplexity": test_ppl,
+            "final/train/ppl": trainer.history.train_ppl[-1],
+            "final/test/ppl": test_ppl,
+        }
+        if best_valid < float("inf"):
+            final_metrics.update({
+                "final/valid/perplexity": valid_ppl,
+                "final/valid/ppl": valid_ppl,
+                "final/best_valid_ppl": best_valid,
+                "final/best_valid_epoch": float(best_valid_epoch),
+            })
+        return ExperimentResult(metrics=_final(updates=trainer.global_step, epochs=trainer.epoch, samples=len(train) * trainer.epoch, **final_metrics), artifact_root=_artifact_root(config), model=model, history=tuple(history), profiling_metrics=profiling)
 
 
 @register_executor("seq2seq")
@@ -292,6 +316,17 @@ def _contexts_targets(corpus, window: int):
     centers = np.arange(window, len(corpus) - window)
     contexts = np.stack([np.concatenate((corpus[index - window:index], corpus[index + 1:index + window + 1])) for index in centers])
     return contexts, corpus[window:-window]
+
+
+def _word2vec_corpus(dataset: dict[str, object]):
+    """Load PTB or the book's fixed toy sentence for Word2Vec experiments."""
+    if str(dataset.get("id")) != "DS-TOY-W2V":
+        ptb = load_ptb()
+        return ptb["train"], ptb["word_to_id"]
+    text = str(dataset.get("text", "You say goodbye and I say hello."))
+    words = text.lower().replace(".", " .").split()
+    word_to_id = {word: index for index, word in enumerate(dict.fromkeys(words))}
+    return np.asarray([word_to_id[word] for word in words], dtype=np.int64), word_to_id
 
 
 def _optional_max_grad(config: dict[str, object], *, default: float | None = None) -> float | None:

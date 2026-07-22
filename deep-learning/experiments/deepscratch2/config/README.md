@@ -1,6 +1,6 @@
 # deepscratch2 YAML experiment catalog
 
-The catalog contains e01–e05 PTB and character sequence experiments. Every
+The catalog contains e01–e07 PTB and character sequence experiments. Every
 configuration records to the MLflow experiment named `deepscratch2`.
 
 Start MLflow before a non-dry run:
@@ -21,7 +21,7 @@ after every evaluation, set `checkpoint.save_on_eval: true`; uploading those
 intermediate checkpoints remains opt-in with
 `tracking.upload_eval_checkpoints: true`.
 
-Preview the 140-run matrix without starting training:
+Preview the 200-run matrix without starting training:
 
 ```bash
 just exp deepscratch2 plan --all

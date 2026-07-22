@@ -12,6 +12,8 @@
 - [e03 RNNLM 비교](experiments/e03_rnnlm_비교.md)
 - [e04 Seq2seq 입력 반전과 구조 비교](experiments/e04_seq2seq_입력반전_구조.md)
 - [e05 Attention Seq2seq](experiments/e05_attention_seq2seq_date.md)
+- [e06 Word2Vec toy full softmax](experiments/e06_word2vec_toy_full_softmax.md)
+- [e07 RNNLM small-corpus comparison](experiments/e07_rnnlm_small_corpus.md)
 
 ## 실행 그룹
 

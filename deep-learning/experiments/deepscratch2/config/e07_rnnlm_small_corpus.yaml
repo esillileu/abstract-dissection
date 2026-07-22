@@ -1,0 +1,35 @@
+kind: language_modeling
+dataset: {id: DS-PTB-TRAIN-1000, name: Penn Treebank first 1000 tokens, train_limit: 1000}
+loader: {batch_size: 10, time_size: 5}
+optimizer: {name: sgd, learning_rate: 0.1}
+scheduler: {name: constant}
+loss: {name: time_softmax_cross_entropy}
+training: {max_epochs: 100, log_interval: 20, entrypoint: experiments/deepscratch2/config/e07_rnnlm_small_corpus.yaml}
+evaluation: {primary_metric: final/test/perplexity, valid_every_epochs: 0, test_every_epochs: 0, test_at_end: true}
+numerics: {dtype: float32, backend: cupy, device: cuda:0, deterministic: true}
+checkpoint: {save_final: true, save_best: false, format: npz}
+profiling: {enabled: true, num_steps: 0, sample_memory_every_n_steps: 0}
+policy: {seed_set: research_v1, seed_count: 10, max_grad: null}
+tracking: {enabled: true, experiment: deepscratch2}
+variants:
+  LM-TOY-RNN:
+    atomic_run_id: LM-TOY-RNN
+    experiment_ids: [e07]
+    execution_group_id: g16
+    recipe_id: RC-PTB1000-RNN100
+    structure_signature: ptb1000-vanilla-rnn100-v1
+    model: {alias: VanillaRnnlm, wordvec_size: 100, hidden_size: 100}
+  LM-TOY-LSTM:
+    atomic_run_id: LM-TOY-LSTM
+    experiment_ids: [e07]
+    execution_group_id: g17
+    recipe_id: RC-PTB1000-LSTM100
+    structure_signature: ptb1000-lstm100-v1
+    model: {alias: Rnnlm, wordvec_size: 100, hidden_size: 100}
+  LM-TOY-BETTER:
+    atomic_run_id: LM-TOY-BETTER
+    experiment_ids: [e07]
+    execution_group_id: g18
+    recipe_id: RC-PTB1000-BETTER100
+    structure_signature: ptb1000-better-rnnlm100-v1
+    model: {alias: BetterRnnlm, wordvec_size: 100, hidden_size: 100, dropout_ratio: 0.5}
