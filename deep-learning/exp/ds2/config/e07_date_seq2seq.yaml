@@ -1,18 +1,23 @@
-# e07 = GT07: character date Seq2seq comparison.
+domain: ds2
 kind: seq2seq
-dataset: {id: DS-SEQ-DATE, file: date.txt, name: character date conversion, reverse: true, split_seed: 1984, split_algorithm: legacy_numpy_randomstate}
-loader: {batch_size: 128, shuffle: true}
+run: {experiment_id: e07, group_id: GT07, protocol: date Seq2seq, recipe_id: ds2-gt07-date, structure_signature: date-seq2seq}
+execution: {mode: seeded, default_device: cpu}
+seed_policy: {seed_set: research_v1, seed_count: 10, paired_execution: true, max_grad: 5.0}
+dataset: {id: DS-SEQ-DATE, source: sequence, file: date.txt, reverse: true, split_seed: 1984, split_algorithm: legacy_numpy_randomstate}
+loader: {batch_size: 128}
 optimizer: {name: adam, learning_rate: 0.001}
-loss: {name: time_softmax_cross_entropy, reduction: mean}
-training: {max_epochs: 10, entrypoint: exp/ds2/config/e07_date_seq2seq.yaml}
-recording: {source_curve: {kind: full_test_exact_match, every_epochs: 1, plot_index: epoch_minus_one}, predictions: {split: test, count: 10}, attention: {selection_seed: 1984, count: 5}}
-evaluation: {primary_metric: final/test/exact_match, decode: greedy, test_every_epochs: 1}
+loss: {name: time_softmax_cross_entropy, reduction: mean, phase: post_update}
+budget: {max_epochs: 10}
+recording:
+  source_curve: {kind: full_test_exact_match, every_epochs: 1, reducer: identity, plot_index: epoch_minus_one}
+  evaluations: [{axis: epoch, every: 1, sources: [test]}]
+  predictions: {split: test, count: 10, decode: greedy}
+  attention: {selection_seed: 1984, count: 5}
 numerics: {dtype: float32, backend: numpy, device: cpu, deterministic: true}
 checkpoint: {save_final: true, save_best: true, format: npz}
 profiling: {enabled: false}
-policy: {seed_set: research_v1, seed_count: 10, paired_execution: true, max_grad: 5.0}
 tracking: {enabled: true, experiment: ds2}
 variants:
-  SEQD-VAN-REV: {atomic_run_id: SEQD-VAN-REV, experiment_ids: [e07], execution_group_id: GT07, recipe_id: ds2-gt07-date, structure_signature: date-seq2seq-16-256, model: {alias: Seq2seq, wordvec_size: 16, hidden_size: 256}}
-  SEQD-PEEKY-REV: {atomic_run_id: SEQD-PEEKY-REV, experiment_ids: [e07], execution_group_id: GT07, recipe_id: ds2-gt07-date, structure_signature: date-peeky-16-256, model: {alias: PeekySeq2seq, wordvec_size: 16, hidden_size: 256}}
-  SEQD-ATTN-REV: {atomic_run_id: SEQD-ATTN-REV, experiment_ids: [e07], execution_group_id: GT07, recipe_id: ds2-gt07-date, structure_signature: date-attention-16-256, model: {alias: AttentionSeq2seq, wordvec_size: 16, hidden_size: 256}}
+  SEQD-VAN-REV: {run: {structure_signature: date-seq2seq-16-256}, model: {alias: Seq2seq, wordvec_size: 16, hidden_size: 256}}
+  SEQD-PEEKY-REV: {run: {structure_signature: date-peeky-16-256}, model: {alias: PeekySeq2seq, wordvec_size: 16, hidden_size: 256}}
+  SEQD-ATTN-REV: {run: {structure_signature: date-attention-16-256}, model: {alias: AttentionSeq2seq, wordvec_size: 16, hidden_size: 256}}

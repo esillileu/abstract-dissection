@@ -1,20 +1,23 @@
-# e02 = GT02: paired PTB Word2Vec architecture × objective comparison.
+domain: ds2
 kind: word2vec
-dataset: {id: DS-PTB-TRAIN, name: Penn Treebank train, window_size: 5}
-loader: {batch_size: 100, shuffle: true}
+run: {experiment_id: e02, group_id: GT02, protocol: PTB Word2Vec, recipe_id: ds2-gt02-ptb-word2vec, structure_signature: ptb-word2vec-w5-e100}
+execution: {mode: seeded, default_device: cpu}
+seed_policy: {seed_set: research_v1, seed_count: 10, paired_execution: true}
+dataset: {id: DS-PTB-TRAIN, source: ptb_train, window_size: 5}
+loader: {batch_size: 100, drop_last: true}
 model: {family: word2vec, embedding_size: 100, negative_samples: 5, sampler: {algorithm: alias_target_rejection_v1, power: 0.75, rejection_rounds: 4}}
 optimizer: {name: adam, learning_rate: 0.001}
-loss: {name: word2vec_cross_entropy, reduction: mean}
-training: {max_epochs: 10, entrypoint: exp/ds2/config/e02_ptb_word2vec.yaml}
-recording: {source_curve: {kind: interval_mean_loss, every_updates: 20, phase: post_update, index_origin: 0}}
-evaluation: {primary_metric: final/train/loss}
+loss: {name: word2vec_cross_entropy, reduction: mean, phase: post_update}
+budget: {max_epochs: 10}
+recording:
+  source_curve: {kind: interval_mean_loss, every_updates: 20, reducer: mean, plot_index: zero_based_append}
+  evaluations: []
 numerics: {dtype: float32, backend: numpy, device: cpu, deterministic: true}
 checkpoint: {save_final: true, save_best: false, format: npz}
 profiling: {enabled: false}
-policy: {seed_set: research_v1, seed_count: 10, paired_execution: true}
 tracking: {enabled: true, experiment: ds2}
 variants:
-  W2V-PTB-CBOW-NS: {atomic_run_id: W2V-PTB-CBOW-NS, experiment_ids: [e02], execution_group_id: GT02, recipe_id: ds2-gt02-ptb-word2vec, structure_signature: ptb-cbow-negative-sampling-w5-e100, model: {architecture: cbow, objective: negative_sampling}}
-  W2V-PTB-SKIPGRAM-NS: {atomic_run_id: W2V-PTB-SKIPGRAM-NS, experiment_ids: [e02], execution_group_id: GT02, recipe_id: ds2-gt02-ptb-word2vec, structure_signature: ptb-skipgram-negative-sampling-w5-e100, model: {architecture: skipgram, objective: negative_sampling}}
-  W2V-PTB-CBOW-FULL: {atomic_run_id: W2V-PTB-CBOW-FULL, experiment_ids: [e02], execution_group_id: GT02, recipe_id: ds2-gt02-ptb-word2vec, structure_signature: ptb-cbow-full-softmax-w5-e100, model: {architecture: cbow, objective: full_softmax}}
-  W2V-PTB-SKIPGRAM-FULL: {atomic_run_id: W2V-PTB-SKIPGRAM-FULL, experiment_ids: [e02], execution_group_id: GT02, recipe_id: ds2-gt02-ptb-word2vec, structure_signature: ptb-skipgram-full-softmax-w5-e100, model: {architecture: skipgram, objective: full_softmax}}
+  W2V-PTB-CBOW-NS: {run: {structure_signature: ptb-cbow-negative-sampling-w5-e100}, model: {architecture: cbow, objective: negative_sampling}}
+  W2V-PTB-SKIPGRAM-NS: {run: {structure_signature: ptb-skipgram-negative-sampling-w5-e100}, model: {architecture: skipgram, objective: negative_sampling}}
+  W2V-PTB-CBOW-FULL: {run: {structure_signature: ptb-cbow-full-softmax-w5-e100}, model: {architecture: cbow, objective: full_softmax}}
+  W2V-PTB-SKIPGRAM-FULL: {run: {structure_signature: ptb-skipgram-full-softmax-w5-e100}, model: {architecture: skipgram, objective: full_softmax}}

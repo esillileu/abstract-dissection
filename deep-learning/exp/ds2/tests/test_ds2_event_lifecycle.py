@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from mlprosection import Tensor
-from mlprosection.events import EpochEvent, EvaluationResult, SourceObjectiveSample, TrainEndEvent, UpdateEvent
+from mlprosection.events import EpochEvent, EvaluationResult, SourceObjectiveSample, TrainEndEvent, TrainingWindowEvent, UpdateEvent
 from mlprosection.experiment.event_executor import EvaluationRequest, EventExperimentExecutor
 
 from exp.ds2.records import DS2Records
@@ -30,3 +30,22 @@ def test_ds2_records_long_metrics_and_source_samples() -> None:
     assert executor.records.source_samples[0]["local_iteration"] == 0
     assert executor.records.source_curves[0]["series_id"] == "book-ppl"
     assert {row["metric"] for row in executor.records.evaluations} == {"loss", "perplexity"}
+
+
+def test_ds2_mlflow_metric_rows_include_device_timing_when_present() -> None:
+    records = DS2Records()
+    records.add_timing_window(TrainingWindowEvent(
+        start_update=1,
+        end_update=3,
+        update_count=3,
+        closed_by="epoch_end",
+        train_wall_time_ns=2_000_000,
+        eval_wall_time_ns=1_000_000,
+        train_device_time_ns=750_000,
+        eval_device_time_ns=250_000,
+    ))
+
+    rows = records.mlflow_metric_rows()
+
+    assert (3, "update/runtime/window/train_device_time_ms", 0.75) in rows
+    assert (3, "update/runtime/window/eval_device_time_ms", 0.25) in rows
