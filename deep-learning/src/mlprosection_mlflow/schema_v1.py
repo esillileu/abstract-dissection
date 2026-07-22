@@ -37,7 +37,7 @@ from .runtime import (
 # Per-domain run material is deliberately kept outside MLflow's own artifact
 # store. MLflow receives the lightweight record, while the local workspace is
 # pleasant to browse and safe to clean independently.
-ARTIFACT_ROOT = Path("experiments")
+ARTIFACT_ROOT = Path("exp")
 
 
 def _storage_domain(value: object) -> str:

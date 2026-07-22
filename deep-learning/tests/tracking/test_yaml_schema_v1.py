@@ -14,11 +14,11 @@ def test_yaml_contract_projects_to_the_schema_v1_artifact_tree(tmp_path, monkeyp
 
     monkeypatch.setattr(schema, "ARTIFACT_ROOT", tmp_path)
     run = SchemaV1Run({
-        "kind": "optimizer_toy", "seed": 7, "atomic_run_id": "TOY-SGD",
+        "kind": "supervised_classification", "seed": 7, "atomic_run_id": "MLP-OPT-SGD",
         "experiment_ids": ["e01"], "execution_group_id": "g01", "recipe_id": "RC-TOY-OPT",
         "structure_signature": "analytic-toy-v1", "dataset": {"id": "DS-TOY"},
         "model": {"family": "analytic", "task_type": "optimization"},
-        "training": {"entrypoint": "experiments/configs/toy.yaml", "max_epochs": 0},
+        "training": {"entrypoint": "exp/ds1/config/e01_mnist_optimizer.yaml", "max_epochs": 0},
     })
 
     run.write_artifacts(

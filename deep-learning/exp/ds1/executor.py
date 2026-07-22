@@ -297,7 +297,7 @@ def _mapping(config: dict[str, object], key: str) -> dict[str, object]:
 
 def _artifact_root(config: dict[str, object]) -> Path:
     run = _mapping(config, "run")
-    return Path(str(run.get("artifact_root", "experiments/results/runs"))) / str(run.get("name", config["kind"]))
+    return Path(str(run.get("artifact_root", "exp/ds1/results/runs"))) / str(run.get("name", config["kind"]))
 
 
 def _file_digest(path: Path) -> str:

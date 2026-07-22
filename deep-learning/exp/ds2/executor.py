@@ -434,7 +434,7 @@ def _save_attention_artifact(model, questions, answers, backend, context: Experi
         return None
     values = backend.to_numpy(weights[0])
     entropy = float(-(values * np.log(values + 1e-12)).sum(axis=1).mean())
-    root = Path(str(context.metadata.get("artifact_root", "experiments/results/runs")))
+    root = Path(str(context.metadata.get("artifact_root", "exp/ds2/results/runs")))
     path = root / "analysis" / "attention_map.npz"
     path.parent.mkdir(parents=True, exist_ok=True)
     np.savez(path, attention=values, entropy=entropy)

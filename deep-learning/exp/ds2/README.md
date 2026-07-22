@@ -1,7 +1,7 @@
 # DS2 실행 catalog
 
 DS2는 실행 그룹 `GT01`–`GT07`을 `e01`–`e07` YAML로 선언한다. 기존
-`experiments/deepscratch2`는 legacy이며 이 catalog의 입력이 아니다.
+`.legacy/experiments/deepscratch2`는 보존용 legacy이며 이 catalog의 입력이 아니다.
 
 ```bash
 just exp ds2 plan -e 02 -seed 1

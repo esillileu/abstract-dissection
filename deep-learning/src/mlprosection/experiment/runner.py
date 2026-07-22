@@ -12,15 +12,12 @@ def run_config(
     *,
     executor_module: str | None = None,
 ):
-    """Run through an explicitly selected experiment-domain adapter.
+    """Run through an optional explicitly selected experiment-domain adapter.
 
-    ``src`` owns only the registration contract.  The CLI supplies the domain
-    module (for example ``exp.ds1.executor``); the fallback preserves the
-    pre-domain public API for existing library callers.
+    ``src`` owns only the registry contract. Domain CLIs provide their module;
+    callers that register an executor themselves may omit it.
     """
-    if executor_module is None:
-        from . import executors  # noqa: F401  # legacy built-in registration
-    else:
+    if executor_module is not None:
         import_module(executor_module)
     context = context or ExperimentContext()
     return get_executor(str(config["kind"])).run(config, context)
