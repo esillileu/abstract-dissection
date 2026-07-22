@@ -7,6 +7,7 @@ from mlprosection.nn.layers import TimeAttention
 from mlprosection.nn.model import TimeSequential, Word2Vec
 from mlprosection.nn.model.recurrent import AttentionSeq2seq, PeekySeq2seq, VanillaRnnlm
 from mlprosection.optim.SGD import Adam
+from mlprosection.optim.transform import ClipGradNorm
 from mlprosection.trainer import LanguageModelTrainer
 
 
@@ -26,11 +27,13 @@ def test_language_model_trainer_runs_truncated_bptt() -> None:
     model = VanillaRnnlm(vocab_size=7, wordvec_size=4, hidden_size=5, backend="cpu")
     trainer = LanguageModelTrainer(
         model,
-        Adam(list(model.named_parameters())),
+        Adam(
+            list(model.named_parameters()),
+            pre_step_hooks=[ClipGradNorm(0.25)],
+        ),
         max_epochs=1,
         batch_size=2,
         time_size=3,
-        max_grad=0.25,
     )
     tokens = Tensor(np.array([0, 1, 2, 3, 4, 5, 6, 0, 1, 2, 3, 4]), backend="cpu")
 

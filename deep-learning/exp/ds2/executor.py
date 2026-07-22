@@ -15,6 +15,7 @@ from mlprosection.nn.model import Word2Vec
 from mlprosection.nn.sampling import UnigramSampler
 from mlprosection.nn.model.recurrent import AttentionSeq2seq, BetterRnnlm, PeekySeq2seq, Rnnlm, Seq2seq, VanillaRnnlm
 from mlprosection.optim.SGD import Adam, SGD
+from mlprosection.optim.transform import ClipGradNorm
 from mlprosection.trainer import (
     LanguageModelTrainer,
     Seq2seqTrainer,
@@ -58,10 +59,24 @@ def _optimizer(config: dict[str, object], model):
     values = _mapping(config, "optimizer")
     name = str(values.get("name", "adam"))
     params = list(model.named_parameters())
+    default_max_grad = {
+        "language_modeling": 0.25,
+        "seq2seq": 5.0,
+    }.get(str(config.get("kind")))
+    max_grad = _optional_max_grad(config, default=default_max_grad)
+    hooks = None if max_grad is None else [ClipGradNorm(max_grad)]
     if name == "adam":
-        return Adam(params, lr=float(values.get("learning_rate", 0.001)))
+        return Adam(
+            params,
+            lr=float(values.get("learning_rate", 0.001)),
+            pre_step_hooks=hooks,
+        )
     if name == "sgd":
-        return SGD(params, lr=float(values.get("learning_rate", 1.0)))
+        return SGD(
+            params,
+            lr=float(values.get("learning_rate", 1.0)),
+            pre_step_hooks=hooks,
+        )
     raise ValueError(f"unsupported sequence optimizer: {name}")
 
 
@@ -89,8 +104,8 @@ def _config_digest(config: dict[str, object]) -> str:
 def _source_curve_from_objective(config: dict[str, object]):
     """Reduce pre-update source objectives at the book's zero-based cadence.
 
-    The accumulator stays on the active backend until a curve point is due, so
-    recording one point does not force a host synchronization for every update.
+    The accumulator and completed point stay on the active backend until the
+    record sink's bulk flush, so producing a point does not synchronize here.
     """
     recording = _mapping(config, "recording")
     curve = recording.get("source_curve", {})
@@ -123,9 +138,12 @@ def _source_curve_from_objective(config: dict[str, object]):
         if event.local_iteration % every != 0:
             return None
         denominator = unit_count if reducer in {"token_weighted_mean", "exp_token_weighted_mean"} else count
-        value = event.objective.backend.scalar_to_float(total / denominator)
+        value = Tensor(total / denominator, backend=event.objective.backend)
         if kind == "train_perplexity":
-            value = float(event.objective.backend.xp.exp(value))
+            value = Tensor(
+                event.objective.backend.xp.exp(value.data),
+                backend=event.objective.backend,
+            )
         point = {
             "series_id": kind,
             "plot_index": plot_index,
@@ -198,7 +216,7 @@ class Word2VecExecutor:
         )
         trainer = Word2VecTrainer(
             model, optimizer, max_epochs=epochs, batch_size=batch_size,
-            max_grad=_optional_max_grad(config), event_receivers=[controller],
+            event_receivers=[controller],
         )
         with training_summary(monitor):
             records = controller.run(
@@ -206,7 +224,7 @@ class Word2VecExecutor:
                 start_update=trainer.global_step + 1,
             )
         records.flush()
-        final_loss = float(records.updates[-1]["loss"].backend.scalar_to_float(records.updates[-1]["loss"].data)) if records.updates else 0.0
+        final_loss = _recorded_float(records.updates[-1]["loss"]) if records.updates else 0.0
         final_metrics = {"final/train/loss": final_loss}
         profiling_metrics = monitor.metrics()
         return ExperimentResult(
@@ -255,7 +273,6 @@ class LanguageModelExecutor:
         trainer = LanguageModelTrainer(
             model, optimizer, max_epochs=max_epochs,
             batch_size=int(loader.get("batch_size", 20)), time_size=int(loader.get("time_size", 35)),
-            max_grad=_optional_max_grad(config, default=0.25),
         )
         def evaluate_request(request):
             return trainer.evaluate(*request.source)
@@ -307,7 +324,7 @@ class LanguageModelExecutor:
                     raise RuntimeError("selected checkpoint is required before terminal test evaluation")
                 load_epoch_checkpoint(path=selected_checkpoint_path, model=model, optimizer=optimizer, trainer=trainer, config_digest=config_digest)
             test_ppl = float(trainer.evaluate(test, test_targets).perplexity)
-        final_train_ppl = float(backend.xp.exp(records.updates[-1]["loss"].backend.scalar_to_float(records.updates[-1]["loss"].data))) if records.updates else float("inf")
+        final_train_ppl = _backend_exp_float(backend, records.updates[-1]["loss"]) if records.updates else float("inf")
         final_metrics = {
             "final/train/perplexity": final_train_ppl,
             "final/test/perplexity": test_ppl,
@@ -364,7 +381,7 @@ class Seq2SeqExecutor:
         request = EvaluationRequest("sequence-test-full", "test", test_source, ("exact_match_accuracy", "token_accuracy"))
         trainer = Seq2seqTrainer(
             model, optimizer, max_epochs=epochs, batch_size=batch_size,
-            start_id=data["char_to_id"]["_"], max_grad=_optional_max_grad(config, default=5.0),
+            start_id=data["char_to_id"]["_"],
         )
         artifact_root = _artifact_root(config, context)
         records = DS2Records()
@@ -426,7 +443,7 @@ class Seq2SeqExecutor:
             records = controller.run(lambda: trainer.fit(train_x, train_t))
         records.flush()
         last_evaluation = records.evaluations[-2:] if len(records.evaluations) >= 2 else []
-        final_values = {"final/train/loss": float(records.updates[-1]["loss"].backend.scalar_to_float(records.updates[-1]["loss"].data)) if records.updates else 0.0}
+        final_values = {"final/train/loss": _recorded_float(records.updates[-1]["loss"]) if records.updates else 0.0}
         for row in last_evaluation:
             final_values[f"final/test/{row['metric'].replace('_accuracy', '')}"] = float(row["value"])
         return ExperimentResult(
@@ -598,24 +615,37 @@ def _generate_attention_with_weights(model: AttentionSeq2seq, question: Tensor, 
     try:
         enc_hs = model.encoder.forward(question)
         model.decoder.lstm.set_state(enc_hs[:, -1, :])
-        sample_id = start_id
+        sample_id = xp.asarray(start_id, dtype=xp.int64)
         sampled = []
         weights = []
         for _ in range(sample_size):
-            out = model.decoder.embed.forward(Tensor(xp.asarray([[sample_id]], dtype=xp.int64), backend=backend))
+            out = model.decoder.embed.forward(Tensor(sample_id.reshape((1, 1)), backend=backend))
             dec_hs = model.decoder.lstm.forward(out)
             context = model.decoder.attention.forward(enc_hs, dec_hs)
-            weights.append(backend.to_numpy(model.decoder.attention.weights[0, 0]).copy())
+            weights.append(model.decoder.attention.weights[0, 0].copy())
             score = model.decoder.affine.forward(Tensor(xp.concatenate((context.data, dec_hs.data), axis=2), backend=backend))
-            sample_id = int(score.data.reshape(-1).argmax())
+            sample_id = score.data.reshape(-1).argmax()
             sampled.append(sample_id)
-        return sampled, np.asarray(weights)
+        host_ids = backend.to_numpy(xp.stack(sampled)) if sampled else np.asarray([], dtype=np.int64)
+        host_weights = backend.to_numpy(xp.stack(weights)) if weights else np.empty((0, 0))
+        return [int(value) for value in host_ids], np.asarray(host_weights)
     finally:
         model.train(was_training)
 
 
 def _decode_ids(values, id_to_char: dict[int, str]) -> str:
     return "".join(id_to_char[int(value)] for value in values)
+
+
+def _recorded_float(value: object) -> float:
+    if hasattr(value, "backend") and hasattr(value, "data"):
+        return value.backend.scalar_to_float(value.data)
+    return float(value)
+
+
+def _backend_exp_float(backend, value: object) -> float:
+    result = backend.xp.exp(backend.xp.asarray(_recorded_float(value)))
+    return backend.scalar_to_float(result)
 
 
 def _attention_example_ids(*, size: int, count: int, seed: int) -> list[int]:

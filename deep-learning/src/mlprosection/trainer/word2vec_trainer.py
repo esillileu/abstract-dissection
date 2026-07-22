@@ -6,8 +6,6 @@ from typing import Literal
 
 from mlprosection import Tensor
 from mlprosection.events import EpochEvent, SourceObjectiveSample, UpdateEvent
-from mlprosection.trainer.utils import clip_grads
-
 from .internal_objective import InternalObjectiveTrainer
 
 
@@ -21,7 +19,6 @@ class Word2VecTrainer(InternalObjectiveTrainer):
         batch_size: int,
         max_updates: int | None = None,
         drop_last: bool = True,
-        max_grad: float | None = None,
         event_receivers=None,
     ) -> None:
         super().__init__(
@@ -32,7 +29,6 @@ class Word2VecTrainer(InternalObjectiveTrainer):
             raise ValueError("batch_size must be positive")
         self.batch_size = batch_size
         self.drop_last = drop_last
-        self.max_grad = max_grad
         self.batch_cursor = 0
 
     def fit(self, contexts: Tensor, targets: Tensor) -> None:
@@ -55,8 +51,6 @@ class Word2VecTrainer(InternalObjectiveTrainer):
                     source_loss = self.model.forward(batch_x, batch_t)
                     fixed_candidates = self._negative_candidates()
                     self.model.backward()
-                    if self.max_grad is not None:
-                        clip_grads(list(self.model.named_parameters()), self.max_grad)
                     self.optimizer.update()
                     post_loss = self._post_update_loss(batch_x, batch_t, fixed_candidates)
                     self.global_step += 1

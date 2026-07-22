@@ -5,6 +5,7 @@ import numpy as np
 from mlprosection import Tensor
 from mlprosection.nn.types import Parameter
 from mlprosection.optim.SGD import AdaGrad, Adam, Momentum, RMSprop
+from mlprosection.optim.transform import ClipGradNorm
 
 
 def _param() -> Parameter:
@@ -51,3 +52,34 @@ def test_adam_advances_bias_correction_step() -> None:
     assert optimizer.lr_t != optimizer.lr
     assert np.any(optimizer.m["w"])
     assert np.any(optimizer.v["w"])
+
+
+def test_clip_grad_norm_hook_clips_global_norm_before_update() -> None:
+    left = Parameter(Tensor([0.0], backend="cpu"))
+    right = Parameter(Tensor([0.0], backend="cpu"))
+    left.grad[...] = 3.0
+    right.grad[...] = 4.0
+    optimizer = Momentum(
+        [("left", left), ("right", right)],
+        lr=0.0,
+        pre_step_hooks=[ClipGradNorm(2.5)],
+    )
+
+    optimizer.update()
+
+    clipped_norm = np.sqrt(np.sum(left.grad**2) + np.sum(right.grad**2))
+    np.testing.assert_allclose(clipped_norm, 2.5, rtol=1e-5)
+
+
+def test_clip_grad_norm_hook_preserves_gradients_below_limit() -> None:
+    param = Parameter(Tensor([0.0, 0.0], backend="cpu"))
+    param.grad[...] = np.array([0.3, -0.4])
+    optimizer = Momentum(
+        [("w", param)],
+        lr=0.0,
+        pre_step_hooks=[ClipGradNorm(1.0)],
+    )
+
+    optimizer.update()
+
+    np.testing.assert_array_equal(param.grad, np.array([0.3, -0.4]))

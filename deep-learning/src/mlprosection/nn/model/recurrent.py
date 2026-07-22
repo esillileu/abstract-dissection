@@ -259,18 +259,18 @@ class Decoder(Layer):
         backend = h.backend
         xp = backend.xp
         sampled = []
-        sample_id = start_id
+        sample_id = xp.asarray(start_id, dtype=xp.int64)
         self.lstm.set_state(h)
 
         for _ in range(sample_size):
-            x = Tensor(xp.array(sample_id).reshape((1, 1)), backend=backend)
+            x = Tensor(sample_id.reshape((1, 1)), backend=backend)
             out = self.embed.forward(x)
             out = self.lstm.forward(out)
             score = self.affine.forward(out)
-            sample_id = int(score.data.flatten().argmax())
+            sample_id = score.data.flatten().argmax()
             sampled.append(sample_id)
 
-        return sampled
+        return _host_sampled_ids(backend, sampled)
 
 
 class Seq2seq(Layer):
@@ -356,18 +356,18 @@ class PeekyDecoder(Decoder):
     def generate(self, h: Tensor, start_id: int, sample_size: int) -> list[int]:
         xp = h.backend.xp
         self.lstm.set_state(h)
-        sample_id = start_id
+        sample_id = xp.asarray(start_id, dtype=xp.int64)
         sampled = []
         peeky_h = h.data[:, None, :]
         for _ in range(sample_size):
-            x = Tensor(xp.asarray([[sample_id]], dtype=xp.int64), backend=h.backend)
+            x = Tensor(sample_id.reshape((1, 1)), backend=h.backend)
             out = self.embed.forward(x)
             out = Tensor(xp.concatenate((peeky_h, out.data), axis=2), backend=h.backend)
             out = self.lstm.forward(out)
             score = self.affine.forward(Tensor(xp.concatenate((peeky_h, out.data), axis=2), backend=h.backend))
-            sample_id = int(score.data.reshape(-1).argmax())
+            sample_id = score.data.reshape(-1).argmax()
             sampled.append(sample_id)
-        return sampled
+        return _host_sampled_ids(h.backend, sampled)
 
 
 class PeekySeq2seq(Seq2seq):
@@ -414,15 +414,16 @@ class AttentionDecoder(Layer):
     def generate(self, enc_hs: Tensor, start_id: int, sample_size: int) -> list[int]:
         xp = enc_hs.backend.xp
         self.lstm.set_state(enc_hs[:, -1, :])
-        sample_id, sampled = start_id, []
+        sample_id = xp.asarray(start_id, dtype=xp.int64)
+        sampled = []
         for _ in range(sample_size):
-            out = self.embed.forward(Tensor(xp.asarray([[sample_id]], dtype=xp.int64), backend=enc_hs.backend))
+            out = self.embed.forward(Tensor(sample_id.reshape((1, 1)), backend=enc_hs.backend))
             dec_hs = self.lstm.forward(out)
             context = self.attention.forward(enc_hs, dec_hs)
             score = self.affine.forward(Tensor(xp.concatenate((context.data, dec_hs.data), axis=2), backend=enc_hs.backend))
-            sample_id = int(score.data.reshape(-1).argmax())
+            sample_id = score.data.reshape(-1).argmax()
             sampled.append(sample_id)
-        return sampled
+        return _host_sampled_ids(enc_hs.backend, sampled)
 
 
 class AttentionSeq2seq(Seq2seq):
@@ -435,6 +436,13 @@ class AttentionSeq2seq(Seq2seq):
     def generate(self, xs: Tensor, start_id: int, sample_size: int) -> list[int]:
         hs = self.encoder.forward(xs)
         return self.decoder.generate(hs, start_id, sample_size)
+
+
+def _host_sampled_ids(backend: Backend, sampled) -> list[int]:
+    if not sampled:
+        return []
+    values = backend.to_numpy(backend.xp.stack(sampled))
+    return [int(value) for value in values]
 
 
 __all__ = [

@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import csv
 
+import numpy as np
+
 from mlprosection import Tensor
+from mlprosection.core.backend import Backend
 from mlprosection.events import EpochEvent, EvaluationResult, SourceObjectiveSample, TrainEndEvent, TrainingWindowEvent, UpdateEvent
 from mlprosection.experiment.event_executor import EvaluationRequest, EventExperimentExecutor
 from mlprosection.experiment.executor import ExperimentContext
@@ -77,6 +80,7 @@ def test_ds2_source_curve_from_objective_uses_documented_schema() -> None:
     assert first["plot_index"] == 0
     assert reducer(SourceObjectiveSample(2, 1, 1, Tensor(1.0), 3)) is None
     point = reducer(SourceObjectiveSample(3, 1, 2, Tensor(3.0), 5))
+    value = point.pop("value")
 
     assert point == {
         "series_id": "interval_mean_loss",
@@ -89,8 +93,8 @@ def test_ds2_source_curve_from_objective_uses_documented_schema() -> None:
         "unit_count": 8,
         "metric": "loss",
         "reducer": "mean",
-        "value": 2.0,
     }
+    assert value.backend.scalar_to_float(value.data) == 2.0
 
 
 def test_ds2_source_curves_csv_schema_and_mlflow_mapping(tmp_path) -> None:
@@ -164,6 +168,42 @@ def test_ds2_writes_canonical_source_objectives_and_prediction_fields(tmp_path) 
         "exact_match", "token_correct", "token_count",
     ]
     assert predictions[0]["epoch"] == "1"
+
+
+def test_ds2_record_flush_materializes_pending_scalars_in_one_copy(tmp_path) -> None:
+    backend = Backend(
+        xp=np,
+        name="numpy",
+        device="cpu",
+        float_dtype=np.float32,
+        int_dtype=np.int64,
+        bool_dtype=np.bool_,
+    )
+    copies: list[int] = []
+
+    def to_numpy(array):
+        copies.append(array.size)
+        return array
+
+    backend.to_numpy = to_numpy
+    records = DS2Records()
+    records.on_update(UpdateEvent(1, 1, 2, Tensor(1.25, backend=backend), 0.1))
+    records.on_source_objective(
+        SourceObjectiveSample(1, 1, 0, Tensor(1.5, backend=backend), 20)
+    )
+    records.add_source_curve({
+        "plot_index": 0,
+        "metric": "loss",
+        "value": Tensor(1.5, backend=backend),
+    })
+
+    records.write_csv(tmp_path)
+    records.write_csv(tmp_path)
+
+    assert copies == [3]
+    assert records.updates[0]["loss"] == 1.25
+    assert records.source_samples[0]["objective"] == 1.5
+    assert records.source_curves[0]["value"] == 1.5
 
 
 def test_source_curve_point_closes_a_probe_timing_window() -> None:

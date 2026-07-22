@@ -9,7 +9,7 @@
 | architecture | Vanilla Seq2seq, Peeky Seq2seq, Attention Seq2seq |
 | input transform | forward 또는 reverse input |
 | batch | resolved config의 epoch sampler와 batch size를 따르는 sequence batch |
-| training | teacher-forced loss, optional gradient clipping |
+| training | teacher-forced loss; optional gradient clipping은 optimizer pre-step transform이 담당 |
 | evaluation | greedy decode, full-test sequence exact match, optional token accuracy |
 
 Trainer는 architecture/input reversal/group ID로 evaluation schedule을 분기하지 않는다. executor가 model adapter, transform, fixed prediction IDs를 전달한다.
@@ -26,6 +26,7 @@ Trainer는 architecture/input reversal/group ID로 evaluation schedule을 분기
 `evaluate(source, metrics={exact_match_accuracy, token_accuracy})`는 fixed sequential test source와 greedy decode를 사용한다.
 
 - model eval mode에서 encoder/decoder state를 example마다 초기화한다.
+- autoregressive argmax ID는 decode 동안 device에 유지하고, sequence 종료에서 예측 token 전체를 한 번에 host로 전송한다.
 - EOS/문자열 정규화, input reverse, decode maximum length는 resolved config에 고정한다.
 - full test의 `correct_sequence_count / sequence_count`를 `exact_match_accuracy`로 반환한다.
 - token accuracy를 기록하면 target token 수와 padding/EOS 포함 규칙을 config에 명시한다.

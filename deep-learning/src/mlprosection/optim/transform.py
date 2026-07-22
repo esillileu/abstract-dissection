@@ -30,6 +30,10 @@ class L2Regularization:
 
 class ClipGradNorm:
     def __init__(self, max_norm: float = 5, eps: float = 1e-6) -> None:
+        if max_norm <= 0.0:
+            raise ValueError("max_norm must be positive")
+        if eps <= 0.0:
+            raise ValueError("eps must be positive")
         self.max_norm = max_norm
         self.eps = eps
 
@@ -37,8 +41,11 @@ class ClipGradNorm:
         if not params:
             return
 
+        first_grad = params[0][1].grad
+        if first_grad is None:
+            return
         xp = params[0][1].backend.xp
-        total_sq = xp.asarray(0.0)
+        total_sq = xp.asarray(0.0, dtype=first_grad.dtype)
 
         for _, param in params:
             if param.grad is None:
@@ -48,9 +55,8 @@ class ClipGradNorm:
 
         total_norm = xp.sqrt(total_sq)
         scale = self.max_norm / (total_norm + self.eps)
-
-        if scale.item() >= 1.0:
-            return
+        one = xp.asarray(1.0, dtype=total_norm.dtype)
+        scale = xp.where(scale < one, scale, one)
 
         for _, param in params:
             if param.grad is not None:

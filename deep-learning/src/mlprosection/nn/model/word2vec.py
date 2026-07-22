@@ -84,10 +84,14 @@ class Word2Vec(Layer):
                     fixed_candidates=fixed,
                 ))
                 candidate_index += 1
-            loss = sum(losses) if self.loss_reduction == "sum" else sum(losses) / len(losses)
+            loss = xp.asarray(0.0, dtype=xp.float64)
+            for objective in losses:
+                loss = loss + objective.astype(xp.float64)
+            if self.loss_reduction == "mean":
+                loss = loss / len(losses)
         return Tensor(xp.asarray(loss, dtype=self.backend.float_dtype), backend=self.backend)
 
-    def _objective(self, hidden, labels, source, *, fixed_candidates=None) -> float:
+    def _objective(self, hidden, labels, source, *, fixed_candidates=None):
         xp = self.backend.xp
         if self.objective == "full_softmax":
             scores = hidden @ self.W_out.data.T
@@ -96,7 +100,7 @@ class Word2Vec(Layer):
             probabilities /= probabilities.sum(axis=1, keepdims=True)
             loss = -xp.log(probabilities[xp.arange(len(labels)), labels] + 1e-7).mean()
             self.cache.append((hidden, labels, source, probabilities))
-            return float(loss)
+            return loss
         if self.sampler is None:
             raise RuntimeError("negative-sampling objective requires a sampler")
         negatives = (
@@ -112,7 +116,7 @@ class Word2Vec(Layer):
         terms = -(targets * xp.log(probabilities + 1e-7) + (1 - targets) * xp.log(1 - probabilities + 1e-7))
         loss = terms.mean() if self.loss_reduction == "mean" else terms.sum(axis=1).mean()
         self.cache.append((hidden, candidates, source, (probabilities, targets)))
-        return float(loss)
+        return loss
 
     def last_negative_candidates(self) -> list[Any] | None:
         """Return copies of the negatives drawn by the most recent forward pass."""

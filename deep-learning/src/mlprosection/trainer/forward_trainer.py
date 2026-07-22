@@ -14,8 +14,6 @@ from mlprosection.events import (
 )
 
 from .base import Trainer
-from .utils import clip_grads
-
 if TYPE_CHECKING:
     from mlprosection import Tensor
     from mlprosection.nn.types import Criterion, Layer
@@ -36,7 +34,6 @@ class ForwardTrainer(Trainer):
         max_updates: int | None = None,
         drop_last: bool = False,
         sampling_method: Literal["permutation_per_epoch", "with_replacement"] = "permutation_per_epoch",
-        max_grad: float | None = None,
         event_receivers: Iterable[TrainerEventReceiver] | None = None,
     ) -> None:
         super().__init__(model=model, criterion=criterion, optimizer=optimizer)
@@ -51,7 +48,6 @@ class ForwardTrainer(Trainer):
         self.batch_size = batch_size
         self.drop_last = drop_last
         self.sampling_method = sampling_method
-        self.max_grad = max_grad
         self.event_receivers = tuple(event_receivers or ())
 
     def fit(self, x_train: Tensor, t_train: Tensor) -> None:
@@ -153,8 +149,6 @@ class ForwardTrainer(Trainer):
         self.criterion.forward(y, t)
         dx = self.criterion.backward()
         self.model.backward(dx)
-        if self.max_grad is not None:
-            clip_grads(list(self.model.named_parameters()), self.max_grad)
         self.optimizer.update()
         # DS1's canonical update record is the mean objective after the update.
         return self.criterion.forward(self.model.forward(x), t)

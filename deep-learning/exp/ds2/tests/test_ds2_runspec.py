@@ -2,7 +2,19 @@ from __future__ import annotations
 
 import pytest
 
+from exp.ds2.executor import _optimizer
 from exp.ds2.spec import parse_run_spec
+from mlprosection import Tensor
+from mlprosection.nn.types import Parameter
+from mlprosection.optim.transform import ClipGradNorm
+
+
+class _SingleParameterModel:
+    def __init__(self) -> None:
+        self.parameter = Parameter(Tensor([0.0], backend="cpu"))
+
+    def named_parameters(self):
+        return (("weight", self.parameter),)
 
 
 def test_word2vec_runspec_connects_source_curve_contract() -> None:
@@ -66,3 +78,30 @@ def test_ds2_runspec_still_rejects_legacy_evaluation_key() -> None:
             atomic_run_id="W2V-TOY-CBOW-FULL",
             overrides={"evaluation": {"test_at_end": True}},
         )
+
+
+@pytest.mark.parametrize(
+    ("config_path", "atomic_run_id", "expected_max_norm"),
+    [
+        ("exp/ds2/config/e01_toy_word2vec.yaml", "W2V-TOY-CBOW-FULL", None),
+        ("exp/ds2/config/e03_small_rnnlm.yaml", "LM-SMALL-RNN", 0.25),
+        ("exp/ds2/config/e06_addition_seq2seq.yaml", "SEQA-VAN-FWD", 5.0),
+    ],
+)
+def test_ds2_optimizer_owns_group_gradient_clipping(
+    config_path: str,
+    atomic_run_id: str,
+    expected_max_norm: float | None,
+) -> None:
+    spec = parse_run_spec(config_path, atomic_run_id=atomic_run_id)
+
+    optimizer = _optimizer(spec.config, _SingleParameterModel())
+    clipping = [
+        hook for hook in optimizer.pre_step_hooks if isinstance(hook, ClipGradNorm)
+    ]
+
+    if expected_max_norm is None:
+        assert clipping == []
+    else:
+        assert len(clipping) == 1
+        assert clipping[0].max_norm == expected_max_norm

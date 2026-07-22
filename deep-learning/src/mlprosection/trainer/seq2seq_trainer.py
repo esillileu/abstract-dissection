@@ -7,8 +7,6 @@ from typing import Literal
 
 from mlprosection import Tensor
 from mlprosection.events import EpochEvent, EvaluationResult, UpdateEvent
-from mlprosection.trainer.utils import clip_grads
-
 from .internal_objective import InternalObjectiveTrainer
 
 
@@ -24,7 +22,6 @@ class Seq2seqTrainer(InternalObjectiveTrainer):
         max_decode_steps: int | None = None,
         max_updates: int | None = None,
         drop_last: bool = False,
-        max_grad: float | None = None,
         event_receivers=None,
     ) -> None:
         super().__init__(model, optimizer, max_epochs=max_epochs, max_updates=max_updates, event_receivers=event_receivers)
@@ -34,7 +31,6 @@ class Seq2seqTrainer(InternalObjectiveTrainer):
         self.start_id = start_id
         self.max_decode_steps = max_decode_steps
         self.drop_last = drop_last
-        self.max_grad = max_grad
         self.batch_cursor = 0
 
     def fit(self, xs: Tensor, ts: Tensor) -> None:
@@ -56,8 +52,6 @@ class Seq2seqTrainer(InternalObjectiveTrainer):
                     self.model.train(True)
                     self.model.forward(batch_x, batch_t)
                     self.model.backward()
-                    if self.max_grad is not None:
-                        clip_grads(list(self.model.named_parameters()), self.max_grad)
                     self.optimizer.update()
                     post_loss = self.model.forward(batch_x, batch_t)
                     self.global_step += 1
@@ -100,11 +94,12 @@ class Seq2seqTrainer(InternalObjectiveTrainer):
         was_training = bool(getattr(self.model, "training", True))
         saved_state = self._snapshot_recurrent_state()
         exact, token_correct, token_count = 0, 0, 0
+        host_targets = self.backend.to_numpy(ts.data)
         self.model.train(False)
         try:
             for index in range(len(xs)):
                 question = Tensor(xs.data[index:index + 1], backend=self.backend)
-                answer = ts.data[index]
+                answer = host_targets[index]
                 expected = [int(value) for value in answer[1:]]
                 sample_size = self.max_decode_steps if self.max_decode_steps is not None else len(expected)
                 predicted = self.model.generate(question, self.start_id, sample_size)

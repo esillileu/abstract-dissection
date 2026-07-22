@@ -20,6 +20,7 @@ Trainer는 `GT01`/`GT02` 또는 objective 이름으로 분기하지 않는다. e
 - negative sampling의 post-update 재계산은 새 negative를 draw하지 않는다. update 때 쓴 candidate set을 재사용해 training RNG와 후속 batch를 바꾸지 않는다.
 - `UpdateEvent.batch_size`는 실제 context row 수, `lr`은 해당 update에 적용한 값이다.
 - `SourceObjectiveSample`에는 update 전 objective와 원본 local zero-based iteration을 넣는다. executor가 `iters % eval_interval == 0` 규칙 그대로 interval mean loss point를 만든다.
+- objective scalar와 Skip-gram objective 합은 device에 유지한다. host scalar materialization은 RecordSink의 bulk flush에서만 수행한다.
 
 full softmax와 negative sampling은 objective 정의가 다르다. 공통 Trainer는 둘의 raw loss를 비교·정규화·순위화하지 않으며, `resolved_config.objective_id`만 보존한다.
 

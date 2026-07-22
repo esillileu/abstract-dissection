@@ -36,7 +36,7 @@
 ## 필수 공통 동작
 
 1. `max_epochs`와 `max_updates`를 모두 지원하고, 먼저 도달한 budget에서 멈춘다.
-2. forward → backward → 선택적 gradient clipping → optimizer update를 하나의 successful update로 정의한다.
+2. forward → backward → optimizer update를 하나의 successful update로 정의한다. 선택적 gradient clipping은 optimizer의 pre-step transform으로 실행한다.
 3. DS2 공통 raw loss는 update 뒤 동일 batch를 다시 계산한 mean objective다. 재계산은 training RNG, sampler state, recurrent state, model mode를 바꾸지 않아야 한다.
 4. evaluator는 train sampler/RNG를 소비하지 않으며, eval mode와 상태를 호출 전 값으로 복원한다.
 5. trainer는 `state_dict()`/`load_state_dict()`로 자신이 소유한 counter·cursor·recurrent state·sampler state를 재개 가능하게 제공한다. executor 소유 state는 executor checkpoint에 둔다.

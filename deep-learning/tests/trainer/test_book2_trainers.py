@@ -3,10 +3,30 @@ from __future__ import annotations
 import numpy as np
 
 from mlprosection import Tensor
+from mlprosection.core.backend import Backend
 from mlprosection.nn.model import Word2Vec
 from mlprosection.nn.model.recurrent import Seq2seq, VanillaRnnlm
 from mlprosection.optim.SGD import SGD
 from mlprosection.trainer import LanguageModelTrainer, Seq2seqTrainer, Word2VecTrainer
+
+
+def _counting_backend() -> tuple[Backend, list[int]]:
+    backend = Backend(
+        xp=np,
+        name="numpy",
+        device="cpu",
+        float_dtype=np.float32,
+        int_dtype=np.int64,
+        bool_dtype=np.bool_,
+    )
+    copies: list[int] = []
+
+    def to_numpy(array):
+        copies.append(array.size)
+        return array
+
+    backend.to_numpy = to_numpy
+    return backend, copies
 
 
 class Receiver:
@@ -80,6 +100,22 @@ def test_language_model_trainer_emits_bptt_events_and_evaluates_ppl() -> None:
     assert result.perplexity is not None
 
 
+def test_language_model_evaluation_materializes_metrics_once() -> None:
+    backend, copies = _counting_backend()
+    model = VanillaRnnlm(8, 3, 4, backend=backend)
+    trainer = LanguageModelTrainer(
+        model, SGD(list(model.named_parameters()), lr=0.1),
+        max_epochs=1, batch_size=2, time_size=2,
+    )
+    xs = Tensor(np.asarray([1, 2, 3, 4, 5, 6, 1, 2]), backend=backend)
+    ts = Tensor(np.asarray([2, 3, 4, 5, 6, 1, 2, 3]), backend=backend)
+
+    result = trainer.evaluate(xs, ts)
+
+    assert result.perplexity is not None
+    assert copies == [2]
+
+
 def test_seq2seq_trainer_evaluates_greedy_exact_match() -> None:
     model = Seq2seq(8, 3, 4)
     trainer = Seq2seqTrainer(
@@ -96,3 +132,14 @@ def test_seq2seq_trainer_evaluates_greedy_exact_match() -> None:
     assert result.unit_count == 2
     assert result.exact_match_accuracy is not None
     assert result.token_accuracy is not None
+
+
+def test_seq2seq_generation_materializes_all_tokens_once() -> None:
+    backend, copies = _counting_backend()
+    model = Seq2seq(8, 3, 4, backend=backend)
+    question = Tensor(np.asarray([[1, 2, 3]]), backend=backend)
+
+    predicted = model.generate(question, start_id=0, sample_size=3)
+
+    assert len(predicted) == 3
+    assert copies == [3]

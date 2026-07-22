@@ -7,8 +7,6 @@ from typing import Literal
 
 from mlprosection import Tensor
 from mlprosection.events import EpochEvent, EvaluationResult, SourceObjectiveSample, UpdateEvent
-from mlprosection.trainer.utils import clip_grads
-
 from .internal_objective import InternalObjectiveTrainer
 
 
@@ -22,7 +20,6 @@ class LanguageModelTrainer(InternalObjectiveTrainer):
         batch_size: int,
         time_size: int,
         max_updates: int | None = None,
-        max_grad: float | None = None,
         event_receivers=None,
     ) -> None:
         super().__init__(model, optimizer, max_epochs=max_epochs, max_updates=max_updates, event_receivers=event_receivers)
@@ -30,7 +27,6 @@ class LanguageModelTrainer(InternalObjectiveTrainer):
             raise ValueError("batch_size and time_size must be positive")
         self.batch_size = batch_size
         self.time_size = time_size
-        self.max_grad = max_grad
         self.time_index = 0
         self.iteration_in_epoch = 0
 
@@ -54,8 +50,6 @@ class LanguageModelTrainer(InternalObjectiveTrainer):
                     self.model.train(True)
                     source_loss = self.model.forward(batch_x, batch_t)
                     self.model.backward()
-                    if self.max_grad is not None:
-                        clip_grads(list(self.model.named_parameters()), self.max_grad)
                     self.optimizer.update()
                     state_after = self._snapshot_recurrent_state()
                     self._restore_recurrent_state(state_before)
@@ -103,7 +97,9 @@ class LanguageModelTrainer(InternalObjectiveTrainer):
             raise ValueError("evaluation corpus must not be empty")
         was_training = bool(getattr(self.model, "training", True))
         saved_state = self._snapshot_recurrent_state()
-        total_nll, token_count = 0.0, 0
+        xp = self.backend.xp
+        total_nll = xp.asarray(0.0, dtype=xp.float64)
+        token_count = 0
         self.model.train(False)
         reset = getattr(self.model, "reset_state", None)
         if reset is not None:
@@ -115,16 +111,17 @@ class LanguageModelTrainer(InternalObjectiveTrainer):
                 batch_t = Tensor(ts.data[start:end][None, :], backend=self.backend)
                 loss = self.model.forward(batch_x, batch_t)
                 count = end - start
-                total_nll += self.backend.scalar_to_float(loss.data) * count
+                total_nll = total_nll + loss.data.astype(xp.float64) * count
                 token_count += count
         finally:
             self._restore_recurrent_state(saved_state)
             self.model.train(was_training)
         mean_nll = total_nll / token_count
+        host_metrics = self.backend.to_numpy(xp.stack((mean_nll, xp.exp(mean_nll))))
         return EvaluationResult(
-            example_count=token_count, loss=mean_nll, accuracy=None,
+            example_count=token_count, loss=float(host_metrics[0]), accuracy=None,
             unit="token", unit_count=token_count,
-            perplexity=float(self.backend.xp.exp(mean_nll)),
+            perplexity=float(host_metrics[1]),
         )
 
     def _batch(self, xs: Tensor, ts: Tensor) -> tuple[Tensor, Tensor]:

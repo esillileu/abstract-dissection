@@ -86,10 +86,10 @@ class DS1Records:
 
     def mlflow_metric_rows(self) -> tuple[tuple[int, str, float], ...]:
         """Project canonical CSV-owned records to MLflow metric rows."""
+        self._materialize_pending_scalars()
         rows: list[tuple[int, str, float]] = []
         for row in self.updates:
-            loss = row["loss"]
-            rows.append((int(row["update"]), "update/train/loss", loss.backend.scalar_to_float(loss.data)))
+            rows.append((int(row["update"]), "update/train/loss", float(row["loss"])))
             lr = row["lr"]
             if isinstance(lr, float):
                 rows.append((int(row["update"]), "update/train/lr", lr))
@@ -112,6 +112,7 @@ class DS1Records:
         """Durably materialize the schema-owned raw CSV artifacts."""
         self.artifact_root = artifact_root
         artifact_root.mkdir(parents=True, exist_ok=True)
+        self._materialize_pending_scalars()
         self._write(artifact_root / "updates.csv", self.updates, columns=["update", "epoch", "batch_size", "loss", "lr"])
         self._write(artifact_root / "evaluations.csv", self.evaluations, columns=["axis", "axis_step", "update", "epoch", "evaluation_set_id", "split", "example_count", "loss", "accuracy"])
         self._write(artifact_root / "checkpoints.csv", self.checkpoints, columns=["update", "epoch", "kind", "path", "sha256"])
@@ -137,6 +138,24 @@ class DS1Records:
         self._pending_rows += 1
         if self._pending_rows >= self.flush_interval:
             self.flush()
+
+    def _materialize_pending_scalars(self) -> None:
+        self._materialize_scalars([(row, "loss") for row in self.updates])
+
+    @staticmethod
+    def _materialize_scalars(entries: list[tuple[dict[str, object], str]]) -> None:
+        groups: dict[int, tuple[object, list[tuple[dict[str, object], str, object]]]] = {}
+        for row, key in entries:
+            value = row.get(key)
+            if not hasattr(value, "backend") or not hasattr(value, "data"):
+                continue
+            group = groups.setdefault(id(value.backend), (value.backend, []))
+            group[1].append((row, key, value))
+        for backend, values in groups.values():
+            stacked = backend.xp.stack([value.data.reshape(()) for _, _, value in values])
+            host_values = backend.to_numpy(stacked)
+            for (row, key, _), host_value in zip(values, host_values, strict=True):
+                row[key] = float(host_value)
 
     @staticmethod
     def _write(path: Path, rows: list[dict[str, object]], *, columns: list[str] | None = None) -> None:

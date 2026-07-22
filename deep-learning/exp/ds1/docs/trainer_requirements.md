@@ -133,7 +133,7 @@ trainer가 제공하는 것은 mode-safe하고 sampler/RNG를 소비하지 않�
 
 - model initialization, batch order, evaluation probe, input transform의 seed stream
   결정과 manifest 기록은 executor가 맡는다.
-- 현재 `ForwardTrainer`가 제공하는 gradient clipping, backend CPU/GPU 지원,
+- optimizer pre-step transform이 제공하는 gradient clipping, backend CPU/GPU 지원,
   `ProfilingConfig`, runtime/epoch throughput 및 memory profiling은 유지한다.
 - profiler의 측정은 학습 record와 분리한다. profiling을 켜거나 끈 것이 sampler,
   evaluation schedule, loss 값에 영향을 주면 안 된다.

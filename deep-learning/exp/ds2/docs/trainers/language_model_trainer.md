@@ -10,9 +10,9 @@
 | batch | corpus의 offset/jump 기반 `(batch_size, time_size)` truncated-BPTT batch |
 | state | 학습 중 recurrent state 유지, update 뒤 truncated history detach |
 | objective | token mean NLL, source curve와 evaluator에서 PPL은 `exp(token-weighted mean NLL)` |
-| clipping | config가 요구할 때 update 직전 global gradient norm clipping |
+| clipping | config가 요구할 때 optimizer pre-step transform에서 global gradient norm clipping |
 
-Trainer는 model class나 `GT03`–`GT05` ID로 schedule을 분기하지 않는다. batch offset, BPTT size, clipping, source-curve trigger는 executor가 전달한 resolved config다.
+Trainer는 model class나 `GT03`–`GT05` ID로 schedule을 분기하지 않는다. batch offset과 BPTT size만 실행하고, clipping은 executor가 resolved config로 조립한 optimizer transform이 소유한다.
 
 ## update와 recurrent-state 안전성
 
@@ -26,6 +26,7 @@ Trainer는 model class나 `GT03`–`GT05` ID로 schedule을 분기하지 않는�
 `evaluate(source, metrics={perplexity})`는 고정 sequential corpus를 사용한다.
 
 - full corpus를 time order대로 순회하고 token 수로 가중한 mean NLL에서 PPL을 한 번 계산한다.
+- chunk NLL은 device `float64`로 순차 누적하고, mean NLL과 PPL을 evaluation 종료에서 한 번에 host로 전송한다.
 - evaluation은 train batch cursor, training recurrent state, training RNG를 바꾸지 않는다.
 - 반환은 `EvaluationResult(unit=token, unit_count=..., metrics={perplexity: ...})`다.
 
