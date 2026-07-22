@@ -12,7 +12,7 @@ from mlprosection.optim import Optimizer
 from mlprosection.profiling import ProfilingConfig
 
 from .base import Trainer
-from .callbacks import TrainerCallback
+from ..callbacks import TrainerCallback
 
 
 @dataclass

@@ -2,6 +2,10 @@
 
 <!-- Domain: deepscratch1 -->
 
+## 원본
+
+『밑바닥부터 시작하는 딥러닝』 1권 원본 저장소 [`WegraLee-deep-learning-from-scratch`](../../../../01_deep-learning-from-base/WegraLee-deep-learning-from-scratch/)의 [`ch06/optimizer_compare_naive.py`](../../../../01_deep-learning-from-base/WegraLee-deep-learning-from-scratch/ch06/optimizer_compare_naive.py)를 재현한다. 목적함수, 초기점, 네 optimizer와 30-step 궤적은 원본 조건을 따른다. 이 실험의 step별 지표와 반복 실행용 보고 형식은 실험 도메인에서 추가했다.
+
 ## 1. 실험 정의
 
 | 항목 | 내용 |

@@ -42,3 +42,9 @@ dev = [
 
 [tool.ruff]
 extend-exclude = ["01_deep-learning-from-base"]
+
+[tool.pytest.ini_options]
+addopts = "-m 'not legacy'"
+markers = [
+    "legacy: checks the retired experiments/ execution and analysis paths",
+]

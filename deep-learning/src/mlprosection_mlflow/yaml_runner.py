@@ -17,6 +17,7 @@ def run_yaml(
     device: str | None = None,
     resume: str | None = None,
     overrides: dict[str, object] | None = None,
+    executor_module: str | None = None,
 ):
     """Run YAML and project its result to the schema-v1 MLflow record."""
     config = normalize_config(load_yaml(path, atomic_run_id=atomic_run_id, overrides=overrides))
@@ -52,6 +53,7 @@ def run_yaml(
         result = run_config(
             config,
             context,
+            executor_module=executor_module,
         )
         result.metrics.update(build_schema_metrics(
             train_loss=result.metrics.get("final/train/loss"),

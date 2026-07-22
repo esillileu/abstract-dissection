@@ -1,293 +1,211 @@
+"""Event-based trainer for supervised forward/criterion/backward updates."""
+
 from __future__ import annotations
 
-import time
-from contextlib import nullcontext
-from typing import TYPE_CHECKING, Iterable, Callable
+from collections.abc import Iterable, Sequence
+from typing import TYPE_CHECKING, Literal
 
-from mlprosection.profiling import ProfilingConfig
+from mlprosection.events import (
+    EpochEvent,
+    EvaluationResult,
+    TrainEndEvent,
+    TrainerEventReceiver,
+    UpdateEvent,
+)
+
 from .base import Trainer
-from .callbacks import TrainerCallback
+from .utils import clip_grads
 
 if TYPE_CHECKING:
     from mlprosection import Tensor
-    from mlprosection.nn.types import Layer, Criterion
+    from mlprosection.nn.types import Criterion, Layer
     from mlprosection.optim import Optimizer
 
 
 class ForwardTrainer(Trainer):
+    """Run supervised updates and emit facts; never own experiment policy or I/O."""
+
     def __init__(
         self,
         model: Layer,
         criterion: Criterion,
         optimizer: Optimizer,
-        max_epoch: int = 10,
+        *,
+        max_epochs: int,
+        batch_size: int,
         max_updates: int | None = None,
-        batch_size: int = 32,
-        log_interval: int = 20,
+        drop_last: bool = False,
+        sampling_method: Literal["permutation_per_epoch", "with_replacement"] = "permutation_per_epoch",
         max_grad: float | None = None,
-        drop_last: bool | None = False,
-        sampling_method: str = "permutation_per_epoch",
-        record_step_loss: str = "none",
-        record_first_step_evaluation: bool = False,
-        record_epoch_evaluation: bool = False,
-        record_step_evaluation_interval: int | None = None,
-        record_first_validation_evaluation: bool = False,
-        record_step_validation_interval: int | None = None,
-        record_step_train_evaluation: bool = False,
-        profiling_config: ProfilingConfig | None = None,
-        callbacks: Iterable[TrainerCallback] | None = None,
-        on_epoch_checkpoint: Callable[[], None] | None = None,
-    ):
-        super().__init__(
-            model=model,
-            criterion=criterion,
-            optimizer=optimizer,
-            max_epoch=max_epoch,
-            max_updates=max_updates,
-            batch_size=batch_size,
-            log_interval=log_interval,
-            drop_last=drop_last,
-            profiling_config=profiling_config,
-            callbacks=callbacks,
-        )
-        self.max_grad = max_grad
-        if sampling_method not in {"permutation_per_epoch", "with_replacement"}:
-            raise ValueError(f"unsupported sampling_method: {sampling_method}")
-        if record_step_loss not in {"none", "pre_update", "post_update"}:
-            raise ValueError(f"unsupported record_step_loss mode: {record_step_loss}")
-        self.sampling_method = sampling_method
-        self.record_step_loss = record_step_loss
-        self.step_losses: list[tuple[int, float]] = []
-        self.record_first_step_evaluation = record_first_step_evaluation
-        self.record_epoch_evaluation = record_epoch_evaluation
-        if (
-            record_step_evaluation_interval is not None
-            and record_step_evaluation_interval < 1
-        ):
-            raise ValueError("record_step_evaluation_interval must be positive")
-        self.record_step_evaluation_interval = record_step_evaluation_interval
-        self.graph_evaluations: list[tuple[int, dict[str, float]]] = []
-        if record_step_validation_interval is not None and record_step_validation_interval < 1:
-            raise ValueError("record_step_validation_interval must be positive")
-        self.record_first_validation_evaluation = record_first_validation_evaluation
-        self.record_step_validation_interval = record_step_validation_interval
-        self.record_step_train_evaluation = record_step_train_evaluation
-        self.validation_evaluations: list[tuple[int, int, dict[str, float]]] = []
-
-        self.epoch: int | None = None
-        self.on_epoch_checkpoint = on_epoch_checkpoint
-
-    def fit(
-        self,
-        x_train: Tensor,
-        t_train: Tensor,
-        x_val: Tensor | None = None,
-        t_val: Tensor | None = None,
-        x_train_probe: Tensor | None = None,
-        t_train_probe: Tensor | None = None,
+        event_receivers: Iterable[TrainerEventReceiver] | None = None,
     ) -> None:
-        xp = self.backend.xp
-        self.start_time = time.time()
-        self.train = True
-        skip_validation = x_val is None or t_val is None
+        super().__init__(model=model, criterion=criterion, optimizer=optimizer)
+        if max_epochs < 1:
+            raise ValueError("max_epochs must be positive")
+        if batch_size < 1:
+            raise ValueError("batch_size must be positive")
+        if max_updates is not None and max_updates < 1:
+            raise ValueError("max_updates must be positive")
+        self.max_epochs = max_epochs
+        self.max_updates = max_updates
+        self.batch_size = batch_size
+        self.drop_last = drop_last
+        self.sampling_method = sampling_method
+        self.max_grad = max_grad
+        self.event_receivers = tuple(event_receivers or ())
 
-        data_size = len(x_train)
+    def fit(self, x_train: Tensor, t_train: Tensor) -> None:
+        if len(x_train) != len(t_train):
+            raise ValueError("inputs and targets must have the same sample count")
+        if self._num_batches(len(x_train)) == 0:
+            raise ValueError("dataset is smaller than one training batch")
 
-        def record_first_step(step: int) -> None:
-            if step == 1:
-                self.graph_evaluations.append((
-                    0,
-                    self._full_evaluation(x_train, t_train, x_val, t_val),
-                ))
-            elif (
-                self.record_step_evaluation_interval
-                and (step - 1) % self.record_step_evaluation_interval == 0
-            ):
-                self.graph_evaluations.append((
-                    step // self.record_step_evaluation_interval,
-                    self._full_evaluation(x_train, t_train, x_val, t_val),
-                ))
-
-        def record_interval_evaluation(step: int) -> None:
-            if skip_validation and not self.record_step_train_evaluation:
-                return
-            should_record = (
-                self.record_first_validation_evaluation and step == 1
-            ) or (
-                self.record_step_validation_interval is not None
-                and step % self.record_step_validation_interval == 0
-            )
-            if should_record:
-                values = {}
-                if not skip_validation:
-                    values.update({
-                        f"valid/{key}": value
-                        for key, value in self._evaluate_split(x_val, t_val).items()
-                    })
-                if self.record_step_train_evaluation:
-                    if x_train_probe is None or t_train_probe is None:
-                        raise ValueError("step train evaluation requires a train probe")
-                    values.update({
-                        f"train/{key}": value
-                        for key, value in self._evaluate_split(x_train_probe, t_train_probe).items()
-                    })
-                self.validation_evaluations.append((
-                    len(self.validation_evaluations), step,
-                    values,
-                ))
-
-        step_recorders = []
-        if self.record_first_step_evaluation:
-            step_recorders.append(record_first_step)
-        if self.record_first_validation_evaluation or self.record_step_validation_interval:
-            step_recorders.append(record_interval_evaluation)
-        self.on_train_step = (
-            (lambda step: [recorder(step) for recorder in step_recorders])
-            if step_recorders else None
-        )
-        self.detail_profiler.start_run()
+        reason: Literal["completed", "max_updates", "stopped", "error"] = "completed"
         try:
-            if self.profiling_config.collect_memory_metrics:
-                self.runtime_monitor.snapshot_memory("run.start", synchronize=True)
-                self.runtime_monitor.snapshot_memory("train.start")
-            self.record_model_metrics()
-
-            if self.profiling_config.collect_common_metrics:
-                train_timer = self.runtime_monitor.timer(
-                    "train_total",
-                    synchronize=True,
-                )
-            else:
-                train_timer = nullcontext()
-
-            with train_timer:
-                start_epoch = int(self.epoch or 0)
-                for epoch in range(start_epoch, self.max_epoch):
-                    if (
-                        self.max_updates is not None
-                        and self.global_step >= self.max_updates
-                    ):
-                        break
-                    self.epoch = epoch + 1
-                    if self.sampling_method == "with_replacement":
-                        updates_per_epoch = data_size // self.batch_size
-                        if updates_per_epoch == 0:
-                            raise ValueError(
-                                "dataset is smaller than one training batch"
-                            )
-                        idx = xp.random.randint(
-                            0, data_size, size=updates_per_epoch * self.batch_size
+            for epoch_index in range(self.epoch, self.max_epochs):
+                if self._at_update_limit():
+                    reason = "max_updates"
+                    break
+                self.epoch = epoch_index + 1
+                start_update = self.global_step + 1
+                sample_count = 0
+                shuffled_x, shuffled_t = self._sample_epoch(x_train, t_train)
+                for batch_x, batch_t in self._iter_batches(shuffled_x, shuffled_t):
+                    loss = self._update(batch_x, batch_t)
+                    self.global_step += 1
+                    sample_count += len(batch_x)
+                    self._emit_update(
+                        UpdateEvent(
+                            update=self.global_step,
+                            epoch=self.epoch,
+                            batch_size=len(batch_x),
+                            loss=loss,
+                            learning_rate=self._learning_rate(),
                         )
-                    else:
-                        idx = xp.random.permutation(xp.arange(data_size))
-                    shuffled_x, shuffled_t = x_train[idx], t_train[idx]
-                    self._run_measured_epoch("train", epoch, shuffled_x, shuffled_t)
-
-                    if self.record_epoch_evaluation:
-                        self.graph_evaluations.append((
-                            epoch + 1,
-                            self._full_evaluation(x_train, t_train, x_val, t_val),
-                        ))
-
-                    if not skip_validation:
-                        self.train = False
-                        self._run_measured_epoch("eval", epoch, x_val, t_val)
-                        self.train = True
-                    if self.on_epoch_checkpoint is not None:
-                        self.on_epoch_checkpoint()
-                    if (
-                        self.max_updates is not None
-                        and self.global_step >= self.max_updates
-                    ):
+                    )
+                    if self._at_update_limit():
+                        reason = "max_updates"
                         break
+                self._emit_epoch(
+                    EpochEvent(
+                        epoch=self.epoch,
+                        start_update=start_update,
+                        end_update=self.global_step,
+                        sample_count=sample_count,
+                    )
+                )
+                if self._at_update_limit():
+                    break
+        except BaseException:
+            reason = "error"
+            raise
         finally:
-            self.on_train_step = None
-            if self.profiling_config.collect_memory_metrics:
-                self.runtime_monitor.snapshot_memory("train.end", synchronize=True)
-                self.runtime_monitor.snapshot_memory("run.end")
-            self.record_final_memory_metrics()
-            self.detail_profiler.stop_run()
-            self.train = True
+            self._emit_train_end(
+                TrainEndEvent(reason=reason, update=self.global_step, epoch=self.epoch)
+            )
 
-    def _full_evaluation(
+    def evaluate(
         self,
-        x_train: Tensor,
-        t_train: Tensor,
-        x_test: Tensor | None,
-        t_test: Tensor | None,
-    ) -> dict[str, float]:
-        values = self._evaluate_split(x_train, t_train)
-        if x_test is not None and t_test is not None:
-            values.update({
-                f"test/{key}": value
-                for key, value in self._evaluate_split(x_test, t_test).items()
-            })
-        return {
-            f"train/{key}": value
-            for key, value in values.items()
-            if not key.startswith("test/")
-        } | {key: value for key, value in values.items() if key.startswith("test/")}
-
-    def _evaluate_split(self, x: Tensor, t: Tensor) -> dict[str, float]:
-        was_training = self.train
-        self.model.train(False)
-        total_loss = 0.0
-        samples = 0
-        correct = 0
-        for batch_x, batch_t in self.iter_batches(x, t):
-            y = self.model.forward(batch_x)
-            loss = self.criterion.forward(y, batch_t)
-            batch_size = len(batch_x)
-            total_loss += float(loss.data) * batch_size
-            samples += batch_size
-            correct += self.count_correct(y, batch_t)
-        self.model.train(was_training)
-        return {"loss": total_loss / samples, "accuracy": correct / samples}
-
-    def _run_measured_epoch(
-        self,
-        split: str,
-        epoch_index: int,
         x: Tensor,
         t: Tensor,
-    ) -> None:
-        sample_count = len(x)
-        if self.profiling_config.collect_memory_metrics:
-            self.runtime_monitor.snapshot_memory(
-                f"epoch.{epoch_index}.{split}.start",
-                synchronize=True,
-            )
+        *,
+        metrics: Sequence[Literal["loss", "accuracy"]] = ("loss", "accuracy"),
+    ) -> EvaluationResult:
+        """Evaluate an executor-selected fixed source without consuming train RNG."""
+        if len(x) != len(t):
+            raise ValueError("inputs and targets must have the same sample count")
+        if not metrics:
+            raise ValueError("at least one evaluation metric is required")
+        unknown = set(metrics) - {"loss", "accuracy"}
+        if unknown:
+            raise ValueError(f"unsupported evaluation metrics: {sorted(unknown)}")
+        if self._num_batches(len(x)) == 0:
+            raise ValueError("evaluation source is smaller than one batch")
 
-        if self.profiling_config.collect_epoch_metrics:
-            start = time.perf_counter_ns()
-            epoch_timer = self.runtime_monitor.timer(
-                f"epoch.{split}",
-                synchronize=True,
-            )
+        xp = self.backend.xp
+        was_training = bool(getattr(self.model, "training", True))
+        total_loss = xp.asarray(0.0, dtype=x.data.dtype)
+        total_correct = xp.asarray(0, dtype=xp.int64)
+        sample_count = 0
+        self.model.train(False)
+        try:
+            for batch_x, batch_t in self._iter_batches(x, t):
+                y = self.model.forward(batch_x)
+                if "loss" in metrics:
+                    loss = self.criterion.forward(y, batch_t)
+                    total_loss += loss.data * len(batch_x)
+                if "accuracy" in metrics:
+                    total_correct += self._correct_count(y, batch_t)
+                sample_count += len(batch_x)
+        finally:
+            self.model.train(was_training)
+        return EvaluationResult(
+            example_count=sample_count,
+            loss=(self.backend.scalar_to_float(total_loss) / sample_count)
+            if "loss" in metrics else None,
+            accuracy=(self.backend.scalar_to_int(total_correct) / sample_count)
+            if "accuracy" in metrics else None,
+        )
+
+    def _update(self, x: Tensor, t: Tensor) -> Tensor:
+        self.model.train(True)
+        y = self.model.forward(x)
+        self.criterion.forward(y, t)
+        dx = self.criterion.backward()
+        self.model.backward(dx)
+        if self.max_grad is not None:
+            clip_grads(list(self.model.named_parameters()), self.max_grad)
+        self.optimizer.update()
+        # DS1's canonical update record is the mean objective after the update.
+        return self.criterion.forward(self.model.forward(x), t)
+
+    def _sample_epoch(self, x: Tensor, t: Tensor) -> tuple[Tensor, Tensor]:
+        xp = self.backend.xp
+        if self.sampling_method == "permutation_per_epoch":
+            indices = xp.random.permutation(len(x))
+        elif self.sampling_method == "with_replacement":
+            updates = len(x) // self.batch_size
+            if updates == 0:
+                raise ValueError("dataset is smaller than one training batch")
+            indices = xp.random.randint(0, len(x), size=updates * self.batch_size)
         else:
-            start = None
-            epoch_timer = nullcontext()
+            raise ValueError(f"unsupported sampling_method: {self.sampling_method}")
+        return x[indices], t[indices]
 
-        with epoch_timer:
-            self.run_epoch(x, t)
+    def _iter_batches(self, x: Tensor, t: Tensor):
+        size = len(x)
+        if self.drop_last:
+            size -= size % self.batch_size
+        for start in range(0, size, self.batch_size):
+            yield x[start:start + self.batch_size], t[start:start + self.batch_size]
 
-        if self.profiling_config.collect_epoch_metrics:
-            self.backend_profiler.synchronize()
-            duration_ms = (time.perf_counter_ns() - start) / 1_000_000
-            self.runtime_monitor.set_metric(
-                f"runtime.epoch.{epoch_index}.{split}_duration_ms",
-                duration_ms,
-            )
-            throughput = 0.0
-            if duration_ms > 0:
-                throughput = sample_count / (duration_ms / 1_000)
-            self.runtime_monitor.set_metric(
-                f"throughput.epoch.{epoch_index}.{split}_samples_per_s",
-                throughput,
-            )
+    def _num_batches(self, size: int) -> int:
+        return size // self.batch_size if self.drop_last else (size + self.batch_size - 1) // self.batch_size
 
-        if self.profiling_config.collect_memory_metrics:
-            self.runtime_monitor.snapshot_memory(
-                f"epoch.{epoch_index}.{split}.end",
-                synchronize=True,
-            )
+    def _correct_count(self, y: Tensor, t: Tensor):
+        xp = self.backend.xp
+        y_data, t_data = y.data, t.data
+        labels = t_data.argmax(axis=1) if t_data.size == y_data.size and t_data.ndim > 1 else t_data.reshape(-1)
+        predictions = y_data.argmax(axis=1) if y_data.ndim > 1 and y_data.shape[1] > 1 else (y_data.reshape(-1) >= 0.5).astype(labels.dtype)
+        return xp.sum(predictions == labels)
+
+    def _learning_rate(self) -> float | tuple[float, ...]:
+        value = getattr(self.optimizer, "lr", None)
+        if value is None:
+            raise RuntimeError("optimizer must expose the learning rate used for an update")
+        return float(value)
+
+    def _at_update_limit(self) -> bool:
+        return self.max_updates is not None and self.global_step >= self.max_updates
+
+    def _emit_update(self, event: UpdateEvent) -> None:
+        for receiver in self.event_receivers:
+            receiver.on_update(event)
+
+    def _emit_epoch(self, event: EpochEvent) -> None:
+        for receiver in self.event_receivers:
+            receiver.on_epoch(event)
+
+    def _emit_train_end(self, event: TrainEndEvent) -> None:
+        for receiver in self.event_receivers:
+            receiver.on_train_end(event)

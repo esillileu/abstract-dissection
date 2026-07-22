@@ -2,10 +2,13 @@ import sys
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 sys.path.insert(0, str(Path(__file__).parents[2]))
 
 from experiments.deepscratch1.analysis.common import DEFAULT_ERROR_BARS, ErrorBarStyle, curve_from_histories, smooth_curve
+
+pytestmark = pytest.mark.legacy
 
 
 def test_curve_uses_mean_and_min_max_for_each_available_log_step() -> None:

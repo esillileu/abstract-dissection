@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any
 
 from mlprosection import Tensor
@@ -56,22 +57,37 @@ class Word2Vec(Layer):
     def word_vectors(self):
         return self.W_in.data
 
-    def forward_manual(self, xs: Tensor, ts: Tensor) -> Tensor:
+    def forward_manual(
+        self,
+        xs: Tensor,
+        ts: Tensor,
+        *,
+        negative_candidates: Sequence[Any] | None = None,
+    ) -> Tensor:
         xp = self.backend.xp
         indices = xs.data.astype(xp.int64, copy=False)
         targets = ts.data.astype(xp.int64, copy=False)
         self.cache = []
+        candidate_index = 0
         if self.architecture == "cbow":
             hidden = self.W_in.data[indices].mean(axis=1)
-            loss = self._objective(hidden, targets.reshape(-1), indices)
+            fixed = None if negative_candidates is None else negative_candidates[candidate_index]
+            loss = self._objective(hidden, targets.reshape(-1), indices, fixed_candidates=fixed)
         else:
             centers = indices.reshape(-1)
             context_targets = targets if targets.ndim == 2 else targets[:, None]
-            losses = [self._objective(self.W_in.data[centers], context_targets[:, column], centers) for column in range(context_targets.shape[1])]
+            losses = []
+            for column in range(context_targets.shape[1]):
+                fixed = None if negative_candidates is None else negative_candidates[candidate_index]
+                losses.append(self._objective(
+                    self.W_in.data[centers], context_targets[:, column], centers,
+                    fixed_candidates=fixed,
+                ))
+                candidate_index += 1
             loss = sum(losses) if self.loss_reduction == "sum" else sum(losses) / len(losses)
         return Tensor(xp.asarray(loss, dtype=self.backend.float_dtype), backend=self.backend)
 
-    def _objective(self, hidden, labels, source) -> float:
+    def _objective(self, hidden, labels, source, *, fixed_candidates=None) -> float:
         xp = self.backend.xp
         if self.objective == "full_softmax":
             scores = hidden @ self.W_out.data.T
@@ -83,7 +99,11 @@ class Word2Vec(Layer):
             return float(loss)
         if self.sampler is None:
             raise RuntimeError("negative-sampling objective requires a sampler")
-        negatives = self.sampler.sample(labels, sample_size=self.negative_samples)
+        negatives = (
+            fixed_candidates
+            if fixed_candidates is not None
+            else self.sampler.sample(labels, sample_size=self.negative_samples)
+        )
         candidates = xp.concatenate((labels[:, None], negatives), axis=1)
         scores = xp.sum(hidden[:, None, :] * self.W_out.data[candidates], axis=2)
         targets = xp.zeros_like(scores)
@@ -93,6 +113,12 @@ class Word2Vec(Layer):
         loss = terms.mean() if self.loss_reduction == "mean" else terms.sum(axis=1).mean()
         self.cache.append((hidden, candidates, source, (probabilities, targets)))
         return float(loss)
+
+    def last_negative_candidates(self) -> list[Any] | None:
+        """Return copies of the negatives drawn by the most recent forward pass."""
+        if self.objective != "negative_sampling":
+            return None
+        return [labels_or_candidates[:, 1:].copy() for _, labels_or_candidates, _, _ in self.cache]
 
     def backward_manual(self, dout: Tensor | None = None) -> None:
         xp = self.backend.xp

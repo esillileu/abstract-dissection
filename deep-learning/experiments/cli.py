@@ -20,6 +20,13 @@ from mlprosection_mlflow import run_yaml
 
 
 EXPERIMENTS_ROOT = Path("experiments")
+DS1_CONFIG_ROOT = Path("exp/ds1/config")
+DS2_CONFIG_ROOT = Path("exp/ds2/config")
+
+DOMAIN_EXECUTOR_MODULES = {
+    "ds1": "exp.ds1.executor",
+    "ds2": "exp.ds2.executor",
+}
 
 
 @dataclass(frozen=True)
@@ -97,7 +104,8 @@ def normalize_experiment_id(value: str) -> str:
 
 
 def _domain_config_root(domain: str) -> Path:
-    root = EXPERIMENTS_ROOT / domain / "config"
+    roots = {"ds1": DS1_CONFIG_ROOT, "ds2": DS2_CONFIG_ROOT}
+    root = roots.get(domain, EXPERIMENTS_ROOT / domain / "config")
     if not root.is_dir():
         raise ValueError(f"unknown experiment domain: {domain}")
     return root
@@ -116,6 +124,10 @@ def _default_device(domain: str, experiment_id: str) -> str:
         return "cuda:0" if experiment_id in {"e08", "e09"} else "cpu"
     if domain == "deepscratch2":
         return "cuda:0"
+    if domain == "ds1":
+        return "cpu"
+    if domain == "ds2":
+        return "cpu"
     raise ValueError(f"unknown experiment domain: {domain}")
 
 
@@ -264,13 +276,13 @@ def _print_analysis_plans(plans: list[AnalysisPlan]) -> None:
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("domain", choices=("deepscratch1", "deepscratch2"))
+    parser.add_argument("domain", choices=("deepscratch1", "deepscratch2", "ds1", "ds2"))
     parser.add_argument("command", choices=("plan", "run", "analyze"))
     selection = parser.add_mutually_exclusive_group()
     selection.add_argument("--all", action="store_true")
     selection.add_argument("-e", "--experiment", action="append", default=[])
     parser.add_argument("--seed-set", default="research_v1")
-    parser.add_argument("--seed", help="Seed-set indexes, for example 0-4 or 0,3,7")
+    parser.add_argument("-seed", "--seed", help="Seed-set indexes, for example 0-4 or 0,3,7")
     parser.add_argument("--device", choices=("cpu", "cuda:0"))
     parser.add_argument("--set", dest="override_values", action="append", default=[], metavar="KEY=VALUE")
     parser.add_argument("--tracking-uri")
@@ -316,6 +328,7 @@ def main(argv: list[str] | None = None) -> None:
                 seed=plan.seed,
                 device=plan.device,
                 overrides=overrides,
+                executor_module=DOMAIN_EXECUTOR_MODULES.get(plan.domain),
             )
     except ValueError as exc:
         parser.error(str(exc))

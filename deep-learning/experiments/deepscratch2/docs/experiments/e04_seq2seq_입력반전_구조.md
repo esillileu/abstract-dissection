@@ -1,5 +1,9 @@
 # e04. Seq2seq 입력 반전과 구조 비교
 
+## 원본
+
+원본 저장소 [`deep-learning-from-scratch-2`](../../../../01_deep-learning-from-base/deep-learning-from-scratch-2/)의 [`ch07/seq2seq.py`](../../../../01_deep-learning-from-base/deep-learning-from-scratch-2/ch07/seq2seq.py), [`ch07/peeky_seq2seq.py`](../../../../01_deep-learning-from-base/deep-learning-from-scratch-2/ch07/peeky_seq2seq.py), [`ch07/train_seq2seq.py`](../../../../01_deep-learning-from-base/deep-learning-from-scratch-2/ch07/train_seq2seq.py)를 기반으로 한다. Attention 조건은 [`ch08/attention_seq2seq.py`](../../../../01_deep-learning-from-base/deep-learning-from-scratch-2/ch08/attention_seq2seq.py)를 같은 addition task에 적용한 확장이고, forward/reverse의 전 요인 비교도 이 도메인에서 추가했다.
+
 ## 1. 실험 정의
 
 | 항목 | 내용 |

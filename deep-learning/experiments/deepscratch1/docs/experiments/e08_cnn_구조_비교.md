@@ -2,6 +2,10 @@
 
 <!-- Domain: deepscratch1 -->
 
+## 원본
+
+『밑바닥부터 시작하는 딥러닝』 1권 원본 저장소 [`WegraLee-deep-learning-from-scratch`](../../../../01_deep-learning-from-base/WegraLee-deep-learning-from-scratch/)의 [`ch07/simple_convnet.py`](../../../../01_deep-learning-from-base/WegraLee-deep-learning-from-scratch/ch07/simple_convnet.py)와 [`ch07/train_convnet.py`](../../../../01_deep-learning-from-base/WegraLee-deep-learning-from-scratch/ch07/train_convnet.py)의 SimpleConvNet recipe를 사용한다. 고정 픽셀 순열 및 parameter-matched MLP 대조군은 CNN의 공간 배치 의존성을 검증하기 위해 이 도메인에서 추가한 통제 확장이다.
+
 ## 1. 실험 정의
 
 | 항목            | 내용                                                                                                                                                       |

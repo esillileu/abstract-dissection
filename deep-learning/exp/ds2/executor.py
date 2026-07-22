@@ -15,14 +15,20 @@ from mlprosection.nn.model import Word2Vec
 from mlprosection.nn.sampling import UnigramSampler
 from mlprosection.nn.model.recurrent import AttentionSeq2seq, BetterRnnlm, PeekySeq2seq, Rnnlm, Seq2seq, VanillaRnnlm
 from mlprosection.optim.SGD import Adam, SGD
-from mlprosection.profiling import profiling_config_from_mapping
-from mlprosection.trainer import BookWord2VecTrainer, InternalLossTrainer, TimeTrainer
+from mlprosection.trainer import (
+    LanguageModelTrainer,
+    Seq2seqTrainer,
+    Word2VecTrainer,
+)
 
-from ..contracts import ExperimentResult
-from ..checkpoint import save_epoch_checkpoint
-from ..executor import ExperimentContext
-from ..registry import register_executor
-from ..reproducibility import configure_runtime, seed_batch_order
+from mlprosection.experiment.contracts import ExperimentResult
+from mlprosection.experiment.checkpoint import save_epoch_checkpoint
+from mlprosection.experiment.event_executor import EvaluationRequest, EventExperimentExecutor
+from mlprosection.experiment.executor import ExperimentContext
+from mlprosection.experiment.registry import register_executor
+from mlprosection.experiment.reproducibility import configure_runtime, seed_batch_order
+
+from .records import DS2Records
 
 
 def _mapping(config: dict[str, object], key: str) -> dict[str, object]:
@@ -32,8 +38,11 @@ def _mapping(config: dict[str, object], key: str) -> dict[str, object]:
     return value
 
 
-def _artifact_root(config: dict[str, object]) -> Path:
-    return Path(str(_mapping(config, "run").get("artifact_root", "experiments/results/runs"))) / str(config["atomic_run_id"])
+def _artifact_root(config: dict[str, object], context: ExperimentContext | None = None) -> Path:
+    """Return this run's artifact root, never the legacy global results root."""
+    if context is not None and (root := context.metadata.get("artifact_root")) is not None:
+        return Path(str(root))
+    return Path(str(_mapping(config, "run").get("artifact_root", "exp/ds2/results"))) / str(config["atomic_run_id"])
 
 
 def _optimizer(config: dict[str, object], model):
@@ -58,6 +67,44 @@ def _final(*, updates: int, epochs: int, samples: int, **values: float) -> dict[
         "final/system/samples_seen": float(samples),
         **{key: float(value) for key, value in values.items()},
     }
+
+
+def _source_curve_from_objective(config: dict[str, object]):
+    """Reduce pre-update source objectives at the book's zero-based cadence.
+
+    The accumulator stays on the active backend until a curve point is due, so
+    recording one point does not force a host synchronization for every update.
+    """
+    recording = _mapping(config, "recording")
+    curve = recording.get("source_curve", {})
+    if not isinstance(curve, dict):
+        return lambda _event: None
+    every = int(curve.get("every_updates", 0))
+    if every < 1:
+        return lambda _event: None
+    kind = str(curve.get("kind", "interval_mean_loss"))
+    total = None
+    count = 0
+
+    def reduce(event):
+        nonlocal total, count
+        total = event.objective.data if total is None else total + event.objective.data
+        count += 1
+        if event.local_iteration % every != 0:
+            return None
+        value = event.objective.backend.scalar_to_float(total / count)
+        total, count = None, 0
+        if kind == "train_perplexity":
+            value = float(event.objective.backend.xp.exp(value))
+        return {
+            "series_id": kind,
+            "plot_index": event.update - 1,
+            "update_end": event.update,
+            "epoch": event.epoch,
+            "value": value,
+        }
+
+    return reduce
 
 
 @register_executor("word2vec")
@@ -91,66 +138,31 @@ class Word2VecExecutor:
         )
         optimizer = _optimizer(config, model)
         seed_batch_order(backend, streams)
-        batch_size, epochs, interval = int(_mapping(config, "loader").get("batch_size", 100)), int(training.get("max_epochs", 10)), int(training.get("log_interval", 1000))
+        batch_size, epochs = int(_mapping(config, "loader").get("batch_size", 100)), int(training.get("max_epochs", 10))
         x = backend.xp.asarray(contexts, dtype=backend.xp.int64)
         t = backend.xp.asarray(targets, dtype=backend.xp.int64)
         train_x, train_t = (t, x) if model.architecture == "skipgram" else (x, t)
-        if str(training.get("trainer", "")) == "book_word2vec":
-            trainer = BookWord2VecTrainer(
-                model,
-                optimizer,
-                max_epoch=epochs,
-                batch_size=batch_size,
-                log_interval=interval,
-                max_grad=_optional_max_grad(config),
-                prediction_term_count=_word2vec_prediction_term_count(model, window),
-                profiling_config=profiling_config_from_mapping(_mapping(config, "profiling")),
-                callbacks=[_Callback(context, loss_metric="train/book_loss")],
-            )
-        else:
-            trainer = InternalLossTrainer(
-                model,
-                optimizer,
-                max_epoch=epochs,
-                batch_size=batch_size,
-                log_interval=interval,
-                max_grad=_optional_max_grad(config),
-                profiling_config=profiling_config_from_mapping(_mapping(config, "profiling")),
-                callbacks=[_Callback(context, loss_metric="train/normalized_loss")],
-            )
-        trainer.fit(Tensor(train_x, backend=backend), Tensor(train_t, backend=backend))
-        trainer.dump_profiling_artifacts(Path(str(context.metadata["artifact_root"])) / "profiles")
-        profiling = trainer.profiling_metrics()
-        history = []
-        for log in trainer.logs.train:
-            step = int(log["global_step"])
-            if "normalized_loss" in log:
-                history.append(("step", step, "train/book_loss", float(log["loss"])))
-                history.append(("step", step, "train/normalized_loss", float(log["normalized_loss"])))
-                history.append(("update", step, "train/raw_loss", float(log["loss"])))
-                history.append(("update", step, "train/normalized_loss", float(log["normalized_loss"])))
-            else:
-                history.append(("step", step, "train/normalized_loss", float(log["loss"])))
-                history.append(("update", step, "train/normalized_loss", float(log["loss"])))
-        for epoch, loss in enumerate(trainer.history.epoch_loss, start=1):
-            if isinstance(trainer, BookWord2VecTrainer):
-                history.append(("epoch", epoch, "train/book_loss", loss))
-                history.append(("epoch", epoch, "train/normalized_loss", loss / trainer.prediction_term_count))
-                history.append(("epoch", epoch, "train/raw_loss", loss))
-            else:
-                history.append(("epoch", epoch, "train/normalized_loss", loss))
-        final_loss = trainer.history.epoch_loss[-1] if trainer.history.epoch_loss else 0.0
-        final_metrics = {"final/train/normalized_loss": final_loss}
-        if isinstance(trainer, BookWord2VecTrainer):
-            final_metrics = {
-                "final/train/book_loss": final_loss,
-                "final/train/raw_loss": final_loss,
-                "final/train/normalized_loss": final_loss / trainer.prediction_term_count,
-            }
+        controller = EventExperimentExecutor(
+            records=DS2Records(), evaluate=lambda _request: None,
+            source_curve=_source_curve_from_objective(config),
+        )
+        trainer = Word2VecTrainer(
+            model, optimizer, max_epochs=epochs, batch_size=batch_size,
+            max_grad=_optional_max_grad(config), event_receivers=[controller],
+        )
+        records = controller.run(
+            lambda: trainer.fit(Tensor(train_x, backend=backend), Tensor(train_t, backend=backend)),
+            start_update=trainer.global_step + 1,
+        )
+        artifact_root = _artifact_root(config, context)
+        records.write_csv(artifact_root)
+        history = list(records.history_rows())
+        final_loss = float(records.updates[-1]["loss"].backend.scalar_to_float(records.updates[-1]["loss"].data)) if records.updates else 0.0
+        final_metrics = {"final/train/loss": final_loss}
         return ExperimentResult(
             metrics=_final(updates=trainer.global_step, epochs=trainer.epoch, samples=len(x) * trainer.epoch, **final_metrics),
-            artifact_root=_artifact_root(config), model=model, history=tuple(history),
-            profiling_metrics=profiling,
+            artifact_root=artifact_root, model=model, history=tuple(history),
+            profiling_metrics={},
         )
 
 
@@ -169,7 +181,6 @@ class LanguageModelExecutor:
         train = Tensor(backend.xp.asarray(train_corpus[:-1], dtype=backend.xp.int64), backend=backend)
         train_targets = Tensor(backend.xp.asarray(train_corpus[1:], dtype=backend.xp.int64), backend=backend)
         max_epochs = int(training.get("max_epochs", 4))
-        trainer = TimeTrainer(model, optimizer, max_epoch=max_epochs, batch_size=int(loader.get("batch_size", 20)), time_size=int(loader.get("time_size", 35)), log_interval=int(training.get("log_interval", 20)), max_grad=_optional_max_grad(config, default=0.25), profiling_config=profiling_config_from_mapping(_mapping(config, "profiling")), callbacks=[_Callback(context)])
         valid = Tensor(backend.xp.asarray(ptb["valid"][:-1], dtype=backend.xp.int64), backend=backend)
         valid_targets = Tensor(backend.xp.asarray(ptb["valid"][1:], dtype=backend.xp.int64), backend=backend)
         test = Tensor(backend.xp.asarray(ptb["test"][:-1], dtype=backend.xp.int64), backend=backend)
@@ -178,43 +189,53 @@ class LanguageModelExecutor:
         test_ppl = float("inf")
         best_valid = float("inf")
         best_valid_epoch = 0
-        validation_history: list[tuple[str, int, str, float]] = []
         valid_every_epochs = int(evaluation.get("valid_every_epochs", 1))
         test_every_epochs = int(evaluation.get("test_every_epochs", 1))
         test_at_end = bool(evaluation.get("test_at_end", False))
-        checkpoint_root = Path(str(context.metadata.get("checkpoint_root", "experiments/results/checkpoints")))
-        for target_epoch in range(1, max_epochs + 1):
-            trainer.max_epoch = target_epoch
-            trainer.fit(train, train_targets)
-            evaluated_valid = valid_every_epochs > 0 and target_epoch % valid_every_epochs == 0
-            if evaluated_valid:
-                valid_ppl = trainer.evaluate_perplexity(valid, valid_targets)
-                validation_history.append(("epoch", target_epoch, "valid/perplexity", valid_ppl))
-            if test_every_epochs > 0 and target_epoch % test_every_epochs == 0:
-                test_ppl = trainer.evaluate_perplexity(test, test_targets)
-                validation_history.append(("epoch", target_epoch, "test/perplexity", test_ppl))
-            _save_evaluation_checkpoint(config, context, model=model, optimizer=optimizer, trainer=trainer)
-            if evaluated_valid and valid_ppl < best_valid:
-                best_valid = valid_ppl
-                best_valid_epoch = target_epoch
-                checkpoint_root.mkdir(parents=True, exist_ok=True)
-                model.save_params_npz(checkpoint_root / "best.npz")
-            elif evaluated_valid and str(model_config.get("alias")) == "BetterRnnlm" and str(_mapping(config, "scheduler").get("name", "constant")) == "validation_decay":
-                optimizer.lr /= float(_mapping(config, "scheduler").get("factor", 4.0))
+        requests = {
+            "valid": EvaluationRequest("ptb-valid", "valid", (valid, valid_targets), ("perplexity",)),
+            "test": EvaluationRequest("ptb-test", "test", (test, test_targets), ("perplexity",)),
+        }
+        trainer = LanguageModelTrainer(
+            model, optimizer, max_epochs=max_epochs,
+            batch_size=int(loader.get("batch_size", 20)), time_size=int(loader.get("time_size", 35)),
+            max_grad=_optional_max_grad(config, default=0.25),
+        )
+        def evaluate_request(request):
+            return trainer.evaluate(*request.source)
+        def epoch_requests(event):
+            values = []
+            if valid_every_epochs > 0 and event.epoch % valid_every_epochs == 0:
+                values.append(requests["valid"])
+            if test_every_epochs > 0 and event.epoch % test_every_epochs == 0:
+                values.append(requests["test"])
+            return tuple(values)
+        def after_evaluation(request, result, _axis, step):
+            nonlocal valid_ppl, test_ppl, best_valid, best_valid_epoch
+            if request.split == "valid":
+                valid_ppl = float(result.perplexity)
+                if valid_ppl < best_valid:
+                    best_valid, best_valid_epoch = valid_ppl, step
+                elif str(model_config.get("alias")) == "BetterRnnlm" and str(_mapping(config, "scheduler").get("name", "constant")) == "validation_decay":
+                    optimizer.lr /= float(_mapping(config, "scheduler").get("factor", 4.0))
+            else:
+                test_ppl = float(result.perplexity)
+        controller = EventExperimentExecutor(
+            records=DS2Records(), evaluate=evaluate_request,
+            epoch_requests=epoch_requests, after_evaluation=after_evaluation,
+            source_curve=_source_curve_from_objective(config),
+        )
+        records = controller.run(lambda: trainer.fit(train, train_targets))
+        artifact_root = _artifact_root(config, context)
+        records.write_csv(artifact_root)
         if test_at_end or test_ppl == float("inf"):
-            test_ppl = trainer.evaluate_perplexity(test, test_targets)
-            validation_history.append(("epoch", max_epochs, "test/perplexity", test_ppl))
-        trainer.max_epoch = max_epochs
-        trainer.dump_profiling_artifacts(Path(str(context.metadata["artifact_root"])) / "profiles")
-        profiling = trainer.profiling_metrics()
-        history = [("step", index + 1, "train/perplexity", value) for index, value in enumerate(trainer.history.train_ppl)]
-        history += [("update", index + 1, "train/ppl", value) for index, value in enumerate(trainer.history.train_ppl)]
-        history += [("epoch", step, metric.replace("perplexity", "ppl"), value) for _kind, step, metric, value in validation_history]
-        history += validation_history
+            test_ppl = float(trainer.evaluate(test, test_targets).perplexity)
+        history = list(records.history_rows())
+        final_train_ppl = float(backend.xp.exp(records.updates[-1]["loss"].backend.scalar_to_float(records.updates[-1]["loss"].data))) if records.updates else float("inf")
         final_metrics = {
-            "final/train/perplexity": trainer.history.train_ppl[-1],
+            "final/train/perplexity": final_train_ppl,
             "final/test/perplexity": test_ppl,
-            "final/train/ppl": trainer.history.train_ppl[-1],
+            "final/train/ppl": final_train_ppl,
             "final/test/ppl": test_ppl,
         }
         if best_valid < float("inf"):
@@ -224,7 +245,7 @@ class LanguageModelExecutor:
                 "final/best_valid_ppl": best_valid,
                 "final/best_valid_epoch": float(best_valid_epoch),
             })
-        return ExperimentResult(metrics=_final(updates=trainer.global_step, epochs=trainer.epoch, samples=len(train) * trainer.epoch, **final_metrics), artifact_root=_artifact_root(config), model=model, history=tuple(history), profiling_metrics=profiling)
+        return ExperimentResult(metrics=_final(updates=trainer.global_step, epochs=trainer.epoch, samples=len(train) * trainer.epoch, **final_metrics), artifact_root=artifact_root, model=model, history=tuple(history), profiling_metrics={})
 
 
 @register_executor("seq2seq")
@@ -254,37 +275,43 @@ class Seq2SeqExecutor:
         batch_size, epochs = int(loader.get("batch_size", 128)), int(training.get("max_epochs", 10))
         train_x = Tensor(backend.xp.asarray(x_train, dtype=backend.xp.int64), backend=backend)
         train_t = Tensor(backend.xp.asarray(t_train, dtype=backend.xp.int64), backend=backend)
-        trainer = InternalLossTrainer(
-            model,
-            optimizer,
-            max_epoch=epochs,
-            batch_size=batch_size,
-            log_interval=int(training.get("log_interval", 20)),
-            max_grad=_optional_max_grad(config, default=5.0),
-            profiling_config=profiling_config_from_mapping(_mapping(config, "profiling")),
-            callbacks=[_Callback(context)],
+        test_source = (Tensor(backend.xp.asarray(x_test, dtype=backend.xp.int64), backend=backend), Tensor(backend.xp.asarray(t_test, dtype=backend.xp.int64), backend=backend))
+        request = EvaluationRequest("sequence-test-full", "test", test_source, ("exact_match_accuracy", "token_accuracy"))
+        trainer = Seq2seqTrainer(
+            model, optimizer, max_epochs=epochs, batch_size=batch_size,
+            start_id=data["char_to_id"]["_"], max_grad=_optional_max_grad(config, default=5.0),
         )
-        history: list[tuple[str, int, str, float]] = []
-        for epoch in range(1, epochs + 1):
-            trainer.max_epoch = epoch
-            trainer.fit(train_x, train_t)
-            exact, token = _seq_accuracy(model, x_test, t_test, data["char_to_id"], backend)
-            train_loss = trainer.history.epoch_loss[-1]
-            history.extend((("epoch", epoch, "train/loss", train_loss), ("epoch", epoch, "test/exact_match", exact), ("epoch", epoch, "test/token_accuracy", token)))
-            context.emit_metric(epoch, {"train/loss": train_loss, "test/exact_match": exact, "test/token_accuracy": token})
-            _save_evaluation_checkpoint(config, context, model=model, optimizer=optimizer, trainer=trainer)
-        history += [
-            ("update", int(log["global_step"]), "train/loss", float(log["loss"]))
-            for log in trainer.logs.train
-        ]
+        records = DS2Records()
+
+        def after_evaluation(_request, result, axis, step):
+            if axis == "epoch" and result.exact_match_accuracy is not None:
+                records.add_source_curve({
+                    "series_id": "full_test_exact_match",
+                    "plot_index": step - 1,
+                    "update_end": trainer.global_step,
+                    "epoch": step,
+                    "value": result.exact_match_accuracy,
+                })
+
+        controller = EventExperimentExecutor(
+            records=records,
+            evaluate=lambda _request: trainer.evaluate(*test_source, metrics=("exact_match_accuracy", "token_accuracy")),
+            epoch_requests=lambda _event: (request,),
+            after_evaluation=after_evaluation,
+        )
+        records = controller.run(lambda: trainer.fit(train_x, train_t))
+        artifact_root = _artifact_root(config, context)
+        records.write_csv(artifact_root)
+        history = list(records.history_rows())
         attention_entropy = _save_attention_artifact(model, x_test, t_test, backend, context)
-        trainer.dump_profiling_artifacts(Path(str(context.metadata["artifact_root"])) / "profiles")
-        profiling = trainer.profiling_metrics()
-        final_values = {"final/train/loss": history[-3][3], "final/test/exact_match": history[-2][3], "final/test/token_accuracy": history[-1][3]}
+        last_evaluation = records.evaluations[-2:] if len(records.evaluations) >= 2 else []
+        final_values = {"final/train/loss": float(records.updates[-1]["loss"].backend.scalar_to_float(records.updates[-1]["loss"].data)) if records.updates else 0.0}
+        for row in last_evaluation:
+            final_values[f"final/test/{row['metric'].replace('_accuracy', '')}"] = float(row["value"])
         if attention_entropy is not None:
             final_values["final/attention/entropy"] = attention_entropy
             final_values["final/attention/entropy_mean"] = attention_entropy
-        return ExperimentResult(metrics=_final(updates=trainer.global_step, epochs=trainer.epoch, samples=len(x_train) * trainer.epoch, **final_values), artifact_root=_artifact_root(config), model=model, history=tuple(history), profiling_metrics=profiling)
+        return ExperimentResult(metrics=_final(updates=trainer.global_step, epochs=trainer.epoch, samples=len(x_train) * trainer.epoch, **final_values), artifact_root=artifact_root, model=model, history=tuple(history), profiling_metrics={})
 
 
 class _Callback:

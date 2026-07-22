@@ -1,5 +1,9 @@
 # e02. Full softmax-Negative sampling
 
+## 원본
+
+원본 저장소 [`deep-learning-from-scratch-2`](../../../../01_deep-learning-from-base/deep-learning-from-scratch-2/)의 full-softmax toy Word2Vec 구현인 [`ch03/simple_cbow.py`](../../../../01_deep-learning-from-base/deep-learning-from-scratch-2/ch03/simple_cbow.py)·[`ch03/simple_skip_gram.py`](../../../../01_deep-learning-from-base/deep-learning-from-scratch-2/ch03/simple_skip_gram.py)과, PTB negative-sampling 구현인 [`ch04/cbow.py`](../../../../01_deep-learning-from-base/deep-learning-from-scratch-2/ch04/cbow.py)·[`ch04/skip_gram.py`](../../../../01_deep-learning-from-base/deep-learning-from-scratch-2/ch04/skip_gram.py)·[`ch04/negative_sampling_layer.py`](../../../../01_deep-learning-from-base/deep-learning-from-scratch-2/ch04/negative_sampling_layer.py)를 결합한 통제 확장이다. PTB에서 architecture와 objective를 완전 요인 비교하는 학습 recipe는 원본에 없는 실험 도메인 추가 사항이다.
+
 ## 1. 실험 정의
 
 | 항목 | 내용 |

@@ -1,0 +1,19 @@
+# e03 = GT03: small-corpus RNNLM graph reproduction.
+kind: language_modeling
+dataset: {id: DS-PTB-TRAIN-1000, name: Penn Treebank first 1,000 tokens, train_limit: 1000}
+loader: {batch_size: 10, time_size: 5}
+model: {alias: VanillaRnnlm, wordvec_size: 100, hidden_size: 100}
+optimizer: {name: sgd, learning_rate: 0.1}
+scheduler: {name: constant}
+loss: {name: time_softmax_cross_entropy, reduction: mean}
+training: {max_epochs: 100, entrypoint: exp/ds2/config/e03_small_rnnlm.yaml}
+recording: {source_curve: {kind: train_perplexity, every_updates: 20, phase: post_update, index_origin: 0}}
+evaluation: {primary_metric: final/test/perplexity, valid_every_epochs: 0, test_every_epochs: 0, test_at_end: true}
+numerics: {dtype: float32, backend: numpy, device: cpu, deterministic: true}
+checkpoint: {save_final: true, save_best: false, format: npz}
+profiling: {enabled: false}
+policy: {seed_set: research_v1, seed_count: 10, paired_execution: true, max_grad: null}
+tracking: {enabled: true, experiment: ds2}
+variants:
+  LM-SMALL-RNN: {atomic_run_id: LM-SMALL-RNN, experiment_ids: [e03], execution_group_id: GT03, recipe_id: ds2-gt03-small-rnnlm, structure_signature: ptb1000-vanilla-rnn-100, training: {loop: interval}}
+  LM-SMALL-RNN-CUSTOM: {atomic_run_id: LM-SMALL-RNN-CUSTOM, experiment_ids: [e03], execution_group_id: GT03, recipe_id: ds2-gt03-small-rnnlm, structure_signature: ptb1000-vanilla-rnn-100, training: {loop: epoch}}

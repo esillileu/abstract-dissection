@@ -1,5 +1,9 @@
 # e05. Attention Seq2seq
 
+## 원본
+
+『밑바닥부터 시작하는 딥러닝 2』 원본 저장소 [`deep-learning-from-scratch-2`](../../../../01_deep-learning-from-base/deep-learning-from-scratch-2/)의 [`ch08/attention_seq2seq.py`](../../../../01_deep-learning-from-base/deep-learning-from-scratch-2/ch08/attention_seq2seq.py), [`ch08/attention_layer.py`](../../../../01_deep-learning-from-base/deep-learning-from-scratch-2/ch08/attention_layer.py), [`ch08/train.py`](../../../../01_deep-learning-from-base/deep-learning-from-scratch-2/ch08/train.py), [`ch08/visualize_attention.py`](../../../../01_deep-learning-from-base/deep-learning-from-scratch-2/ch08/visualize_attention.py)를 바탕으로 한다. Vanilla·Peeky 대조와 seed별 정량 보고는 원본 Attention recipe를 확장한 것이다.
+
 ## 1. 실험 정의
 
 | 항목 | 내용 |

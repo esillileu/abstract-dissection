@@ -1,0 +1,121 @@
+"""DS1's MNIST-oriented projection of trainer events to raw records."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+import csv
+from pathlib import Path
+from typing import Literal
+
+from mlprosection.events import (
+    EpochEvent,
+    TrainEndEvent,
+    TrainingWindowEvent,
+    UpdateEvent,
+)
+
+
+@dataclass
+class DS1Records:
+    """DS1's CSV and MLflow-history representation.
+
+    This is intentionally not part of ``src``: its loss/accuracy columns and
+    metric names are properties of the DS1 experiment schema.
+    """
+
+    updates: list[dict[str, object]] = field(default_factory=list)
+    evaluations: list[dict[str, object]] = field(default_factory=list)
+    timing_windows: list[TrainingWindowEvent] = field(default_factory=list)
+    epochs: list[EpochEvent] = field(default_factory=list)
+    end: TrainEndEvent | None = None
+
+    def on_update(self, event: UpdateEvent) -> None:
+        self.updates.append({
+            "update": event.update,
+            "epoch": event.epoch,
+            "batch_size": event.batch_size,
+            "loss": event.loss,
+            "lr": event.learning_rate,
+        })
+
+    def on_epoch(self, event: EpochEvent) -> None:
+        self.epochs.append(event)
+
+    def on_train_end(self, event: TrainEndEvent) -> None:
+        self.end = event
+
+    def add_evaluation(
+        self,
+        *,
+        axis: Literal["update", "epoch", "terminal"],
+        axis_step: int,
+        update: int,
+        epoch: int,
+        evaluation_set_id: str,
+        split: str,
+        result,
+    ) -> None:
+        self.evaluations.append({
+            "axis": axis, "axis_step": axis_step, "update": update,
+            "epoch": epoch, "evaluation_set_id": evaluation_set_id,
+            "split": split, "example_count": result.example_count,
+            "loss": result.loss, "accuracy": result.accuracy,
+        })
+
+    def add_timing_window(self, event: TrainingWindowEvent) -> None:
+        self.timing_windows.append(event)
+
+    def history_rows(self) -> tuple[tuple[str, int, str, float], ...]:
+        """Project canonical records to the legacy MLflow runner history tuple."""
+        rows: list[tuple[str, int, str, float]] = []
+        for row in self.updates:
+            loss = row["loss"]
+            rows.append(("update", int(row["update"]), "train/loss", loss.backend.scalar_to_float(loss.data)))
+            lr = row["lr"]
+            if isinstance(lr, float):
+                rows.append(("update", int(row["update"]), "train/lr", lr))
+        for row in self.evaluations:
+            for metric in ("loss", "accuracy"):
+                value = row[metric]
+                if value is not None:
+                    rows.append((str(row["axis"]), int(row["axis_step"]), f"eval_{row['split']}/{metric}", float(value)))
+        for window in self.timing_windows:
+            rows.append(("update", window.end_update, "runtime/window/train_wall_time_ms", window.train_wall_time_ns / 1_000_000))
+            if window.eval_wall_time_ns is not None:
+                rows.append(("update", window.end_update, "runtime/window/eval_wall_time_ms", window.eval_wall_time_ns / 1_000_000))
+        return tuple(rows)
+
+    def write_csv(self, artifact_root: Path) -> None:
+        """Durably materialize the schema-owned raw CSV artifacts."""
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        self._write(artifact_root / "updates.csv", self.updates)
+        self._write(artifact_root / "evaluations.csv", self.evaluations)
+        windows = [
+            {
+                "start_update": item.start_update, "end_update": item.end_update,
+                "update_count": item.update_count, "closed_by": item.closed_by,
+                "train_wall_time_ns": item.train_wall_time_ns,
+                "train_device_time_ns": item.train_device_time_ns,
+                "eval_wall_time_ns": item.eval_wall_time_ns,
+                "eval_device_time_ns": item.eval_device_time_ns,
+            }
+            for item in self.timing_windows
+        ]
+        self._write(artifact_root / "timing_windows.csv", windows)
+
+    @staticmethod
+    def _write(path: Path, rows: list[dict[str, object]]) -> None:
+        if not rows:
+            return
+        columns = list(rows[0])
+        with path.open("w", newline="") as file:
+            writer = csv.DictWriter(file, fieldnames=columns)
+            writer.writeheader()
+            for row in rows:
+                writer.writerow({key: DS1Records._csv_value(value) for key, value in row.items()})
+
+    @staticmethod
+    def _csv_value(value: object) -> object:
+        if hasattr(value, "backend") and hasattr(value, "data"):
+            return value.backend.scalar_to_float(value.data)
+        return value

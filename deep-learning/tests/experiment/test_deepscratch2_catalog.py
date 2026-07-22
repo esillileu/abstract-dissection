@@ -4,9 +4,12 @@ from pathlib import Path
 import runpy
 
 import yaml
+import pytest
 
 
 CONFIG_ROOT = Path("experiments/deepscratch2/config")
+
+pytestmark = pytest.mark.legacy
 
 
 def test_deepscratch2_catalog_declares_200_seeded_runs() -> None:

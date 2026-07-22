@@ -2,6 +2,10 @@
 
 <!-- Domain: deepscratch1 -->
 
+## 원본
+
+『밑바닥부터 시작하는 딥러닝』 1권 원본 저장소 [`WegraLee-deep-learning-from-scratch`](../../../../01_deep-learning-from-base/WegraLee-deep-learning-from-scratch/)의 [`ch06/weight_init_activation_histogram.py`](../../../../01_deep-learning-from-base/WegraLee-deep-learning-from-scratch/ch06/weight_init_activation_histogram.py)를 재현한다. 원본의 activation·초기화 조합과 깊이별 histogram 관찰을 유지하고, 정량 신호 보존 지표와 반복 실행 보고를 확장했다.
+
 ## 1. 실험 정의
 
 | 항목 | 내용 |

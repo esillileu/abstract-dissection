@@ -1,0 +1,19 @@
+# e05 = GT05: PTB language-model recipe comparison.
+kind: language_modeling
+dataset: {id: DS-PTB, name: Penn Treebank}
+loader: {batch_size: 20, time_size: 35}
+optimizer: {name: sgd, learning_rate: 20.0}
+scheduler: {name: validation_decay, factor: 4.0}
+loss: {name: time_softmax_cross_entropy, reduction: mean}
+training: {max_epochs: 40, entrypoint: exp/ds2/config/e05_ptb_lm_recipes.yaml}
+recording: {source_curve: {kind: train_perplexity, every_updates: 20, phase: post_update, index_origin: 0}}
+evaluation: {primary_metric: final/test/perplexity, valid_every_epochs: 1, test_every_epochs: 0, test_at_end: true}
+numerics: {dtype: float32, backend: numpy, device: cpu, deterministic: true}
+checkpoint: {save_final: true, save_best: true, format: npz}
+profiling: {enabled: false}
+policy: {seed_set: research_v1, seed_count: 10, paired_execution: true, max_grad: 0.25}
+tracking: {enabled: true, experiment: ds2}
+variants:
+  LM-RNN-RECIPE: {atomic_run_id: LM-RNN-RECIPE, experiment_ids: [e05], execution_group_id: GT05, recipe_id: ds2-gt05-ptb-lm, structure_signature: ptb-rnn-650, model: {alias: VanillaRnnlm, wordvec_size: 650, hidden_size: 650}}
+  LM-LSTM-RECIPE: {atomic_run_id: LM-LSTM-RECIPE, experiment_ids: [e05], execution_group_id: GT05, recipe_id: ds2-gt05-ptb-lm, structure_signature: ptb-lstm-650, model: {alias: Rnnlm, wordvec_size: 650, hidden_size: 650}}
+  LM-BETTER-RECIPE: {atomic_run_id: LM-BETTER-RECIPE, experiment_ids: [e05], execution_group_id: GT05, recipe_id: ds2-gt05-ptb-lm, structure_signature: ptb-better-rnnlm-650, model: {alias: BetterRnnlm, wordvec_size: 650, hidden_size: 650, dropout_ratio: 0.5}}

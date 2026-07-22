@@ -2,6 +2,10 @@
 
 <!-- Domain: deepscratch1 -->
 
+## 원본
+
+『밑바닥부터 시작하는 딥러닝』 1권 원본 저장소 [`WegraLee-deep-learning-from-scratch`](../../../../01_deep-learning-from-base/WegraLee-deep-learning-from-scratch/)의 [`ch06/optimizer_compare_mnist.py`](../../../../01_deep-learning-from-base/WegraLee-deep-learning-from-scratch/ch06/optimizer_compare_mnist.py)를 바탕으로 한다. 원본의 MNIST MLP와 SGD·Momentum·AdaGrad·Adam 비교를 유지하되, 여기서는 반복 seed, 전체 test 평가 및 curve·AUC 지표를 추가했다.
+
 ## 1. 실험 정의
 
 | 항목 | 내용 |

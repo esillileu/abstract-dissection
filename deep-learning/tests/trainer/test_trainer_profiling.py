@@ -1,7 +1,9 @@
+from __future__ import annotations
+
 from mlprosection import Tensor
+from mlprosection.events import EpochEvent, TrainEndEvent, UpdateEvent
 from mlprosection.nn.layers.base import Layer
 from mlprosection.nn.layers.criterion import SoftmaxWithLoss
-from mlprosection.profiling import ProfilingConfig
 from mlprosection.trainer import ForwardTrainer
 
 
@@ -16,146 +18,67 @@ class IdentityModel(Layer):
 class DummyOptimizer:
     def __init__(self) -> None:
         self.params = []
+        self.lr = 0.1
         self.update_count = 0
 
     def update(self) -> None:
         self.update_count += 1
 
 
-class RecordingCallback:
+class Recorder:
     def __init__(self) -> None:
-        self.batch_steps: list[int] = []
-        self.intervals: list[dict[str, float]] = []
-        self.epochs: list[tuple[int, dict[str, float]]] = []
+        self.updates: list[UpdateEvent] = []
+        self.epochs: list[EpochEvent] = []
+        self.ends: list[TrainEndEvent] = []
 
-    def on_batch_end(self, *, step: int) -> None:
-        self.batch_steps.append(step)
+    def on_update(self, event: UpdateEvent) -> None:
+        self.updates.append(event)
 
-    def on_interval(self, *, metrics: dict[str, float]) -> None:
-        self.intervals.append(metrics)
+    def on_epoch(self, event: EpochEvent) -> None:
+        self.epochs.append(event)
 
-    def on_epoch_end(self, *, epoch: int, metrics: dict[str, float]) -> None:
-        self.epochs.append((epoch, metrics))
+    def on_train_end(self, event: TrainEndEvent) -> None:
+        self.ends.append(event)
 
 
-def test_forward_trainer_collects_common_profiling_metrics() -> None:
+def test_forward_trainer_emits_one_post_update_event_per_successful_update() -> None:
+    recorder = Recorder()
+    optimizer = DummyOptimizer()
     trainer = ForwardTrainer(
-        model=IdentityModel(),
-        criterion=SoftmaxWithLoss(),
-        optimizer=DummyOptimizer(),
-        max_epoch=2,
-        batch_size=2,
-        log_interval=None,
-    )
-
-    x = Tensor([[0.1, 0.9], [0.8, 0.2], [0.7, 0.3], [0.2, 0.8]])
-    t = Tensor([1, 0, 0, 1])
-
-    trainer.fit(x, t)
-    metrics = trainer.profiling_metrics()
-
-    assert trainer.global_step == 4
-    assert "runtime.train_total.mean_ms" in metrics
-    assert "runtime.epoch.train.count" in metrics
-    assert "runtime.epoch.0.train_duration_ms" in metrics
-    assert "throughput.epoch.0.train_samples_per_s" in metrics
-    assert "memory.run.start.cpu.rss_bytes" in metrics
-    assert metrics["profiling.enabled"] == 0
-    assert "runtime.profile.forward.count" not in metrics
-
-
-def test_forward_trainer_profiles_only_configured_steps() -> None:
-    trainer = ForwardTrainer(
-        model=IdentityModel(),
-        criterion=SoftmaxWithLoss(),
-        optimizer=DummyOptimizer(),
-        max_epoch=2,
-        batch_size=2,
-        log_interval=None,
-        profiling_config=ProfilingConfig(
-            enabled=True,
-            start_step=1,
-            num_steps=2,
-            profile_memory=True,
-        ),
-    )
-
-    x = Tensor([[0.1, 0.9], [0.8, 0.2], [0.7, 0.3], [0.2, 0.8]])
-    t = Tensor([1, 0, 0, 1])
-
-    trainer.fit(x, t)
-    metrics = trainer.profiling_metrics()
-
-    assert trainer.global_step == 4
-    assert metrics["runtime.profile.train_step.count"] == 2
-    assert metrics["runtime.profile.forward.count"] == 2
-    assert metrics["runtime.profile.backward.count"] == 2
-    assert metrics["runtime.profile.optimizer_update.count"] == 2
-    assert "memory.profile.step.1.before.cpu.rss_bytes" in metrics
-    assert "memory.profile.step.2.after.cpu.rss_bytes" in metrics
-    assert "memory.profile.step.0.before.cpu.rss_bytes" not in metrics
-
-
-def test_forward_trainer_emits_plain_callback_events() -> None:
-    callback = RecordingCallback()
-    trainer = ForwardTrainer(
-        model=IdentityModel(), criterion=SoftmaxWithLoss(), optimizer=DummyOptimizer(),
-        max_epoch=1, batch_size=2, log_interval=1, callbacks=[callback],
+        IdentityModel(), SoftmaxWithLoss(), optimizer,
+        max_epochs=2, max_updates=3, batch_size=2, event_receivers=[recorder],
     )
     x = Tensor([[0.1, 0.9], [0.8, 0.2], [0.7, 0.3], [0.2, 0.8]])
     t = Tensor([1, 0, 0, 1])
 
     trainer.fit(x, t)
 
-    assert callback.batch_steps == [1, 2]
-    assert callback.intervals and all("loss" in event for event in callback.intervals)
-    assert [log["global_step"] for log in trainer.logs.train] == [1, 2]
-    assert trainer.eval_step == 0
-    assert callback.epochs == [(1, {"train/accuracy": 1.0})]
+    assert optimizer.update_count == 3
+    assert [event.update for event in recorder.updates] == [1, 2, 3]
+    assert [event.epoch for event in recorder.updates] == [1, 1, 2]
+    assert [event.batch_size for event in recorder.updates] == [2, 2, 2]
+    assert all(event.loss.data > 0 for event in recorder.updates)
+    assert [(event.start_update, event.end_update) for event in recorder.epochs] == [(1, 2), (3, 3)]
+    assert recorder.ends == [TrainEndEvent(reason="max_updates", update=3, epoch=2)]
 
 
-def test_forward_trainer_stops_at_max_updates() -> None:
+def test_forward_trainer_records_remainder_batch_and_restores_state() -> None:
+    recorder = Recorder()
     trainer = ForwardTrainer(
-        model=IdentityModel(), criterion=SoftmaxWithLoss(), optimizer=DummyOptimizer(),
-        max_epoch=3, max_updates=2, batch_size=2, log_interval=10,
+        IdentityModel(), SoftmaxWithLoss(), DummyOptimizer(),
+        max_epochs=1, batch_size=2, event_receivers=[recorder],
     )
-    x = Tensor([
-        [0.1, 0.9], [0.8, 0.2], [0.7, 0.3],
-        [0.2, 0.8], [0.1, 0.9], [0.8, 0.2],
-    ])
-    t = Tensor([1, 0, 0, 1, 1, 0])
+    x = Tensor([[0.1, 0.9], [0.8, 0.2], [0.7, 0.3]])
+    t = Tensor([1, 0, 0])
 
     trainer.fit(x, t)
-
-    assert trainer.global_step == 2
-    assert trainer.optimizer.update_count == 2
-    assert trainer.epoch == 1
-
-
-def test_forward_trainer_records_post_update_loss_for_each_step() -> None:
-    trainer = ForwardTrainer(
-        model=IdentityModel(), criterion=SoftmaxWithLoss(), optimizer=DummyOptimizer(),
-        max_epoch=1, batch_size=2, log_interval=10, record_step_loss="post_update",
+    state = trainer.state_dict()
+    restored = ForwardTrainer(
+        IdentityModel(), SoftmaxWithLoss(), DummyOptimizer(), max_epochs=2, batch_size=2
     )
-    x = Tensor([[0.1, 0.9], [0.8, 0.2], [0.7, 0.3], [0.2, 0.8]])
-    t = Tensor([1, 0, 0, 1])
+    restored.load_state_dict(state)
 
-    trainer.fit(x, t)
-
-    assert [step for step, _ in trainer.step_losses] == [1, 2]
-    assert all(loss > 0 for _, loss in trainer.step_losses)
-
-
-def test_forward_trainer_records_first_step_and_epoch_full_evaluations() -> None:
-    trainer = ForwardTrainer(
-        model=IdentityModel(), criterion=SoftmaxWithLoss(), optimizer=DummyOptimizer(),
-        max_epoch=1, batch_size=2, log_interval=10,
-        record_first_step_evaluation=True, record_epoch_evaluation=True,
-    )
-    x = Tensor([[0.1, 0.9], [0.8, 0.2], [0.7, 0.3], [0.2, 0.8]])
-    t = Tensor([1, 0, 0, 1])
-
-    trainer.fit(x, t, x, t)
-
-    assert [step for step, _ in trainer.graph_evaluations] == [0, 1]
-    assert all("train/accuracy" in metrics and "test/accuracy" in metrics for _, metrics in trainer.graph_evaluations)
+    assert [event.batch_size for event in recorder.updates] == [2, 1]
+    assert state == {"global_step": 2, "epoch": 1}
+    assert restored.global_step == 2
+    assert restored.epoch == 1

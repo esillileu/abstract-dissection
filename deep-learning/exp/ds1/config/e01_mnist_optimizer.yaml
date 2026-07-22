@@ -1,0 +1,26 @@
+# e01 = GT01: MNIST MLP optimizer comparison.
+kind: supervised_classification
+dataset:
+  id: mnist-train-full
+  name: MNIST
+  flatten: true
+  train_limit: 60000
+  test_limit: 10000
+  input_shape: [784]
+  num_classes: 10
+  normalization: pixel_0_1
+loader: {batch_size: 128, shuffle: true, drop_last: false, sampling_method: with_replacement}
+model: {alias: MLP, family: mlp, task_type: classification, input_size: 784, hidden_sizes: [100, 100, 100, 100], output_size: 10, activation: relu, initializer: he}
+loss: {name: SoftmaxWithLoss, reduction: mean}
+training: {max_epochs: 5, max_updates: 2000, entrypoint: exp/ds1/config/e01_mnist_optimizer.yaml}
+evaluation: {primary_metric: test/accuracy}
+numerics: {dtype: float64, backend: numpy, device: cpu, deterministic: false}
+checkpoint: {save_final: true, save_on_eval: false, format: npz}
+profiling: {enabled: false}
+policy: {seed_set: research_v1, seed_count: 10, paired_execution: true}
+tracking: {enabled: true, experiment: ds1, upload_checkpoint: false}
+variants:
+  MLP-OPT-SGD: {atomic_run_id: MLP-OPT-SGD, experiment_ids: [e01], execution_group_id: GT01, recipe_id: ds1-gt01-optimizer, structure_signature: mnist-mlp-784-100x4-10-relu, optimizer: {name: sgd, learning_rate: 0.01}}
+  MLP-OPT-MOMENTUM: {atomic_run_id: MLP-OPT-MOMENTUM, experiment_ids: [e01], execution_group_id: GT01, recipe_id: ds1-gt01-optimizer, structure_signature: mnist-mlp-784-100x4-10-relu, optimizer: {name: momentum, learning_rate: 0.01, momentum: 0.9}}
+  MLP-OPT-ADAGRAD: {atomic_run_id: MLP-OPT-ADAGRAD, experiment_ids: [e01], execution_group_id: GT01, recipe_id: ds1-gt01-optimizer, structure_signature: mnist-mlp-784-100x4-10-relu, optimizer: {name: adagrad, learning_rate: 0.01}}
+  MLP-OPT-ADAM: {atomic_run_id: MLP-OPT-ADAM, experiment_ids: [e01], execution_group_id: GT01, recipe_id: ds1-gt01-optimizer, structure_signature: mnist-mlp-784-100x4-10-relu, optimizer: {name: adam, learning_rate: 0.001}}

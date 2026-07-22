@@ -1,0 +1,47 @@
+# e05 = GT05: BatchNorm × log-spaced initialization scale.
+kind: supervised_classification
+dataset: {id: mnist-train-1000, name: MNIST, flatten: true, train_limit: 1000, test_limit: 10000, train_evaluation_size: 1000}
+loader: {batch_size: 100, drop_last: false, sampling_method: with_replacement}
+model: {alias: MLP, input_size: 784, hidden_sizes: [100, 100, 100, 100, 100], output_size: 10, activation: relu}
+optimizer: {name: sgd, learning_rate: 0.01}
+loss: {name: SoftmaxWithLoss, reduction: mean}
+training: {max_epochs: 20, entrypoint: exp/ds1/config/e05_mnist_batchnorm_scale.yaml}
+evaluation: {primary_metric: train/accuracy, schedule: {on_update: {first: true, every: 10, sets: [train-first-1000]}}}
+numerics: {dtype: float64, backend: numpy, device: cpu}
+checkpoint: {save_final: true, save_on_eval: false, format: npz}
+profiling: {enabled: false}
+policy: {seed_set: research_v1, seed_count: 10, paired_execution: true}
+tracking: {enabled: true, experiment: ds1, upload_checkpoint: false}
+variants:
+  BN-SCALE-01-OFF: {atomic_run_id: BN-SCALE-01-OFF, experiment_ids: [e05], execution_group_id: GT05, recipe_id: ds1-gt05-batchnorm-scale, structure_signature: mnist-mlp-100x5-no-bn, model: {initializer: 'std:1.0', use_batchnorm: false}}
+  BN-SCALE-01-ON: {atomic_run_id: BN-SCALE-01-ON, experiment_ids: [e05], execution_group_id: GT05, recipe_id: ds1-gt05-batchnorm-scale, structure_signature: mnist-mlp-100x5-bn, model: {initializer: 'std:1.0', use_batchnorm: true}}
+  BN-SCALE-02-OFF: {atomic_run_id: BN-SCALE-02-OFF, experiment_ids: [e05], execution_group_id: GT05, recipe_id: ds1-gt05-batchnorm-scale, structure_signature: mnist-mlp-100x5-no-bn, model: {initializer: 'std:0.541169526', use_batchnorm: false}}
+  BN-SCALE-02-ON: {atomic_run_id: BN-SCALE-02-ON, experiment_ids: [e05], execution_group_id: GT05, recipe_id: ds1-gt05-batchnorm-scale, structure_signature: mnist-mlp-100x5-bn, model: {initializer: 'std:0.541169526', use_batchnorm: true}}
+  BN-SCALE-03-OFF: {atomic_run_id: BN-SCALE-03-OFF, experiment_ids: [e05], execution_group_id: GT05, recipe_id: ds1-gt05-batchnorm-scale, structure_signature: mnist-mlp-100x5-no-bn, model: {initializer: 'std:0.292864456', use_batchnorm: false}}
+  BN-SCALE-03-ON: {atomic_run_id: BN-SCALE-03-ON, experiment_ids: [e05], execution_group_id: GT05, recipe_id: ds1-gt05-batchnorm-scale, structure_signature: mnist-mlp-100x5-bn, model: {initializer: 'std:0.292864456', use_batchnorm: true}}
+  BN-SCALE-04-OFF: {atomic_run_id: BN-SCALE-04-OFF, experiment_ids: [e05], execution_group_id: GT05, recipe_id: ds1-gt05-batchnorm-scale, structure_signature: mnist-mlp-100x5-no-bn, model: {initializer: 'std:0.158489319', use_batchnorm: false}}
+  BN-SCALE-04-ON: {atomic_run_id: BN-SCALE-04-ON, experiment_ids: [e05], execution_group_id: GT05, recipe_id: ds1-gt05-batchnorm-scale, structure_signature: mnist-mlp-100x5-bn, model: {initializer: 'std:0.158489319', use_batchnorm: true}}
+  BN-SCALE-05-OFF: {atomic_run_id: BN-SCALE-05-OFF, experiment_ids: [e05], execution_group_id: GT05, recipe_id: ds1-gt05-batchnorm-scale, structure_signature: mnist-mlp-100x5-no-bn, model: {initializer: 'std:0.085769590', use_batchnorm: false}}
+  BN-SCALE-05-ON: {atomic_run_id: BN-SCALE-05-ON, experiment_ids: [e05], execution_group_id: GT05, recipe_id: ds1-gt05-batchnorm-scale, structure_signature: mnist-mlp-100x5-bn, model: {initializer: 'std:0.085769590', use_batchnorm: true}}
+  BN-SCALE-06-OFF: {atomic_run_id: BN-SCALE-06-OFF, experiment_ids: [e05], execution_group_id: GT05, recipe_id: ds1-gt05-batchnorm-scale, structure_signature: mnist-mlp-100x5-no-bn, model: {initializer: 'std:0.046415888', use_batchnorm: false}}
+  BN-SCALE-06-ON: {atomic_run_id: BN-SCALE-06-ON, experiment_ids: [e05], execution_group_id: GT05, recipe_id: ds1-gt05-batchnorm-scale, structure_signature: mnist-mlp-100x5-bn, model: {initializer: 'std:0.046415888', use_batchnorm: true}}
+  BN-SCALE-07-OFF: {atomic_run_id: BN-SCALE-07-OFF, experiment_ids: [e05], execution_group_id: GT05, recipe_id: ds1-gt05-batchnorm-scale, structure_signature: mnist-mlp-100x5-no-bn, model: {initializer: 'std:0.025118864', use_batchnorm: false}}
+  BN-SCALE-07-ON: {atomic_run_id: BN-SCALE-07-ON, experiment_ids: [e05], execution_group_id: GT05, recipe_id: ds1-gt05-batchnorm-scale, structure_signature: mnist-mlp-100x5-bn, model: {initializer: 'std:0.025118864', use_batchnorm: true}}
+  BN-SCALE-08-OFF: {atomic_run_id: BN-SCALE-08-OFF, experiment_ids: [e05], execution_group_id: GT05, recipe_id: ds1-gt05-batchnorm-scale, structure_signature: mnist-mlp-100x5-no-bn, model: {initializer: 'std:0.013593564', use_batchnorm: false}}
+  BN-SCALE-08-ON: {atomic_run_id: BN-SCALE-08-ON, experiment_ids: [e05], execution_group_id: GT05, recipe_id: ds1-gt05-batchnorm-scale, structure_signature: mnist-mlp-100x5-bn, model: {initializer: 'std:0.013593564', use_batchnorm: true}}
+  BN-SCALE-09-OFF: {atomic_run_id: BN-SCALE-09-OFF, experiment_ids: [e05], execution_group_id: GT05, recipe_id: ds1-gt05-batchnorm-scale, structure_signature: mnist-mlp-100x5-no-bn, model: {initializer: 'std:0.007356423', use_batchnorm: false}}
+  BN-SCALE-09-ON: {atomic_run_id: BN-SCALE-09-ON, experiment_ids: [e05], execution_group_id: GT05, recipe_id: ds1-gt05-batchnorm-scale, structure_signature: mnist-mlp-100x5-bn, model: {initializer: 'std:0.007356423', use_batchnorm: true}}
+  BN-SCALE-10-OFF: {atomic_run_id: BN-SCALE-10-OFF, experiment_ids: [e05], execution_group_id: GT05, recipe_id: ds1-gt05-batchnorm-scale, structure_signature: mnist-mlp-100x5-no-bn, model: {initializer: 'std:0.003981072', use_batchnorm: false}}
+  BN-SCALE-10-ON: {atomic_run_id: BN-SCALE-10-ON, experiment_ids: [e05], execution_group_id: GT05, recipe_id: ds1-gt05-batchnorm-scale, structure_signature: mnist-mlp-100x5-bn, model: {initializer: 'std:0.003981072', use_batchnorm: true}}
+  BN-SCALE-11-OFF: {atomic_run_id: BN-SCALE-11-OFF, experiment_ids: [e05], execution_group_id: GT05, recipe_id: ds1-gt05-batchnorm-scale, structure_signature: mnist-mlp-100x5-no-bn, model: {initializer: 'std:0.002154435', use_batchnorm: false}}
+  BN-SCALE-11-ON: {atomic_run_id: BN-SCALE-11-ON, experiment_ids: [e05], execution_group_id: GT05, recipe_id: ds1-gt05-batchnorm-scale, structure_signature: mnist-mlp-100x5-bn, model: {initializer: 'std:0.002154435', use_batchnorm: true}}
+  BN-SCALE-12-OFF: {atomic_run_id: BN-SCALE-12-OFF, experiment_ids: [e05], execution_group_id: GT05, recipe_id: ds1-gt05-batchnorm-scale, structure_signature: mnist-mlp-100x5-no-bn, model: {initializer: 'std:0.001165914', use_batchnorm: false}}
+  BN-SCALE-12-ON: {atomic_run_id: BN-SCALE-12-ON, experiment_ids: [e05], execution_group_id: GT05, recipe_id: ds1-gt05-batchnorm-scale, structure_signature: mnist-mlp-100x5-bn, model: {initializer: 'std:0.001165914', use_batchnorm: true}}
+  BN-SCALE-13-OFF: {atomic_run_id: BN-SCALE-13-OFF, experiment_ids: [e05], execution_group_id: GT05, recipe_id: ds1-gt05-batchnorm-scale, structure_signature: mnist-mlp-100x5-no-bn, model: {initializer: 'std:0.000630957', use_batchnorm: false}}
+  BN-SCALE-13-ON: {atomic_run_id: BN-SCALE-13-ON, experiment_ids: [e05], execution_group_id: GT05, recipe_id: ds1-gt05-batchnorm-scale, structure_signature: mnist-mlp-100x5-bn, model: {initializer: 'std:0.000630957', use_batchnorm: true}}
+  BN-SCALE-14-OFF: {atomic_run_id: BN-SCALE-14-OFF, experiment_ids: [e05], execution_group_id: GT05, recipe_id: ds1-gt05-batchnorm-scale, structure_signature: mnist-mlp-100x5-no-bn, model: {initializer: 'std:0.000341455', use_batchnorm: false}}
+  BN-SCALE-14-ON: {atomic_run_id: BN-SCALE-14-ON, experiment_ids: [e05], execution_group_id: GT05, recipe_id: ds1-gt05-batchnorm-scale, structure_signature: mnist-mlp-100x5-bn, model: {initializer: 'std:0.000341455', use_batchnorm: true}}
+  BN-SCALE-15-OFF: {atomic_run_id: BN-SCALE-15-OFF, experiment_ids: [e05], execution_group_id: GT05, recipe_id: ds1-gt05-batchnorm-scale, structure_signature: mnist-mlp-100x5-no-bn, model: {initializer: 'std:0.000184785', use_batchnorm: false}}
+  BN-SCALE-15-ON: {atomic_run_id: BN-SCALE-15-ON, experiment_ids: [e05], execution_group_id: GT05, recipe_id: ds1-gt05-batchnorm-scale, structure_signature: mnist-mlp-100x5-bn, model: {initializer: 'std:0.000184785', use_batchnorm: true}}
+  BN-SCALE-16-OFF: {atomic_run_id: BN-SCALE-16-OFF, experiment_ids: [e05], execution_group_id: GT05, recipe_id: ds1-gt05-batchnorm-scale, structure_signature: mnist-mlp-100x5-no-bn, model: {initializer: 'std:0.0001', use_batchnorm: false}}
+  BN-SCALE-16-ON: {atomic_run_id: BN-SCALE-16-ON, experiment_ids: [e05], execution_group_id: GT05, recipe_id: ds1-gt05-batchnorm-scale, structure_signature: mnist-mlp-100x5-bn, model: {initializer: 'std:0.0001', use_batchnorm: true}}

@@ -1,5 +1,9 @@
 # e03. RNNLM 비교
 
+## 원본
+
+『밑바닥부터 시작하는 딥러닝 2』 원본 저장소 [`deep-learning-from-scratch-2`](../../../../01_deep-learning-from-base/deep-learning-from-scratch-2/)의 vanilla RNNLM [`ch05/simple_rnnlm.py`](../../../../01_deep-learning-from-base/deep-learning-from-scratch-2/ch05/simple_rnnlm.py)·[`ch05/train.py`](../../../../01_deep-learning-from-base/deep-learning-from-scratch-2/ch05/train.py), LSTM RNNLM [`ch06/rnnlm.py`](../../../../01_deep-learning-from-base/deep-learning-from-scratch-2/ch06/rnnlm.py)·[`ch06/train_rnnlm.py`](../../../../01_deep-learning-from-base/deep-learning-from-scratch-2/ch06/train_rnnlm.py), BetterRnnlm [`ch06/better_rnnlm.py`](../../../../01_deep-learning-from-base/deep-learning-from-scratch-2/ch06/better_rnnlm.py)·[`ch06/train_better_rnnlm.py`](../../../../01_deep-learning-from-base/deep-learning-from-scratch-2/ch06/train_better_rnnlm.py)를 비교한다. 세 recipe를 공통 보고 형식으로 묶는 것은 이 도메인의 확장이다.
+
 ## 1. 실험 정의
 
 | 항목 | 내용 |

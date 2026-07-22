@@ -1,5 +1,9 @@
 # e01. CBOW-Skip-gram
 
+## 원본
+
+『밑바닥부터 시작하는 딥러닝 2』 원본 저장소 [`deep-learning-from-scratch-2`](../../../../01_deep-learning-from-base/deep-learning-from-scratch-2/)의 [`ch04/cbow.py`](../../../../01_deep-learning-from-base/deep-learning-from-scratch-2/ch04/cbow.py), [`ch04/skip_gram.py`](../../../../01_deep-learning-from-base/deep-learning-from-scratch-2/ch04/skip_gram.py), [`ch04/negative_sampling_layer.py`](../../../../01_deep-learning-from-base/deep-learning-from-scratch-2/ch04/negative_sampling_layer.py), [`ch04/train.py`](../../../../01_deep-learning-from-base/deep-learning-from-scratch-2/ch04/train.py)를 바탕으로 한다. 원본의 CBOW negative-sampling 학습을 보존하고, Skip-gram 대조와 비용·품질 반복 분석을 추가했다.
+
 ## 1. 실험 정의
 
 | 항목 | 내용 |

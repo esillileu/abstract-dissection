@@ -1,5 +1,9 @@
 # e07. RNNLM small-corpus comparison
 
+## 원본
+
+원본 저장소 [`deep-learning-from-scratch-2`](../../../../01_deep-learning-from-base/deep-learning-from-scratch-2/)의 vanilla baseline [`ch05/simple_rnnlm.py`](../../../../01_deep-learning-from-base/deep-learning-from-scratch-2/ch05/simple_rnnlm.py)·[`ch05/train.py`](../../../../01_deep-learning-from-base/deep-learning-from-scratch-2/ch05/train.py)와, 비교 모델 [`ch06/rnnlm.py`](../../../../01_deep-learning-from-base/deep-learning-from-scratch-2/ch06/rnnlm.py)·[`ch06/better_rnnlm.py`](../../../../01_deep-learning-from-base/deep-learning-from-scratch-2/ch06/better_rnnlm.py)를 사용한다. PTB 1,000-token, 공통 SGD recipe로 세 모델을 맞추는 것은 원본 장별 예제를 통제 비교로 바꾼 확장이다.
+
 ch05의 Vanilla RNNLM 조건을 공통 baseline으로 하여 RNN, LSTM, BetterRnnlm을 비교한다.
 
 | 항목 | 내용 |

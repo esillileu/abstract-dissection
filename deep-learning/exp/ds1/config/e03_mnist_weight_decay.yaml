@@ -1,0 +1,17 @@
+# e03 = GT03: weight decay on the first 300 MNIST examples.
+kind: supervised_classification
+dataset: {id: mnist-train-300, name: MNIST, flatten: true, train_limit: 300, test_limit: 10000, train_evaluation_size: 300}
+loader: {batch_size: 100, drop_last: false, sampling_method: with_replacement}
+model: {alias: MLP, input_size: 784, hidden_sizes: [100, 100, 100, 100, 100, 100], output_size: 10, activation: relu, initializer: he}
+optimizer: {name: sgd, learning_rate: 0.01}
+loss: {name: SoftmaxWithLoss, reduction: mean}
+training: {max_epochs: 201, max_updates: 601, entrypoint: exp/ds1/config/e03_mnist_weight_decay.yaml}
+evaluation: {primary_metric: test/accuracy, schedule: {on_update: {first: true, every: 3, sets: [train-first-300, test-full]}}}
+numerics: {dtype: float64, backend: numpy, device: cpu}
+checkpoint: {save_final: true, save_on_eval: false, format: npz}
+profiling: {enabled: false}
+policy: {seed_set: research_v1, seed_count: 10, paired_execution: true}
+tracking: {enabled: true, experiment: ds1, upload_checkpoint: false}
+variants:
+  REG-WD-OFF: {atomic_run_id: REG-WD-OFF, experiment_ids: [e03], execution_group_id: GT03, recipe_id: ds1-gt03-weight-decay, structure_signature: mnist-mlp-784-100x6-10-relu, optimizer: {name: sgd, learning_rate: 0.01, weight_decay: 0.0}}
+  REG-WD-01: {atomic_run_id: REG-WD-01, experiment_ids: [e03], execution_group_id: GT03, recipe_id: ds1-gt03-weight-decay, structure_signature: mnist-mlp-784-100x6-10-relu, optimizer: {name: sgd, learning_rate: 0.01, weight_decay: 0.1}}

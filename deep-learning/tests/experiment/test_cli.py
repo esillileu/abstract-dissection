@@ -1,10 +1,14 @@
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).parents[2]))
 
 import experiments.cli as cli
 from experiments.cli import build_analysis_plans, build_plans, main, parse_overrides, parse_seed_indexes
+
+pytestmark = pytest.mark.legacy
 
 
 def test_seed_index_ranges_are_deduplicated() -> None:
@@ -38,6 +42,25 @@ def test_deepscratch1_cnn_plans_default_to_gpu() -> None:
     )
 
     assert {plan.device for plan in plans} == {"cuda:0"}
+
+
+def test_ds1_plan_selects_gt01_atomic_trials_and_seed_indexes() -> None:
+    plans = build_plans(
+        domain="ds1",
+        experiment_ids=["01"],
+        all_experiments=False,
+        seed_set="research_v1",
+        seed_indexes="1,2,3,4",
+        device=None,
+        overrides={},
+    )
+
+    assert len(plans) == 16
+    assert {plan.atomic_run_id for plan in plans} == {
+        "MLP-OPT-SGD", "MLP-OPT-MOMENTUM", "MLP-OPT-ADAGRAD", "MLP-OPT-ADAM",
+    }
+    assert {plan.seed for plan in plans} == {2, 3, 4, 5}
+    assert {plan.device for plan in plans} == {"cpu"}
 
 
 def test_cli_overrides_change_seed_count_and_are_applied_last() -> None:

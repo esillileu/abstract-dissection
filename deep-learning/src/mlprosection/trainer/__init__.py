@@ -1,7 +1,17 @@
 from .forward_trainer import ForwardTrainer
-from .internal_loss_trainer import InternalLossTrainer
-from .book_word2vec_trainer import BookWord2VecTrainer
+from .language_model_trainer import LanguageModelTrainer
+from .seq2seq_trainer import Seq2seqTrainer
+from .word2vec_trainer import Word2VecTrainer
 from .callbacks import TrainerCallback
-from .time_trainer import TimeTrainer
+from .legacy import BookWord2VecTrainer, InternalLossTrainer, TimeTrainer
 
-__all__ = ["ForwardTrainer", "InternalLossTrainer", "BookWord2VecTrainer", "TimeTrainer", "TrainerCallback"]
+__all__ = [
+    "ForwardTrainer",
+    "Word2VecTrainer",
+    "LanguageModelTrainer",
+    "Seq2seqTrainer",
+    "InternalLossTrainer",
+    "BookWord2VecTrainer",
+    "TimeTrainer",
+    "TrainerCallback",
+]

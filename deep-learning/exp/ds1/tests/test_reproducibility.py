@@ -1,10 +1,13 @@
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 from mlprosection.experiment import load_yaml, normalize_config
-from mlprosection.experiment.executors.supervised import _apply_input_transform, _model, _permute_pixels, _train_evaluation_probe
+from exp.ds1.executor import _apply_input_transform, _model, _permute_pixels, _train_evaluation_probe
 from mlprosection.experiment.reproducibility import configure_runtime, seed_batch_order
+
+pytestmark = pytest.mark.legacy
 
 
 CONFIG = Path("experiments/deepscratch1/config/e05_batchnorm_scale.yaml")

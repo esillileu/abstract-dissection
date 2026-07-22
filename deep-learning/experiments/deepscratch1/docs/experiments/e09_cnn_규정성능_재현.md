@@ -2,6 +2,10 @@
 
 <!-- Domain: deepscratch1 -->
 
+## 원본
+
+『밑바닥부터 시작하는 딥러닝』 1권 원본 저장소 [`WegraLee-deep-learning-from-scratch`](../../../../01_deep-learning-from-base/WegraLee-deep-learning-from-scratch/)의 [`ch07/simple_convnet.py`](../../../../01_deep-learning-from-base/WegraLee-deep-learning-from-scratch/ch07/simple_convnet.py)·[`ch07/train_convnet.py`](../../../../01_deep-learning-from-base/WegraLee-deep-learning-from-scratch/ch07/train_convnet.py), 그리고 [`ch08/deep_convnet.py`](../../../../01_deep-learning-from-base/WegraLee-deep-learning-from-scratch/ch08/deep_convnet.py)·[`ch08/train_deepnet.py`](../../../../01_deep-learning-from-base/WegraLee-deep-learning-from-scratch/ch08/train_deepnet.py)를 직접 재현한다. 전체 test-set 평가와 10-seed 보고만 원본의 1,000개 표본 평가를 확장한다.
+
 ## 실험 정의
 
 | 항목 | 내용 |
