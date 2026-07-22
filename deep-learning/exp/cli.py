@@ -7,6 +7,7 @@ The active catalog and its executors live under :mod:`exp`; the historical
 from __future__ import annotations
 
 import argparse
+import importlib
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -16,12 +17,12 @@ from urllib.request import urlopen
 import yaml
 
 from mlprosection.core.backend import BackendConfig, make_backend
-from mlprosection.experiment import load_yaml
 from mlprosection_mlflow import run_yaml
 
 
 DOMAIN_ROOT = Path("exp")
 DOMAIN_EXECUTOR_MODULES = {"ds1": "exp.ds1.executor", "ds2": "exp.ds2.executor"}
+DOMAIN_SPEC_MODULES = {"ds1": "exp.ds1.spec", "ds2": "exp.ds2.spec"}
 
 
 @dataclass(frozen=True)
@@ -98,6 +99,13 @@ def _config_root(domain: str) -> Path:
     return root
 
 
+def parse_domain_run_spec(domain: str, path: Path, *, atomic_run_id: str | None = None, overrides: dict[str, object] | None = None):
+    if domain not in DOMAIN_SPEC_MODULES:
+        raise ValueError(f"unknown experiment domain: {domain}")
+    module = importlib.import_module(DOMAIN_SPEC_MODULES[domain])
+    return module.parse_run_spec(path, atomic_run_id=atomic_run_id, overrides=overrides)
+
+
 def _seed_values(domain: str, seed_set: str) -> list[int]:
     registry = yaml.safe_load((_config_root(domain) / "seeds.yaml").read_text(encoding="utf-8"))
     try:
@@ -140,9 +148,9 @@ def build_plans(
                 raise ValueError(f"{experiment_id} is a single-run experiment and does not accept --seed")
             run_seeds: list[int | None] = [None]
         else:
-            policy = resolved.get("policy", {})
+            policy = resolved.get("seed_policy", {})
             if not isinstance(policy, dict):
-                raise ValueError(f"policy must be a mapping: {path}")
+                raise ValueError(f"seed_policy must be a mapping: {path}")
             count = int(policy.get("seed_count", len(seeds)))
             indexes = requested_indexes if requested_indexes is not None else list(range(count))
             invalid = [index for index in indexes if index < 0 or index >= count]
@@ -163,7 +171,7 @@ def build_plans(
 def _require_mlflow_server(plans: list[RunPlan], overrides: dict[str, object]) -> None:
     uris = set()
     for plan in plans:
-        config = load_yaml(plan.path, atomic_run_id=plan.atomic_run_id, overrides=overrides)
+        config = parse_domain_run_spec(plan.domain, plan.path, atomic_run_id=plan.atomic_run_id, overrides=overrides).to_executor_config()
         tracking = config.get("tracking", {})
         if isinstance(tracking, dict) and tracking.get("enabled", True):
             uris.add(os.getenv("MLFLOW_TRACKING_URI") or str(tracking.get("uri", "http://127.0.0.1:5000")))
@@ -215,6 +223,6 @@ def main(argv: list[str] | None = None) -> None:
         _require_mlflow_server(plans, overrides)
         _require_devices(plans)
         for plan in plans:
-            run_yaml(plan.path, atomic_run_id=plan.atomic_run_id, seed=plan.seed, device=plan.device, overrides=overrides, executor_module=DOMAIN_EXECUTOR_MODULES[plan.domain])
+            run_yaml(plan.path, atomic_run_id=plan.atomic_run_id, seed=plan.seed, device=plan.device, overrides=overrides, executor_module=DOMAIN_EXECUTOR_MODULES[plan.domain], spec_module=DOMAIN_SPEC_MODULES[plan.domain])
     except ValueError as exc:
         parser.error(str(exc))
