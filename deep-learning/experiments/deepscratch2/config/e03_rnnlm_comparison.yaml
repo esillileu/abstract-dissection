@@ -2,7 +2,7 @@ kind: language_modeling
 dataset: {id: DS-PTB, name: Penn Treebank}
 loader: {batch_size: 20, time_size: 35}
 optimizer: {name: sgd, learning_rate: 20.0}
-scheduler: {name: validation_decay, factor: 0.25}
+scheduler: {name: validation_decay, factor: 4.0}
 loss: {name: time_softmax_cross_entropy}
 training: {max_epochs: 4, log_interval: 20, entrypoint: experiments/deepscratch2/config/e03_rnnlm_comparison.yaml}
 evaluation: {primary_metric: final/test/perplexity}

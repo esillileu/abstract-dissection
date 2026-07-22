@@ -45,13 +45,14 @@ def _plans(experiments: list[str] | None, seeds: list[int], device: str):
     selected = set(experiments or ())
     for path in sorted(CONFIG_ROOT.glob("e[0-9][0-9]_*.yaml")):
         experiment_id = path.name[:3]
-        if selected and experiment_id not in selected:
-            continue
         config = yaml.safe_load(path.read_text(encoding="utf-8"))
         run_seeds = seeds[:int(config.get("policy", {}).get("seed_count", len(seeds)))]
         if not run_seeds:
             raise ValueError(f"{path}: policy.seed_count must be at least 1")
-        for atomic_run_id in config["variants"]:
+        for atomic_run_id, variant in config["variants"].items():
+            declared_experiments = set(variant.get("experiment_ids", (experiment_id,)))
+            if selected and not selected.intersection(declared_experiments):
+                continue
             for seed in run_seeds:
                 yield path, atomic_run_id, seed, device
 

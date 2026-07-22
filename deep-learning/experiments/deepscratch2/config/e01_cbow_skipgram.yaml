@@ -22,7 +22,7 @@ variants:
     model: {architecture: cbow, objective: negative_sampling}
   W2V-SG-NS:
     atomic_run_id: W2V-SG-NS
-    experiment_ids: [e01]
+    experiment_ids: [e01, e02]
     execution_group_id: g02
     recipe_id: RC-PTB-SKIPGRAM-NS
     structure_signature: ptb-skipgram-negative-sampling-v1

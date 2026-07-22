@@ -23,9 +23,9 @@ records sampled memory peaks.
 ## e01--e02: Word2Vec
 
 Canonical histories are `update/train/{raw_loss,normalized_loss}` and
-`epoch/train/{raw_loss,normalized_loss}`.  `raw_loss` is emitted only by the
-book negative-sampling trainer; `normalized_loss` is the loss divided by its
-prediction-term count.  Finals use `final/train/{raw_loss,normalized_loss}`.
+`epoch/train/{raw_loss,normalized_loss}`. `raw_loss` is emitted by the book
+Word2Vec trainer; `normalized_loss` is the loss divided by its prediction-term
+count. Finals use `final/train/{raw_loss,normalized_loss}`.
 The old `step/train/book_loss` and `step/train/normalized_loss` names remain
 aliases.
 
