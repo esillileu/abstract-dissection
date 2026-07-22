@@ -14,6 +14,7 @@ MODEL_PAIRS = {
 }
 ATOMIC_RUN_IDS = [atomic_run_id for pair in MODEL_PAIRS.values() for atomic_run_id in pair]
 OUTPUT = ANALYSIS_ROOT / "e08_spatial_layout.png"
+VALID_ACCURACY_METRIC = "eval/valid/accuracy"
 ERROR_BARS = ErrorBarStyle(every=2)
 
 
@@ -38,22 +39,22 @@ def _write_paired_final_drops(path, grouped) -> None:
 
 
 def main() -> None:
-    args = parser("Render e08 spatial-layout learning curves.", OUTPUT).parse_args()
+    args = parser("Render e08 spatial-layout validation-accuracy curves.", OUTPUT).parse_args()
     mlflow_client = client(args.tracking_uri)
     grouped = latest_seeded_records(mlflow_client, experiment_name=args.mlflow_experiment, atomic_run_ids=ATOMIC_RUN_IDS)
     records = [record for values in grouped.values() for record in values]
 
     fig, axes = plt.subplots(1, 2, figsize=(11, 4.5), sharey=True)
     for axis, (model, (original_id, permuted_id)) in zip(axes, MODEL_PAIRS.items(), strict=True):
-        plot_curve(axis, metric_curve(mlflow_client, grouped[original_id], "epoch/test/accuracy"), label="original", marker="o", error_bars=ERROR_BARS)
-        plot_curve(axis, metric_curve(mlflow_client, grouped[permuted_id], "epoch/test/accuracy"), label="pixel-permuted", linestyle="--", marker="s", error_bars=ERROR_BARS)
+        plot_curve(axis, metric_curve(mlflow_client, grouped[original_id], VALID_ACCURACY_METRIC), label="original", marker="o", error_bars=ERROR_BARS)
+        plot_curve(axis, metric_curve(mlflow_client, grouped[permuted_id], VALID_ACCURACY_METRIC), label="pixel-permuted", linestyle="--", marker="s", error_bars=ERROR_BARS)
         axis.set_title(model)
-        axis.set_xlabel("epoch")
+        axis.set_xlabel("update")
         axis.set_ylim(0, 1)
         axis.grid(alpha=0.25)
         axis.legend(fontsize=8)
-    axes[0].set_ylabel("full-test accuracy")
-    fig.suptitle("e08 spatial-layout dependence")
+    axes[0].set_ylabel("validation accuracy")
+    fig.suptitle("e08 spatial-layout dependence (evaluated every 20 updates)")
     fig.tight_layout()
     args.output.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(args.output, dpi=160)

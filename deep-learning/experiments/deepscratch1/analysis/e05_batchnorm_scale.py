@@ -8,7 +8,7 @@ from .common import ANALYSIS_ROOT, ErrorBarStyle, client, latest_seeded_records,
 EXPERIMENT_ID = "e05"
 ATOMIC_RUN_IDS = [f"BN-OFF-{index:02d}" for index in range(1, 17)] + [f"BN-ON-{index:02d}" for index in range(1, 17)]
 OUTPUT = ANALYSIS_ROOT / "e05_batchnorm_scale.png"
-ERROR_BARS = ErrorBarStyle(every=2)
+ERROR_BARS = ErrorBarStyle(every=1)
 
 
 def scale_value(record) -> float:

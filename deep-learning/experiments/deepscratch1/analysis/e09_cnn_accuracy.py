@@ -11,11 +11,12 @@ RUNS = {
     "CNN-DEEP-ACCURACY": {"group": "g10", "target": 0.9938, "label": "DeepConvNet"},
 }
 OUTPUT = ANALYSIS_ROOT / "e09_cnn_accuracy.png"
-ERROR_BARS = ErrorBarStyle(every=2)
+VALID_ACCURACY_METRIC = "eval/valid/accuracy"
+ERROR_BARS = ErrorBarStyle(every=10)
 
 
 def main() -> None:
-    args = parser("Render e09 CNN full-test accuracy results.", OUTPUT).parse_args()
+    args = parser("Render e09 CNN validation-accuracy results.", OUTPUT).parse_args()
     mlflow_client = client(args.tracking_uri)
     grouped = {}
     for atomic_run_id, definition in RUNS.items():
@@ -34,12 +35,12 @@ def main() -> None:
 
     fig, axis = plt.subplots(figsize=(8, 5))
     for atomic_run_id, definition in RUNS.items():
-        plot_curve(axis, metric_curve(mlflow_client, grouped[atomic_run_id], "epoch/test/accuracy"), label=definition["label"], marker="o" if atomic_run_id == "CNN-SIMPLE" else "s", error_bars=ERROR_BARS)
+        plot_curve(axis, metric_curve(mlflow_client, grouped[atomic_run_id], VALID_ACCURACY_METRIC), label=definition["label"], marker="o" if atomic_run_id == "CNN-SIMPLE" else "s", error_bars=ERROR_BARS)
         axis.axhline(definition["target"], color="0.45", linestyle=":" if atomic_run_id == "CNN-SIMPLE" else "--", linewidth=1, label=f"{definition['label']} target ({definition['target']:.2%})")
 
-    axis.set_title("e09 CNN accuracy reproduction")
-    axis.set_xlabel("epoch")
-    axis.set_ylabel("full-test accuracy")
+    axis.set_title("e09 CNN accuracy reproduction (evaluated every 20 updates)")
+    axis.set_xlabel("update")
+    axis.set_ylabel("validation accuracy")
     axis.set_ylim(0.9, 1.0)
     axis.grid(alpha=0.25)
     axis.legend(fontsize=8, loc="lower right")

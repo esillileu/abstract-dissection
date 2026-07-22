@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import matplotlib.pyplot as plt
 
-from .common import ANALYSIS_ROOT, client, latest_seeded_records, metric_curve, parser, plot_curve, print_outputs, save_summary_csv
+from .common import ANALYSIS_ROOT, ErrorBarStyle, client, latest_seeded_records, metric_curve, parser, plot_curve, print_outputs, save_summary_csv
 
 
 EXPERIMENT_ID = "e06"
 ATOMIC_RUN_IDS = ["REG-WD-1E1"]
 OUTPUT = ANALYSIS_ROOT / "e06_weight_decay.png"
+ERROR_BARS = ErrorBarStyle(every=5)
 
 
 def main() -> None:
@@ -18,8 +19,8 @@ def main() -> None:
 
     fig, axis = plt.subplots(figsize=(9, 5))
     for atomic_run_id in ATOMIC_RUN_IDS:
-        plot_curve(axis, metric_curve(mlflow_client, grouped[atomic_run_id], "book_epoch/train/accuracy"), label=f"{atomic_run_id} train", marker="o")
-        plot_curve(axis, metric_curve(mlflow_client, grouped[atomic_run_id], "book_epoch/test/accuracy"), label=f"{atomic_run_id} test", linestyle="--", marker="s")
+        plot_curve(axis, metric_curve(mlflow_client, grouped[atomic_run_id], "book_epoch/train/accuracy"), label=f"{atomic_run_id} train", marker="o", error_bars=ERROR_BARS)
+        plot_curve(axis, metric_curve(mlflow_client, grouped[atomic_run_id], "book_epoch/test/accuracy"), label=f"{atomic_run_id} test", linestyle="--", marker="s", error_bars=ERROR_BARS)
 
     axis.set_title("e06 weight decay")
     axis.set_xlabel("epoch")

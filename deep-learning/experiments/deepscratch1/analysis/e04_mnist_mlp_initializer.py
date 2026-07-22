@@ -8,7 +8,7 @@ from .common import ANALYSIS_ROOT, ErrorBarStyle, client, latest_seeded_records,
 EXPERIMENT_ID = "e04"
 ATOMIC_RUN_IDS = ["MLP-SGD-STD001", "MLP-SGD-XAVIER", "MLP-SGD-HE"]
 OUTPUT = ANALYSIS_ROOT / "e04_mnist_mlp_initializer.png"
-ERROR_BARS = ErrorBarStyle(every=100)
+ERROR_BARS = ErrorBarStyle(every=20)
 MARKERS = {"MLP-SGD-STD001": "o", "MLP-SGD-XAVIER": "s", "MLP-SGD-HE": "D"}
 
 
