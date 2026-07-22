@@ -43,42 +43,13 @@ def im2col(
         constant_values=pad_value,
     )
 
-    col = xp.empty(
-        (
-            batch_size,
-            channels,
-            kernel_h,
-            kernel_w,
-            output_h,
-            output_w,
-        ),
-        dtype=x.dtype,
+    windows = xp.lib.stride_tricks.sliding_window_view(
+        padded,
+        (kernel_h, kernel_w),
+        axis=(2, 3),
     )
-
-    for kernel_y in range(kernel_h):
-        y_end = kernel_y + stride_h * output_h
-
-        for kernel_x in range(kernel_w):
-            x_end = kernel_x + stride_w * output_w
-
-            col[
-                :,
-                :,
-                kernel_y,
-                kernel_x,
-                :,
-                :,
-            ] = padded[
-                :,
-                :,
-                kernel_y:y_end:stride_h,
-                kernel_x:x_end:stride_w,
-            ]
-
-    col = xp.transpose(
-        col,
-        (0, 4, 5, 1, 2, 3),
-    )
+    windows = windows[:, :, ::stride_h, ::stride_w, :, :]
+    col = xp.transpose(windows, (0, 2, 3, 1, 4, 5))
 
     return col.reshape(
         batch_size * output_h * output_w,

@@ -279,7 +279,7 @@ class MaxPool2D(Layer):
         )
 
         argmax = xp.argmax(col, axis=2)
-        out = xp.max(col, axis=2)
+        out = xp.take_along_axis(col, argmax[..., None], axis=2)[..., 0]
 
         out = out.reshape(
             batch_size,
