@@ -108,23 +108,27 @@ def _source_curve_from_objective(config: dict[str, object]):
     unit_count = 0
     update_start = None
     epoch_start = None
+    plot_index = 0
 
     def reduce(event):
-        nonlocal total, count, unit_count, update_start, epoch_start
+        nonlocal total, count, unit_count, update_start, epoch_start, plot_index
         if update_start is None:
             update_start = event.update
             epoch_start = event.epoch
-        total = event.objective.data if total is None else total + event.objective.data
+        weight = int(event.unit_count) if reducer in {"token_weighted_mean", "exp_token_weighted_mean"} else 1
+        weighted_objective = event.objective.data * weight
+        total = weighted_objective if total is None else total + weighted_objective
         count += 1
         unit_count += int(event.unit_count)
         if event.local_iteration % every != 0:
             return None
-        value = event.objective.backend.scalar_to_float(total / count)
+        denominator = unit_count if reducer in {"token_weighted_mean", "exp_token_weighted_mean"} else count
+        value = event.objective.backend.scalar_to_float(total / denominator)
         if kind == "train_perplexity":
             value = float(event.objective.backend.xp.exp(value))
         point = {
             "series_id": kind,
-            "plot_index": event.update - 1,
+            "plot_index": plot_index,
             "update_start": update_start,
             "update_end": event.update,
             "epoch_start": epoch_start,
@@ -137,6 +141,7 @@ def _source_curve_from_objective(config: dict[str, object]):
         }
         total, count, unit_count = None, 0, 0
         update_start, epoch_start = None, None
+        plot_index += 1
         return point
 
     return reduce
@@ -151,6 +156,10 @@ class Word2VecExecutor:
         corpus, word_to_id = _word2vec_corpus(_mapping(config, "dataset"))
         window = int(dataset.get("window_size", 5))
         contexts, targets = _contexts_targets(corpus, window)
+        context.metadata["data"] = {
+            "dataset_checksum": _array_digest(corpus),
+            "split_checksum": _array_digest(contexts, targets),
+        }
         objective = str(model_config.get("objective", "negative_sampling"))
         sampler = None
         if objective == "negative_sampling":
@@ -226,6 +235,10 @@ class LanguageModelExecutor:
         valid_targets = Tensor(backend.xp.asarray(ptb["valid"][1:], dtype=backend.xp.int64), backend=backend)
         test = Tensor(backend.xp.asarray(ptb["test"][:-1], dtype=backend.xp.int64), backend=backend)
         test_targets = Tensor(backend.xp.asarray(ptb["test"][1:], dtype=backend.xp.int64), backend=backend)
+        context.metadata["data"] = {
+            "dataset_checksum": _array_digest(ptb["train"], ptb["valid"], ptb["test"]),
+            "split_checksum": _array_digest(train_corpus, ptb["valid"], ptb["test"]),
+        }
         valid_ppl = float("inf")
         test_ppl = float("inf")
         best_valid = float("inf")
@@ -331,14 +344,16 @@ class Seq2SeqExecutor:
             seed=split_seed,
             split_algorithm=split_algorithm,
         )
-        context.metadata["data"] = {
-            "split_seed": split_seed,
-            "split_algorithm": split_algorithm,
-        }
         x_train, t_train = data["train"]
         x_test, t_test = data["test"]
         if bool(dataset.get("reverse", False)):
             x_train, x_test = x_train[:, ::-1], x_test[:, ::-1]
+        context.metadata["data"] = {
+            "split_seed": split_seed,
+            "split_algorithm": split_algorithm,
+            "dataset_checksum": _file_digest(_sequence_dataset_path(str(dataset["file"]))),
+            "split_checksum": _array_digest(x_train, t_train, x_test, t_test),
+        }
         model = _seq_model(str(model_config.get("alias")), len(data["char_to_id"]), model_config, backend)
         optimizer = _optimizer(config, model)
         seed_batch_order(backend, streams)
@@ -375,6 +390,17 @@ class Seq2SeqExecutor:
                     "reducer": "identity",
                     "value": result.exact_match_accuracy,
                 })
+                _record_seq_predictions(
+                    records,
+                    model,
+                    x_test,
+                    t_test,
+                    data["char_to_id"],
+                    data["id_to_char"],
+                    backend,
+                    _mapping(config, "recording"),
+                    epoch=step,
+                )
                 if bool(checkpoint_config.get("save_best", False)) and result.exact_match_accuracy > best_exact:
                     best_exact = float(result.exact_match_accuracy)
                     records.flush()
@@ -398,7 +424,6 @@ class Seq2SeqExecutor:
         )
         with training_summary(monitor):
             records = controller.run(lambda: trainer.fit(train_x, train_t))
-        _record_seq_predictions(records, model, x_test, t_test, data["char_to_id"], data["id_to_char"], backend, _mapping(config, "recording"))
         records.flush()
         last_evaluation = records.evaluations[-2:] if len(records.evaluations) >= 2 else []
         final_values = {"final/train/loss": float(records.updates[-1]["loss"].backend.scalar_to_float(records.updates[-1]["loss"].data)) if records.updates else 0.0}
@@ -431,6 +456,12 @@ class AttentionAlignmentObservationExecutor:
         x_test, t_test = data["test"]
         if bool(dataset.get("reverse", True)):
             x_test = x_test[:, ::-1]
+        context.metadata["data"] = {
+            "split_seed": int(dataset.get("split_seed", 1984)),
+            "split_algorithm": str(dataset.get("split_algorithm", "legacy_numpy_randomstate")),
+            "dataset_checksum": _file_digest(_sequence_dataset_path(str(dataset["file"]))),
+            "observation_split_checksum": _array_digest(x_test, t_test),
+        }
         model = _seq_model(str(model_config.get("alias", "AttentionSeq2seq")), len(data["char_to_id"]), model_config, backend)
         if not isinstance(model, AttentionSeq2seq):
             raise ValueError("DS2 GO01 requires AttentionSeq2seq model")
@@ -441,7 +472,11 @@ class AttentionAlignmentObservationExecutor:
         recording = _mapping(config, "recording")
         attention_config = _mapping(recording, "attention")
         count = int(attention_config.get("count", 5))
-        example_ids = list(range(min(count, len(x_test))))
+        example_ids = _attention_example_ids(
+            size=len(x_test),
+            count=count,
+            seed=int(attention_config.get("selection_seed", 1984)),
+        )
         start_id = data["char_to_id"]["_"]
         id_to_char = data["id_to_char"]
         render_examples = []
@@ -453,11 +488,14 @@ class AttentionAlignmentObservationExecutor:
             target_text = _decode_ids(expected, id_to_char)
             prediction_text = _decode_ids(predicted, id_to_char)
             records.add_prediction({
+                "epoch": 0,
                 "example_id": example_id,
                 "source": source_text,
                 "target": target_text,
                 "prediction": prediction_text,
                 "exact_match": int(predicted == expected),
+                "token_correct": sum(left == right for left, right in zip(predicted, expected, strict=True)),
+                "token_count": len(expected),
             })
             render_examples.append({"example_id": example_id, "source": source_text, "target": target_text, "prediction": prediction_text})
             for decode_step in range(weights.shape[0]):
@@ -524,7 +562,7 @@ def _word2vec_prediction_term_count(model: Word2Vec, window: int) -> int:
     return contexts * (model.negative_samples + 1)
 
 
-def _record_seq_predictions(records: DS2Records, model, questions, answers, char_to_id, id_to_char, backend, recording: dict[str, object]) -> None:
+def _record_seq_predictions(records: DS2Records, model, questions, answers, char_to_id, id_to_char, backend, recording: dict[str, object], *, epoch: int) -> None:
     config = recording.get("predictions")
     if not isinstance(config, dict):
         return
@@ -540,11 +578,14 @@ def _record_seq_predictions(records: DS2Records, model, questions, answers, char
             expected = [int(value) for value in answers[example_id][1:]]
             predicted = model.generate(question, start_id, len(expected))
             records.add_prediction({
+                "epoch": epoch,
                 "example_id": example_id,
                 "source": _decode_ids(questions[example_id], id_to_char),
                 "target": _decode_ids(expected, id_to_char),
                 "prediction": _decode_ids(predicted, id_to_char),
                 "exact_match": int(predicted == expected),
+                "token_correct": sum(left == right for left, right in zip(predicted, expected, strict=True)),
+                "token_count": len(expected),
             })
     finally:
         model.train(was_training)
@@ -575,6 +616,29 @@ def _generate_attention_with_weights(model: AttentionSeq2seq, question: Tensor, 
 
 def _decode_ids(values, id_to_char: dict[int, str]) -> str:
     return "".join(id_to_char[int(value)] for value in values)
+
+
+def _attention_example_ids(*, size: int, count: int, seed: int) -> list[int]:
+    if size < 1:
+        return []
+    rng = np.random.RandomState(seed)
+    return [int(rng.randint(0, size)) for _ in range(count)]
+
+
+def _sequence_dataset_path(file_name: str) -> Path:
+    from mlprosection.datasets import sequence
+
+    return Path(sequence.__file__).resolve().parent / file_name
+
+
+def _array_digest(*arrays) -> str:
+    digest = hashlib.sha256()
+    for array in arrays:
+        value = np.asarray(array)
+        digest.update(str(value.dtype).encode())
+        digest.update(str(value.shape).encode())
+        digest.update(value.tobytes(order="C"))
+    return digest.hexdigest()
 
 
 def _load_model_checkpoint(model, path: Path) -> None:

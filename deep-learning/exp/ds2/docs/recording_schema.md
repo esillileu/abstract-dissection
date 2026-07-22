@@ -9,7 +9,7 @@ MLflow metric 이름과 artifact layout의 구현 계약은 [`mlflow/`](mlflow/)
 ## 저장 규칙
 
 - 값은 지정된 update/epoch에서 계산한다.
-- `updates.csv`, `evaluations.csv`, `timing_windows.csv`, `observations/source_curves.csv`는 메모리 buffer에 쌓아 256 records마다, epoch 종료, checkpoint 직전, run 종료에 flush한다.
+- `updates.csv`, `evaluations.csv`, `timing_windows.csv`, `observations/source_objectives.csv`, `observations/source_curves.csv`는 메모리 buffer에 쌓아 256 records마다, epoch 종료, checkpoint 직전, run 종료에 flush한다.
 - buffer flush는 계산 step, 원본 graph `plot_index`, 값에 영향을 주지 않는다.
 - MLflow에는 같은 값을 batch로 전송한다. artifact CSV가 완전한 history의 기준이다.
 
@@ -23,6 +23,7 @@ artifact/
   timing_windows.csv           # GT 그룹만 사용
   checkpoints.csv
   observations/
+    source_objectives.csv      # GT01-GT05 canonical pre-update objective
     source_curves.csv          # 원본 graph/console series가 있는 GT만
     predictions.csv            # Seq2seq GT만
     attention.csv              # GO01만
@@ -118,6 +119,16 @@ start_update,end_update,update_count,closed_by,train_wall_time_ns,train_device_t
 
 GPU 일반 기록 모드는 update마다 synchronize하지 않는다. device time은 backend event profile mode에서만 window 종료에 한 번 동기화해 확정한다. MLflow에는 ns 값을 ms로 바꿔 `runtime/window/{train,eval}_{wall,device}_time_ms`로 `end_update` step에 기록한다.
 
+### `observations/source_objectives.csv`
+
+```text
+update,epoch,local_iteration,objective,unit_count
+```
+
+GT01-GT05가 매 update 발행한 pre-update objective의 canonical history다. 분석 단계는
+이 파일에서 원본 interval 또는 epoch reducer와 `plot_index`를 재구성한다.
+`updates.csv.loss`는 post-update 값이므로 이 파일을 대체할 수 없다.
+
 ### `observations/source_curves.csv`
 
 원본이 실제 graph 또는 console series에 append한 한 point다.
@@ -130,6 +141,9 @@ series_id,plot_index,update_start,update_end,epoch_start,epoch_end,unit,unit_cou
 - `update_start`, `update_end`는 해당 point에 실제 포함된 update 범위다. `iters % 20 == 0`의 첫 update 한 건도 그대로 남긴다.
 - `reducer`는 `mean`, `token_weighted_mean`, `exp_token_weighted_mean`, `identity` 중 하나다.
 - `source_objective`는 update 전 계산되는 책의 loss/PPL 원재료다. 이는 `updates.csv`의 post-update loss와 다른 값일 수 있으며, source curve 계산을 위해서만 executor에 전달한다.
+
+이 파일은 실행 중 확인과 기존 consumer 호환을 위한 projection이다. GT01-GT05 분석의
+기준 데이터는 `source_objectives.csv`이며, 분석 단계가 reducer와 좌표를 다시 검증한다.
 
 MLflow mapping:
 

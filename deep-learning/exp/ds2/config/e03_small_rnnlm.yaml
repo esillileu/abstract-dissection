@@ -19,4 +19,4 @@ profiling: {enabled: false}
 tracking: {enabled: true, experiment: ds2}
 variants:
   LM-SMALL-RNN: {budget: {loop: interval}}
-  LM-SMALL-RNN-CUSTOM: {budget: {loop: epoch}}
+  LM-SMALL-RNN-CUSTOM: {budget: {loop: epoch}, recording: {source_curve: {every_updates: null, every_epochs: 1}}}

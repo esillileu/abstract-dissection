@@ -7,7 +7,11 @@ from mlprosection.events import EpochEvent, EvaluationResult, SourceObjectiveSam
 from mlprosection.experiment.event_executor import EvaluationRequest, EventExperimentExecutor
 from mlprosection.experiment.executor import ExperimentContext
 
-from exp.ds2.executor import Word2VecExecutor, _source_curve_from_objective
+from exp.ds2.executor import (
+    Word2VecExecutor,
+    _attention_example_ids,
+    _source_curve_from_objective,
+)
 from exp.ds2.records import DS2Records
 from exp.ds2.spec import parse_run_spec
 
@@ -68,14 +72,17 @@ def test_ds2_source_curve_from_objective_uses_documented_schema() -> None:
         }
     })
 
-    assert reducer(SourceObjectiveSample(1, 1, 1, Tensor(1.0), 3)) is None
-    point = reducer(SourceObjectiveSample(2, 1, 2, Tensor(3.0), 5))
+    first = reducer(SourceObjectiveSample(1, 1, 0, Tensor(1.0), 3))
+    assert first is not None
+    assert first["plot_index"] == 0
+    assert reducer(SourceObjectiveSample(2, 1, 1, Tensor(1.0), 3)) is None
+    point = reducer(SourceObjectiveSample(3, 1, 2, Tensor(3.0), 5))
 
     assert point == {
         "series_id": "interval_mean_loss",
         "plot_index": 1,
-        "update_start": 1,
-        "update_end": 2,
+        "update_start": 2,
+        "update_end": 3,
         "epoch_start": 1,
         "epoch_end": 1,
         "unit": "example",
@@ -130,6 +137,55 @@ def test_ds2_source_curves_csv_schema_and_mlflow_mapping(tmp_path) -> None:
     assert (0, "series/eval_test/exact_match_accuracy", 0.42) in records.mlflow_metric_rows()
 
 
+def test_ds2_writes_canonical_source_objectives_and_prediction_fields(tmp_path) -> None:
+    records = DS2Records()
+    records.on_source_objective(SourceObjectiveSample(1, 1, 0, Tensor(1.5), 20))
+    records.add_prediction({
+        "epoch": 1,
+        "example_id": 0,
+        "source": "12+34",
+        "target": "46",
+        "prediction": "45",
+        "exact_match": 0,
+        "token_correct": 1,
+        "token_count": 2,
+    })
+
+    records.write_csv(tmp_path)
+
+    objectives = list(csv.DictReader((tmp_path / "observations/source_objectives.csv").open()))
+    predictions = list(csv.DictReader((tmp_path / "observations/predictions.csv").open()))
+    assert objectives == [{
+        "update": "1", "epoch": "1", "local_iteration": "0",
+        "objective": "1.5", "unit_count": "20",
+    }]
+    assert list(predictions[0]) == [
+        "epoch", "example_id", "source", "target", "prediction",
+        "exact_match", "token_correct", "token_count",
+    ]
+    assert predictions[0]["epoch"] == "1"
+
+
+def test_source_curve_point_closes_a_probe_timing_window() -> None:
+    executor = EventExperimentExecutor(
+        records=DS2Records(),
+        evaluate=lambda _request: None,
+        source_curve=lambda event: {"plot_index": 0, "value": event.objective},
+    )
+    executor.begin()
+    executor.on_update(UpdateEvent(1, 1, 2, Tensor(1.4), 0.1))
+    executor.on_source_objective(SourceObjectiveSample(1, 1, 0, Tensor(1.5), 20))
+
+    assert len(executor.records.timing_windows) == 1
+    assert executor.records.timing_windows[0].closed_by == "probe"
+    assert executor.records.timing_windows[0].start_update == 1
+    assert executor.records.timing_windows[0].end_update == 1
+
+
+def test_attention_selection_matches_the_book_seeded_randint() -> None:
+    assert _attention_example_ids(size=100, count=5, seed=1984) == [92, 25, 72, 38, 8]
+
+
 def test_ds2_executor_returns_runtime_profiling_summary(tmp_path) -> None:
     spec = parse_run_spec(
         "exp/ds2/config/e01_toy_word2vec.yaml",
@@ -139,11 +195,14 @@ def test_ds2_executor_returns_runtime_profiling_summary(tmp_path) -> None:
     config = spec.config
     config["seed"] = 1
 
+    context = ExperimentContext(metadata={"artifact_root": tmp_path, "checkpoint_root": tmp_path / "checkpoints"})
     result = Word2VecExecutor().run(
         config,
-        ExperimentContext(metadata={"artifact_root": tmp_path, "checkpoint_root": tmp_path / "checkpoints"}),
+        context,
     )
 
     assert "runtime.train_total.count" in result.profiling_metrics
     assert "memory.run.start.cpu.rss_bytes" in result.profiling_metrics
     assert "memory.run.end.cpu.rss_bytes" in result.profiling_metrics
+    assert len(context.metadata["data"]["dataset_checksum"]) == 64
+    assert len(context.metadata["data"]["split_checksum"]) == 64

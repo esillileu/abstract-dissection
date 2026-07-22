@@ -7,6 +7,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
+import logging
 import platform
 import queue
 import re
@@ -183,6 +184,11 @@ def build_memory_history_rows(profiling_metrics: dict[str, int | float]) -> list
     return rows
 
 
+def _silence_mlflow_progress_logs() -> None:
+    """Keep MLflow's lifecycle INFO messages out of the tqdm render stream."""
+    logging.getLogger("mlflow.tracking.fluent").setLevel(logging.WARNING)
+
+
 class _Sink:
     def __init__(self, options: RuntimeOptions, run_name: str, tags: dict[str, str], params: dict[str, object]) -> None:
         self.options, self.run_name, self.tags, self.params = options, run_name, tags, params; self.events: queue.Queue[tuple[str, Any]] = queue.Queue(options.queue_size); self.errors: list[str] = []; self.mlflow = None; self.run_id = None; self.thread = None; self.console_writer = None
@@ -227,7 +233,9 @@ class _Sink:
                         is_checkpoint_payload = relative.startswith("checkpoints/") and relative != "checkpoints/checkpoint_manifest.json"
                         should_upload = not is_checkpoint_payload or (self.options.upload_checkpoint and relative == "checkpoints/final.npz")
                         if path.is_file() and should_upload:
-                            client.log_artifact(self.run_id, str(path), artifact_path=str(path.parent.relative_to(root)))
+                            relative_parent = path.parent.relative_to(root)
+                            artifact_path = None if relative_parent == Path(".") else relative_parent.as_posix()
+                            client.log_artifact(self.run_id, str(path), artifact_path=artifact_path)
                 elif kind == "checkpoint" and client:
                     path, checkpoint_kind = value
                     should_upload = (
@@ -251,6 +259,7 @@ class _Sink:
             return None
         try:
             import mlflow
+            _silence_mlflow_progress_logs()
             mlflow.set_tracking_uri(self.options.tracking_uri)
             experiment = mlflow.set_experiment(self.options.experiment_name)
             client = mlflow.tracking.MlflowClient(tracking_uri=self.options.tracking_uri)

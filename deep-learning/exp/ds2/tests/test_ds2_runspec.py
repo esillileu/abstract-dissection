@@ -47,6 +47,18 @@ def test_ds2_runspec_allows_device_timing_profiling_policy() -> None:
     assert spec.config["profiling"] == {"enabled": False, "device_timing": True}
 
 
+def test_custom_language_model_defers_epoch_curve_to_raw_analysis() -> None:
+    spec = parse_run_spec(
+        "exp/ds2/config/e03_small_rnnlm.yaml",
+        atomic_run_id="LM-SMALL-RNN-CUSTOM",
+    )
+
+    assert spec.source_curve is not None
+    assert spec.source_curve.every_updates is None
+    assert spec.source_curve.every_epochs == 1
+    assert spec.config["training"]["loop"] == "epoch"
+
+
 def test_ds2_runspec_still_rejects_legacy_evaluation_key() -> None:
     with pytest.raises(ValueError, match="old catalog keys"):
         parse_run_spec(

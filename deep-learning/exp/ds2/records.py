@@ -132,8 +132,9 @@ class DS2Records:
         self._write(artifact_root / "timing_windows.csv", [{"start_update": item.start_update, "end_update": item.end_update, "update_count": item.update_count, "closed_by": item.closed_by, "train_wall_time_ns": item.train_wall_time_ns, "train_device_time_ns": item.train_device_time_ns, "eval_wall_time_ns": item.eval_wall_time_ns, "eval_device_time_ns": item.eval_device_time_ns} for item in self.timing_windows], columns=["start_update", "end_update", "update_count", "closed_by", "train_wall_time_ns", "train_device_time_ns", "eval_wall_time_ns", "eval_device_time_ns"])
         observations = artifact_root / "observations"
         observations.mkdir(exist_ok=True)
+        self._write(observations / "source_objectives.csv", self.source_samples, columns=["update", "epoch", "local_iteration", "objective", "unit_count"])
         self._write(observations / "source_curves.csv", self.source_curves, columns=["series_id", "plot_index", "update_start", "update_end", "epoch_start", "epoch_end", "unit", "unit_count", "metric", "reducer", "value"])
-        self._write(observations / "predictions.csv", self.predictions, columns=["example_id", "source", "target", "prediction", "exact_match"])
+        self._write(observations / "predictions.csv", self.predictions, columns=["epoch", "example_id", "source", "target", "prediction", "exact_match", "token_correct", "token_count"])
         self._write(observations / "attention.csv", self.attention, columns=["example_id", "decode_step", "encoder_position", "weight"])
         if self.attention_render is not None:
             (observations / "attention_render.json").write_text(json.dumps(self.attention_render, indent=2, sort_keys=True), encoding="utf-8")

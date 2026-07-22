@@ -103,6 +103,12 @@ class EventExperimentExecutor:
             receiver = getattr(self.records, "add_source_curve", None)
             if callable(receiver):
                 receiver(point)
+            self._close_window(
+                end_update=event.update,
+                closed_by="probe",
+                requests=(),
+                epoch=event.epoch,
+            )
 
     def on_epoch(self, event: EpochEvent) -> None:
         self.records.on_epoch(event)

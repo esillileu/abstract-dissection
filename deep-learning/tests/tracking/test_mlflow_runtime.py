@@ -1,6 +1,7 @@
+import logging
 from types import SimpleNamespace
 
-from mlprosection_mlflow.runtime import RuntimeOptions, _Sink, build_profiling_metric_rows, get_or_create_condition_parent, metric_batches
+from mlprosection_mlflow.runtime import RuntimeOptions, _Sink, _silence_mlflow_progress_logs, build_profiling_metric_rows, get_or_create_condition_parent, metric_batches
 
 
 def test_completed_checkpoint_upload_is_enabled_but_eval_upload_is_disabled_by_default() -> None:
@@ -8,6 +9,17 @@ def test_completed_checkpoint_upload_is_enabled_but_eval_upload_is_disabled_by_d
 
     assert options.upload_checkpoint is True
     assert options.upload_eval_checkpoints is False
+
+
+def test_mlflow_lifecycle_info_is_silenced_without_hiding_warnings() -> None:
+    logger = logging.getLogger("mlflow.tracking.fluent")
+    original_level = logger.level
+    try:
+        _silence_mlflow_progress_logs()
+        assert logger.isEnabledFor(logging.INFO) is False
+        assert logger.isEnabledFor(logging.WARNING) is True
+    finally:
+        logger.setLevel(original_level)
 
 
 class _ArtifactClient:
@@ -60,6 +72,26 @@ def test_final_checkpoint_uploads_by_default_but_eval_checkpoint_requires_opt_in
     enabled_sink._consume()
 
     assert enabled_client.trees == [("run-id", str(eval_path), "checkpoints/epoch-0001")]
+
+
+def test_artifact_upload_uses_no_artifact_path_for_root_files(tmp_path, monkeypatch) -> None:
+    root_file = tmp_path / "updates.csv"
+    root_file.write_text("update,loss\n", encoding="utf-8")
+    nested_file = tmp_path / "metrics" / "final.json"
+    nested_file.parent.mkdir()
+    nested_file.write_text("{}", encoding="utf-8")
+    client = _ArtifactClient()
+    sink = _Sink(RuntimeOptions(tracking_uri="http://example.invalid", experiment_name="example"), "run", {}, {})
+    sink.run_id = "run-id"
+    monkeypatch.setattr(sink, "_start_mlflow", lambda: client)
+    sink.put(("artifact", tmp_path))
+    sink.put(("stop", "FINISHED"))
+
+    sink._consume()
+
+    assert ("run-id", str(root_file), None) in client.files
+    assert ("run-id", str(nested_file), "metrics") in client.files
+    assert sink.errors == []
 
 
 def test_metric_batches_bounds_each_mlflow_request() -> None:
