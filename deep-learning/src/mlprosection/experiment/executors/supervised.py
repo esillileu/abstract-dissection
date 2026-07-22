@@ -51,11 +51,20 @@ class SupervisedClassificationExecutor:
             dataset=dataset, backend=backend, x_train=x_train, t_train=t_train,
             artifact_root=Path(str(context.metadata["artifact_root"])),
         )
+        x_train_probe, t_train_probe, train_probe_metadata = _train_evaluation_probe(
+            dataset=dataset,
+            training=training_config,
+            backend=backend,
+            x_train=x_train,
+            t_train=t_train,
+            artifact_root=Path(str(context.metadata["artifact_root"])),
+        )
         context.metadata["data"] = {
             "cache_path": mnist_cache_path,
             "cache_sha256": _file_digest(Path(mnist_cache_path)),
             "train_samples": len(x_train), "test_samples": len(x_test), "flatten": flatten,
             "input_transform": transform_metadata, "validation": validation_metadata,
+            "train_evaluation": train_probe_metadata,
         }
         model = _model(model_config)
         if any(isinstance(layer, BatchNormalization) for layer in model.children()):
@@ -85,11 +94,11 @@ class SupervisedClassificationExecutor:
             if callable(callback):
                 callback(path)
 
-        trainer = ForwardTrainer(model, SoftmaxWithLoss().to(model.backend), optimizer, max_epoch=int(training_config.get("max_epochs", 1)), max_updates=None if max_updates is None else int(max_updates), batch_size=int(loader_config.get("batch_size", 32)), log_interval=int(training_config.get("log_interval", 20)), drop_last=bool(loader_config.get("drop_last", False)), sampling_method=str(loader_config.get("sampling_method", "permutation_per_epoch")), record_step_loss=str(training_config.get("record_step_loss", "none")), record_first_step_evaluation=bool(training_config.get("record_first_step_evaluation", False)), record_epoch_evaluation=bool(training_config.get("record_epoch_evaluation", False)), record_step_evaluation_interval=training_config.get("record_step_evaluation_interval"), record_first_validation_evaluation=bool(training_config.get("record_first_validation_evaluation", False)), record_step_validation_interval=training_config.get("record_step_validation_interval"), profiling_config=profiling_config_from_mapping(_mapping(config, "profiling")), callbacks=[_Callback(context)], on_epoch_checkpoint=save_evaluation_checkpoint)
+        trainer = ForwardTrainer(model, SoftmaxWithLoss().to(model.backend), optimizer, max_epoch=int(training_config.get("max_epochs", 1)), max_updates=None if max_updates is None else int(max_updates), batch_size=int(loader_config.get("batch_size", 32)), log_interval=int(training_config.get("log_interval", 20)), drop_last=bool(loader_config.get("drop_last", False)), sampling_method=str(loader_config.get("sampling_method", "permutation_per_epoch")), record_step_loss=str(training_config.get("record_step_loss", "none")), record_first_step_evaluation=bool(training_config.get("record_first_step_evaluation", False)), record_epoch_evaluation=bool(training_config.get("record_epoch_evaluation", False)), record_step_evaluation_interval=training_config.get("record_step_evaluation_interval"), record_first_validation_evaluation=bool(training_config.get("record_first_validation_evaluation", False)), record_step_validation_interval=training_config.get("record_step_validation_interval"), record_step_train_evaluation=bool(training_config.get("record_step_train_evaluation", False)), profiling_config=profiling_config_from_mapping(_mapping(config, "profiling")), callbacks=[_Callback(context)], on_epoch_checkpoint=save_evaluation_checkpoint)
         if (resume := checkpoint_config.get("resume")):
             load_epoch_checkpoint(path=str(resume), model=model, optimizer=optimizer, trainer=trainer, config_digest=config_digest)
         seed_batch_order(backend, streams)
-        trainer.fit(x_train, t_train, x_valid, t_valid)
+        trainer.fit(x_train, t_train, x_valid, t_valid, x_train_probe, t_train_probe)
         trainer.dump_profiling_artifacts(Path(str(context.metadata["artifact_root"])) / "profiles")
         profiling = trainer.profiling_metrics()
         metrics = build_final_metrics(
@@ -215,3 +224,18 @@ def _validation_probe(*, dataset: dict[str, object], backend, x_train, t_train, 
     np.save(target, valid_indices)
     xp = backend.xp
     return (x_train[xp.asarray(train_indices)], t_train[xp.asarray(train_indices)], x_train[xp.asarray(valid_indices)], t_train[xp.asarray(valid_indices)], {"size": size, "seed": seed, "artifact": str(target.relative_to(artifact_root)), "sha256": hashlib.sha256(valid_indices.tobytes()).hexdigest()})
+
+
+def _train_evaluation_probe(*, dataset: dict[str, object], training: dict[str, object], backend, x_train, t_train, artifact_root: Path):
+    if not bool(training.get("record_step_train_evaluation", False)):
+        return None, None, {"enabled": False, "size": 0}
+    size = int(dataset.get("train_evaluation_size", 1_000))
+    if not 0 < size <= len(x_train):
+        raise ValueError("dataset.train_evaluation_size must be between 1 and train size")
+    seed = int(dataset.get("train_evaluation_seed", 0))
+    indices = np.random.default_rng(seed).permutation(len(x_train))[:size]
+    target = artifact_root / "data" / "train_evaluation_indices.npy"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    np.save(target, indices)
+    xp = backend.xp
+    return (x_train[xp.asarray(indices)], t_train[xp.asarray(indices)], {"enabled": True, "size": size, "seed": seed, "artifact": str(target.relative_to(artifact_root)), "sha256": hashlib.sha256(indices.tobytes()).hexdigest()})

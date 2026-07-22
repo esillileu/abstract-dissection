@@ -14,7 +14,7 @@
 | e06      | update 1, 4, 7, …, 601 뒤 train/test accuracy를 기록                                          | 같은 update 위치에서 full train/test accuracy를 기록                                                       | 기록 위치와 관측점 수를 맞췄다. |
 | e07      | update 1, 4, 7, …, 901 뒤 train/test accuracy를 기록                                          | 같은 update 위치에서 full train/test accuracy를 기록                                                       | 기록 위치와 관측점 수를 맞췄다. |
 | e08      | 대응하는 원본 실험 없음                                                                              | ParameterMatchedNN·SimpleConvNet의 원본/고정 pixel-permuted full-test accuracy curve                       | 공간적 배치 활용을 보는 확장 실험이다. 책의 CNN curve 재현으로 해석하지 않는다.                 |
-| e09      | SimpleConvNet은 앞 1,000개 train/test 표본 accuracy graph를 그림; DeepConvNet 학습 스크립트는 graph가 없음 | g08의 SimpleConvNet과 g10의 DeepConvNet을 같은 full-test accuracy graph에 표시                              | 학습 recipe는 원본과 같지만 관측 집합과 공통 비교 graph는 확장이다.                               |
+| e09      | SimpleConvNet은 앞 1,000개 train/test 표본 accuracy graph를 그림; DeepConvNet 학습 스크립트는 graph가 없음 | e09에서 독립 학습한 SimpleConvNet과 DeepConvNet을 같은 full-test accuracy graph에 표시                      | 학습 recipe는 원본과 같지만 관측 집합과 공통 비교 graph는 확장이다.                               |
 
 ## 의도적으로 유지하는 그래프 차이: 시행 재현성
 
@@ -36,8 +36,8 @@
 - e05는 원본에 없는 test accuracy와 runtime metric을, e02/e04는 원본 plot에 없는 full
   train/test epoch 평가를 추가로 저장한다. 이는 원본 그래프를 대체하는 값이 아니라 추가
   분석 지표다.
-- e09의 SimpleConvNet은 별도 재학습하지 않고 `g08/CNN-SIMPLE` 시행을 재사용한다. e09는
-  다른 실험 ID가 아니라 실행 그룹 `g08`·`g10`의 MLflow 결과만 조회한다.
+- e09의 SimpleConvNet과 DeepConvNet은 각각 20 epochs 동안 독립적으로 재학습한다. e09는
+  다른 실험 ID가 아니라 실행 그룹 `g10`의 MLflow 결과만 조회한다.
 - e09의 `98.96%`·`99.38%`는 실행 하이퍼파라미터나 성공/실패 분기가 아니라 final full-test
   accuracy를 해석할 때 쓰는 규정 성능 기준이다.
 

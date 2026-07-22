@@ -3,7 +3,7 @@ from pathlib import Path
 import numpy as np
 
 from mlprosection.experiment import load_yaml, normalize_config
-from mlprosection.experiment.executors.supervised import _apply_input_transform, _model, _permute_pixels
+from mlprosection.experiment.executors.supervised import _apply_input_transform, _model, _permute_pixels, _train_evaluation_probe
 from mlprosection.experiment.reproducibility import configure_runtime, seed_batch_order
 
 
@@ -64,25 +64,56 @@ def test_e08_models_are_parameter_matched() -> None:
     assert sum(parameter.data.size for _, parameter in cnn_model.named_parameters()) == 433_890
 
 
-def test_e09_deep_cnn_recipe_uses_short_curve_measurement_budget() -> None:
+def test_e09_cnn_recipes_train_independently_for_twenty_epochs() -> None:
+    simple = normalize_config(load_yaml(E09_CONFIG, atomic_run_id="CNN-SIMPLE-ACCURACY"))
     deep = normalize_config(load_yaml(E09_CONFIG, atomic_run_id="CNN-DEEP-ACCURACY"))
 
-    assert deep["training"]["max_epochs"] == 2
-    assert deep["training"]["record_step_validation_interval"] == 20
-    assert deep["loader"]["sampling_method"] == "with_replacement"
-    assert _model(deep["model"])
+    for config in (simple, deep):
+        assert config["training"]["max_epochs"] == 20
+        assert config["training"]["record_step_validation_interval"] == 20
+        assert config["loader"]["sampling_method"] == "with_replacement"
+        assert config["execution_group_id"] == "g10"
+        assert config["training"]["record_step_train_evaluation"] is True
+        assert _model(config["model"])
 
 
 def test_e08_and_e09_use_the_same_fixed_validation_probe() -> None:
     e08 = normalize_config(load_yaml(E08_CONFIG, atomic_run_id="CNN-SIMPLE"))
-    e09 = normalize_config(load_yaml(E09_CONFIG, atomic_run_id="CNN-DEEP-ACCURACY"))
+    e09_simple = normalize_config(load_yaml(E09_CONFIG, atomic_run_id="CNN-SIMPLE-ACCURACY"))
+    e09_deep = normalize_config(load_yaml(E09_CONFIG, atomic_run_id="CNN-DEEP-ACCURACY"))
 
-    for config in (e08, e09):
+    for config in (e08, e09_simple, e09_deep):
         assert config["dataset"]["validation_size"] == 1_000
         assert config["dataset"]["validation_seed"] == 20260808
-        assert config["training"]["max_epochs"] == 2
         assert config["training"]["record_first_validation_evaluation"] is True
         assert config["training"]["record_step_validation_interval"] == 20
+    assert e08["training"]["max_epochs"] == 2
+    assert e09_simple["training"]["max_epochs"] == 20
+    assert e09_deep["training"]["max_epochs"] == 20
+
+
+def test_step_train_evaluation_probe_is_fixed_and_opt_in(tmp_path: Path) -> None:
+    class Backend:
+        xp = np
+
+    x_train = np.arange(20).reshape(10, 2)
+    t_train = np.arange(10)
+    disabled = _train_evaluation_probe(
+        dataset={}, training={}, backend=Backend(), x_train=x_train, t_train=t_train, artifact_root=tmp_path,
+    )
+    first = _train_evaluation_probe(
+        dataset={"train_evaluation_size": 4, "train_evaluation_seed": 42}, training={"record_step_train_evaluation": True}, backend=Backend(), x_train=x_train, t_train=t_train, artifact_root=tmp_path,
+    )
+    second = _train_evaluation_probe(
+        dataset={"train_evaluation_size": 4, "train_evaluation_seed": 42}, training={"record_step_train_evaluation": True}, backend=Backend(), x_train=x_train, t_train=t_train, artifact_root=tmp_path,
+    )
+
+    assert disabled[0] is None
+    assert disabled[2] == {"enabled": False, "size": 0}
+    np.testing.assert_array_equal(first[0], second[0])
+    np.testing.assert_array_equal(first[1], second[1])
+    assert first[2]["size"] == 4
+    assert (tmp_path / "data" / "train_evaluation_indices.npy").is_file()
 
 
 def test_pixel_permutation_is_shape_invariant_and_artifacted(tmp_path: Path) -> None:

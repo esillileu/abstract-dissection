@@ -23,7 +23,7 @@ Conv30 5x5-ReLU-Pool-FC100-ReLU-FC10; Adam .001; batch 100; 2 epochs
 
 ## 사용 실험
 
-e08, e09
+e08
 
 ## 실행 정책
 

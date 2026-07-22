@@ -33,6 +33,7 @@ class ForwardTrainer(Trainer):
         record_step_evaluation_interval: int | None = None,
         record_first_validation_evaluation: bool = False,
         record_step_validation_interval: int | None = None,
+        record_step_train_evaluation: bool = False,
         profiling_config: ProfilingConfig | None = None,
         callbacks: Iterable[TrainerCallback] | None = None,
         on_epoch_checkpoint: Callable[[], None] | None = None,
@@ -70,6 +71,7 @@ class ForwardTrainer(Trainer):
             raise ValueError("record_step_validation_interval must be positive")
         self.record_first_validation_evaluation = record_first_validation_evaluation
         self.record_step_validation_interval = record_step_validation_interval
+        self.record_step_train_evaluation = record_step_train_evaluation
         self.validation_evaluations: list[tuple[int, int, dict[str, float]]] = []
 
         self.epoch: int | None = None
@@ -81,6 +83,8 @@ class ForwardTrainer(Trainer):
         t_train: Tensor,
         x_val: Tensor | None = None,
         t_val: Tensor | None = None,
+        x_train_probe: Tensor | None = None,
+        t_train_probe: Tensor | None = None,
     ) -> None:
         xp = self.backend.xp
         self.start_time = time.time()
@@ -104,8 +108,8 @@ class ForwardTrainer(Trainer):
                     self._full_evaluation(x_train, t_train, x_val, t_val),
                 ))
 
-        def record_validation(step: int) -> None:
-            if skip_validation:
+        def record_interval_evaluation(step: int) -> None:
+            if skip_validation and not self.record_step_train_evaluation:
                 return
             should_record = (
                 self.record_first_validation_evaluation and step == 1
@@ -114,17 +118,29 @@ class ForwardTrainer(Trainer):
                 and step % self.record_step_validation_interval == 0
             )
             if should_record:
-                values = self._evaluate_split(x_val, t_val)
+                values = {}
+                if not skip_validation:
+                    values.update({
+                        f"valid/{key}": value
+                        for key, value in self._evaluate_split(x_val, t_val).items()
+                    })
+                if self.record_step_train_evaluation:
+                    if x_train_probe is None or t_train_probe is None:
+                        raise ValueError("step train evaluation requires a train probe")
+                    values.update({
+                        f"train/{key}": value
+                        for key, value in self._evaluate_split(x_train_probe, t_train_probe).items()
+                    })
                 self.validation_evaluations.append((
                     len(self.validation_evaluations), step,
-                    {f"valid/{key}": value for key, value in values.items()},
+                    values,
                 ))
 
         step_recorders = []
         if self.record_first_step_evaluation:
             step_recorders.append(record_first_step)
         if self.record_first_validation_evaluation or self.record_step_validation_interval:
-            step_recorders.append(record_validation)
+            step_recorders.append(record_interval_evaluation)
         self.on_train_step = (
             (lambda step: [recorder(step) for recorder in step_recorders])
             if step_recorders else None

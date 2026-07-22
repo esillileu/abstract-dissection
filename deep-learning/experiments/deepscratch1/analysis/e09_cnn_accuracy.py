@@ -7,7 +7,7 @@ from .common import ANALYSIS_ROOT, ErrorBarStyle, client, latest_seeded_records,
 
 EXPERIMENT_ID = "e09"
 RUNS = {
-    "CNN-SIMPLE": {"group": "g08", "target": 0.9896, "label": "SimpleConvNet"},
+    "CNN-SIMPLE-ACCURACY": {"group": "g10", "target": 0.9896, "label": "SimpleConvNet"},
     "CNN-DEEP-ACCURACY": {"group": "g10", "target": 0.9938, "label": "DeepConvNet"},
 }
 OUTPUT = ANALYSIS_ROOT / "e09_cnn_accuracy.png"
@@ -35,8 +35,8 @@ def main() -> None:
 
     fig, axis = plt.subplots(figsize=(8, 5))
     for atomic_run_id, definition in RUNS.items():
-        plot_curve(axis, metric_curve(mlflow_client, grouped[atomic_run_id], VALID_ACCURACY_METRIC), label=definition["label"], marker="o" if atomic_run_id == "CNN-SIMPLE" else "s", error_bars=ERROR_BARS)
-        axis.axhline(definition["target"], color="0.45", linestyle=":" if atomic_run_id == "CNN-SIMPLE" else "--", linewidth=1, label=f"{definition['label']} target ({definition['target']:.2%})")
+        plot_curve(axis, metric_curve(mlflow_client, grouped[atomic_run_id], VALID_ACCURACY_METRIC), label=definition["label"], marker="o" if atomic_run_id == "CNN-SIMPLE-ACCURACY" else "s", error_bars=ERROR_BARS)
+        axis.axhline(definition["target"], color="0.45", linestyle=":" if atomic_run_id == "CNN-SIMPLE-ACCURACY" else "--", linewidth=1, label=f"{definition['label']} target ({definition['target']:.2%})")
 
     axis.set_title("e09 CNN accuracy reproduction (evaluated every 20 updates)")
     axis.set_xlabel("update")

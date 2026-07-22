@@ -30,11 +30,16 @@ uses the optimizer update index.  Final values are
   completed evaluation values.
 
 For e08 and e09, a fixed 1,000-example validation probe is sampled from the
-training split with the configured `validation_seed`.  It records
+training split with the configured `validation_seed`. It records
 `eval/valid/{loss,accuracy}` at the first update and every 20 updates; the
 companion `eval/global_update` records the associated training update.  The
 official MNIST test split is evaluated only at epoch boundaries and recorded as
-`epoch/test/{loss,accuracy}`.  Both experiments use two training epochs.
+`epoch/test/{loss,accuracy}`. e08 uses two training epochs; e09 uses 20 training epochs.
+
+When `training.record_step_train_evaluation` is enabled (default: `false`), a
+fixed `dataset.train_evaluation_size` probe is sampled from the training data
+after validation holdout. It records `eval/train/{loss,accuracy}` on the same
+update schedule. e09 enables this option with a 1,000-example probe.
 
 `book_epoch/*` is a compatibility axis for book-style graph evaluations; it
 must not be treated as the ordinary epoch metric axis.

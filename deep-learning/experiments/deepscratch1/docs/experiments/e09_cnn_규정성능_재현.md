@@ -7,9 +7,9 @@
 | 항목 | 내용 |
 | --- | --- |
 | 데이터·태스크 | 공식 MNIST train 60,000 / test 10,000, 이미지 10-class 분류 |
-| 실험 목적 | 책의 SimpleConvNet과 DeepConvNet 구조·optimizer recipe를 사용해, 2-epoch 측정 예산에서 규정 test accuracy 도달 여부와 학습 곡선을 확인한다. |
+| 실험 목적 | 책의 SimpleConvNet과 DeepConvNet 구조·optimizer recipe를 사용해, 각 20-epoch 학습에서 규정 test accuracy 도달 여부와 학습 곡선을 확인한다. |
 | 독립변인 | architecture recipe: SimpleConvNet, DeepConvNet |
-| 고정변수 | Adam `lr=.001`, batch 100, replacement sampling, 2 epochs, float64 CUDA |
+| 고정변수 | Adam `lr=.001`, batch 100, replacement sampling, 20 epochs, float64 CUDA |
 | 규정 성능 | SimpleConvNet final full-test accuracy `>=98.96%`; DeepConvNet final full-test accuracy `>=99.38%` |
 | 주 분석 | epoch별 full-test accuracy graph |
 
@@ -21,6 +21,8 @@
 
 원본은 매 epoch train/test 앞 1,000개 표본을 평가한다. e09는 규정 성능을 명확히 하기 위해 동일 학습 recipe를 유지하되, graph와 최종 기준에는 전체 test 10,000개 accuracy를 사용한다.
 
+학습 중간에는 첫 update와 이후 매 20 updates마다 고정 validation 1,000개와 별도 고정 train 1,000개 probe의 accuracy를 기록한다. Train probe 기록은 `training.record_step_train_evaluation`으로 켜며, 이 옵션의 기본값은 `false`다.
+
 ## 분석과 보고
 
 - SimpleConvNet·DeepConvNet의 full-test accuracy curve를 한 그래프에 표시한다.
@@ -28,10 +30,10 @@
 - 각 seed의 final test accuracy와 해당 모델의 규정 성능 도달 여부를 CSV로 기록한다.
 - 일반 성능 비교는 curve의 수렴 양상과 final test accuracy를 기술하되, 두 구조의 차이를 depth 하나의 인과효과로 단정하지 않는다.
 
-## 실행 그룹 재사용
+## 실행 그룹
 
-e09는 다른 실험 ID를 참조하지 않는다. SimpleConvNet curve는 `g08`의 원본 MNIST atomic run `CNN-SIMPLE`을 재사용하고, DeepConvNet은 e09가 소유한 `g10`의 `CNN-DEEP-ACCURACY`를 실행한다. 분석은 MLflow의 `execution_group.id` 태그로 두 그룹의 결과를 조회한다.
+e09는 다른 실험 ID를 참조하지 않는다. SimpleConvNet과 DeepConvNet 모두 e09가 소유한 `g10` 실행 그룹에서 독립적으로 학습한다. 분석은 MLflow의 `execution_group.id` 태그로 해당 결과를 조회한다.
 
 ## 원자 실행
 
-재사용: `g08/CNN-SIMPLE` / 신규 실행: `g10/CNN-DEEP-ACCURACY`
+`g10/CNN-SIMPLE-ACCURACY`, `g10/CNN-DEEP-ACCURACY`

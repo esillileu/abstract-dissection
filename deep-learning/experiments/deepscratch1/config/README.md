@@ -21,7 +21,7 @@ uv sync --extra tracking
 
 The new catalog records under the MLflow experiment name `deepscratch1`.
 
-Run the complete catalog (516 runs) with CPU for MLP/probe experiments and GPU
+Run the complete catalog (526 runs) with CPU for MLP/probe experiments and GPU
 for e08/e09 CNN experiments. The CLI verifies the MLflow server before starting;
 if it is unavailable, no training run begins.
 
