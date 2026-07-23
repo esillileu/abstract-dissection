@@ -1,0 +1,77 @@
+"""DS1 GT06+GT07: compare both CNNs on a shared broken y-axis."""
+
+import matplotlib.pyplot as plt
+
+from exp.analyze import mark_empty, plot_curve
+
+from .broken_axis import add_wave_break
+from .common import accuracy_curve, runs
+
+
+DEFINITIONS = [
+    ("GT06", "CNN-SIMPLE-BOOK", "SimpleCNN", "tab:blue"),
+    ("GT07", "CNN-DEEP-BOOK", "DeepCNN", "tab:orange"),
+]
+
+
+def _curves(client):
+    grouped = {
+        atomic: runs(client, group, [atomic])[atomic]
+        for group, atomic, _label, _color in DEFINITIONS
+    }
+    result = {}
+    for _group, atomic, label, _color in DEFINITIONS:
+        for split in ("train", "test"):
+            result[f"{label}/{split}"] = accuracy_curve(
+                client,
+                grouped[atomic],
+                split=split,
+                axis="update",
+                x_value=lambda row: float(row["epoch"]) - 1,
+            )
+    return result
+
+
+def render(client, error_style, output):
+    del output
+    curves = _curves(client)
+    figure, (upper, lower) = plt.subplots(
+        2,
+        1,
+        figsize=(8, 6),
+        sharex=True,
+        gridspec_kw={"height_ratios": (3, 1), "hspace": 0.05},
+    )
+    figure.subplots_adjust(left=0.12, right=0.98, bottom=0.12, top=0.92)
+    figure._analysis_skip_tight_layout = True
+    styles = {
+        "SimpleCNN/train": ("o", "-", "tab:blue"),
+        "SimpleCNN/test": ("s", "--", "tab:blue"),
+        "DeepCNN/train": ("^", "-", "tab:orange"),
+        "DeepCNN/test": ("D", "--", "tab:orange"),
+    }
+    for axis in (upper, lower):
+        for name, curve in curves.items():
+            marker, linestyle, color = styles[name]
+            plot_curve(
+                axis,
+                curve,
+                label=name,
+                marker=marker,
+                linestyle=linestyle,
+                error_style=error_style,
+                error_every=2,
+                color=color,
+            )
+        mark_empty(axis)
+    upper.set_ylim(0.95, 1.00)
+    lower.set_ylim(0.0, 0.23)
+    upper.set_yticks((0.96, 0.98, 1.0))
+    lower.set_yticks((0.0, 0.1, 0.2))
+    upper.set_title("SimpleConvNet vs DeepConvNet")
+    figure.text(0.02, 0.5, "accuracy", va="center", rotation="vertical")
+    lower.set_xlabel("epochs")
+    add_wave_break(figure, upper, lower)
+    if upper.has_data():
+        upper.legend(loc="lower right")
+    return figure, curves

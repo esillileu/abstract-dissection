@@ -12,3 +12,4 @@ infra/mlflow/data/
 **/checkpoints/
 **/mlflow_artifacts/
 **/run_logs/
+**/results/image/

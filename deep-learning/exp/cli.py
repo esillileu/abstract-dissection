@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import importlib
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.error import URLError
@@ -24,6 +25,7 @@ from mlprosection_mlflow import run_yaml
 DOMAIN_ROOT = Path("exp")
 DOMAIN_EXECUTOR_MODULES = {"ds1": "exp.ds1.executor", "ds2": "exp.ds2.executor"}
 DOMAIN_SPEC_MODULES = {"ds1": "exp.ds1.spec", "ds2": "exp.ds2.spec"}
+DOMAIN_ANALYSIS_MODULES = {"ds1": "exp.ds1.analyze.render", "ds2": "exp.ds2.analyze.render"}
 
 
 @dataclass(frozen=True)
@@ -84,11 +86,21 @@ def parse_seed_indexes(value: str | None, *, count: int) -> list[int] | None:
     return selected
 
 
-def normalize_experiment_id(value: str) -> str:
-    compact = value.lower().removeprefix("e")
-    if not compact.isdigit():
-        raise ValueError(f"experiment id must be numeric, for example 01: {value}")
-    return f"e{int(compact):02d}"
+def parse_experiment_ids(values: list[str]) -> list[str]:
+    """Expand 01, e01, 01-08, and comma-separated execution selections."""
+    selected: list[str] = []
+    for value in values:
+        for item in value.split(","):
+            item = item.strip().lower()
+            match = re.fullmatch(r"e?(\d+)(?:-e?(\d+))?", item)
+            if match is None:
+                raise ValueError(f"invalid experiment selection: {item}")
+            start = int(match.group(1))
+            end = int(match.group(2)) if match.group(2) is not None else start
+            if start > end:
+                raise ValueError(f"experiment range must be ascending: {item}")
+            selected.extend(f"e{number:02d}" for number in range(start, end + 1))
+    return list(dict.fromkeys(selected))
 
 
 def _config_root(domain: str) -> Path:
@@ -126,7 +138,7 @@ def build_plans(
 ) -> list[RunPlan]:
     if bool(experiment_ids) == all_experiments:
         raise ValueError("choose exactly one of --all or --experiment/-e")
-    selected = {normalize_experiment_id(value) for value in experiment_ids}
+    selected = set(parse_experiment_ids(experiment_ids))
     seeds = _seed_values(domain, seed_set)
     requested_indexes = parse_seed_indexes(seed_indexes, count=len(seeds))
     plans: list[RunPlan] = []
@@ -221,7 +233,7 @@ def _progress_context(plan: RunPlan, *, index: int, count: int, overrides: dict[
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("domain", choices=tuple(DOMAIN_EXECUTOR_MODULES))
-    parser.add_argument("command", choices=("plan", "run"))
+    parser.add_argument("command", choices=("plan", "run", "analyze"))
     selection = parser.add_mutually_exclusive_group()
     selection.add_argument("--all", action="store_true")
     selection.add_argument("-e", "--experiment", action="append", default=[])
@@ -232,8 +244,26 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--progress", choices=("auto", "none", "line", "tqdm"), default="auto")
     parser.add_argument("--progress-every", type=int, default=10)
+    parser.add_argument("--tracking-uri")
+    parser.add_argument("--error-style", choices=("band", "errorbar"), default="band")
+    parser.add_argument("--output-dir", type=Path)
     args = parser.parse_args(argv)
     try:
+        if args.command == "analyze":
+            analysis_argv: list[str] = []
+            if args.all:
+                analysis_argv.extend(("-e", "all"))
+            for experiment in args.experiment:
+                analysis_argv.extend(("-e", experiment))
+            if args.tracking_uri:
+                analysis_argv.extend(("--tracking-uri", args.tracking_uri))
+            analysis_argv.extend(("--error-style", args.error_style))
+            if args.output_dir is not None:
+                analysis_argv.extend(("--output-dir", str(args.output_dir)))
+            if args.seed is not None:
+                analysis_argv.extend(("--seed", args.seed))
+            importlib.import_module(DOMAIN_ANALYSIS_MODULES[args.domain]).main(analysis_argv)
+            return
         overrides = parse_overrides(args.override_values)
         all_experiments = args.all or (args.command == "plan" and not args.experiment)
         if args.command == "run" and not all_experiments and not args.experiment:

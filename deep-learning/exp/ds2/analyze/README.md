@@ -43,3 +43,29 @@
 2. GT06-GT07 accuracy는 `evaluations.csv`가 기준이고 source series는 여기서 파생한다.
 3. prediction과 attention weight는 observation CSV가 기준이다.
 4. run identity/config/checkpoint는 schema-v1 artifact와 domain CSV를 결합한다.
+
+## 실행
+
+완료된 MLflow seed trial만 조회하며 condition별로 현재 존재하는 모든 seed를 자동으로
+집계한다. 공통 x축의 평균과 최솟값, 최댓값으로 원본 그래프를 복원한다.
+
+```bash
+python -m exp ds2 analyze --all --error-style band
+python -m exp ds2 analyze -e 01-08 --error-style errorbar
+```
+
+`-e`는 `01`, `e01`, `01-08`, `01,03,06-08` 형식을 지원한다.
+
+`--seed 1`은 MLflow의 실제 `seed/master=1`인 완료 run만 선택하며 출력 이름에
+`_seed-1`을 붙인다.
+
+- `--error-style band`: 평균선 주변 min–max 반투명 영역
+- `--error-style errorbar`: 평균선 위 min–max error bar
+- 완료 run이 없으면 `No completed runs` 빈 그래프와 값이 비어 있는 summary CSV를 만든다.
+- 출력 기본 경로는 `exp/ds2/results/image/`이다.
+- 확장 실험인 `GT05`와 `GT02`의 PTB full-softmax 조건은 제외한다.
+- 원본 대상인 `e01`–`e04`, `e06`–`e08`을 지원한다.
+
+각 실험의 reducer 결과 선택, 축과 원본 시각 형식은 `e01_toy_word2vec.py`부터
+`e08_attention.py`까지의 개별 모듈이 소유한다. `common.py`에는 완료 run 조회와
+source curve 로딩만 둔다.
