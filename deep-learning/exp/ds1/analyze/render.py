@@ -28,6 +28,7 @@ from . import (
     e08_spatial_layout,
     e09_optimizer_trajectory,
     e10_activation,
+    e11_cnn_filters,
 )
 
 
@@ -43,6 +44,7 @@ RENDERERS = {
     "e08": e08_spatial_layout.render,
     "e09": e09_optimizer_trajectory.render,
     "e10": e10_activation.render,
+    "e11": e11_cnn_filters.render,
 }
 
 

@@ -1,0 +1,240 @@
+"""DS1 E11: visualize every convolution layer from final CNN checkpoints."""
+
+from __future__ import annotations
+
+import csv
+import json
+import math
+import re
+from pathlib import Path
+
+import matplotlib.pyplot as plt
+import numpy as np
+
+from exp.analyze import artifact_file, mark_empty, save_figure
+
+from .common import runs
+
+
+RUN_GROUPS = (
+    ("GT06", "CNN-SIMPLE-BOOK"),
+    ("GT07", "CNN-DEEP-BOOK"),
+    ("GT08", "CNN-SIMPLE-SPATIAL"),
+    ("GT08", "CNN-SIMPLE-SPATIAL-PERMUTED"),
+)
+SUMMARY_FIELDS = (
+    "group",
+    "condition",
+    "seed",
+    "run_id",
+    "checkpoint_format",
+    "checkpoint_epoch",
+    "checkpoint_update",
+    "parameter",
+    "shape",
+    "weight_min",
+    "weight_max",
+    "weight_mean",
+    "weight_std",
+    "image",
+)
+
+
+def _natural_key(value: str) -> tuple[object, ...]:
+    return tuple(
+        int(part) if part.isdigit() else part
+        for part in re.split(r"(\d+)", value)
+    )
+
+
+def _conv_weights(checkpoint: Path) -> list[tuple[str, np.ndarray]]:
+    """Return convolution kernels in model order from a v1 or v2 checkpoint."""
+    with np.load(checkpoint, allow_pickle=False) as arrays:
+        weights = [
+            (name, np.asarray(arrays[name]))
+            for name in arrays.files
+            if name.endswith(".W") and arrays[name].ndim == 4
+        ]
+    return sorted(weights, key=lambda item: _natural_key(item[0]))
+
+
+def _square_grid(count: int, *, maximum_columns: int = 8) -> tuple[int, int]:
+    columns = min(maximum_columns, max(1, math.ceil(math.sqrt(count))))
+    return math.ceil(count / columns), columns
+
+
+def _tiled_array(images: np.ndarray, *, maximum_columns: int = 8) -> np.ndarray:
+    """Tile N grayscale images with NaN gutters."""
+    count, height, width = images.shape
+    rows, columns = _square_grid(count, maximum_columns=maximum_columns)
+    canvas = np.full(
+        (rows * height + rows - 1, columns * width + columns - 1),
+        np.nan,
+        dtype=float,
+    )
+    for index, image in enumerate(images):
+        row, column = divmod(index, columns)
+        top = row * (height + 1)
+        left = column * (width + 1)
+        canvas[top : top + height, left : left + width] = image
+    return canvas
+
+
+def _filter_mosaic(weights: np.ndarray) -> np.ndarray:
+    """Make one tile per output filter, retaining every input-channel kernel."""
+    if weights.ndim != 4:
+        raise ValueError(f"convolution weights must be four-dimensional, got {weights.shape}")
+    filter_tiles = np.asarray(
+        [_tiled_array(output_filter) for output_filter in weights],
+        dtype=float,
+    )
+    return _tiled_array(filter_tiles)
+
+
+def _checkpoint_weights_path(client, run):
+    manifest_path = artifact_file(
+        client,
+        run,
+        "checkpoints/checkpoint_manifest.json",
+    )
+    if manifest_path is None:
+        return None
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        final = manifest.get("final")
+        if not isinstance(final, dict) or not final.get("path"):
+            return None
+        final_path = Path(str(final["path"]))
+    except (OSError, TypeError, ValueError, json.JSONDecodeError):
+        return None
+
+    candidates = []
+    if final_path.is_dir():
+        candidates.append(final_path / "model_parameters.npz")
+    else:
+        candidates.append(final_path)
+    if run.local_artifact_root is not None:
+        candidates.extend(
+            (
+                run.local_artifact_root.parent.parent
+                / "checkpoints"
+                / run.local_artifact_root.name
+                / "final.npz",
+                run.local_artifact_root
+                / "checkpoints"
+                / final_path.name
+                / "model_parameters.npz",
+            )
+        )
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate, manifest
+
+    if final_path.suffix == ".npz":
+        remote_path = "checkpoints/final.npz"
+    else:
+        remote_path = f"checkpoints/{final_path.name}/model_parameters.npz"
+    downloaded = artifact_file(client, run, remote_path)
+    if downloaded is None:
+        return None
+    return downloaded, manifest
+
+
+def _render_layer(
+    weights: np.ndarray,
+    *,
+    title: str,
+    output: Path,
+) -> None:
+    mosaic = _filter_mosaic(weights)
+    figure, axis = plt.subplots(figsize=(10, 10))
+    limit = float(np.max(np.abs(weights))) if weights.size else 1.0
+    if limit == 0.0:
+        limit = 1.0
+    color_map = plt.colormaps["gray_r"].copy()
+    color_map.set_bad("white")
+    image = axis.imshow(
+        mosaic,
+        cmap=color_map,
+        interpolation="nearest",
+        vmin=-limit,
+        vmax=limit,
+    )
+    axis.set_title(title)
+    axis.set_xticks(())
+    axis.set_yticks(())
+    figure.colorbar(image, ax=axis, fraction=0.046, pad=0.04, label="weight")
+    save_figure(figure, output)
+    plt.close(figure)
+
+
+def _write_summary(path: Path, rows: list[dict[str, object]]) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8", newline="") as file:
+        writer = csv.DictWriter(file, fieldnames=SUMMARY_FIELDS)
+        writer.writeheader()
+        writer.writerows(rows)
+    return path
+
+
+def render(client, error_style, output):
+    del error_style
+    output_root = output.parent / output.stem
+    outputs: list[Path] = []
+    summary_rows: list[dict[str, object]] = []
+    for group, condition in RUN_GROUPS:
+        for run in runs(client, group, [condition])[condition]:
+            checkpoint = _checkpoint_weights_path(client, run)
+            if checkpoint is None:
+                continue
+            checkpoint_path, manifest = checkpoint
+            try:
+                layers = _conv_weights(checkpoint_path)
+            except (OSError, ValueError):
+                continue
+            final = manifest["final"]
+            checkpoint_format = str(manifest.get("format", "unknown"))
+            for layer_number, (parameter, weights) in enumerate(layers, start=1):
+                image_path = (
+                    output_root
+                    / f"{condition.lower()}_seed-{run.seed}_conv-{layer_number:02d}.png"
+                )
+                _render_layer(
+                    weights,
+                    title=(
+                        f"{condition} | seed {run.seed} | conv {layer_number}\n"
+                        f"{parameter} {tuple(weights.shape)} | final checkpoint"
+                    ),
+                    output=image_path,
+                )
+                outputs.append(image_path)
+                summary_rows.append(
+                    {
+                        "group": group,
+                        "condition": condition,
+                        "seed": run.seed,
+                        "run_id": run.run_id,
+                        "checkpoint_format": checkpoint_format,
+                        "checkpoint_epoch": final.get("epoch", ""),
+                        "checkpoint_update": final.get("update", ""),
+                        "parameter": parameter,
+                        "shape": "x".join(str(size) for size in weights.shape),
+                        "weight_min": float(weights.min()),
+                        "weight_max": float(weights.max()),
+                        "weight_mean": float(weights.mean()),
+                        "weight_std": float(weights.std()),
+                        "image": image_path.as_posix(),
+                    }
+                )
+
+    if not outputs:
+        figure, axis = plt.subplots(figsize=(8, 4))
+        axis.set_title("CNN final-checkpoint filters")
+        mark_empty(axis, "No completed runs with final CNN checkpoints")
+        save_figure(figure, output)
+        plt.close(figure)
+        outputs.append(output)
+    summary = output.with_suffix(".csv")
+    _write_summary(summary, summary_rows)
+    outputs.append(summary)
+    return outputs

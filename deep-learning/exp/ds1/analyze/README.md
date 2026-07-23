@@ -30,6 +30,7 @@
 | `GT08` | epoch-end full-test curve, spatial/permuted paired comparison, NN/CNN 구조별 차이와 seed CI |
 | `GO01` | 저장된 `0..29` trajectory update를 표시용 `1..30`으로 변환, optimizer별 경로·등고선 시각화 |
 | `GO02` | histogram count를 density/ratio로 변환, bin·layer 정렬, summary 검증과 activation 분포 시각화 |
+| `E11` | GT06 SimpleCNN, GT07 DeepCNN, GT08 CNN identity/permuted의 final checkpoint 합성곱 필터를 seed·층별로 시각화 |
 
 ## 분석 입력 우선순위
 
@@ -64,10 +65,10 @@ python -m exp ds1 analyze -e 06 --seed 1
 - 완료 run이 없으면 `No completed runs` 빈 그래프와 값이 비어 있는 summary CSV를 만든다.
 - 출력 기본 경로는 `exp/ds1/results/image/`이다.
 - 명시적으로 포함한 spatial-layout 비교 `GT08`은 `e08` 분석으로 제공한다.
-- `e01`–`e10`을 지원한다.
+- `e01`–`e11`을 지원한다.
 
 각 실험의 artifact 선택, 축 변환, subplot 구성과 원본 시각 형식은
-`e01_optimizer.py`부터 `e10_activation.py`까지의 개별 모듈이 소유한다.
+`e01_optimizer.py`부터 `e11_cnn_filters.py`까지의 개별 모듈이 소유한다.
 `common.py`에는 DS1 CSV를 loss/accuracy curve로 읽는 공통 연산만 둔다.
 
 `e06`과 `e07`은 예외적으로 같은 `e06_e07_{band,errorbar}.png`를 만든다.
@@ -76,3 +77,10 @@ SimpleCNN/DeepCNN의 train·test 네 곡선을 함께 그리고 y축 `0.25–0.9
 `e08`은 `update/eval_{train,test}/accuracy`를 사용한다. 왼쪽은 NN identity/permuted,
 오른쪽은 CNN identity/permuted이며 test는 실선, train은 점선이다. 두 패널 모두 같은
 broken y축을 사용한다.
+
+`e11`은 원본 교재의 `filter_show`를 final checkpoint 분석으로 확장한다. seed 간에는
+필터 순서가 대응하지 않으므로 평균하지 않고 완료 seed별 이미지를 만든다. 첫 합성곱층은
+교재처럼 출력 필터를 격자로 배치한다. DeepCNN의 후속 합성곱층은 각 출력 필터 안에 모든
+입력 채널 커널을 작은 격자로 다시 배치해 채널 축을 평균하거나 버리지 않는다. 산출물은
+`e11_{band,errorbar}/` 아래에 저장하며 CSV에는 checkpoint와 층별 shape·가중치 요약을
+기록한다.
