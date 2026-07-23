@@ -28,6 +28,6 @@ class Embedding(Layer):
         if self.idx is None:
             raise RuntimeError("forward() must be called before backward()")
         xp = self.W.backend.xp
-        self.W.grad[...] = xp.zeros_like(self.W.data)
+        self.W.grad.fill(0)
         xp.add.at(self.W.grad, self.idx, dout.data)
         return None

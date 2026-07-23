@@ -82,14 +82,21 @@ class TimeDistributed(TimeLayer):
         self.input_shape: tuple[int, ...] | None = None
         self.output_shape: tuple[int, ...] | None = None
 
-    def forward_manual(self, xs: Tensor) -> Tensor:
+    def forward_manual(self, xs: Tensor, *, cache: bool = True) -> Tensor:
         if xs.ndim < 2:
             raise ValueError("TimeDistributed expects (batch, time, ...) input")
         self.input_shape = xs.shape
         flat = Tensor(xs.data.reshape(xs.shape[0] * xs.shape[1], *xs.shape[2:]), backend=xs.backend)
         output = self.layer.forward(flat)
         self.output_shape = output.shape[1:]
-        return Tensor(output.data.reshape(xs.shape[0], xs.shape[1], *self.output_shape), backend=output.backend)
+        result = Tensor(output.data.reshape(xs.shape[0], xs.shape[1], *self.output_shape), backend=output.backend)
+        if not cache:
+            self.input_shape = None
+            self.output_shape = None
+            for name in ("x", "idx", "mask", "cache"):
+                if hasattr(self.layer, name):
+                    setattr(self.layer, name, None)
+        return result
 
     def backward_manual(self, dout: Tensor):
         if self.input_shape is None or self.output_shape is None:
@@ -206,7 +213,7 @@ class TimeRNN(RecurrentTimeLayer):
         self.h = None
         self.dh = None
 
-    def forward_manual(self, xs: Tensor) -> Tensor:
+    def forward_manual(self, xs: Tensor, *, cache: bool = True) -> Tensor:
         xp = xs.backend.xp
         n, time_size, _ = xs.shape
         hidden_size = self.Wh.shape[0]
@@ -223,7 +230,8 @@ class TimeRNN(RecurrentTimeLayer):
             h_prev = h
             h = xp.tanh(h_prev @ self.Wh.data + x @ self.Wx.data + self.b.data)
             hs[:, index, :] = h
-            self.layers.append((x, h_prev, h))
+            if cache:
+                self.layers.append((x, h_prev, h))
 
         self.h = h
         return Tensor(hs, backend=xs.backend)
@@ -383,7 +391,7 @@ class TimeLSTM(RecurrentTimeLayer):
         self.c = None
         self.dh = None
 
-    def forward_manual(self, xs: Tensor) -> Tensor:
+    def forward_manual(self, xs: Tensor, *, cache: bool = True) -> Tensor:
         xp = xs.backend.xp
         n, time_size, _ = xs.shape
         hidden_size = self.Wh.shape[0]
@@ -412,7 +420,8 @@ class TimeLSTM(RecurrentTimeLayer):
             c = f * c_prev + g * i
             h = o * xp.tanh(c)
             hs[:, index, :] = h
-            self.layers.append((x, h_prev, c_prev, i, f, g, o, c))
+            if cache:
+                self.layers.append((x, h_prev, c_prev, i, f, g, o, c))
 
         self.h = h
         self.c = c
@@ -522,7 +531,7 @@ class TimeSoftmaxWithLoss(Criterion):
         self.cache = None
         self.ignore_label = ignore_label
 
-    def forward_manual(self, xs: Tensor, ts: Tensor) -> Tensor:
+    def forward_manual(self, xs: Tensor, ts: Tensor, *, cache: bool = True) -> Tensor:
         xp = xs.backend.xp
         n, time_size, vocab_size = xs.shape
         ts_data = ts.data
@@ -539,9 +548,14 @@ class TimeSoftmaxWithLoss(Criterion):
         losses *= mask
         loss = -xp.sum(losses) / mask.sum()
 
-        self.y = Tensor(ys.reshape(n, time_size, vocab_size), backend=xs.backend)
-        self.t = Tensor(labels.reshape(n, time_size), backend=xs.backend)
-        self.cache = (labels, ys, mask, (n, time_size, vocab_size), xs.backend)
+        if cache:
+            self.y = Tensor(ys.reshape(n, time_size, vocab_size), backend=xs.backend)
+            self.t = Tensor(labels.reshape(n, time_size), backend=xs.backend)
+            self.cache = (labels, ys, mask, (n, time_size, vocab_size), xs.backend)
+        else:
+            self.y = None
+            self.t = None
+            self.cache = None
         return Tensor(loss, backend=xs.backend)
 
     def backward_manual(self, dout: Tensor | None = None) -> Tensor:
@@ -883,14 +897,20 @@ class TimeAttention(TimeLayer):
         self.cache: tuple[Tensor, Tensor] | None = None
         self.weights = None
 
-    def forward_manual(self, enc_hs: Tensor, dec_hs: Tensor) -> Tensor:
+    def forward_manual(
+        self,
+        enc_hs: Tensor,
+        dec_hs: Tensor,
+        *,
+        cache: bool = True,
+    ) -> Tensor:
         xp = enc_hs.backend.xp
         scores = xp.sum(enc_hs.data[:, None, :, :] * dec_hs.data[:, :, None, :], axis=3)
         scores -= scores.max(axis=2, keepdims=True)
         weights = xp.exp(scores)
         weights /= weights.sum(axis=2, keepdims=True)
-        self.weights = weights
-        self.cache = (enc_hs, dec_hs)
+        self.weights = weights if cache else None
+        self.cache = (enc_hs, dec_hs) if cache else None
         context = xp.sum(weights[:, :, :, None] * enc_hs.data[:, None, :, :], axis=2)
         return Tensor(context, backend=enc_hs.backend)
 

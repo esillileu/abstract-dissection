@@ -38,17 +38,23 @@ class Rnnlm(Layer):
         self.lstm_layer = self.layers[1]
         self._uses_internal_loss = False
 
-    def predict(self, xs: Tensor) -> Tensor:
+    def predict(self, xs: Tensor, *, cache: bool = True) -> Tensor:
         for layer in self.layers:
-            xs = layer.forward(xs)
+            xs = layer.forward(xs, cache=cache)
         return xs
 
-    def forward_manual(self, xs: Tensor, ts: Tensor | None = None) -> Tensor:
-        score = self.predict(xs)
+    def forward_manual(
+        self,
+        xs: Tensor,
+        ts: Tensor | None = None,
+        *,
+        cache: bool = True,
+    ) -> Tensor:
+        score = self.predict(xs, cache=cache)
         self._uses_internal_loss = ts is not None
         if ts is None:
             return score
-        return self.loss_layer.forward(score, ts)
+        return self.loss_layer.forward(score, ts, cache=cache)
 
     def backward_manual(self, dout: Tensor | int | float | None = None) -> Tensor:
         if self._uses_internal_loss:
@@ -85,15 +91,21 @@ class VanillaRnnlm(Layer):
         self.loss_layer = TimeSoftmaxWithLoss()
         self._uses_internal_loss = False
 
-    def predict(self, xs: Tensor) -> Tensor:
+    def predict(self, xs: Tensor, *, cache: bool = True) -> Tensor:
         for layer in self.layers:
-            xs = layer.forward(xs)
+            xs = layer.forward(xs, cache=cache)
         return xs
 
-    def forward_manual(self, xs: Tensor, ts: Tensor | None = None) -> Tensor:
-        score = self.predict(xs)
+    def forward_manual(
+        self,
+        xs: Tensor,
+        ts: Tensor | None = None,
+        *,
+        cache: bool = True,
+    ) -> Tensor:
+        score = self.predict(xs, cache=cache)
         self._uses_internal_loss = ts is not None
-        return score if ts is None else self.loss_layer.forward(score, ts)
+        return score if ts is None else self.loss_layer.forward(score, ts, cache=cache)
 
     def backward_manual(self, dout: Tensor | int | float | None = None) -> Tensor:
         if self._uses_internal_loss:
@@ -150,21 +162,23 @@ class BetterRnnlm(Layer):
         self.drop_layers = [self.layers[1], self.layers[3], self.layers[5]]
         self._uses_internal_loss = False
 
-    def predict(self, xs: Tensor) -> Tensor:
+    def predict(self, xs: Tensor, *, cache: bool = True) -> Tensor:
         for layer in self.layers:
-            xs = layer.forward(xs)
+            xs = layer.forward(xs, cache=cache)
         return xs
 
     def forward_manual(
         self,
         xs: Tensor,
         ts: Tensor | None = None,
+        *,
+        cache: bool = True,
     ) -> Tensor:
-        score = self.predict(xs)
+        score = self.predict(xs, cache=cache)
         self._uses_internal_loss = ts is not None
         if ts is None:
             return score
-        return self.loss_layer.forward(score, ts)
+        return self.loss_layer.forward(score, ts, cache=cache)
 
     def backward_manual(self, dout: Tensor | int | float | None = None) -> Tensor:
         if self._uses_internal_loss:
@@ -206,9 +220,9 @@ class Encoder(Layer):
         )
         self.hs: Tensor | None = None
 
-    def forward_manual(self, xs: Tensor) -> Tensor:
-        xs = self.embed.forward(xs)
-        hs = self.lstm.forward(xs)
+    def forward_manual(self, xs: Tensor, *, cache: bool = True) -> Tensor:
+        xs = self.embed.forward(xs, cache=cache)
+        hs = self.lstm.forward(xs, cache=cache)
         self.hs = hs
         return hs[:, -1, :]
 
@@ -243,11 +257,11 @@ class Decoder(Layer):
         )
         self.affine = TimeAffine(hidden_size, vocab_size, backend=self._backend)
 
-    def forward_manual(self, xs: Tensor, h: Tensor) -> Tensor:
+    def forward_manual(self, xs: Tensor, h: Tensor, *, cache: bool = True) -> Tensor:
         self.lstm.set_state(h)
-        out = self.embed.forward(xs)
-        out = self.lstm.forward(out)
-        return self.affine.forward(out)
+        out = self.embed.forward(xs, cache=cache)
+        out = self.lstm.forward(out, cache=cache)
+        return self.affine.forward(out, cache=cache)
 
     def backward_manual(self, dscore: Tensor) -> Tensor:
         dout = self.affine.backward(dscore)
@@ -256,6 +270,9 @@ class Decoder(Layer):
         return self.lstm.dh
 
     def generate(self, h: Tensor, start_id: int, sample_size: int) -> list[int]:
+        return _host_sampled_ids(h.backend, self.generate_device(h, start_id, sample_size))
+
+    def generate_device(self, h: Tensor, start_id: int, sample_size: int):
         backend = h.backend
         xp = backend.xp
         sampled = []
@@ -270,7 +287,7 @@ class Decoder(Layer):
             sample_id = score.data.flatten().argmax()
             sampled.append(sample_id)
 
-        return _host_sampled_ids(backend, sampled)
+        return _stack_sampled_ids_device(backend, sampled)
 
 
 class Seq2seq(Layer):
@@ -297,13 +314,13 @@ class Seq2seq(Layer):
         )
         self.softmax = TimeSoftmaxWithLoss()
 
-    def forward_manual(self, xs: Tensor, ts: Tensor) -> Tensor:
+    def forward_manual(self, xs: Tensor, ts: Tensor, *, cache: bool = True) -> Tensor:
         decoder_xs = ts[:, :-1]
         decoder_ts = ts[:, 1:]
 
-        h = self.encoder.forward(xs)
-        score = self.decoder.forward(decoder_xs, h)
-        return self.softmax.forward(score, decoder_ts)
+        h = self.encoder.forward(xs, cache=cache)
+        score = self.decoder.forward(decoder_xs, h, cache=cache)
+        return self.softmax.forward(score, decoder_ts, cache=cache)
 
     def backward_manual(self, dout: Tensor | int | float | None = None) -> None:
         if dout is None:
@@ -317,8 +334,11 @@ class Seq2seq(Layer):
         return None
 
     def generate(self, xs: Tensor, start_id: int, sample_size: int) -> list[int]:
+        return _host_sampled_ids(xs.backend, self.generate_device(xs, start_id, sample_size))
+
+    def generate_device(self, xs: Tensor, start_id: int, sample_size: int):
         h = self.encoder.forward(xs)
-        return self.decoder.generate(h, start_id, sample_size)
+        return self.decoder.generate_device(h, start_id, sample_size)
 
 
 class PeekyDecoder(Decoder):
@@ -332,15 +352,15 @@ class PeekyDecoder(Decoder):
         self.affine = TimeAffine(hidden_size * 2, vocab_size, backend=self._backend)
         self.peeky_h = None
 
-    def forward_manual(self, xs: Tensor, h: Tensor) -> Tensor:
+    def forward_manual(self, xs: Tensor, h: Tensor, *, cache: bool = True) -> Tensor:
         xp = h.backend.xp
         self.lstm.set_state(h)
-        out = self.embed.forward(xs)
+        out = self.embed.forward(xs, cache=cache)
         self.peeky_h = xp.repeat(h.data[:, None, :], xs.shape[1], axis=1)
         out = Tensor(xp.concatenate((self.peeky_h, out.data), axis=2), backend=h.backend)
-        out = self.lstm.forward(out)
+        out = self.lstm.forward(out, cache=cache)
         out = Tensor(xp.concatenate((self.peeky_h, out.data), axis=2), backend=h.backend)
-        return self.affine.forward(out)
+        return self.affine.forward(out, cache=cache)
 
     def backward_manual(self, dscore: Tensor) -> Tensor:
         if self.peeky_h is None:
@@ -354,6 +374,9 @@ class PeekyDecoder(Decoder):
         return Tensor(self.lstm.dh.data + (d_peeky_out + d_peeky_in).sum(axis=1), backend=dscore.backend)
 
     def generate(self, h: Tensor, start_id: int, sample_size: int) -> list[int]:
+        return _host_sampled_ids(h.backend, self.generate_device(h, start_id, sample_size))
+
+    def generate_device(self, h: Tensor, start_id: int, sample_size: int):
         xp = h.backend.xp
         self.lstm.set_state(h)
         sample_id = xp.asarray(start_id, dtype=xp.int64)
@@ -367,7 +390,7 @@ class PeekyDecoder(Decoder):
             score = self.affine.forward(Tensor(xp.concatenate((peeky_h, out.data), axis=2), backend=h.backend))
             sample_id = score.data.reshape(-1).argmax()
             sampled.append(sample_id)
-        return _host_sampled_ids(h.backend, sampled)
+        return _stack_sampled_ids_device(h.backend, sampled)
 
 
 class PeekySeq2seq(Seq2seq):
@@ -379,8 +402,11 @@ class PeekySeq2seq(Seq2seq):
 
 
 class AttentionEncoder(Encoder):
-    def forward_manual(self, xs: Tensor) -> Tensor:
-        return self.lstm.forward(self.embed.forward(xs))
+    def forward_manual(self, xs: Tensor, *, cache: bool = True) -> Tensor:
+        return self.lstm.forward(
+            self.embed.forward(xs, cache=cache),
+            cache=cache,
+        )
 
     def backward_manual(self, dhs: Tensor) -> None:
         self.embed.backward(self.lstm.backward(dhs))
@@ -395,12 +421,27 @@ class AttentionDecoder(Layer):
         self.attention = TimeAttention(backend=self._backend)
         self.affine = TimeAffine(hidden_size * 2, vocab_size, backend=self._backend)
 
-    def forward_manual(self, xs: Tensor, enc_hs: Tensor) -> Tensor:
+    def forward_manual(
+        self,
+        xs: Tensor,
+        enc_hs: Tensor,
+        *,
+        cache: bool = True,
+    ) -> Tensor:
         self.lstm.set_state(enc_hs[:, -1, :])
-        dec_hs = self.lstm.forward(self.embed.forward(xs))
-        context = self.attention.forward(enc_hs, dec_hs)
+        dec_hs = self.lstm.forward(
+            self.embed.forward(xs, cache=cache),
+            cache=cache,
+        )
+        context = self.attention.forward(enc_hs, dec_hs, cache=cache)
         xp = xs.backend.xp
-        return self.affine.forward(Tensor(xp.concatenate((context.data, dec_hs.data), axis=2), backend=xs.backend))
+        return self.affine.forward(
+            Tensor(
+                xp.concatenate((context.data, dec_hs.data), axis=2),
+                backend=xs.backend,
+            ),
+            cache=cache,
+        )
 
     def backward_manual(self, dscore: Tensor) -> Tensor:
         dout = self.affine.backward(dscore)
@@ -412,6 +453,12 @@ class AttentionDecoder(Layer):
         return denc
 
     def generate(self, enc_hs: Tensor, start_id: int, sample_size: int) -> list[int]:
+        return _host_sampled_ids(
+            enc_hs.backend,
+            self.generate_device(enc_hs, start_id, sample_size),
+        )
+
+    def generate_device(self, enc_hs: Tensor, start_id: int, sample_size: int):
         xp = enc_hs.backend.xp
         self.lstm.set_state(enc_hs[:, -1, :])
         sample_id = xp.asarray(start_id, dtype=xp.int64)
@@ -423,7 +470,7 @@ class AttentionDecoder(Layer):
             score = self.affine.forward(Tensor(xp.concatenate((context.data, dec_hs.data), axis=2), backend=enc_hs.backend))
             sample_id = score.data.reshape(-1).argmax()
             sampled.append(sample_id)
-        return _host_sampled_ids(enc_hs.backend, sampled)
+        return _stack_sampled_ids_device(enc_hs.backend, sampled)
 
 
 class AttentionSeq2seq(Seq2seq):
@@ -434,14 +481,23 @@ class AttentionSeq2seq(Seq2seq):
         self.softmax = TimeSoftmaxWithLoss()
 
     def generate(self, xs: Tensor, start_id: int, sample_size: int) -> list[int]:
+        return _host_sampled_ids(xs.backend, self.generate_device(xs, start_id, sample_size))
+
+    def generate_device(self, xs: Tensor, start_id: int, sample_size: int):
         hs = self.encoder.forward(xs)
-        return self.decoder.generate(hs, start_id, sample_size)
+        return self.decoder.generate_device(hs, start_id, sample_size)
+
+
+def _stack_sampled_ids_device(backend: Backend, sampled):
+    if not sampled:
+        return backend.xp.empty((0,), dtype=backend.xp.int64)
+    return backend.xp.stack(sampled)
 
 
 def _host_sampled_ids(backend: Backend, sampled) -> list[int]:
-    if not sampled:
+    if sampled.size == 0:
         return []
-    values = backend.to_numpy(backend.xp.stack(sampled))
+    values = backend.to_numpy(sampled)
     return [int(value) for value in values]
 
 

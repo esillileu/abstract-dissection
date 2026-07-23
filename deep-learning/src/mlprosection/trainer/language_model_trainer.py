@@ -29,6 +29,9 @@ class LanguageModelTrainer(InternalObjectiveTrainer):
         self.time_size = time_size
         self.time_index = 0
         self.iteration_in_epoch = 0
+        self._batch_offsets = None
+        self._time_offsets = None
+        self._batch_data_size: int | None = None
 
     def fit(self, xs: Tensor, ts: Tensor) -> None:
         if len(xs) != len(ts):
@@ -53,7 +56,7 @@ class LanguageModelTrainer(InternalObjectiveTrainer):
                     self.optimizer.update()
                     state_after = self._snapshot_recurrent_state()
                     self._restore_recurrent_state(state_before)
-                    post_loss = self.model.forward(batch_x, batch_t)
+                    post_loss = self.model.forward(batch_x, batch_t, cache=False)
                     self._restore_recurrent_state(state_after)
                     self._detach_state()
                     self.global_step += 1
@@ -127,9 +130,16 @@ class LanguageModelTrainer(InternalObjectiveTrainer):
     def _batch(self, xs: Tensor, ts: Tensor) -> tuple[Tensor, Tensor]:
         xp = self.backend.xp
         data_size = len(xs)
-        jump = data_size // self.batch_size
-        offsets = xp.arange(self.batch_size) * jump
-        positions = (offsets[:, None] + self.time_index + xp.arange(self.time_size)[None, :]) % data_size
+        if self._batch_offsets is None or self._batch_data_size != data_size:
+            jump = data_size // self.batch_size
+            self._batch_offsets = xp.arange(self.batch_size) * jump
+            self._time_offsets = xp.arange(self.time_size)
+            self._batch_data_size = data_size
+        positions = (
+            self._batch_offsets[:, None]
+            + self.time_index
+            + self._time_offsets[None, :]
+        ) % data_size
         self.time_index = (self.time_index + self.time_size) % data_size
         return (
             Tensor(xs.data[positions], backend=self.backend),

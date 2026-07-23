@@ -32,6 +32,7 @@ class Seq2seqTrainer(InternalObjectiveTrainer):
         self.max_decode_steps = max_decode_steps
         self.drop_last = drop_last
         self.batch_cursor = 0
+        self.last_predictions = None
 
     def fit(self, xs: Tensor, ts: Tensor) -> None:
         if len(xs) != len(ts):
@@ -53,7 +54,7 @@ class Seq2seqTrainer(InternalObjectiveTrainer):
                     self.model.forward(batch_x, batch_t)
                     self.model.backward()
                     self.optimizer.update()
-                    post_loss = self.model.forward(batch_x, batch_t)
+                    post_loss = self.model.forward(batch_x, batch_t, cache=False)
                     self.global_step += 1
                     sample_count += len(batch_x)
                     self.batch_cursor = iteration + 1
@@ -94,21 +95,35 @@ class Seq2seqTrainer(InternalObjectiveTrainer):
         was_training = bool(getattr(self.model, "training", True))
         saved_state = self._snapshot_recurrent_state()
         exact, token_correct, token_count = 0, 0, 0
-        host_targets = self.backend.to_numpy(ts.data)
+        device_predictions = []
         self.model.train(False)
         try:
             for index in range(len(xs)):
                 question = Tensor(xs.data[index:index + 1], backend=self.backend)
-                answer = host_targets[index]
-                expected = [int(value) for value in answer[1:]]
-                sample_size = self.max_decode_steps if self.max_decode_steps is not None else len(expected)
-                predicted = self.model.generate(question, self.start_id, sample_size)
-                exact += int(predicted == expected)
-                token_correct += sum(left == right for left, right in zip(predicted, expected, strict=True))
-                token_count += len(expected)
+                expected_size = ts.shape[1] - 1
+                sample_size = self.max_decode_steps if self.max_decode_steps is not None else expected_size
+                if sample_size != expected_size:
+                    raise ValueError("max_decode_steps must match the fixed target length")
+                device_predictions.append(
+                    self.model.generate_device(question, self.start_id, sample_size)
+                )
         finally:
             self._restore_recurrent_state(saved_state)
             self.model.train(was_training)
+        xp = self.backend.xp
+        predictions = xp.stack(device_predictions)
+        paired = xp.stack((predictions, ts.data[:, 1:]))
+        host_predictions, host_targets = self.backend.to_numpy(paired)
+        self.last_predictions = host_predictions
+        for predicted, expected in zip(host_predictions, host_targets, strict=True):
+            predicted_values = [int(value) for value in predicted]
+            expected_values = [int(value) for value in expected]
+            exact += int(predicted_values == expected_values)
+            token_correct += sum(
+                left == right
+                for left, right in zip(predicted_values, expected_values, strict=True)
+            )
+            token_count += len(expected_values)
         return EvaluationResult(
             example_count=len(xs), loss=None, accuracy=None,
             unit="sequence", unit_count=len(xs),

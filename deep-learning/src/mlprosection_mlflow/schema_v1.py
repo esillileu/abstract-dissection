@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 from pathlib import Path
@@ -233,7 +234,9 @@ class SchemaV1Run:
                     "update": final_metrics.get("final/system/total_updates"),
                     "digest": checkpoint_digest,
                 },
-                "best": None,
+                "best": _checkpoint_role_manifest(self.local_checkpoint_root, "best"),
+                "latest": _checkpoint_role_manifest(self.local_checkpoint_root, "latest"),
+                "periodic": _periodic_checkpoint_manifests(self.local_checkpoint_root),
                 "epoch_checkpoints": [
                     {"path": str(path.resolve())}
                     for path in evaluation_checkpoints or []
@@ -369,3 +372,32 @@ def _save_checkpoint(
     path.parent.mkdir(parents=True, exist_ok=True)
     model.save_params_npz(path)
     return path, file_digest(path)
+
+
+def _checkpoint_role_manifest(root: Path, role: str) -> dict[str, object] | None:
+    pointer = root / f"{role}.json"
+    if not pointer.exists():
+        return None
+    payload = json.loads(pointer.read_text(encoding="utf-8"))
+    path = root / str(payload["path"])
+    return {
+        "path": str(path.resolve()),
+        "epoch": int(payload["epoch"]),
+        "update": int(payload["update"]),
+        "digest": str(payload["sha256"]),
+    }
+
+
+def _periodic_checkpoint_manifests(root: Path) -> list[dict[str, object]]:
+    generations = root / "generations"
+    if not generations.exists():
+        return []
+    output = []
+    for path in sorted(generations.glob("periodic-*")):
+        manifest = json.loads((path / "manifest.json").read_text(encoding="utf-8"))
+        output.append({
+            "path": str(path.resolve()),
+            "epoch": int(manifest["epoch"]),
+            "update": int(manifest["global_step"]),
+        })
+    return output

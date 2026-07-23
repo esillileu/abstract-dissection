@@ -23,7 +23,12 @@ from mlprosection.trainer import (
 )
 
 from mlprosection.experiment.contracts import ExperimentResult
-from mlprosection.experiment.checkpoint import load_epoch_checkpoint, save_epoch_checkpoint
+from mlprosection.experiment.checkpoint import (
+    CheckpointManager,
+    CheckpointRetentionPolicy,
+    load_epoch_checkpoint,
+    resolve_checkpoint_path,
+)
 from mlprosection.experiment.event_executor import EvaluationRequest, EventExperimentExecutor
 from mlprosection.experiment.executor import ExperimentContext
 from mlprosection.experiment.profiling import create_runtime_monitor, training_summary
@@ -208,21 +213,27 @@ class Word2VecExecutor:
         records_sink = DS2Records()
         records_sink.bind_artifact_root(artifact_root)
         monitor = create_runtime_monitor(backend, _mapping(config, "profiling"))
+        trainer = Word2VecTrainer(
+            model, optimizer, max_epochs=epochs, batch_size=batch_size,
+            event_receivers=[],
+        )
+        checkpoint_manager = _checkpoint_manager(
+            config, context, model=model, optimizer=optimizer, trainer=trainer,
+        )
         controller = EventExperimentExecutor(
             records=records_sink, evaluate=lambda _request: None,
             source_curve=_source_curve_from_objective(config),
+            after_epoch=lambda _event: _save_epoch_roles(checkpoint_manager),
             device_timer=_device_timer(config, backend),
             progress=context.metadata.get("progress_reporter"),
         )
-        trainer = Word2VecTrainer(
-            model, optimizer, max_epochs=epochs, batch_size=batch_size,
-            event_receivers=[controller],
-        )
+        trainer.event_receivers = (controller,)
         with training_summary(monitor):
             records = controller.run(
                 lambda: trainer.fit(Tensor(train_x, backend=backend), Tensor(train_t, backend=backend)),
                 start_update=trainer.global_step + 1,
             )
+        _record_retained_checkpoints(records, checkpoint_manager)
         records.flush()
         final_loss = _recorded_float(records.updates[-1]["loss"]) if records.updates else 0.0
         final_metrics = {"final/train/loss": final_loss}
@@ -274,6 +285,9 @@ class LanguageModelExecutor:
             model, optimizer, max_epochs=max_epochs,
             batch_size=int(loader.get("batch_size", 20)), time_size=int(loader.get("time_size", 35)),
         )
+        checkpoint_manager = _checkpoint_manager(
+            config, context, model=model, optimizer=optimizer, trainer=trainer,
+        )
         def evaluate_request(request):
             return trainer.evaluate(*request.source)
         def epoch_requests(event):
@@ -295,15 +309,7 @@ class LanguageModelExecutor:
                     best_valid, best_valid_epoch = valid_ppl, step
                     if bool(_mapping(config, "checkpoint").get("save_best", False)):
                         records_sink.flush()
-                        selected_checkpoint_path = save_epoch_checkpoint(root=Path(str(context.metadata["checkpoint_root"])), model=model, optimizer=optimizer, trainer=trainer, config_digest=config_digest)
-                        records_sink.add_checkpoint(
-                            update=trainer.global_step, epoch=step, kind="selected",
-                            path=selected_checkpoint_path, sha256=_path_digest(selected_checkpoint_path),
-                            checkpoint_id=f"selected-epoch-{step:04d}",
-                            selection_metric="valid/perplexity",
-                            selection_value=valid_ppl,
-                        )
-                        records_sink.flush()
+                        selected_checkpoint_path = checkpoint_manager.save_best().path
                 elif str(model_config.get("alias")) == "BetterRnnlm" and str(_mapping(config, "scheduler").get("name", "constant")) == "validation_decay":
                     optimizer.lr /= float(_mapping(config, "scheduler").get("factor", 4.0))
             else:
@@ -312,18 +318,24 @@ class LanguageModelExecutor:
             records=records_sink, evaluate=evaluate_request,
             epoch_requests=epoch_requests, after_evaluation=after_evaluation,
             source_curve=_source_curve_from_objective(config),
+            after_epoch=lambda _event: _save_epoch_roles(checkpoint_manager),
             device_timer=_device_timer(config, backend),
             progress=context.metadata.get("progress_reporter"),
         )
         with training_summary(monitor):
             records = controller.run(lambda: trainer.fit(train, train_targets))
-        records.flush()
         if test_at_end or test_ppl == float("inf"):
             if bool(_mapping(config, "checkpoint").get("save_best", False)):
                 if selected_checkpoint_path is None:
                     raise RuntimeError("selected checkpoint is required before terminal test evaluation")
                 load_epoch_checkpoint(path=selected_checkpoint_path, model=model, optimizer=optimizer, trainer=trainer, config_digest=config_digest)
             test_ppl = float(trainer.evaluate(test, test_targets).perplexity)
+        _record_retained_checkpoints(
+            records, checkpoint_manager,
+            best_metric="valid/perplexity",
+            best_value=None if best_valid == float("inf") else best_valid,
+        )
+        records.flush()
         final_train_ppl = _backend_exp_float(backend, records.updates[-1]["loss"]) if records.updates else float("inf")
         final_metrics = {
             "final/train/perplexity": final_train_ppl,
@@ -388,7 +400,9 @@ class Seq2SeqExecutor:
         records.bind_artifact_root(artifact_root)
         monitor = create_runtime_monitor(backend, _mapping(config, "profiling"))
         checkpoint_config = _mapping(config, "checkpoint")
-        config_digest = _config_digest(config)
+        checkpoint_manager = _checkpoint_manager(
+            config, context, model=model, optimizer=optimizer, trainer=trainer,
+        )
         best_exact = -1.0
 
         def after_evaluation(_request, result, axis, step):
@@ -417,30 +431,29 @@ class Seq2SeqExecutor:
                     backend,
                     _mapping(config, "recording"),
                     epoch=step,
+                    predictions=trainer.last_predictions,
                 )
                 if bool(checkpoint_config.get("save_best", False)) and result.exact_match_accuracy > best_exact:
                     best_exact = float(result.exact_match_accuracy)
                     records.flush()
-                    path = save_epoch_checkpoint(root=Path(str(context.metadata["checkpoint_root"])), model=model, optimizer=optimizer, trainer=trainer, config_digest=config_digest)
-                    records.add_checkpoint(
-                        update=trainer.global_step, epoch=step, kind="selected",
-                        path=path, sha256=_path_digest(path),
-                        checkpoint_id=f"selected-epoch-{step:04d}",
-                        selection_metric="test/exact_match_accuracy",
-                        selection_value=best_exact,
-                    )
-                    records.flush()
+                    checkpoint_manager.save_best()
 
         controller = EventExperimentExecutor(
             records=records,
             evaluate=lambda _request: trainer.evaluate(*test_source, metrics=("exact_match_accuracy", "token_accuracy")),
             epoch_requests=lambda _event: (request,),
             after_evaluation=after_evaluation,
+            after_epoch=lambda _event: _save_epoch_roles(checkpoint_manager),
             device_timer=_device_timer(config, backend),
             progress=context.metadata.get("progress_reporter"),
         )
         with training_summary(monitor):
             records = controller.run(lambda: trainer.fit(train_x, train_t))
+        _record_retained_checkpoints(
+            records, checkpoint_manager,
+            best_metric="test/exact_match_accuracy",
+            best_value=None if best_exact < 0 else best_exact,
+        )
         records.flush()
         last_evaluation = records.evaluations[-2:] if len(records.evaluations) >= 2 else []
         final_values = {"final/train/loss": _recorded_float(records.updates[-1]["loss"]) if records.updates else 0.0}
@@ -465,6 +478,7 @@ class AttentionAlignmentObservationExecutor:
         checkpoint_path = checkpoint_config.get("source_path") or checkpoint_config.get("source_checkpoint_path")
         if checkpoint_path is None:
             raise ValueError("DS2 GO01 requires checkpoint.source_path")
+        checkpoint_path = resolve_checkpoint_path(Path(str(checkpoint_path)))
         data = load_sequence(
             str(dataset["file"]),
             seed=int(dataset.get("split_seed", 1984)),
@@ -550,6 +564,54 @@ def _device_timer(config: dict[str, object], backend):
     return create_device_timer(backend, enabled=bool(profiling.get("device_timing", False)))
 
 
+def _checkpoint_manager(config, context, *, model, optimizer, trainer) -> CheckpointManager:
+    checkpoint = _mapping(config, "checkpoint")
+    return CheckpointManager(
+        root=Path(str(context.metadata["checkpoint_root"])),
+        model=model,
+        optimizer=optimizer,
+        trainer=trainer,
+        config_digest=_config_digest(config),
+        policy=CheckpointRetentionPolicy.from_mapping(checkpoint),
+    )
+
+
+def _save_epoch_roles(manager: CheckpointManager) -> None:
+    manager.save_latest()
+    manager.save_periodic_if_due()
+
+
+def _record_retained_checkpoints(
+    records: DS2Records,
+    manager: CheckpointManager,
+    *,
+    best_metric: str = "",
+    best_value: float | None = None,
+) -> None:
+    latest = manager.current("latest")
+    if latest is not None:
+        records.add_checkpoint(
+            update=latest.update, epoch=latest.epoch, kind="latest",
+            path=latest.path, sha256=latest.sha256,
+            checkpoint_id=f"latest-epoch-{latest.epoch:04d}",
+        )
+    best = manager.current("best")
+    if best is not None:
+        records.add_checkpoint(
+            update=best.update, epoch=best.epoch, kind="selected",
+            path=best.path, sha256=best.sha256,
+            checkpoint_id=f"selected-epoch-{best.epoch:04d}",
+            selection_metric=best_metric,
+            selection_value="" if best_value is None else best_value,
+        )
+    for periodic in manager.retained_periodic():
+        records.add_checkpoint(
+            update=periodic.update, epoch=periodic.epoch, kind="periodic",
+            path=periodic.path, sha256=periodic.sha256,
+            checkpoint_id=f"periodic-epoch-{periodic.epoch:04d}",
+        )
+
+
 def _contexts_targets(corpus, window: int):
     width = 2 * window + 1
     windows = np.lib.stride_tricks.sliding_window_view(corpus, width)
@@ -579,7 +641,19 @@ def _word2vec_prediction_term_count(model: Word2Vec, window: int) -> int:
     return contexts * (model.negative_samples + 1)
 
 
-def _record_seq_predictions(records: DS2Records, model, questions, answers, char_to_id, id_to_char, backend, recording: dict[str, object], *, epoch: int) -> None:
+def _record_seq_predictions(
+    records: DS2Records,
+    model,
+    questions,
+    answers,
+    char_to_id,
+    id_to_char,
+    backend,
+    recording: dict[str, object],
+    *,
+    epoch: int,
+    predictions=None,
+) -> None:
     config = recording.get("predictions")
     if not isinstance(config, dict):
         return
@@ -591,9 +665,18 @@ def _record_seq_predictions(records: DS2Records, model, questions, answers, char
     model.train(False)
     try:
         for example_id in range(count):
-            question = Tensor(backend.xp.asarray(questions[example_id:example_id + 1], dtype=backend.xp.int64), backend=backend)
             expected = [int(value) for value in answers[example_id][1:]]
-            predicted = model.generate(question, start_id, len(expected))
+            if predictions is None:
+                question = Tensor(
+                    backend.xp.asarray(
+                        questions[example_id:example_id + 1],
+                        dtype=backend.xp.int64,
+                    ),
+                    backend=backend,
+                )
+                predicted = model.generate(question, start_id, len(expected))
+            else:
+                predicted = [int(value) for value in predictions[example_id]]
             records.add_prediction({
                 "epoch": epoch,
                 "example_id": example_id,
@@ -672,6 +755,7 @@ def _array_digest(*arrays) -> str:
 
 
 def _load_model_checkpoint(model, path: Path) -> None:
+    path = resolve_checkpoint_path(path)
     if path.is_dir():
         model.load_params_npz(path / "model.npz")
     elif path.is_file():
@@ -696,21 +780,6 @@ def _file_digest(path: Path) -> str:
         for chunk in iter(lambda: file.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
-
-
-def _save_evaluation_checkpoint(config: dict[str, object], context: ExperimentContext, *, model, optimizer, trainer) -> None:
-    if not bool(_mapping(config, "checkpoint").get("save_on_eval", False)):
-        return
-    checkpoint_config = dict(_mapping(config, "checkpoint"))
-    checkpoint_config.pop("resume", None)
-    identity = dict(config)
-    identity["checkpoint"] = checkpoint_config
-    digest = hashlib.sha256(json.dumps(identity, sort_keys=True, default=str).encode()).hexdigest()
-    root = Path(str(context.metadata["checkpoint_root"]))
-    path = save_epoch_checkpoint(root=root, model=model, optimizer=optimizer, trainer=trainer, config_digest=digest)
-    callback = context.metadata.get("record_eval_checkpoint")
-    if callable(callback):
-        callback(path)
 
 
 def _language_model(alias: str, vocab_size: int, values: dict[str, object], backend):

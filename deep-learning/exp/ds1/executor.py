@@ -18,7 +18,11 @@ from mlprosection.optim.SGD import AdaGrad, Adam, Momentum, SGD
 from mlprosection.optim.transform import L2Regularization
 from mlprosection.trainer import ForwardTrainer
 
-from mlprosection.experiment.checkpoint import load_epoch_checkpoint, save_epoch_checkpoint
+from mlprosection.experiment.checkpoint import (
+    CheckpointManager,
+    CheckpointRetentionPolicy,
+    load_epoch_checkpoint,
+)
 from mlprosection.experiment.contracts import ExperimentResult
 from mlprosection.experiment.event_executor import EvaluationRequest, EventExperimentExecutor
 from mlprosection.experiment.executor import ExperimentContext
@@ -83,6 +87,7 @@ class SupervisedClassificationExecutor:
         config_digest = hashlib.sha256(json.dumps(checkpoint_identity, sort_keys=True, default=str).encode()).hexdigest()
         max_updates = training_config.get("max_updates")
         trainer_holder: dict[str, ForwardTrainer] = {}
+        checkpoint_manager_holder: dict[str, CheckpointManager] = {}
         evaluation_config = _mapping(config, "evaluation")
         schedule = _mapping(evaluation_config, "schedule")
         request_by_set = _evaluation_requests(
@@ -124,14 +129,14 @@ class SupervisedClassificationExecutor:
                 return scheduled_requests(first_epoch_spec)
             return ()
         def after_epoch(event):
-            if bool(checkpoint_config.get("save_on_eval", False)):
-                records_sink.flush()
-                path = save_epoch_checkpoint(root=Path(str(context.metadata["checkpoint_root"])), model=model, optimizer=optimizer, trainer=trainer_holder["trainer"], config_digest=config_digest)
-                records_sink.add_checkpoint(update=event.end_update, epoch=event.epoch, kind="eval", path=path, sha256=_path_digest(path))
-                records_sink.flush()
+            records_sink.flush()
+            manager = checkpoint_manager_holder["manager"]
+            manager.save_latest()
+            periodic = manager.save_periodic_if_due()
+            if bool(checkpoint_config.get("save_on_eval", False)) and periodic is not None:
                 callback = context.metadata.get("record_eval_checkpoint")
                 if callable(callback):
-                    callback(path)
+                    callback(periodic.path)
         artifact_root = Path(str(context.metadata["artifact_root"]))
         records_sink = DS1Records()
         records_sink.bind_artifact_root(artifact_root)
@@ -156,11 +161,37 @@ class SupervisedClassificationExecutor:
             event_receivers=[events],
         )
         trainer_holder["trainer"] = trainer
+        checkpoint_manager = CheckpointManager(
+            root=Path(str(context.metadata["checkpoint_root"])),
+            model=model,
+            optimizer=optimizer,
+            trainer=trainer,
+            config_digest=config_digest,
+            policy=CheckpointRetentionPolicy.from_mapping(checkpoint_config),
+        )
+        checkpoint_manager_holder["manager"] = checkpoint_manager
         if (resume := checkpoint_config.get("resume")):
             load_epoch_checkpoint(path=str(resume), model=model, optimizer=optimizer, trainer=trainer, config_digest=config_digest)
         seed_batch_order(backend, streams)
         with training_summary(monitor):
             records = events.run(lambda: trainer.fit(x_train, t_train), start_update=trainer.global_step + 1)
+        latest = checkpoint_manager.current("latest")
+        if latest is not None:
+            records.add_checkpoint(
+                update=latest.update, epoch=latest.epoch, kind="latest",
+                path=latest.path, sha256=latest.sha256,
+            )
+        best = checkpoint_manager.current("best")
+        if best is not None:
+            records.add_checkpoint(
+                update=best.update, epoch=best.epoch, kind="selected",
+                path=best.path, sha256=best.sha256,
+            )
+        for periodic in checkpoint_manager.retained_periodic():
+            records.add_checkpoint(
+                update=periodic.update, epoch=periodic.epoch, kind="periodic",
+                path=periodic.path, sha256=periodic.sha256,
+            )
         records.flush()
         final_train = trainer.evaluate(x_train, t_train)
         final_test = trainer.evaluate(x_test, t_test)

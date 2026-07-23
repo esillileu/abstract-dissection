@@ -41,6 +41,7 @@ class InternalObjectiveTrainer(Trainer):
         self.max_epochs = max_epochs
         self.max_updates = max_updates
         self.event_receivers = tuple(event_receivers or ())
+        self._recurrent_state_layers: tuple[object, ...] | None = None
 
     def _at_update_limit(self) -> bool:
         return self.max_updates is not None and self.global_step >= self.max_updates
@@ -72,7 +73,19 @@ class InternalObjectiveTrainer(Trainer):
 
     def _snapshot_recurrent_state(self) -> list[tuple[object, object, object]]:
         """Copy stateful time-layer values without assuming a model class."""
-        snapshot: list[tuple[object, object, object]] = []
+        if self._recurrent_state_layers is None:
+            self._recurrent_state_layers = self._find_recurrent_state_layers()
+        return [
+            (
+                layer,
+                None if (h := getattr(layer, "h", None)) is None else h.copy(),
+                None if (c := getattr(layer, "c", None)) is None else c.copy(),
+            )
+            for layer in self._recurrent_state_layers
+        ]
+
+    def _find_recurrent_state_layers(self) -> tuple[object, ...]:
+        layers: list[object] = []
         seen: set[int] = set()
 
         def walk(value) -> None:
@@ -87,14 +100,12 @@ class InternalObjectiveTrainer(Trainer):
                 return
             seen.add(id(value))
             if hasattr(value, "h") or hasattr(value, "c"):
-                h = getattr(value, "h", None)
-                c = getattr(value, "c", None)
-                snapshot.append((value, None if h is None else h.copy(), None if c is None else c.copy()))
+                layers.append(value)
             for item in vars(value).values():
                 walk(item)
 
         walk(self.model)
-        return snapshot
+        return tuple(layers)
 
     @staticmethod
     def _restore_recurrent_state(snapshot: list[tuple[object, object, object]]) -> None:
