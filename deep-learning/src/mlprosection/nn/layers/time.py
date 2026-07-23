@@ -210,7 +210,7 @@ class TimeRNN(RecurrentTimeLayer):
             zeros=True,
         )
         self.layers: list[tuple[Any, Any, Any]] = []
-        self.h = None
+        self.register_buffer("h", runtime_state=True)
         self.dh = None
 
     def forward_manual(self, xs: Tensor, *, cache: bool = True) -> Tensor:
@@ -387,8 +387,8 @@ class TimeLSTM(RecurrentTimeLayer):
             zeros=True,
         )
         self.layers: list[tuple[Any, ...]] = []
-        self.h = None
-        self.c = None
+        self.register_buffer("h", runtime_state=True)
+        self.register_buffer("c", runtime_state=True)
         self.dh = None
 
     def forward_manual(self, xs: Tensor, *, cache: bool = True) -> Tensor:
@@ -787,7 +787,7 @@ class TimeGRU(RecurrentTimeLayer):
             name="Wh",
         )
         self.layers: list[tuple[Any, ...]] = []
-        self.h = None
+        self.register_buffer("h", runtime_state=True)
         self.dh = None
 
     def forward_manual(self, xs: Tensor) -> Tensor:

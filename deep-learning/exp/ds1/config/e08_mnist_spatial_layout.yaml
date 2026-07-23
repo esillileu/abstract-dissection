@@ -6,7 +6,7 @@ seed_policy: {seed_set: research_v1, seed_count: 10, paired_execution: true}
 dataset: {id: mnist-full, source: mnist, train_limit: 60000, test_limit: 10000}
 loader: {batch_size: 100, drop_last: false, sampling_method: with_replacement}
 optimizer: {name: adam, learning_rate: 0.001}
-loss: {name: SoftmaxWithLoss, reduction: mean, phase: post_update}
+objective: {name: SoftmaxCrossEntropy, reduction: mean}
 budget: {max_epochs: 2}
 recording:
   evaluation_sources:
@@ -17,11 +17,11 @@ recording:
     - {type: updates, start: 20, every: 20, sources: [mnist-train-first-1000, mnist-test-first-1000]}
     - {type: epoch_end, sources: [mnist-test-full]}
 numerics: {dtype: float64, backend: cupy, device: cuda:0}
-checkpoint: {save_final: true, save_on_eval: false, format: npz}
+checkpoint: {save_final: true, save_on_eval: false, format: v2}
 profiling: {enabled: false}
 tracking: {enabled: true, experiment: ds1, upload_checkpoint: false}
 variants:
-  NN-MATCHED: {run: {structure_signature: mnist-mlp-784-489-100-10}, dataset: {flatten: true, input_transform: {name: identity}}, model: {alias: MLP, input_size: 784, hidden_sizes: [489, 100], output_size: 10, activation: relu, initializer: he}}
-  NN-MATCHED-PERMUTED: {run: {structure_signature: mnist-mlp-784-489-100-10}, dataset: {flatten: true, input_transform: {name: pixel_permutation, seed: 20260808}}, model: {alias: MLP, input_size: 784, hidden_sizes: [489, 100], output_size: 10, activation: relu, initializer: he}}
-  CNN-SIMPLE-SPATIAL: {run: {structure_signature: mnist-simplecnn-c30-fc100}, dataset: {flatten: false, input_transform: {name: identity}}, model: {alias: SimpleCNN, input_channels: 1, image_size: 28, num_classes: 10, conv_channels: 30, kernel_size: 5, hidden_size: 100, initializer: 'std:0.01'}}
-  CNN-SIMPLE-SPATIAL-PERMUTED: {run: {structure_signature: mnist-simplecnn-c30-fc100}, dataset: {flatten: false, input_transform: {name: pixel_permutation, seed: 20260808}}, model: {alias: SimpleCNN, input_channels: 1, image_size: 28, num_classes: 10, conv_channels: 30, kernel_size: 5, hidden_size: 100, initializer: 'std:0.01'}}
+  NN-MATCHED: {run: {structure_signature: mnist-mlp-784-489-100-10}, dataset: {flatten: true, input_transform: {name: identity}}, model: {name: MLP, input_size: 784, hidden_sizes: [489, 100], output_size: 10, activation: relu, initializer: he}}
+  NN-MATCHED-PERMUTED: {run: {structure_signature: mnist-mlp-784-489-100-10}, dataset: {flatten: true, input_transform: {name: pixel_permutation, seed: 20260808}}, model: {name: MLP, input_size: 784, hidden_sizes: [489, 100], output_size: 10, activation: relu, initializer: he}}
+  CNN-SIMPLE-SPATIAL: {run: {structure_signature: mnist-simplecnn-c30-fc100}, dataset: {flatten: false, input_transform: {name: identity}}, model: {name: SimpleCNN, input_channels: 1, image_size: 28, num_classes: 10, conv_channels: 30, kernel_size: 5, hidden_size: 100, initializer: 'std:0.01'}}
+  CNN-SIMPLE-SPATIAL-PERMUTED: {run: {structure_signature: mnist-simplecnn-c30-fc100}, dataset: {flatten: false, input_transform: {name: pixel_permutation, seed: 20260808}}, model: {name: SimpleCNN, input_channels: 1, image_size: 28, num_classes: 10, conv_channels: 30, kernel_size: 5, hidden_size: 100, initializer: 'std:0.01'}}

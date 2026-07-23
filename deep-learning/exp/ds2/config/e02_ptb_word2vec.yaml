@@ -5,19 +5,19 @@ execution: {mode: seeded, default_device: cuda:0}
 seed_policy: {seed_set: research_v1, seed_count: 10, paired_execution: true}
 dataset: {id: DS-PTB-TRAIN, source: ptb_train, window_size: 5}
 loader: {batch_size: 100, drop_last: true}
-model: {family: word2vec, embedding_size: 100, negative_samples: 5, sampler: {algorithm: alias_target_rejection_v1, power: 0.75, rejection_rounds: 4}}
+model: {name: CBOW, embedding_size: 100}
+objective: {name: NegativeSampling, reduction: mean, negative_samples: 5, sampler: {algorithm: alias_target_rejection_v1, power: 0.75, rejection_rounds: 4}}
 optimizer: {name: adam, learning_rate: 0.001}
-loss: {name: word2vec_cross_entropy, reduction: mean, phase: post_update}
 budget: {max_epochs: 10}
 recording:
   source_curve: {kind: interval_mean_loss, every_updates: 20, reducer: mean, plot_index: zero_based_append}
   evaluations: []
 numerics: {dtype: float32, backend: cupy, device: cuda:0, deterministic: true}
-checkpoint: {save_final: true, save_best: false, format: npz}
+checkpoint: {save_final: true, save_best: false, format: v2}
 profiling: {enabled: false}
 tracking: {enabled: true, experiment: ds2}
 variants:
-  W2V-PTB-CBOW-NS: {run: {structure_signature: ptb-cbow-negative-sampling-w5-e100}, model: {architecture: cbow, objective: negative_sampling}}
-  W2V-PTB-SKIPGRAM-NS: {run: {structure_signature: ptb-skipgram-negative-sampling-w5-e100}, model: {architecture: skipgram, objective: negative_sampling}}
-  W2V-PTB-CBOW-FULL: {run: {structure_signature: ptb-cbow-full-softmax-w5-e100}, model: {architecture: cbow, objective: full_softmax}}
-  W2V-PTB-SKIPGRAM-FULL: {run: {structure_signature: ptb-skipgram-full-softmax-w5-e100}, model: {architecture: skipgram, objective: full_softmax}}
+  W2V-PTB-CBOW-NS: {run: {structure_signature: ptb-cbow-negative-sampling-w5-e100}, model: {name: CBOW}, objective: {name: NegativeSampling}}
+  W2V-PTB-SKIPGRAM-NS: {run: {structure_signature: ptb-skipgram-negative-sampling-w5-e100}, model: {name: SkipGram}, objective: {name: NegativeSampling}}
+  W2V-PTB-CBOW-FULL: {run: {structure_signature: ptb-cbow-full-softmax-w5-e100}, model: {name: CBOW}, objective: {name: FullSoftmax}}
+  W2V-PTB-SKIPGRAM-FULL: {run: {structure_signature: ptb-skipgram-full-softmax-w5-e100}, model: {name: SkipGram}, objective: {name: FullSoftmax}}

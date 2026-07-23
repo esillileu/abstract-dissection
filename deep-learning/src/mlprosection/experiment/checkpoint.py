@@ -72,6 +72,7 @@ class CheckpointManager:
         *,
         root: Path,
         model: Layer,
+        objective: Layer,
         optimizer: Any,
         trainer: Any,
         config_digest: str,
@@ -79,6 +80,7 @@ class CheckpointManager:
     ) -> None:
         self.root = Path(root)
         self.model = model
+        self.objective = objective
         self.optimizer = optimizer
         self.trainer = trainer
         self.config_digest = config_digest
@@ -139,6 +141,7 @@ class CheckpointManager:
             _write_epoch_checkpoint(
                 path=staging,
                 model=self.model,
+                objective=self.objective,
                 optimizer=self.optimizer,
                 trainer=self.trainer,
                 config_digest=self.config_digest,
@@ -164,7 +167,7 @@ class CheckpointManager:
         pointer = self.root / f"{ref.role}.json"
         temporary = self.root / f".{ref.role}.{uuid.uuid4().hex}.tmp"
         temporary.write_text(json.dumps({
-            "schema_version": 1,
+            "schema_version": 2,
             "role": ref.role,
             "path": ref.path.relative_to(self.root).as_posix(),
             "sha256": ref.sha256,
@@ -191,39 +194,52 @@ class CheckpointManager:
                 shutil.rmtree(path)
 
 
-def save_epoch_checkpoint(*, root: Path, model: Layer, optimizer: Any, trainer: Any, config_digest: str) -> Path:
+def save_epoch_checkpoint(*, root: Path, model: Layer, objective: Layer, optimizer: Any, trainer: Any, config_digest: str) -> Path:
     path = root / f"epoch-{int(trainer.epoch or 0):04d}"
     _write_epoch_checkpoint(
-        path=path, model=model, optimizer=optimizer, trainer=trainer,
+        path=path, model=model, objective=objective, optimizer=optimizer, trainer=trainer,
         config_digest=config_digest,
     )
     return path
 
 
-def _write_epoch_checkpoint(*, path: Path, model: Layer, optimizer: Any, trainer: Any, config_digest: str) -> None:
+def _write_epoch_checkpoint(*, path: Path, model: Layer, objective: Layer, optimizer: Any, trainer: Any, config_digest: str) -> None:
     path.mkdir(parents=True, exist_ok=True)
-    model.save_params_npz(path / "model.npz")
-    _save_buffers(model, path / "buffers.npz")
+    model.save_params_npz(path / "model_parameters.npz")
+    _save_buffers(model, path / "model_buffers.npz")
+    objective.save_params_npz(path / "objective_parameters.npz")
+    _save_buffers(objective, path / "objective_buffers.npz")
     backend_state = _backend_rng_state(model)
-    with (path / "state.pkl").open("wb") as file:
-        pickle.dump({"optimizer": optimizer.state_dict(), "trainer": trainer.state_dict(), "python_rng": random.getstate(), "numpy_rng": np.random.get_state(), "backend_rng": backend_state}, file, protocol=pickle.HIGHEST_PROTOCOL)
-    (path / "manifest.json").write_text(json.dumps({"schema_version": 1, "epoch": trainer.epoch, "global_step": trainer.global_step, "config_digest": config_digest}, indent=2, sort_keys=True), encoding="utf-8")
+    _write_pickle(path / "optimizer_state.pkl", optimizer.state_dict())
+    _write_pickle(path / "trainer_state.pkl", trainer.state_dict())
+    _write_pickle(
+        path / "rng_state.pkl",
+        {
+            "python": random.getstate(),
+            "numpy": np.random.get_state(),
+            "backend": backend_state,
+        },
+    )
+    (path / "manifest.json").write_text(json.dumps({"schema_version": 2, "epoch": trainer.epoch, "global_step": trainer.global_step, "config_digest": config_digest}, indent=2, sort_keys=True), encoding="utf-8")
 
 
-def load_epoch_checkpoint(*, path: str | Path, model: Layer, optimizer: Any, trainer: Any, config_digest: str) -> None:
+def load_epoch_checkpoint(*, path: str | Path, model: Layer, objective: Layer, optimizer: Any, trainer: Any, config_digest: str) -> None:
     root = resolve_checkpoint_path(Path(path))
     manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
+    if manifest.get("schema_version") != 2:
+        raise ValueError("only checkpoint schema version 2 is supported")
     if manifest["config_digest"] != config_digest:
         raise ValueError("checkpoint configuration digest does not match this run")
-    model.load_params_npz(root / "model.npz")
-    _load_buffers(model, root / "buffers.npz")
-    with (root / "state.pkl").open("rb") as file:
-        state = pickle.load(file)
-    optimizer.load_state_dict(state["optimizer"])
-    trainer.load_state_dict(state["trainer"])
-    random.setstate(state["python_rng"])
-    np.random.set_state(state["numpy_rng"])
-    _restore_backend_rng_state(model, state.get("backend_rng"))
+    model.load_params_npz(root / "model_parameters.npz")
+    _load_buffers(model, root / "model_buffers.npz")
+    objective.load_params_npz(root / "objective_parameters.npz")
+    _load_buffers(objective, root / "objective_buffers.npz")
+    optimizer.load_state_dict(_read_pickle(root / "optimizer_state.pkl"))
+    trainer.load_state_dict(_read_pickle(root / "trainer_state.pkl"))
+    rng_state = _read_pickle(root / "rng_state.pkl")
+    random.setstate(rng_state["python"])
+    np.random.set_state(rng_state["numpy"])
+    _restore_backend_rng_state(model, rng_state.get("backend"))
 
 
 def resolve_checkpoint_path(path: str | Path) -> Path:
@@ -232,6 +248,16 @@ def resolve_checkpoint_path(path: str | Path) -> Path:
         payload = json.loads(path.read_text(encoding="utf-8"))
         return path.parent / str(payload["path"])
     return path
+
+
+def _write_pickle(path: Path, value: Any) -> None:
+    with path.open("wb") as file:
+        pickle.dump(value, file, protocol=pickle.HIGHEST_PROTOCOL)
+
+
+def _read_pickle(path: Path) -> Any:
+    with path.open("rb") as file:
+        return pickle.load(file)
 
 
 def _path_digest(path: Path) -> str:
@@ -248,8 +274,8 @@ def _path_digest(path: Path) -> str:
 
 def _save_buffers(model: Layer, path: Path) -> None:
     arrays = {
-        name: layer.backend.to_numpy(value).copy()
-        for name, layer, _attr, value in _buffer_items(model)
+        name: model.backend.to_numpy(value).copy()
+        for name, value in model.named_buffers()
         if value is not None
     }
     np.savez(path, **arrays)
@@ -257,33 +283,17 @@ def _save_buffers(model: Layer, path: Path) -> None:
 
 def _load_buffers(model: Layer, path: Path) -> None:
     if not path.exists(): return
-    targets = {name: (layer, attr) for name, layer, attr, _ in _buffer_items(model)}
+    from mlprosection.nn.layers.base import _resolve_owner
+
+    targets = {
+        name: _resolve_owner(model, name)
+        for name, _value in model.named_buffers()
+    }
     with np.load(path, allow_pickle=False) as arrays:
         for name in arrays.files:
             if name in targets:
                 layer, attr = targets[name]
                 setattr(layer, attr, layer.backend.xp.asarray(arrays[name]))
-
-
-def _buffer_items(root: Layer):
-    seen: set[int] = set()
-    def walk(value: Any, prefix: str):
-        if isinstance(value, Layer):
-            if id(value) in seen: return
-            seen.add(id(value))
-            for attr, child in vars(value).items():
-                is_normalization_buffer = attr in {"running_mean", "running_var"}
-                is_recurrent_state = (
-                    attr in {"h", "c"} and bool(getattr(value, "stateful", False))
-                )
-                if is_normalization_buffer or is_recurrent_state:
-                    yield f"{prefix}/{attr}", value, attr, child
-                yield from walk(child, f"{prefix}/{attr}")
-        elif isinstance(value, (list, tuple)):
-            for index, child in enumerate(value): yield from walk(child, f"{prefix}/{index}")
-        elif isinstance(value, dict):
-            for key, child in value.items(): yield from walk(child, f"{prefix}/{key}")
-    yield from walk(root, "model")
 
 
 def _backend_rng_state(model: Layer):

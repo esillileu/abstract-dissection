@@ -9,8 +9,8 @@ from mlprosection.nn.layers import (
     TimeEmbedding,
     TimeLSTM,
     TimeRNN,
-    TimeSoftmaxWithLoss,
 )
+from mlprosection.nn.objective import TemporalSoftmaxCrossEntropy
 
 
 def test_time_affine_forward_backward_shapes() -> None:
@@ -68,14 +68,14 @@ def test_time_rnn_and_bilstm_shapes() -> None:
 
 
 def test_time_softmax_with_loss_ignores_label() -> None:
-    layer = TimeSoftmaxWithLoss(ignore_label=-1)
+    objective = TemporalSoftmaxCrossEntropy()
     scores = Tensor(np.random.randn(2, 3, 5).astype("f"), backend="cpu")
     labels = Tensor(np.array([[1, -1, 3], [2, 0, -1]]), backend="cpu")
 
-    loss = layer.forward(scores, labels)
-    dx = layer.backward()
+    result = objective.forward(scores, labels)
+    dx = objective.backward()
 
-    assert loss.shape == ()
+    assert result.loss.shape == ()
     assert dx.shape == scores.shape
     np.testing.assert_array_equal(dx.data[0, 1, :], np.zeros(5))
     np.testing.assert_array_equal(dx.data[1, 2, :], np.zeros(5))

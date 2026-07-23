@@ -5,7 +5,7 @@
 [실행 그룹](execution_groups.md), [시행 기록 스키마](recording_schema.md),
 [GT MLflow 스키마](mlflow/gt_common.md)다.
 
-대상은 외부 criterion을 사용하는 지도 분류 학습 trainer다. `GO01`의 목적함수
+대상은 외부 objective를 사용하는 지도 분류 학습 trainer다. `GO01`의 목적함수
 궤적과 `GO02`의 activation 관찰은 optimizer/observation runner의 책임이므로 이
 trainer의 범위가 아니다. 다만 같은 record sink와 artifact lifecycle은 공유할 수
 있어야 한다.
@@ -71,7 +71,7 @@ event는 dataclass 또는 확장 가능한 callback protocol으로 정의한다.
 - `max_epochs`와 `max_updates`를 모두 지원하고, 먼저 도달한 budget에서 멈춘다.
 - `permutation_per_epoch` 및 `with_replacement` sampler를 지원한다. replacement
   sampler의 epoch당 update 수, 마지막 batch 처리, `drop_last`는 executor가 전달한다.
-- forward → criterion → backward → (선택) gradient clipping → optimizer update를
+- model forward → objective forward/backward → model backward → (선택) gradient clipping → optimizer update를
   한 update로 정의하고, 성공적으로 update한 뒤에만 `global_update`를 증가한다.
 - DS1 executor가 요청하면 매 update 뒤 동일 batch로 mean objective를 재계산하고
   `UpdateEvent`로 발행한다. DS1은 `loss_phase=post_update`, `loss_reduction=mean`만

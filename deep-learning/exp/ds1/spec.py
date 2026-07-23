@@ -56,7 +56,7 @@ class RunSpec:
     tracking: dict[str, object]
     numerics: dict[str, object]
     profiling: dict[str, object]
-    loss: dict[str, object]
+    objective: dict[str, object]
     path: Path
 
     @property
@@ -93,7 +93,7 @@ class RunSpec:
             "loader": dict(self.loader),
             "model": dict(self.model),
             "optimizer": dict(self.optimizer),
-            "loss": dict(self.loss),
+            "objective": dict(self.objective),
             "training": {
                 "entrypoint": str(self.path),
                 "max_epochs": self.budget.get("max_epochs"),
@@ -153,7 +153,7 @@ def parse_run_spec(
         tracking=_mapping(raw, "tracking"),
         numerics=_mapping(raw, "numerics"),
         profiling=_mapping(raw, "profiling"),
-        loss=_mapping(raw, "loss"),
+        objective=_mapping(raw, "objective"),
         path=path,
     )
     _validate(spec)

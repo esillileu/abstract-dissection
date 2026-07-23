@@ -11,9 +11,24 @@ import numpy as np
 
 from mlprosection import Tensor
 from mlprosection.datasets import load_ptb, load_sequence
-from mlprosection.nn.model import Word2Vec
 from mlprosection.nn.sampling import UnigramSampler
-from mlprosection.nn.model.recurrent import AttentionSeq2seq, BetterRnnlm, PeekySeq2seq, Rnnlm, Seq2seq, VanillaRnnlm
+from mlprosection.nn.model.architecture import (
+    AttentionSeq2seq,
+    BetterRnnlm,
+    CBOW,
+    CBOWBatchAdapter,
+    PeekySeq2seq,
+    Rnnlm,
+    Seq2seq,
+    SkipGram,
+    SkipGramBatchAdapter,
+    VanillaRnnlm,
+)
+from mlprosection.nn.objective import (
+    FullSoftmax,
+    NegativeSampling,
+    TemporalSoftmaxCrossEntropy,
+)
 from mlprosection.optim.SGD import Adam, SGD
 from mlprosection.optim.transform import ClipGradNorm
 from mlprosection.trainer import (
@@ -60,10 +75,13 @@ def _artifact_root(config: dict[str, object], context: ExperimentContext | None 
     return Path(str(_mapping(config, "run").get("artifact_root", "exp/ds2/results"))) / str(config["atomic_run_id"])
 
 
-def _optimizer(config: dict[str, object], model):
+def _optimizer(config: dict[str, object], model, objective):
     values = _mapping(config, "optimizer")
     name = str(values.get("name", "adam"))
-    params = list(model.named_parameters())
+    params = [
+        *((f"model.{name}", parameter) for name, parameter in model.named_parameters()),
+        *((f"objective.{name}", parameter) for name, parameter in objective.named_parameters()),
+    ]
     default_max_grad = {
         "language_modeling": 0.25,
         "seq2seq": 5.0,
@@ -175,7 +193,7 @@ class Word2VecExecutor:
     def run(self, config: dict[str, object], context: ExperimentContext) -> ExperimentResult:
         backend, streams, runtime = configure_runtime(config)
         context.metadata.update({"runtime": runtime, "seed_streams": asdict(streams)})
-        dataset, model_config, training = (_mapping(config, key) for key in ("dataset", "model", "training"))
+        dataset, model_config, objective_config, training = (_mapping(config, key) for key in ("dataset", "model", "objective", "training"))
         corpus, word_to_id = _word2vec_corpus(_mapping(config, "dataset"))
         window = int(dataset.get("window_size", 5))
         contexts, targets = _contexts_targets(corpus, window)
@@ -183,10 +201,10 @@ class Word2VecExecutor:
             "dataset_checksum": _array_digest(corpus),
             "split_checksum": _array_digest(contexts, targets),
         }
-        objective = str(model_config.get("objective", "negative_sampling"))
+        objective_name = str(objective_config.get("name", "NegativeSampling"))
         sampler = None
-        if objective == "negative_sampling":
-            sampler_values = _mapping(model_config, "sampler")
+        if objective_name == "NegativeSampling":
+            sampler_values = _mapping(objective_config, "sampler")
             sampler = UnigramSampler.from_corpus(
                 corpus,
                 vocab_size=len(word_to_id),
@@ -195,30 +213,49 @@ class Word2VecExecutor:
                 rejection_rounds=int(sampler_values.get("rejection_rounds", 4)),
             )
             context.metadata["negative_sampler"] = sampler.metadata
-        model = Word2Vec(
-            len(word_to_id), int(model_config.get("embedding_size", 100)),
-            architecture=str(model_config.get("architecture", "cbow")),
-            objective=objective,
-            negative_samples=int(model_config.get("negative_samples", 5)),
-            loss_reduction=str(_mapping(config, "loss").get("reduction", "mean")),
-            sampler=sampler, backend=backend,
+        architecture = str(model_config.get("name", "CBOW"))
+        model_type, adapter = {
+            "CBOW": (CBOW, CBOWBatchAdapter()),
+            "SkipGram": (SkipGram, SkipGramBatchAdapter()),
+        }.get(architecture, (None, None))
+        if model_type is None:
+            raise ValueError(f"unknown Word2Vec model name: {architecture}")
+        embedding_size = int(model_config.get("embedding_size", 100))
+        model = model_type(
+            len(word_to_id), embedding_size, backend=backend
         )
-        optimizer = _optimizer(config, model)
+        if objective_name == "FullSoftmax":
+            objective = FullSoftmax(
+                len(word_to_id), embedding_size,
+                reduction=str(objective_config.get("reduction", "mean")),
+                backend=backend,
+            )
+        elif objective_name == "NegativeSampling":
+            objective = NegativeSampling(
+                len(word_to_id), embedding_size,
+                negative_samples=int(objective_config.get("negative_samples", 5)),
+                reduction=str(objective_config.get("reduction", "mean")),
+                sampler=sampler,
+                backend=backend,
+            )
+        else:
+            raise ValueError(f"unknown Word2Vec objective name: {objective_name}")
+        optimizer = _optimizer(config, model, objective)
         seed_batch_order(backend, streams)
         batch_size, epochs = int(_mapping(config, "loader").get("batch_size", 100)), int(training.get("max_epochs", 10))
         x = backend.xp.asarray(contexts, dtype=backend.xp.int64)
         t = backend.xp.asarray(targets, dtype=backend.xp.int64)
-        train_x, train_t = (t, x) if model.architecture == "skipgram" else (x, t)
         artifact_root = _artifact_root(config, context)
         records_sink = DS2Records()
         records_sink.bind_artifact_root(artifact_root)
         monitor = create_runtime_monitor(backend, _mapping(config, "profiling"))
         trainer = Word2VecTrainer(
-            model, optimizer, max_epochs=epochs, batch_size=batch_size,
+            model, objective, optimizer, batch_adapter=adapter,
+            max_epochs=epochs, batch_size=batch_size,
             event_receivers=[],
         )
         checkpoint_manager = _checkpoint_manager(
-            config, context, model=model, optimizer=optimizer, trainer=trainer,
+            config, context, model=model, objective=objective, optimizer=optimizer, trainer=trainer,
         )
         controller = EventExperimentExecutor(
             records=records_sink, evaluate=lambda _request: None,
@@ -230,7 +267,7 @@ class Word2VecExecutor:
         trainer.event_receivers = (controller,)
         with training_summary(monitor):
             records = controller.run(
-                lambda: trainer.fit(Tensor(train_x, backend=backend), Tensor(train_t, backend=backend)),
+                lambda: trainer.fit(Tensor(x, backend=backend), Tensor(t, backend=backend)),
                 start_update=trainer.global_step + 1,
             )
         _record_retained_checkpoints(records, checkpoint_manager)
@@ -253,8 +290,12 @@ class LanguageModelExecutor:
         ptb = load_ptb()
         model_config, loader, training = (_mapping(config, key) for key in ("model", "loader", "training"))
         dataset, evaluation = _mapping(config, "dataset"), _mapping(config, "evaluation")
-        model = _language_model(str(model_config.get("alias")), len(ptb["word_to_id"]), model_config, backend)
-        optimizer = _optimizer(config, model)
+        model = _language_model(str(model_config.get("name")), len(ptb["word_to_id"]), model_config, backend)
+        objective = TemporalSoftmaxCrossEntropy(
+            reduction=str(_mapping(config, "objective").get("reduction", "mean")),
+            backend=backend,
+        )
+        optimizer = _optimizer(config, model, objective)
         seed_batch_order(backend, streams)
         train_corpus = ptb["train"][:int(dataset.get("train_limit", len(ptb["train"])))]
         train = Tensor(backend.xp.asarray(train_corpus[:-1], dtype=backend.xp.int64), backend=backend)
@@ -282,11 +323,11 @@ class LanguageModelExecutor:
             "test": EvaluationRequest("ptb-test", "test", (test, test_targets), ("perplexity",)),
         }
         trainer = LanguageModelTrainer(
-            model, optimizer, max_epochs=max_epochs,
+            model, objective, optimizer, max_epochs=max_epochs,
             batch_size=int(loader.get("batch_size", 20)), time_size=int(loader.get("time_size", 35)),
         )
         checkpoint_manager = _checkpoint_manager(
-            config, context, model=model, optimizer=optimizer, trainer=trainer,
+            config, context, model=model, objective=objective, optimizer=optimizer, trainer=trainer,
         )
         def evaluate_request(request):
             return trainer.evaluate(*request.source)
@@ -310,7 +351,7 @@ class LanguageModelExecutor:
                     if bool(_mapping(config, "checkpoint").get("save_best", False)):
                         records_sink.flush()
                         selected_checkpoint_path = checkpoint_manager.save_best().path
-                elif str(model_config.get("alias")) == "BetterRnnlm" and str(_mapping(config, "scheduler").get("name", "constant")) == "validation_decay":
+                elif str(model_config.get("name")) == "BetterRnnlm" and str(_mapping(config, "scheduler").get("name", "constant")) == "validation_decay":
                     optimizer.lr /= float(_mapping(config, "scheduler").get("factor", 4.0))
             else:
                 test_ppl = float(result.perplexity)
@@ -328,7 +369,7 @@ class LanguageModelExecutor:
             if bool(_mapping(config, "checkpoint").get("save_best", False)):
                 if selected_checkpoint_path is None:
                     raise RuntimeError("selected checkpoint is required before terminal test evaluation")
-                load_epoch_checkpoint(path=selected_checkpoint_path, model=model, optimizer=optimizer, trainer=trainer, config_digest=config_digest)
+                load_epoch_checkpoint(path=selected_checkpoint_path, model=model, objective=objective, optimizer=optimizer, trainer=trainer, config_digest=config_digest)
             test_ppl = float(trainer.evaluate(test, test_targets).perplexity)
         _record_retained_checkpoints(
             records, checkpoint_manager,
@@ -383,8 +424,12 @@ class Seq2SeqExecutor:
             "dataset_checksum": _file_digest(_sequence_dataset_path(str(dataset["file"]))),
             "split_checksum": _array_digest(x_train, t_train, x_test, t_test),
         }
-        model = _seq_model(str(model_config.get("alias")), len(data["char_to_id"]), model_config, backend)
-        optimizer = _optimizer(config, model)
+        model = _seq_model(str(model_config.get("name")), len(data["char_to_id"]), model_config, backend)
+        objective = TemporalSoftmaxCrossEntropy(
+            reduction=str(_mapping(config, "objective").get("reduction", "mean")),
+            backend=backend,
+        )
+        optimizer = _optimizer(config, model, objective)
         seed_batch_order(backend, streams)
         batch_size, epochs = int(loader.get("batch_size", 128)), int(training.get("max_epochs", 10))
         train_x = Tensor(backend.xp.asarray(x_train, dtype=backend.xp.int64), backend=backend)
@@ -392,7 +437,7 @@ class Seq2SeqExecutor:
         test_source = (Tensor(backend.xp.asarray(x_test, dtype=backend.xp.int64), backend=backend), Tensor(backend.xp.asarray(t_test, dtype=backend.xp.int64), backend=backend))
         request = EvaluationRequest("sequence-test-full", "test", test_source, ("exact_match_accuracy", "token_accuracy"))
         trainer = Seq2seqTrainer(
-            model, optimizer, max_epochs=epochs, batch_size=batch_size,
+            model, objective, optimizer, max_epochs=epochs, batch_size=batch_size,
             start_id=data["char_to_id"]["_"],
         )
         artifact_root = _artifact_root(config, context)
@@ -401,7 +446,7 @@ class Seq2SeqExecutor:
         monitor = create_runtime_monitor(backend, _mapping(config, "profiling"))
         checkpoint_config = _mapping(config, "checkpoint")
         checkpoint_manager = _checkpoint_manager(
-            config, context, model=model, optimizer=optimizer, trainer=trainer,
+            config, context, model=model, objective=objective, optimizer=optimizer, trainer=trainer,
         )
         best_exact = -1.0
 
@@ -493,7 +538,7 @@ class AttentionAlignmentObservationExecutor:
             "dataset_checksum": _file_digest(_sequence_dataset_path(str(dataset["file"]))),
             "observation_split_checksum": _array_digest(x_test, t_test),
         }
-        model = _seq_model(str(model_config.get("alias", "AttentionSeq2seq")), len(data["char_to_id"]), model_config, backend)
+        model = _seq_model(str(model_config.get("name", "AttentionSeq2seq")), len(data["char_to_id"]), model_config, backend)
         if not isinstance(model, AttentionSeq2seq):
             raise ValueError("DS2 GO01 requires AttentionSeq2seq model")
         _load_model_checkpoint(model, Path(str(checkpoint_path)))
@@ -564,11 +609,12 @@ def _device_timer(config: dict[str, object], backend):
     return create_device_timer(backend, enabled=bool(profiling.get("device_timing", False)))
 
 
-def _checkpoint_manager(config, context, *, model, optimizer, trainer) -> CheckpointManager:
+def _checkpoint_manager(config, context, *, model, objective, optimizer, trainer) -> CheckpointManager:
     checkpoint = _mapping(config, "checkpoint")
     return CheckpointManager(
         root=Path(str(context.metadata["checkpoint_root"])),
         model=model,
+        objective=objective,
         optimizer=optimizer,
         trainer=trainer,
         config_digest=_config_digest(config),
@@ -633,12 +679,6 @@ def _word2vec_corpus(dataset: dict[str, object]):
 def _optional_max_grad(config: dict[str, object], *, default: float | None = None) -> float | None:
     value = _mapping(config, "policy").get("max_grad", default)
     return None if value is None else float(value)
-
-
-def _word2vec_prediction_term_count(model: Word2Vec, window: int) -> int:
-    """Return the sigmoid terms summed by the book's negative-sampling loss."""
-    contexts = 2 * window if model.architecture == "skipgram" else 1
-    return contexts * (model.negative_samples + 1)
 
 
 def _record_seq_predictions(
@@ -756,12 +796,14 @@ def _array_digest(*arrays) -> str:
 
 def _load_model_checkpoint(model, path: Path) -> None:
     path = resolve_checkpoint_path(path)
-    if path.is_dir():
-        model.load_params_npz(path / "model.npz")
-    elif path.is_file():
-        model.load_params_npz(path)
-    else:
+    if not path.is_dir():
         raise FileNotFoundError(path)
+    manifest = json.loads(
+        (path / "manifest.json").read_text(encoding="utf-8")
+    )
+    if manifest.get("schema_version") != 2:
+        raise ValueError("only checkpoint schema version 2 is supported")
+    model.load_params_npz(path / "model_parameters.npz")
 
 
 def _path_digest(path: Path) -> str:
@@ -782,26 +824,26 @@ def _file_digest(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _language_model(alias: str, vocab_size: int, values: dict[str, object], backend):
+def _language_model(name: str, vocab_size: int, values: dict[str, object], backend):
     kwargs = {"vocab_size": vocab_size, "wordvec_size": int(values.get("wordvec_size", 100)), "hidden_size": int(values.get("hidden_size", 100)), "backend": backend}
-    if alias == "VanillaRnnlm":
+    if name == "VanillaRnnlm":
         return VanillaRnnlm(**kwargs)
-    if alias == "Rnnlm":
+    if name == "Rnnlm":
         return Rnnlm(**kwargs)
-    if alias == "BetterRnnlm":
+    if name == "BetterRnnlm":
         return BetterRnnlm(**kwargs, dropout_ratio=float(values.get("dropout_ratio", 0.5)))
-    raise ValueError(f"unknown language-model alias: {alias}")
+    raise ValueError(f"unknown language-model name: {name}")
 
 
-def _seq_model(alias: str, vocab_size: int, values: dict[str, object], backend):
+def _seq_model(name: str, vocab_size: int, values: dict[str, object], backend):
     kwargs = {"vocab_size": vocab_size, "wordvec_size": int(values.get("wordvec_size", 16)), "hidden_size": int(values.get("hidden_size", 128)), "backend": backend}
-    if alias == "Seq2seq":
+    if name == "Seq2seq":
         return Seq2seq(**kwargs)
-    if alias == "PeekySeq2seq":
+    if name == "PeekySeq2seq":
         return PeekySeq2seq(**kwargs)
-    if alias == "AttentionSeq2seq":
+    if name == "AttentionSeq2seq":
         return AttentionSeq2seq(**kwargs)
-    raise ValueError(f"unknown seq2seq alias: {alias}")
+    raise ValueError(f"unknown seq2seq name: {name}")
 
 
 def _seq_accuracy(model, questions, answers, char_to_id, backend) -> tuple[float, float]:

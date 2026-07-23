@@ -10,11 +10,11 @@ from mlprosection.nn.layers import (
     TimeEmbedding,
     TimeLSTM,
     TimeRNN,
-    TimeSoftmaxWithLoss,
 )
+from mlprosection.nn.model.base import GenerativeModel, Model
 
 
-class Rnnlm(Layer):
+class Rnnlm(Model):
     def __init__(
         self,
         vocab_size: int = 10000,
@@ -34,43 +34,23 @@ class Rnnlm(Layer):
             ),
             TimeAffine(hidden_size, vocab_size, backend=self._backend),
         ]
-        self.loss_layer = TimeSoftmaxWithLoss()
         self.lstm_layer = self.layers[1]
-        self._uses_internal_loss = False
 
     def predict(self, xs: Tensor, *, cache: bool = True) -> Tensor:
         for layer in self.layers:
             xs = layer.forward(xs, cache=cache)
         return xs
 
-    def forward_manual(
-        self,
-        xs: Tensor,
-        ts: Tensor | None = None,
-        *,
-        cache: bool = True,
-    ) -> Tensor:
-        score = self.predict(xs, cache=cache)
-        self._uses_internal_loss = ts is not None
-        if ts is None:
-            return score
-        return self.loss_layer.forward(score, ts, cache=cache)
+    def forward_manual(self, xs: Tensor, *, cache: bool = True) -> Tensor:
+        return self.predict(xs, cache=cache)
 
-    def backward_manual(self, dout: Tensor | int | float | None = None) -> Tensor:
-        if self._uses_internal_loss:
-            dout = self.loss_layer.backward(None if dout is None else Tensor(dout))
-        elif not isinstance(dout, Tensor):
-            raise TypeError("dout must be a Tensor when no internal loss was used")
-
+    def backward_manual(self, dout: Tensor) -> Tensor:
         for layer in reversed(self.layers):
             dout = layer.backward(dout)
         return dout
 
-    def reset_state(self) -> None:
-        self.lstm_layer.reset_state()
 
-
-class VanillaRnnlm(Layer):
+class VanillaRnnlm(Model):
     """Embedding → vanilla RNN → vocabulary projection language model."""
 
     def __init__(
@@ -88,39 +68,22 @@ class VanillaRnnlm(Layer):
             TimeAffine(hidden_size, vocab_size, backend=self._backend),
         ]
         self.rnn_layer = self.layers[1]
-        self.loss_layer = TimeSoftmaxWithLoss()
-        self._uses_internal_loss = False
 
     def predict(self, xs: Tensor, *, cache: bool = True) -> Tensor:
         for layer in self.layers:
             xs = layer.forward(xs, cache=cache)
         return xs
 
-    def forward_manual(
-        self,
-        xs: Tensor,
-        ts: Tensor | None = None,
-        *,
-        cache: bool = True,
-    ) -> Tensor:
-        score = self.predict(xs, cache=cache)
-        self._uses_internal_loss = ts is not None
-        return score if ts is None else self.loss_layer.forward(score, ts, cache=cache)
+    def forward_manual(self, xs: Tensor, *, cache: bool = True) -> Tensor:
+        return self.predict(xs, cache=cache)
 
-    def backward_manual(self, dout: Tensor | int | float | None = None) -> Tensor:
-        if self._uses_internal_loss:
-            dout = self.loss_layer.backward(None if dout is None else Tensor(dout))
-        elif not isinstance(dout, Tensor):
-            raise TypeError("dout must be a Tensor when no internal loss was used")
+    def backward_manual(self, dout: Tensor) -> Tensor:
         for layer in reversed(self.layers):
             dout = layer.backward(dout)
         return dout
 
-    def reset_state(self) -> None:
-        self.rnn_layer.reset_state()
 
-
-class BetterRnnlm(Layer):
+class BetterRnnlm(Model):
     def __init__(
         self,
         vocab_size: int = 10000,
@@ -157,35 +120,18 @@ class BetterRnnlm(Layer):
                 transpose_weight=True,
             ),
         ]
-        self.loss_layer = TimeSoftmaxWithLoss()
         self.lstm_layers = [self.layers[2], self.layers[4]]
         self.drop_layers = [self.layers[1], self.layers[3], self.layers[5]]
-        self._uses_internal_loss = False
 
     def predict(self, xs: Tensor, *, cache: bool = True) -> Tensor:
         for layer in self.layers:
             xs = layer.forward(xs, cache=cache)
         return xs
 
-    def forward_manual(
-        self,
-        xs: Tensor,
-        ts: Tensor | None = None,
-        *,
-        cache: bool = True,
-    ) -> Tensor:
-        score = self.predict(xs, cache=cache)
-        self._uses_internal_loss = ts is not None
-        if ts is None:
-            return score
-        return self.loss_layer.forward(score, ts, cache=cache)
+    def forward_manual(self, xs: Tensor, *, cache: bool = True) -> Tensor:
+        return self.predict(xs, cache=cache)
 
-    def backward_manual(self, dout: Tensor | int | float | None = None) -> Tensor:
-        if self._uses_internal_loss:
-            dout = self.loss_layer.backward(None if dout is None else Tensor(dout))
-        elif not isinstance(dout, Tensor):
-            raise TypeError("dout must be a Tensor when no internal loss was used")
-
+    def backward_manual(self, dout: Tensor) -> Tensor:
         tied_grad = None
         for layer in reversed(self.layers):
             dout = layer.backward(dout)
@@ -196,9 +142,6 @@ class BetterRnnlm(Layer):
             self.embed.W.grad[...] += tied_grad
         return dout
 
-    def reset_state(self) -> None:
-        for layer in self.lstm_layers:
-            layer.reset_state()
 
 
 class Encoder(Layer):
@@ -290,7 +233,7 @@ class Decoder(Layer):
         return _stack_sampled_ids_device(backend, sampled)
 
 
-class Seq2seq(Layer):
+class Seq2seq(GenerativeModel):
     def __init__(
         self,
         vocab_size: int,
@@ -312,23 +255,12 @@ class Seq2seq(Layer):
             hidden_size,
             backend=self._backend,
         )
-        self.softmax = TimeSoftmaxWithLoss()
-
-    def forward_manual(self, xs: Tensor, ts: Tensor, *, cache: bool = True) -> Tensor:
-        decoder_xs = ts[:, :-1]
-        decoder_ts = ts[:, 1:]
-
+    def forward_manual(self, xs: Tensor, decoder_xs: Tensor, *, cache: bool = True) -> Tensor:
         h = self.encoder.forward(xs, cache=cache)
         score = self.decoder.forward(decoder_xs, h, cache=cache)
-        return self.softmax.forward(score, decoder_ts, cache=cache)
+        return score
 
-    def backward_manual(self, dout: Tensor | int | float | None = None) -> None:
-        if dout is None:
-            dout = None
-        elif not isinstance(dout, Tensor):
-            dout = Tensor(dout)
-
-        dout = self.softmax.backward(dout)
+    def backward_manual(self, dout: Tensor) -> None:
         dh = self.decoder.backward(dout)
         self.encoder.backward(dh)
         return None
@@ -398,7 +330,6 @@ class PeekySeq2seq(Seq2seq):
         Layer.__init__(self, backend)
         self.encoder = Encoder(vocab_size, wordvec_size, hidden_size, backend=self._backend)
         self.decoder = PeekyDecoder(vocab_size, wordvec_size, hidden_size, backend=self._backend)
-        self.softmax = TimeSoftmaxWithLoss()
 
 
 class AttentionEncoder(Encoder):
@@ -478,7 +409,6 @@ class AttentionSeq2seq(Seq2seq):
         Layer.__init__(self, backend)
         self.encoder = AttentionEncoder(vocab_size, wordvec_size, hidden_size, backend=self._backend)
         self.decoder = AttentionDecoder(vocab_size, wordvec_size, hidden_size, backend=self._backend)
-        self.softmax = TimeSoftmaxWithLoss()
 
     def generate(self, xs: Tensor, start_id: int, sample_size: int) -> list[int]:
         return _host_sampled_ids(xs.backend, self.generate_device(xs, start_id, sample_size))

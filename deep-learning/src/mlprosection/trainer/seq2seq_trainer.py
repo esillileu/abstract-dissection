@@ -7,13 +7,15 @@ from typing import Literal
 
 from mlprosection import Tensor
 from mlprosection.events import EpochEvent, EvaluationResult, UpdateEvent
-from .internal_objective import InternalObjectiveTrainer
+from mlprosection.nn.model.base import GenerativeModel
+from .event import EventTrainer
 
 
-class Seq2seqTrainer(InternalObjectiveTrainer):
+class Seq2seqTrainer(EventTrainer):
     def __init__(
         self,
         model,
+        objective,
         optimizer,
         *,
         max_epochs: int,
@@ -24,7 +26,9 @@ class Seq2seqTrainer(InternalObjectiveTrainer):
         drop_last: bool = False,
         event_receivers=None,
     ) -> None:
-        super().__init__(model, optimizer, max_epochs=max_epochs, max_updates=max_updates, event_receivers=event_receivers)
+        super().__init__(model, objective, optimizer, max_epochs=max_epochs, max_updates=max_updates, event_receivers=event_receivers)
+        if not isinstance(model, GenerativeModel):
+            raise TypeError("Seq2seqTrainer requires the GenerativeModel capability")
         if batch_size < 1:
             raise ValueError("batch_size must be positive")
         self.batch_size = batch_size
@@ -51,16 +55,30 @@ class Seq2seqTrainer(InternalObjectiveTrainer):
                 shuffled_x, shuffled_t = xs[order], ts[order]
                 for iteration, (batch_x, batch_t) in enumerate(self._iter_batches(shuffled_x, shuffled_t)):
                     self.model.train(True)
-                    self.model.forward(batch_x, batch_t)
-                    self.model.backward()
+                    decoder_x, objective_t = batch_t[:, :-1], batch_t[:, 1:]
+                    prediction = self.model.forward(batch_x, decoder_x)
+                    result = self.objective.forward(prediction, objective_t)
+                    self.model.backward(self.objective.backward())
                     self.optimizer.update()
-                    post_loss = self.model.forward(batch_x, batch_t, cache=False)
+                    probe_state = self._snapshot_evaluation_state()
+                    try:
+                        post_prediction = self.model.forward(
+                            batch_x, decoder_x, cache=False
+                        )
+                        post_result = self.objective.forward(
+                            post_prediction,
+                            objective_t,
+                            cache=False,
+                            replay_context=result.replay_context,
+                        )
+                    finally:
+                        self._restore_evaluation_state(probe_state)
                     self.global_step += 1
                     sample_count += len(batch_x)
                     self.batch_cursor = iteration + 1
                     self._emit_update(UpdateEvent(
                         update=self.global_step, epoch=self.epoch, batch_size=len(batch_x),
-                        loss=post_loss, learning_rate=self._learning_rate(),
+                        loss=post_result.loss, learning_rate=self._learning_rate(),
                     ))
                     if self._at_update_limit():
                         reason = "max_updates"
@@ -92,11 +110,11 @@ class Seq2seqTrainer(InternalObjectiveTrainer):
             raise ValueError("inputs and targets must have the same sequence count")
         if not len(xs):
             raise ValueError("evaluation source must not be empty")
-        was_training = bool(getattr(self.model, "training", True))
-        saved_state = self._snapshot_recurrent_state()
+        saved_state = self._snapshot_evaluation_state()
         exact, token_correct, token_count = 0, 0, 0
         device_predictions = []
         self.model.train(False)
+        self.objective.train(False)
         try:
             for index in range(len(xs)):
                 question = Tensor(xs.data[index:index + 1], backend=self.backend)
@@ -108,8 +126,7 @@ class Seq2seqTrainer(InternalObjectiveTrainer):
                     self.model.generate_device(question, self.start_id, sample_size)
                 )
         finally:
-            self._restore_recurrent_state(saved_state)
-            self.model.train(was_training)
+            self._restore_evaluation_state(saved_state)
         xp = self.backend.xp
         predictions = xp.stack(device_predictions)
         paired = xp.stack((predictions, ts.data[:, 1:]))

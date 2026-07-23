@@ -1,12 +1,6 @@
 from __future__ import annotations
 
-from mlprosection_mlflow.schema_v1 import SchemaV1Run, _save_checkpoint
-
-
-class _CheckpointModel:
-    def save_params_npz(self, path) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(b"checkpoint")
+from mlprosection_mlflow.schema_v1 import SchemaV1Run, _select_final_checkpoint
 
 
 def test_yaml_contract_projects_to_the_schema_v1_artifact_tree(tmp_path, monkeypatch) -> None:
@@ -46,14 +40,19 @@ def test_yaml_contract_projects_to_the_schema_v1_artifact_tree(tmp_path, monkeyp
 
 
 def test_final_checkpoint_can_be_disabled(tmp_path) -> None:
-    path, digest = _save_checkpoint(tmp_path, _CheckpointModel(), save_final=False)
+    path, digest = _select_final_checkpoint(tmp_path, save_final=False)
 
     assert path is None
     assert digest is None
 
 
-def test_final_checkpoint_is_saved_by_default(tmp_path) -> None:
-    path, digest = _save_checkpoint(tmp_path, _CheckpointModel(), save_final=True)
+def test_final_checkpoint_selects_latest_v2_generation(tmp_path) -> None:
+    generation = tmp_path / "generations" / "latest-1"
+    generation.mkdir(parents=True)
+    (tmp_path / "latest.json").write_text(
+        '{"schema_version": 2, "path": "generations/latest-1", "sha256": "abc"}'
+    )
+    path, digest = _select_final_checkpoint(tmp_path, save_final=True)
 
-    assert path == tmp_path / "final.npz"
-    assert digest is not None
+    assert path == generation
+    assert digest == "abc"

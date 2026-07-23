@@ -16,7 +16,7 @@
 
 | 그룹 | protocol | 공통 조건 | 변동 축 | 원자 시행 수 |
 | --- | --- | --- | --- | ---: |
-| `GT01` | toy Word2Vec | toy corpus, CBOW full softmax, window 1, embedding 5, Adam .001, batch 3, 1,000 epochs | 없음 | 1 |
+| `GT01` | toy Word2Vec | toy corpus, full softmax, window 1, embedding 5, Adam .001, batch 3, 1,000 epochs | architecture | 2 |
 | `GT02` | PTB Word2Vec | PTB train, window 5, embedding 100, Adam .001, batch 100, 10 epochs | architecture × objective | 4 |
 | `GT03` | small-corpus RNNLM | PTB first 1,000 tokens, SimpleRnnlm 100/100, SGD .1, batch 10, BPTT 5, 100 epochs | training-loop implementation | 2 |
 | `GT04` | PTB LSTM RNNLM | PTB train/test, LSTM 100/100, SGD 20, batch 20, BPTT 35, clip .25, 4 epochs | 없음 | 1 |
@@ -28,7 +28,7 @@
 
 | 그룹 | atomic run ID |
 | --- | --- |
-| `GT01` | `W2V-TOY-CBOW-FULL` |
+| `GT01` | `W2V-TOY-CBOW-FULL`, `W2V-TOY-SKIPGRAM-FULL` |
 | `GT02` | `W2V-PTB-CBOW-NS`, `W2V-PTB-SKIPGRAM-NS`, `W2V-PTB-CBOW-FULL`, `W2V-PTB-SKIPGRAM-FULL` |
 | `GT03` | `LM-SMALL-RNN`, `LM-SMALL-RNN-CUSTOM` |
 | `GT04` | `LM-LSTM` |
@@ -39,11 +39,12 @@
 
 ## Atomic 조건
 
-### GT01 — toy CBOW
+### GT01 — toy Word2Vec
 
 | atomic run ID | architecture | objective |
 | --- | --- | --- |
 | `W2V-TOY-CBOW-FULL` | SimpleCBOW, window 1, embedding 5 | full vocabulary softmax |
+| `W2V-TOY-SKIPGRAM-FULL` | SimpleSkipGram, window 1, embedding 5 | full vocabulary softmax |
 
 ### GT02 — PTB Word2Vec
 
@@ -104,7 +105,7 @@ negative sampling과 full softmax는 objective 정의가 다르므로 raw loss�
 
 | 구현 그룹 ID | 원본 시행 ID |
 | --- | --- |
-| `GT01` | `SRC-B2-CH03-TOY-CBOW` |
+| `GT01` | `SRC-B2-CH03-TOY-CBOW`; toy Skip-gram 조건은 새 확장 |
 | `GT02` | `SRC-B2-CH04-PTB-CBOW`, `SRC-B2-CH04-PTB-SKIPGRAM`; full-softmax 조건은 새 확장 |
 | `GT03` | `SRC-B2-CH05-SMALL-RNNLM`, `SRC-B2-CH05-SMALL-RNNLM-CUSTOM` |
 | `GT04` | `SRC-B2-CH06-LSTM-RNNLM` |

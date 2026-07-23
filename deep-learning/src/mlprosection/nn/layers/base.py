@@ -16,9 +16,10 @@ NamedParameter: TypeAlias = tuple[str, Parameter]
 NamedParameters: TypeAlias = list[NamedParameter]
 
 class Layer(ABC):
-    def __init__(self, backend: Backend | None = None) -> Backend:
+    def __init__(self, backend: Backend | None = None) -> None:
         self._backend = backend or get_default_backend()
         self.training = True
+        self._buffers: dict[str, bool] = {}
 
 
     def __call__(self, *args, **kwargs):
@@ -50,6 +51,38 @@ class Layer(ABC):
                 prefix=name,
                 seen=seen,
             )
+
+    def register_buffer(
+        self,
+        name: str,
+        value: Any = None,
+        *,
+        runtime_state: bool = False,
+    ) -> None:
+        """Register non-parameter state owned by this layer.
+
+        ``runtime_state`` marks ephemeral recurrent state.  Persistent buffers
+        such as BatchNorm statistics are registered with the default value.
+        """
+        if not name.isidentifier() or name.startswith("_"):
+            raise ValueError(f"invalid buffer name: {name!r}")
+        if isinstance(getattr(self, name, None), Parameter):
+            raise ValueError(f"buffer {name!r} is already a parameter")
+        self._buffers[name] = runtime_state
+        setattr(self, name, value)
+
+    def named_buffers(
+        self,
+        *,
+        runtime_state: bool | None = None,
+    ) -> Iterator[tuple[str, Any]]:
+        seen_layers: set[int] = set()
+        yield from _iter_named_buffers(
+            self,
+            prefix="",
+            seen_layers=seen_layers,
+            runtime_state=runtime_state,
+        )
 
     def children(self) -> Iterator[Layer]:
         seen: set[int] = set()
@@ -99,6 +132,13 @@ class Layer(ABC):
             p.data = moved.data
             p.grad = moved.grad
             p.backend = moved.backend
+        for name, value in self.named_buffers():
+            if value is None:
+                continue
+            owner, attr = _resolve_owner(self, name)
+            setattr(owner, attr, backend.asarray(owner.backend.to_numpy(value)))
+        for layer in (self, *self.children()):
+            layer._backend = backend
         return self
 
     def cpu(self) -> Layer:
@@ -225,3 +265,59 @@ def _iter_layers(value: Any, seen: set[int]) -> Iterator[Layer]:
     if isinstance(value, dict):
         for item in value.values():
             yield from _iter_layers(item, seen)
+
+
+def _iter_named_buffers(
+    layer: Layer,
+    prefix: str,
+    seen_layers: set[int],
+    runtime_state: bool | None,
+) -> Iterator[tuple[str, Any]]:
+    layer_id = id(layer)
+    if layer_id in seen_layers:
+        return
+    seen_layers.add(layer_id)
+
+    for name, is_runtime in getattr(layer, "_buffers", {}).items():
+        if runtime_state is None or runtime_state == is_runtime:
+            yield f"{prefix}{name}", getattr(layer, name)
+
+    for name, value in layer.__dict__.items():
+        child_prefix = f"{prefix}{name}."
+        if isinstance(value, Layer):
+            yield from _iter_named_buffers(
+                value, child_prefix, seen_layers, runtime_state
+            )
+        elif isinstance(value, (list, tuple)):
+            for index, child in enumerate(value):
+                if isinstance(child, Layer):
+                    yield from _iter_named_buffers(
+                        child,
+                        f"{child_prefix}{index}.",
+                        seen_layers,
+                        runtime_state,
+                    )
+        elif isinstance(value, dict):
+            for key, child in value.items():
+                if isinstance(child, Layer):
+                    yield from _iter_named_buffers(
+                        child,
+                        f"{child_prefix}{key}.",
+                        seen_layers,
+                        runtime_state,
+                    )
+
+
+def _resolve_owner(root: Layer, path: str) -> tuple[Layer, str]:
+    parts = path.split(".")
+    value: Any = root
+    for part in parts[:-1]:
+        if isinstance(value, (list, tuple)):
+            value = value[int(part)]
+        elif isinstance(value, dict):
+            value = value[part]
+        else:
+            value = getattr(value, part)
+    if not isinstance(value, Layer):
+        raise TypeError(f"buffer owner for {path!r} is not a Layer")
+    return value, parts[-1]

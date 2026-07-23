@@ -6,15 +6,17 @@ from typing import Literal
 
 from mlprosection import Tensor
 from mlprosection.events import EpochEvent, SourceObjectiveSample, UpdateEvent
-from .internal_objective import InternalObjectiveTrainer
+from .event import EventTrainer
 
 
-class Word2VecTrainer(InternalObjectiveTrainer):
+class Word2VecTrainer(EventTrainer):
     def __init__(
         self,
         model,
+        objective,
         optimizer,
         *,
+        batch_adapter,
         max_epochs: int,
         batch_size: int,
         max_updates: int | None = None,
@@ -22,13 +24,14 @@ class Word2VecTrainer(InternalObjectiveTrainer):
         event_receivers=None,
     ) -> None:
         super().__init__(
-            model, optimizer, max_epochs=max_epochs, max_updates=max_updates,
+            model, objective, optimizer, max_epochs=max_epochs, max_updates=max_updates,
             event_receivers=event_receivers,
         )
         if batch_size < 1:
             raise ValueError("batch_size must be positive")
         self.batch_size = batch_size
         self.drop_last = drop_last
+        self.batch_adapter = batch_adapter
         self.batch_cursor = 0
 
     def fit(self, contexts: Tensor, targets: Tensor) -> None:
@@ -48,21 +51,33 @@ class Word2VecTrainer(InternalObjectiveTrainer):
                 order = xp.random.permutation(len(contexts))
                 shuffled_contexts, shuffled_targets = contexts[order], targets[order]
                 for local_iteration, (batch_x, batch_t) in enumerate(self._iter_batches(shuffled_contexts, shuffled_targets)):
-                    source_loss = self.model.forward(batch_x, batch_t)
-                    fixed_candidates = self._negative_candidates()
-                    self.model.backward()
+                    model_x, objective_t = self.batch_adapter.prepare(batch_x, batch_t)
+                    prediction = self.model.forward(model_x)
+                    result = self.objective.forward(prediction, objective_t)
+                    gradient = self.objective.backward()
+                    self.model.backward(gradient)
                     self.optimizer.update()
-                    post_loss = self._post_update_loss(batch_x, batch_t, fixed_candidates)
+                    probe_state = self._snapshot_evaluation_state()
+                    try:
+                        post_prediction = self.model.forward(model_x, cache=False)
+                        post_result = self.objective.forward(
+                            post_prediction,
+                            objective_t,
+                            cache=False,
+                            replay_context=result.replay_context,
+                        )
+                    finally:
+                        self._restore_evaluation_state(probe_state)
                     self.global_step += 1
                     sample_count += len(batch_x)
                     self._emit_update(UpdateEvent(
                         update=self.global_step, epoch=self.epoch, batch_size=len(batch_x),
-                        loss=post_loss, learning_rate=self._learning_rate(),
+                        loss=post_result.loss, learning_rate=self._learning_rate(),
                     ))
                     self._emit_source_objective(SourceObjectiveSample(
                         update=self.global_step, epoch=self.epoch,
-                        local_iteration=local_iteration, objective=source_loss,
-                        unit_count=self._prediction_terms(batch_x, batch_t),
+                        local_iteration=local_iteration, objective=result.loss,
+                        unit_count=result.unit_count,
                     ))
                     self.batch_cursor = local_iteration + 1
                     if self._at_update_limit():
@@ -80,20 +95,6 @@ class Word2VecTrainer(InternalObjectiveTrainer):
             raise
         finally:
             self._emit_train_end(reason)
-
-    def _post_update_loss(self, x: Tensor, t: Tensor, candidates) -> Tensor:
-        if candidates is None:
-            return self.model.forward(x, t)
-        return self.model.forward(x, t, negative_candidates=candidates)
-
-    def _negative_candidates(self):
-        getter = getattr(self.model, "last_negative_candidates", None)
-        return getter() if getter is not None else None
-
-    def _prediction_terms(self, x: Tensor, t: Tensor) -> int:
-        if getattr(self.model, "architecture", "cbow") == "skipgram":
-            return int(t.data.size)
-        return len(x)
 
     def _iter_batches(self, x: Tensor, t: Tensor):
         size = len(x) - (len(x) % self.batch_size) if self.drop_last else len(x)

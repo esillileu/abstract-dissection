@@ -47,7 +47,7 @@ def test_ds2_catalog_plans_all_variants_for_one_seed() -> None:
         seed_set="research_v1", seed_indexes="0", device=None, overrides={},
     )
 
-    assert len(plans) == 19
+    assert len(plans) == 20
     assert {plan.seed for plan in plans} == {1}
     assert {plan.device for plan in plans if plan.experiment_id != "e08"} == {"cuda:0"}
     assert {plan.device for plan in plans if plan.experiment_id == "e08"} == {"cpu"}

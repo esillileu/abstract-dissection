@@ -40,7 +40,7 @@
 - `metrics/runtime_history.csv`, `metrics/memory_history.csv` - profiling metrics에서 만든 runtime/memory history artifact.
 - `profiles/profiling_summary.json` - `ExperimentResult.profiling_metrics` 전체 summary.
 - `checkpoints/checkpoint_manifest.json` - checkpoint payload 위치, digest, 포함 state manifest.
-- `checkpoints/final.npz` - final checkpoint payload. `tracking.upload_checkpoint`가 true일 때 MLflow artifact로 업로드한다.
+- `checkpoints/latest.json + generations/latest-*/` - final checkpoint payload. `tracking.upload_checkpoint`가 true일 때 MLflow artifact로 업로드한다.
 
 | artifact 열 | MLflow metric | step |
 | --- | --- | ---: |

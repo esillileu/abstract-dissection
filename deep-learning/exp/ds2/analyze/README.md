@@ -20,7 +20,7 @@
 
 | 그룹 | 분석으로 이관한 항목 |
 | --- | --- |
-| `GT01` | `local_iteration % every_updates == 0` 규칙으로 원본 interval mean loss 재구성, append plot index, smoothing과 seed 집계 |
+| `GT01` | `local_iteration % every_updates == 0` 규칙으로 원본 interval mean loss 재구성, append plot index, toy CBOW/Skip-gram 비교와 seed 집계 |
 | `GT02` | GT01 reducer 적용, CBOW/Skip-gram 및 negative-sampling/full-softmax 조건 분리, word-vector checkpoint index와 조건 비교 |
 | `GT03` | standard variant는 원본 zero-based interval PPL, custom variant는 epoch별 token-weighted mean NLL의 exp로 PPL 재구성; 두 loop의 축을 별도 유지 |
 | `GT04` | interval token-weighted train PPL, terminal full-test PPL 정규화, train-test 비교와 seed CI |
@@ -63,8 +63,10 @@ python -m exp ds2 analyze -e 01-08 --error-style errorbar
 - `--error-style errorbar`: 평균선 위 min–max error bar
 - 완료 run이 없으면 `No completed runs` 빈 그래프와 값이 비어 있는 summary CSV를 만든다.
 - 출력 기본 경로는 `exp/ds2/results/image/`이다.
-- 확장 실험인 `GT05`와 `GT02`의 PTB full-softmax 조건은 제외한다.
-- 원본 대상인 `e01`–`e04`, `e06`–`e08`을 지원한다.
+- `GT01`은 같은 toy/full-softmax 조건의 CBOW와 Skip-gram을 함께 표시한다.
+- `GT02`는 negative-sampling과 full-softmax 네 조건을 모두 표시한다.
+- `GT05`는 train/valid/test perplexity와 learning-rate history를 2×2로 표시한다.
+- `e01`–`e08`을 지원한다.
 
 각 실험의 reducer 결과 선택, 축과 원본 시각 형식은 `e01_toy_word2vec.py`부터
 `e08_attention.py`까지의 개별 모듈이 소유한다. `common.py`에는 완료 run 조회와

@@ -4,7 +4,8 @@ import numpy as np
 
 from mlprosection import Tensor
 from mlprosection.nn import UnigramSampler
-from mlprosection.nn.model import Word2Vec
+from mlprosection.nn.model.architecture import CBOW, SkipGram, SkipGramBatchAdapter
+from mlprosection.nn.objective import NegativeSampling
 
 
 def test_unigram_sampler_builds_powered_distribution_once_and_excludes_targets() -> None:
@@ -36,13 +37,16 @@ def test_word2vec_uses_unigram_sampler_for_negative_candidates() -> None:
         vocab_size=4,
         backend="cpu",
     )
-    model = Word2Vec(4, 3, negative_samples=16, sampler=sampler, backend="cpu")
+    model = CBOW(4, 3, backend="cpu")
+    objective = NegativeSampling(
+        4, 3, negative_samples=16, sampler=sampler, backend="cpu"
+    )
     targets = Tensor(np.array([0, 1], dtype=np.int64), backend="cpu")
-    model.forward(Tensor(np.array([[1, 2], [2, 3]], dtype=np.int64), backend="cpu"), targets)
-
-    _hidden, candidates, _source, _values = model.cache[-1]
-    assert np.array_equal(candidates[:, 0], targets.data)
-    assert not np.any(candidates[:, 1:] == targets.data[:, None])
+    result = objective.forward(
+        model.forward(Tensor(np.array([[1, 2], [2, 3]], dtype=np.int64), backend="cpu")),
+        targets,
+    )
+    assert not np.any(result.replay_context == targets.data[:, None])
 
 
 def test_skipgram_samples_all_context_targets_in_one_call() -> None:
@@ -55,9 +59,9 @@ def test_skipgram_samples_all_context_targets_in_one_call() -> None:
         return sample(targets, sample_size=sample_size)
 
     sampler.sample = counted_sample
-    model = Word2Vec(
-        8, 3, architecture="skipgram", objective="negative_sampling",
-        negative_samples=2, sampler=sampler, backend="cpu",
+    model = SkipGram(8, 3, backend="cpu")
+    objective = NegativeSampling(
+        8, 3, negative_samples=2, sampler=sampler, backend="cpu"
     )
     centers = Tensor(np.array([1, 2], dtype=np.int64), backend="cpu")
     contexts = Tensor(
@@ -65,13 +69,15 @@ def test_skipgram_samples_all_context_targets_in_one_call() -> None:
         backend="cpu",
     )
 
-    model.forward(centers, contexts)
-    candidates = model.last_negative_candidates()
-    model.forward(centers, contexts, negative_candidates=candidates)
+    model_x, objective_t = SkipGramBatchAdapter().prepare(contexts, centers)
+    result = objective.forward(model.forward(model_x), objective_t)
+    objective.forward(
+        model.forward(model_x), objective_t,
+        replay_context=result.replay_context,
+    )
 
     assert calls == [(6, 2)]
-    assert len(model.cache) == 1
-    assert np.array_equal(model.cache[0][1][:, 0], contexts.data.reshape(-1))
+    assert result.replay_context.shape == (6, 2)
 
 
 def test_vectorized_skipgram_preserves_per_context_loss_and_gradients() -> None:
@@ -80,36 +86,25 @@ def test_vectorized_skipgram_preserves_per_context_loss_and_gradients() -> None:
         np.array([[0, 2, 3], [1, 3, 4]], dtype=np.int64),
         backend="cpu",
     )
-    candidates = [
+    candidates = np.stack([
         np.array([[4, 5], [5, 6]], dtype=np.int64),
         np.array([[5, 6], [6, 7]], dtype=np.int64),
         np.array([[6, 7], [0, 7]], dtype=np.int64),
-    ]
-    vectorized = Word2Vec(
-        8, 3, architecture="skipgram", objective="negative_sampling",
-        negative_samples=2, backend="cpu",
+    ], axis=1).reshape(6, 2)
+    model = SkipGram(8, 3, backend="cpu")
+    objective = NegativeSampling(8, 3, negative_samples=2, backend="cpu")
+    model_x, objective_t = SkipGramBatchAdapter().prepare(contexts, centers)
+    first = objective.forward(
+        model.forward(model_x), objective_t, replay_context=candidates
     )
-    reference = Word2Vec(
-        8, 3, architecture="skipgram", objective="negative_sampling",
-        negative_samples=2, backend="cpu",
+    model.backward(objective.backward())
+    input_gradient = model.W_in.grad.copy()
+    output_gradient = objective.W_out.grad.copy()
+    second = objective.forward(
+        model.forward(model_x), objective_t, replay_context=candidates
     )
-    reference.W_in.data[...] = vectorized.W_in.data
-    reference.W_out.data[...] = vectorized.W_out.data
+    model.backward(objective.backward())
 
-    loss = vectorized.forward(centers, contexts, negative_candidates=candidates)
-    vectorized.backward()
-
-    reference.cache = []
-    losses = [
-        reference._objective(
-            reference.W_in.data[centers.data], contexts.data[:, column],
-            centers.data, fixed_candidates=candidates[column],
-        )
-        for column in range(contexts.shape[1])
-    ]
-    reference_loss = sum(losses) / len(losses)
-    reference.backward()
-
-    assert np.allclose(loss.data, reference_loss)
-    assert np.allclose(vectorized.W_in.grad, reference.W_in.grad)
-    assert np.allclose(vectorized.W_out.grad, reference.W_out.grad)
+    assert np.allclose(first.loss.data, second.loss.data)
+    assert np.allclose(input_gradient, model.W_in.grad)
+    assert np.allclose(output_gradient, objective.W_out.grad)

@@ -28,9 +28,10 @@ def test_supervised_executor_consumes_forward_events_for_updates_evaluation_and_
         "seed": 1,
         "dataset": {"flatten": True},
         "model": {
-            "alias": "MLP", "input_size": 2, "hidden_sizes": [3],
+            "name": "MLP", "input_size": 2, "hidden_sizes": [3],
             "output_size": 2, "activation": "relu", "initializer": "he",
         },
+        "objective": {"name": "SoftmaxCrossEntropy", "reduction": "mean"},
         "optimizer": {"name": "sgd", "learning_rate": 0.01},
         "training": {
             "max_epochs": 1, "max_updates": 2,

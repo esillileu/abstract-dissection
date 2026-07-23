@@ -6,18 +6,18 @@ seed_policy: {seed_set: research_v1, seed_count: 10, paired_execution: true, max
 dataset: {id: DS-SEQ-ADD, source: sequence, file: addition.txt, split_seed: 1984, split_algorithm: legacy_numpy_randomstate}
 loader: {batch_size: 128}
 optimizer: {name: adam, learning_rate: 0.001}
-loss: {name: time_softmax_cross_entropy, reduction: mean, phase: post_update}
+objective: {name: TemporalSoftmaxCrossEntropy, reduction: mean}
 budget: {max_epochs: 25}
 recording:
   source_curve: {kind: full_test_exact_match, every_epochs: 1, reducer: identity, plot_index: epoch_minus_one}
   evaluations: [{axis: epoch, every: 1, sources: [test]}]
   predictions: {split: test, count: 10, decode: greedy}
 numerics: {dtype: float32, backend: cupy, device: cuda:0, deterministic: true}
-checkpoint: {save_final: true, save_best: true, format: npz}
+checkpoint: {save_final: true, save_best: true, format: v2}
 profiling: {enabled: false}
 tracking: {enabled: true, experiment: ds2}
 variants:
-  SEQA-VAN-FWD: {run: {structure_signature: addition-seq2seq-16-128}, model: {alias: Seq2seq, wordvec_size: 16, hidden_size: 128}, dataset: {reverse: false}}
-  SEQA-VAN-REV: {run: {structure_signature: addition-seq2seq-16-128}, model: {alias: Seq2seq, wordvec_size: 16, hidden_size: 128}, dataset: {reverse: true}}
-  SEQA-PEEKY-FWD: {run: {structure_signature: addition-peeky-16-128}, model: {alias: PeekySeq2seq, wordvec_size: 16, hidden_size: 128}, dataset: {reverse: false}}
-  SEQA-PEEKY-REV: {run: {structure_signature: addition-peeky-16-128}, model: {alias: PeekySeq2seq, wordvec_size: 16, hidden_size: 128}, dataset: {reverse: true}}
+  SEQA-VAN-FWD: {run: {structure_signature: addition-seq2seq-16-128}, model: {name: Seq2seq, wordvec_size: 16, hidden_size: 128}, dataset: {reverse: false}}
+  SEQA-VAN-REV: {run: {structure_signature: addition-seq2seq-16-128}, model: {name: Seq2seq, wordvec_size: 16, hidden_size: 128}, dataset: {reverse: true}}
+  SEQA-PEEKY-FWD: {run: {structure_signature: addition-peeky-16-128}, model: {name: PeekySeq2seq, wordvec_size: 16, hidden_size: 128}, dataset: {reverse: false}}
+  SEQA-PEEKY-REV: {run: {structure_signature: addition-peeky-16-128}, model: {name: PeekySeq2seq, wordvec_size: 16, hidden_size: 128}, dataset: {reverse: true}}

@@ -5,9 +5,9 @@ execution: {mode: seeded, default_device: cpu}
 seed_policy: {seed_set: research_v1, seed_count: 1, paired_execution: true}
 dataset: {id: SYNTH-NORMAL-1000x100, source: synthetic_normal, input_seed: 40402, sample_count: 1000, input_width: 100}
 loader: {}
-model: {family: mlp_observation, width: 100, depth: 5, bias: 0.0, model_seed: 40403}
+model: {name: MLPActivationObservation, family: mlp_observation, width: 100, depth: 5, bias: 0.0, model_seed: 40403}
 optimizer: {}
-loss: {name: none}
+objective: {name: None}
 budget: {}
 recording: {evaluation_sources: [], triggers: [], outputs: [observations/activation_histogram.csv, observations/activation_summary.csv]}
 numerics: {dtype: float64, backend: numpy, device: cpu}

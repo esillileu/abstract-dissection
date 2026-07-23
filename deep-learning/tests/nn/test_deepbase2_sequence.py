@@ -4,8 +4,9 @@ import numpy as np
 
 from mlprosection import Tensor
 from mlprosection.nn.layers import TimeAttention
-from mlprosection.nn.model import TimeSequential, Word2Vec
-from mlprosection.nn.model.recurrent import AttentionSeq2seq, PeekySeq2seq, VanillaRnnlm
+from mlprosection.nn.model import TimeSequential
+from mlprosection.nn.model.architecture import AttentionSeq2seq, CBOW, PeekySeq2seq, VanillaRnnlm
+from mlprosection.nn.objective import FullSoftmax, NegativeSampling, TemporalSoftmaxCrossEntropy
 from mlprosection.optim.SGD import Adam
 from mlprosection.optim.transform import ClipGradNorm
 from mlprosection.trainer import LanguageModelTrainer
@@ -14,21 +15,30 @@ from mlprosection.trainer import LanguageModelTrainer
 def test_word2vec_objectives_populate_embedding_gradients() -> None:
     contexts = Tensor(np.array([[0, 1], [1, 2], [2, 3]]), backend="cpu")
     targets = Tensor(np.array([2, 3, 4]), backend="cpu")
-    for objective in ("full_softmax", "negative_sampling"):
-        model = Word2Vec(6, 4, objective=objective, negative_samples=2, backend="cpu")
-        loss = model.forward(contexts, targets)
-        model.backward()
-        assert float(loss.data) > 0
+    for objective in (
+        FullSoftmax(6, 4, backend="cpu"),
+        NegativeSampling(6, 4, negative_samples=2, backend="cpu"),
+    ):
+        model = CBOW(6, 4, backend="cpu")
+        result = objective.forward(model.forward(contexts), targets)
+        model.backward(objective.backward())
+        assert float(result.loss.data) > 0
         assert np.any(model.W_in.grad)
-        assert np.any(model.W_out.grad)
+        assert np.any(objective.W_out.grad)
 
 
 def test_language_model_trainer_runs_truncated_bptt() -> None:
     model = VanillaRnnlm(vocab_size=7, wordvec_size=4, hidden_size=5, backend="cpu")
+    objective = TemporalSoftmaxCrossEntropy()
+    params = [
+        *((f"model.{name}", value) for name, value in model.named_parameters()),
+        *((f"objective.{name}", value) for name, value in objective.named_parameters()),
+    ]
     trainer = LanguageModelTrainer(
         model,
+        objective,
         Adam(
-            list(model.named_parameters()),
+            params,
             pre_step_hooks=[ClipGradNorm(0.25)],
         ),
         max_epochs=1,
@@ -46,7 +56,7 @@ def test_language_model_trainer_runs_truncated_bptt() -> None:
 def test_time_sequential_resets_nested_state() -> None:
     model = VanillaRnnlm(vocab_size=7, wordvec_size=4, hidden_size=5, backend="cpu")
     container = TimeSequential(model.rnn_layer)
-    container.reset_state()
+    container.reset_runtime_state()
     assert model.rnn_layer.h is None
 
 
@@ -55,10 +65,11 @@ def test_peeky_and_attention_seq2seq_support_training_and_decode() -> None:
     ts = Tensor(np.array([[0, 1, 2, 3], [0, 3, 2, 1]]), backend="cpu")
     for model_class in (PeekySeq2seq, AttentionSeq2seq):
         model = model_class(vocab_size=6, wordvec_size=3, hidden_size=4, backend="cpu")
-        loss = model.forward(xs, ts)
-        model.backward()
+        objective = TemporalSoftmaxCrossEntropy()
+        result = objective.forward(model.forward(xs, ts[:, :-1]), ts[:, 1:])
+        model.backward(objective.backward())
         decoded = model.generate(xs[:1], start_id=0, sample_size=3)
-        assert loss.shape == ()
+        assert result.loss.shape == ()
         assert len(decoded) == 3
     attention_model = AttentionSeq2seq(
         vocab_size=6, wordvec_size=3, hidden_size=4, backend="cpu"

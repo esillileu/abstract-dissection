@@ -11,6 +11,7 @@ if TYPE_CHECKING:
 
 class Criterion(Layer):
     def __init__(self) -> None:
+        super().__init__()
         self.y: Tensor | None = None
         self.t: Tensor | None = None
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import json
 from pathlib import Path
 import time
 
@@ -94,11 +95,18 @@ def run_yaml(
             },
             evaluation_checkpoints=evaluation_checkpoints,
         )
+        latest_pointer = record.local_checkpoint_root / "latest.json"
+        final_checkpoint = None
+        if latest_pointer.exists():
+            payload = json.loads(latest_pointer.read_text(encoding="utf-8"))
+            final_checkpoint = (
+                record.local_checkpoint_root / str(payload["path"])
+            )
         errors = runtime.complete(
             artifact_root=record.artifact_root,
             metric_rows=metric_rows,
             final_metrics=result.metrics,
-            checkpoint_path=record.local_checkpoint_root / "final.npz",
+            checkpoint_path=final_checkpoint,
         )
     write_json(
         record.artifact_root / "runtime" / "upload_summary.json",

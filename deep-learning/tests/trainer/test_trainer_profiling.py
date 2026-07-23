@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from mlprosection import Tensor
 from mlprosection.events import EpochEvent, TrainEndEvent, UpdateEvent
-from mlprosection.nn.layers.base import Layer
-from mlprosection.nn.layers.criterion import SoftmaxWithLoss
+from mlprosection.nn.model import Model
+from mlprosection.nn.objective import SoftmaxCrossEntropy
 from mlprosection.trainer import ForwardTrainer
 
 
-class IdentityModel(Layer):
-    def forward_manual(self, x):
+class IdentityModel(Model):
+    def forward_manual(self, x, *, cache=True):
         return x
 
     def backward_manual(self, dout):
@@ -45,7 +45,7 @@ def test_forward_trainer_emits_one_post_update_event_per_successful_update() -> 
     recorder = Recorder()
     optimizer = DummyOptimizer()
     trainer = ForwardTrainer(
-        IdentityModel(), SoftmaxWithLoss(), optimizer,
+        IdentityModel(), SoftmaxCrossEntropy(), optimizer,
         max_epochs=2, max_updates=3, batch_size=2, event_receivers=[recorder],
     )
     x = Tensor([[0.1, 0.9], [0.8, 0.2], [0.7, 0.3], [0.2, 0.8]])
@@ -65,7 +65,7 @@ def test_forward_trainer_emits_one_post_update_event_per_successful_update() -> 
 def test_forward_trainer_records_remainder_batch_and_restores_state() -> None:
     recorder = Recorder()
     trainer = ForwardTrainer(
-        IdentityModel(), SoftmaxWithLoss(), DummyOptimizer(),
+        IdentityModel(), SoftmaxCrossEntropy(), DummyOptimizer(),
         max_epochs=1, batch_size=2, event_receivers=[recorder],
     )
     x = Tensor([[0.1, 0.9], [0.8, 0.2], [0.7, 0.3]])
@@ -74,7 +74,7 @@ def test_forward_trainer_records_remainder_batch_and_restores_state() -> None:
     trainer.fit(x, t)
     state = trainer.state_dict()
     restored = ForwardTrainer(
-        IdentityModel(), SoftmaxWithLoss(), DummyOptimizer(), max_epochs=2, batch_size=2
+        IdentityModel(), SoftmaxCrossEntropy(), DummyOptimizer(), max_epochs=2, batch_size=2
     )
     restored.load_state_dict(state)
 

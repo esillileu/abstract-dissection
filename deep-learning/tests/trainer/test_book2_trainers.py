@@ -4,8 +4,8 @@ import numpy as np
 
 from mlprosection import Tensor
 from mlprosection.core.backend import Backend
-from mlprosection.nn.model import Word2Vec
-from mlprosection.nn.model.recurrent import Seq2seq, VanillaRnnlm
+from mlprosection.nn.model.architecture import CBOW, CBOWBatchAdapter, Seq2seq, VanillaRnnlm
+from mlprosection.nn.objective import FullSoftmax, NegativeSampling, TemporalSoftmaxCrossEntropy
 from mlprosection.optim.SGD import SGD
 from mlprosection.trainer import LanguageModelTrainer, Seq2seqTrainer, Word2VecTrainer
 
@@ -49,11 +49,20 @@ class Receiver:
         self.ends.append(event)
 
 
+def _params(model, objective):
+    return [
+        *((f"model.{name}", value) for name, value in model.named_parameters()),
+        *((f"objective.{name}", value) for name, value in objective.named_parameters()),
+    ]
+
+
 def test_word2vec_trainer_emits_update_and_source_objective_events() -> None:
-    model = Word2Vec(8, 3, objective="full_softmax")
+    model = CBOW(8, 3)
+    objective = FullSoftmax(8, 3)
     receiver = Receiver()
     trainer = Word2VecTrainer(
-        model, SGD(list(model.named_parameters()), lr=0.1),
+        model, objective, SGD(_params(model, objective), lr=0.1),
+        batch_adapter=CBOWBatchAdapter(),
         max_epochs=1, batch_size=2, event_receivers=[receiver],
     )
     contexts = Tensor(np.asarray([[1, 2], [2, 3], [3, 4], [4, 5]]))
@@ -67,10 +76,12 @@ def test_word2vec_trainer_emits_update_and_source_objective_events() -> None:
 
 
 def test_word2vec_negative_sampling_reuses_update_candidates_for_post_loss() -> None:
-    model = Word2Vec(8, 3, objective="negative_sampling", negative_samples=2)
+    model = CBOW(8, 3)
+    objective = NegativeSampling(8, 3, negative_samples=2)
     receiver = Receiver()
     trainer = Word2VecTrainer(
-        model, SGD(list(model.named_parameters()), lr=0.1),
+        model, objective, SGD(_params(model, objective), lr=0.1),
+        batch_adapter=CBOWBatchAdapter(),
         max_epochs=1, batch_size=2, event_receivers=[receiver],
     )
 
@@ -82,9 +93,10 @@ def test_word2vec_negative_sampling_reuses_update_candidates_for_post_loss() -> 
 
 def test_language_model_trainer_emits_bptt_events_and_evaluates_ppl() -> None:
     model = VanillaRnnlm(8, 3, 4)
+    objective = TemporalSoftmaxCrossEntropy()
     receiver = Receiver()
     trainer = LanguageModelTrainer(
-        model, SGD(list(model.named_parameters()), lr=0.1),
+        model, objective, SGD(_params(model, objective), lr=0.1),
         max_epochs=1, batch_size=2, time_size=2, event_receivers=[receiver],
     )
     xs = Tensor(np.asarray([1, 2, 3, 4, 5, 6, 1, 2]))
@@ -103,8 +115,9 @@ def test_language_model_trainer_emits_bptt_events_and_evaluates_ppl() -> None:
 def test_language_model_evaluation_materializes_metrics_once() -> None:
     backend, copies = _counting_backend()
     model = VanillaRnnlm(8, 3, 4, backend=backend)
+    objective = TemporalSoftmaxCrossEntropy(backend=backend)
     trainer = LanguageModelTrainer(
-        model, SGD(list(model.named_parameters()), lr=0.1),
+        model, objective, SGD(_params(model, objective), lr=0.1),
         max_epochs=1, batch_size=2, time_size=2,
     )
     xs = Tensor(np.asarray([1, 2, 3, 4, 5, 6, 1, 2]), backend=backend)
@@ -118,8 +131,9 @@ def test_language_model_evaluation_materializes_metrics_once() -> None:
 
 def test_seq2seq_trainer_evaluates_greedy_exact_match() -> None:
     model = Seq2seq(8, 3, 4)
+    objective = TemporalSoftmaxCrossEntropy()
     trainer = Seq2seqTrainer(
-        model, SGD(list(model.named_parameters()), lr=0.1),
+        model, objective, SGD(_params(model, objective), lr=0.1),
         max_epochs=1, batch_size=2, start_id=0,
     )
     xs = Tensor(np.asarray([[1, 2, 3], [2, 3, 4]]))
@@ -148,8 +162,9 @@ def test_seq2seq_generation_materializes_all_tokens_once() -> None:
 def test_seq2seq_evaluation_materializes_predictions_and_targets_once() -> None:
     backend, copies = _counting_backend()
     model = Seq2seq(8, 3, 4, backend=backend)
+    objective = TemporalSoftmaxCrossEntropy(backend=backend)
     trainer = Seq2seqTrainer(
-        model, SGD(list(model.named_parameters()), lr=0.1),
+        model, objective, SGD(_params(model, objective), lr=0.1),
         max_epochs=1, batch_size=2, start_id=0,
     )
     xs = Tensor(np.asarray([[1, 2, 3], [2, 3, 4]]), backend=backend)

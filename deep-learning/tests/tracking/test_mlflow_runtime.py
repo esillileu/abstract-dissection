@@ -35,11 +35,12 @@ class _ArtifactClient:
 
 
 def test_final_checkpoint_uploads_by_default_but_eval_checkpoint_requires_opt_in(tmp_path, monkeypatch) -> None:
-    final_path = tmp_path / "final.npz"
-    final_path.write_bytes(b"final")
+    final_path = tmp_path / "latest-epoch-0001"
+    final_path.mkdir()
+    (final_path / "model_parameters.npz").write_bytes(b"final")
     eval_path = tmp_path / "epoch-0001"
     eval_path.mkdir()
-    (eval_path / "model.npz").write_bytes(b"eval")
+    (eval_path / "model_parameters.npz").write_bytes(b"eval")
     client = _ArtifactClient()
     sink = _Sink(RuntimeOptions(tracking_uri="http://example.invalid", experiment_name="example"), "run", {}, {})
     sink.run_id = "run-id"
@@ -50,8 +51,10 @@ def test_final_checkpoint_uploads_by_default_but_eval_checkpoint_requires_opt_in
 
     sink._consume()
 
-    assert client.files == [("run-id", str(final_path), "checkpoints")]
-    assert client.trees == []
+    assert client.files == []
+    assert client.trees == [
+        ("run-id", str(final_path), f"checkpoints/{final_path.name}")
+    ]
 
     enabled_client = _ArtifactClient()
     enabled_sink = _Sink(

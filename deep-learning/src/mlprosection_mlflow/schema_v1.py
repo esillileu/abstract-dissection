@@ -19,7 +19,6 @@ from .runtime import (
     build_runtime_history_rows,
     current_git_info,
     environment_artifacts,
-    file_digest,
     flatten_dict,
     make_condition_key,
     make_parent_group_key,
@@ -132,9 +131,8 @@ class SchemaV1Run:
         reproducibility: dict[str, object] | None = None,
         evaluation_checkpoints: list[Path] | None = None,
     ) -> None:
-        checkpoint_path, checkpoint_digest = _save_checkpoint(
+        checkpoint_path, checkpoint_digest = _select_final_checkpoint(
             self.local_checkpoint_root,
-            model,
             save_final=bool(
                 _section(self.config, "checkpoint").get("save_final", True)
             ),
@@ -224,7 +222,7 @@ class SchemaV1Run:
         write_json(
             self.artifact_root / "checkpoints/checkpoint_manifest.json",
             {
-                "format": "npz" if checkpoint_path else "none",
+                "format": "v2" if checkpoint_path else "none",
                 "local_root": str(self.local_checkpoint_root.resolve()),
                 "final": None
                 if checkpoint_path is None
@@ -342,7 +340,7 @@ def build_tags(
         "dataset.id": str(_section(config, "dataset").get("id", "")),
         "model.name": str(
             _section(config, "model").get(
-                "name", _section(config, "model").get("alias", "")
+                "name", ""
             )
         ),
         "model.family": str(_section(config, "model").get("family", "")),
@@ -360,18 +358,19 @@ def _section(config: dict[str, object], name: str) -> dict[str, object]:
     return value
 
 
-def _save_checkpoint(
+def _select_final_checkpoint(
     root: Path,
-    model: Any | None,
     *,
     save_final: bool,
 ) -> tuple[Path | None, str | None]:
-    if not save_final or model is None or not hasattr(model, "save_params_npz"):
+    pointer = root / "latest.json"
+    if not save_final or not pointer.exists():
         return None, None
-    path = root / "final.npz"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    model.save_params_npz(path)
-    return path, file_digest(path)
+    payload = json.loads(pointer.read_text(encoding="utf-8"))
+    if payload.get("schema_version") != 2:
+        raise ValueError("only checkpoint schema version 2 is supported")
+    path = root / str(payload["path"])
+    return path, str(payload["sha256"])
 
 
 def _checkpoint_role_manifest(root: Path, role: str) -> dict[str, object] | None:

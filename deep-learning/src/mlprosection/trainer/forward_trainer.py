@@ -16,7 +16,8 @@ from mlprosection.events import (
 from .base import Trainer
 if TYPE_CHECKING:
     from mlprosection import Tensor
-    from mlprosection.nn.types import Criterion, Layer
+    from mlprosection.nn.model import Model
+    from mlprosection.nn.objective import Objective
     from mlprosection.optim import Optimizer
 
 
@@ -25,8 +26,8 @@ class ForwardTrainer(Trainer):
 
     def __init__(
         self,
-        model: Layer,
-        criterion: Criterion,
+        model: Model,
+        objective: Objective,
         optimizer: Optimizer,
         *,
         max_epochs: int,
@@ -36,7 +37,7 @@ class ForwardTrainer(Trainer):
         sampling_method: Literal["permutation_per_epoch", "with_replacement"] = "permutation_per_epoch",
         event_receivers: Iterable[TrainerEventReceiver] | None = None,
     ) -> None:
-        super().__init__(model=model, criterion=criterion, optimizer=optimizer)
+        super().__init__(model=model, objective=objective, optimizer=optimizer)
         if max_epochs < 1:
             raise ValueError("max_epochs must be positive")
         if batch_size < 1:
@@ -119,22 +120,23 @@ class ForwardTrainer(Trainer):
             raise ValueError("evaluation source is smaller than one batch")
 
         xp = self.backend.xp
-        was_training = bool(getattr(self.model, "training", True))
+        saved_state = self._snapshot_evaluation_state()
         total_loss = xp.asarray(0.0, dtype=x.data.dtype)
         total_correct = xp.asarray(0, dtype=xp.int64)
         sample_count = 0
         self.model.train(False)
+        self.objective.train(False)
         try:
             for batch_x, batch_t in self._iter_batches(x, t):
                 y = self.model.forward(batch_x)
                 if "loss" in metrics:
-                    loss = self.criterion.forward(y, batch_t)
-                    total_loss += loss.data * len(batch_x)
+                    result = self.objective.forward(y, batch_t, cache=False)
+                    total_loss += result.loss.data * result.unit_count
                 if "accuracy" in metrics:
                     total_correct += self._correct_count(y, batch_t)
                 sample_count += len(batch_x)
         finally:
-            self.model.train(was_training)
+            self._restore_evaluation_state(saved_state)
         return EvaluationResult(
             example_count=sample_count,
             loss=(self.backend.scalar_to_float(total_loss) / sample_count)
@@ -146,12 +148,21 @@ class ForwardTrainer(Trainer):
     def _update(self, x: Tensor, t: Tensor) -> Tensor:
         self.model.train(True)
         y = self.model.forward(x)
-        self.criterion.forward(y, t)
-        dx = self.criterion.backward()
+        result = self.objective.forward(y, t)
+        dx = self.objective.backward()
         self.model.backward(dx)
         self.optimizer.update()
         # DS1's canonical update record is the mean objective after the update.
-        return self.criterion.forward(self.model.forward(x), t)
+        probe_state = self._snapshot_evaluation_state()
+        try:
+            return self.objective.forward(
+                self.model.forward(x, cache=False),
+                t,
+                cache=False,
+                replay_context=result.replay_context,
+            ).loss
+        finally:
+            self._restore_evaluation_state(probe_state)
 
     def _sample_epoch(self, x: Tensor, t: Tensor) -> tuple[Tensor, Tensor]:
         xp = self.backend.xp

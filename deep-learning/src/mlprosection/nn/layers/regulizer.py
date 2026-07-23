@@ -50,8 +50,8 @@ class BatchNormalization(Layer):
 
         self.input_shape: tuple[int, ...] | None = None
 
-        self.running_mean = None
-        self.running_var = None
+        self.register_buffer("running_mean")
+        self.register_buffer("running_var")
 
         self.batch_size: int | None = None
         self.xc: Tensor | None = None

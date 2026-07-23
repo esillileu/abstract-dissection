@@ -5,10 +5,10 @@ execution: {mode: seeded, default_device: cpu}
 seed_policy: {seed_set: research_v1, seed_count: 1, paired_execution: true}
 dataset: {id: DS-SEQ-DATE, source: sequence, file: date.txt, reverse: true, split_seed: 1984, split_algorithm: legacy_numpy_randomstate}
 loader: {}
-model: {alias: AttentionSeq2seq, wordvec_size: 16, hidden_size: 256}
+model: {name: AttentionSeq2seq, wordvec_size: 16, hidden_size: 256}
 optimizer: {}
 scheduler: {}
-loss: {name: none}
+objective: {name: None}
 budget: {}
 recording:
   source_curve: null
@@ -16,7 +16,7 @@ recording:
   predictions: {split: test, count: 5, decode: greedy}
   attention: {selection_seed: 1984, count: 5, decode: greedy}
 numerics: {dtype: float32, backend: numpy, device: cpu, deterministic: true}
-checkpoint: {save_final: false, save_best: false, format: npz, source_group_id: GT07, source_atomic_run_id: SEQD-ATTN-REV, source_kind: selected, source_path: null}
+checkpoint: {save_final: false, save_best: false, format: v2, source_group_id: GT07, source_atomic_run_id: SEQD-ATTN-REV, source_kind: selected, source_path: null}
 profiling: {enabled: false}
 tracking: {enabled: true, experiment: ds2, upload_checkpoint: false}
 variants:

@@ -3,14 +3,15 @@ from __future__ import annotations
 from typing import Iterator
 
 from ..layers.base import Layer
+from .base import Model
 
 
-class Sequential(Layer):
+class Sequential(Model):
     def __init__(self, *layers: Layer, backend=None) -> None:
         super().__init__(backend or (layers[0].backend if layers else None))
         self.layers = list(layers)
 
-    def forward_manual(self, x):
+    def forward_manual(self, x, *, cache: bool = True):
         for layer in self.layers:
             x = layer.forward(x)
         return x

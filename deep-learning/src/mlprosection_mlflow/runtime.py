@@ -231,7 +231,7 @@ class _Sink:
                     for path in root.rglob("*"):
                         relative = path.relative_to(root).as_posix()
                         is_checkpoint_payload = relative.startswith("checkpoints/") and relative != "checkpoints/checkpoint_manifest.json"
-                        should_upload = not is_checkpoint_payload or (self.options.upload_checkpoint and relative == "checkpoints/final.npz")
+                        should_upload = not is_checkpoint_payload
                         if path.is_file() and should_upload:
                             relative_parent = path.parent.relative_to(root)
                             artifact_path = None if relative_parent == Path(".") else relative_parent.as_posix()
@@ -340,7 +340,7 @@ class ExperimentRun:
         rows = list(metric_rows)
         rows.extend((0, key, value) for key, value in final_metrics.items())
         self.sink.put(("metrics", rows)); self.sink.put(("artifact", artifact_root))
-        if checkpoint_path is not None and checkpoint_path.is_file(): self.emit_checkpoint(checkpoint_path, checkpoint_kind="final")
+        if checkpoint_path is not None and checkpoint_path.exists(): self.emit_checkpoint(checkpoint_path, checkpoint_kind="final")
         self.sink.put(("stop", "FINISHED")); self.sink.thread.join()
         return self.sink.errors
     def __exit__(self, exc_type, exc, traceback) -> bool:

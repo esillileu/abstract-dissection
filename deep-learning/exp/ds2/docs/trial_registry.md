@@ -38,9 +38,10 @@
 
 | 시행 ID | 고정 조건 | raw 기록 |
 | --- | --- | --- |
+| `ext.ds2.toy-skipgram-full-softmax` | toy sentence, window 1, vocab 7, SimpleSkipGram embedding 5, Adam .001, batch 3, 1,000 epochs | 20 update interval mean loss, word-vector checkpoint |
 | `ext.ds2.ptb-word2vec-full-softmax` | PTB train, window 5, embedding 100, Adam .001, batch 100, 10 epochs; CBOW와 Skip-gram full softmax | 20 update interval mean loss, word-vector checkpoint |
 | `ext.ds2.ptb-lm-recipe-comparison` | PTB train/valid/test, embedding/hidden 650, SGD 20, batch 20, BPTT 35, clip .25, max 40 epochs; Rnnlm/LSTM Rnnlm/BetterRnnlm | 20 update train PPL, epoch valid PPL, selected-checkpoint terminal test PPL |
 
 ## 시행 선택의 범위
 
-`ch04/train.py`의 SkipGram, `ch07/train_seq2seq.py`의 Peeky·reverse, `ch08/train.py`의 Vanilla·Peeky는 source에서 한 줄을 전환해 선택하는 책의 실행 조건이므로 위에서 독립 시행으로 전개했다. 반면 별도의 학습 entrypoint가 없는 `ch03/simple_skip_gram.py`은 model 구현 파일이므로 시행으로 등록하지 않았다.
+`ch04/train.py`의 SkipGram, `ch07/train_seq2seq.py`의 Peeky·reverse, `ch08/train.py`의 Vanilla·Peeky는 source에서 한 줄을 전환해 선택하는 책의 실행 조건이므로 위에서 독립 시행으로 전개했다. 별도의 학습 entrypoint가 없는 `ch03/simple_skip_gram.py`은 원본 시행에는 포함하지 않고, GT01에서 CBOW와 같은 조건을 적용한 새 확장 시행으로 등록했다.

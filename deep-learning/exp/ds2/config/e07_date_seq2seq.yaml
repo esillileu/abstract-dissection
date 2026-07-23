@@ -6,7 +6,7 @@ seed_policy: {seed_set: research_v1, seed_count: 10, paired_execution: true, max
 dataset: {id: DS-SEQ-DATE, source: sequence, file: date.txt, reverse: true, split_seed: 1984, split_algorithm: legacy_numpy_randomstate}
 loader: {batch_size: 128}
 optimizer: {name: adam, learning_rate: 0.001}
-loss: {name: time_softmax_cross_entropy, reduction: mean, phase: post_update}
+objective: {name: TemporalSoftmaxCrossEntropy, reduction: mean}
 budget: {max_epochs: 10}
 recording:
   source_curve: {kind: full_test_exact_match, every_epochs: 1, reducer: identity, plot_index: epoch_minus_one}
@@ -14,10 +14,10 @@ recording:
   predictions: {split: test, count: 10, decode: greedy}
   attention: {selection_seed: 1984, count: 5}
 numerics: {dtype: float32, backend: cupy, device: cuda:0, deterministic: true}
-checkpoint: {save_final: true, save_best: true, format: npz}
+checkpoint: {save_final: true, save_best: true, format: v2}
 profiling: {enabled: false}
 tracking: {enabled: true, experiment: ds2}
 variants:
-  SEQD-VAN-REV: {run: {structure_signature: date-seq2seq-16-256}, model: {alias: Seq2seq, wordvec_size: 16, hidden_size: 256}}
-  SEQD-PEEKY-REV: {run: {structure_signature: date-peeky-16-256}, model: {alias: PeekySeq2seq, wordvec_size: 16, hidden_size: 256}}
-  SEQD-ATTN-REV: {run: {structure_signature: date-attention-16-256}, model: {alias: AttentionSeq2seq, wordvec_size: 16, hidden_size: 256}}
+  SEQD-VAN-REV: {run: {structure_signature: date-seq2seq-16-256}, model: {name: Seq2seq, wordvec_size: 16, hidden_size: 256}}
+  SEQD-PEEKY-REV: {run: {structure_signature: date-peeky-16-256}, model: {name: PeekySeq2seq, wordvec_size: 16, hidden_size: 256}}
+  SEQD-ATTN-REV: {run: {structure_signature: date-attention-16-256}, model: {name: AttentionSeq2seq, wordvec_size: 16, hidden_size: 256}}

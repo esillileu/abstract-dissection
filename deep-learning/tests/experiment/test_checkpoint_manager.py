@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from mlprosection.nn.model import MLP
+from mlprosection.nn.model.architecture import MLP
+from mlprosection.nn.objective import SoftmaxCrossEntropy
 from mlprosection.optim.SGD import SGD
 from mlprosection.experiment.checkpoint import (
     CheckpointManager,
@@ -26,21 +27,27 @@ class _Trainer:
 
 def _manager(root: Path, *, policy: CheckpointRetentionPolicy | None = None):
     model = MLP(input_size=2, hidden_sizes=[3], output_size=2)
-    optimizer = SGD(list(model.named_parameters()), lr=0.1)
+    objective = SoftmaxCrossEntropy()
+    params = [
+        *((f"model.{name}", value) for name, value in model.named_parameters()),
+        *((f"objective.{name}", value) for name, value in objective.named_parameters()),
+    ]
+    optimizer = SGD(params, lr=0.1)
     trainer = _Trainer()
     manager = CheckpointManager(
         root=root,
         model=model,
+        objective=objective,
         optimizer=optimizer,
         trainer=trainer,
         config_digest="config",
         policy=policy,
     )
-    return manager, model, optimizer, trainer
+    return manager, model, objective, optimizer, trainer
 
 
 def test_best_and_latest_each_keep_one_generation(tmp_path) -> None:
-    manager, _model, _optimizer, trainer = _manager(tmp_path)
+    manager, _model, _objective, _optimizer, trainer = _manager(tmp_path)
     for epoch in range(1, 4):
         trainer.epoch = epoch
         trainer.global_step = epoch * 10
@@ -58,7 +65,7 @@ def test_best_and_latest_each_keep_one_generation(tmp_path) -> None:
 
 def test_periodic_generations_require_explicit_policy_and_keep_limit(tmp_path) -> None:
     policy = CheckpointRetentionPolicy(periodic_every_epochs=2, periodic_keep=2)
-    manager, _model, _optimizer, trainer = _manager(tmp_path, policy=policy)
+    manager, _model, _objective, _optimizer, trainer = _manager(tmp_path, policy=policy)
     for epoch in range(1, 7):
         trainer.epoch = epoch
         trainer.global_step = epoch * 10
@@ -69,16 +76,25 @@ def test_periodic_generations_require_explicit_policy_and_keep_limit(tmp_path) -
 
 
 def test_checkpoint_pointer_can_be_loaded(tmp_path) -> None:
-    manager, model, optimizer, trainer = _manager(tmp_path)
+    manager, model, objective, optimizer, trainer = _manager(tmp_path)
     trainer.epoch = 2
     trainer.global_step = 20
     manager.save_latest()
+    generation = manager.current("latest").path
+    assert (generation / "model_parameters.npz").is_file()
+    assert (generation / "model_buffers.npz").is_file()
+    assert (generation / "objective_parameters.npz").is_file()
+    assert (generation / "objective_buffers.npz").is_file()
+    assert (generation / "optimizer_state.pkl").is_file()
+    assert (generation / "trainer_state.pkl").is_file()
+    assert (generation / "rng_state.pkl").is_file()
     trainer.epoch = 9
     trainer.global_step = 90
 
     load_epoch_checkpoint(
         path=tmp_path / "latest.json",
         model=model,
+        objective=objective,
         optimizer=optimizer,
         trainer=trainer,
         config_digest="config",

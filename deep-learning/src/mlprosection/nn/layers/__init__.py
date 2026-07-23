@@ -2,7 +2,6 @@ from .base import Layer
 from .cnn import Conv2D, MaxPool2D
 from .linear import Affine, MatMul
 from .activation import Relu, Sigmoid, Softmax, Tanh
-from .criterion import SigmoidWithLoss, SoftmaxWithLoss
 from .embeding import Embedding
 from .regulizer import Dropout, BatchNormalization
 from .shape import Flatten
@@ -11,7 +10,6 @@ from .time import (
     LSTM,
     RNN,
     SimpleTimeAffine,
-    SimpleTimeSoftmaxWithLoss,
     TimeAffine,
     TimeAttention,
     TimeBiLSTM,
@@ -23,8 +21,6 @@ from .time import (
     TimeLSTM,
     TimeLayer,
     TimeRNN,
-    TimeSigmoidWithLoss,
-    TimeSoftmaxWithLoss,
 )
 
 __all__ = [
@@ -37,8 +33,6 @@ __all__ = [
     "Sigmoid",
     "Tanh",
     "Softmax",
-    "SigmoidWithLoss",
-    "SoftmaxWithLoss",
     "Embedding",
     "Dropout",
     "BatchNormalization",
@@ -53,13 +47,10 @@ __all__ = [
     "TimeEmbedding",
     "TimeAffine",
     "TimeAttention",
-    "TimeSoftmaxWithLoss",
     "TimeDropout",
     "TimeBatchNormalization",
     "TimeBiLSTM",
-    "TimeSigmoidWithLoss",
     "GRU",
     "TimeGRU",
-    "SimpleTimeSoftmaxWithLoss",
     "SimpleTimeAffine",
 ]

@@ -12,8 +12,9 @@ import numpy as np
 
 from mlprosection.datasets import load_mnist
 from mlprosection.datasets.mnist import save_file as mnist_cache_path
-from mlprosection.nn.layers import BatchNormalization, SoftmaxWithLoss
-from mlprosection.nn.model import DeepCNN, MLP, SimpleCNN
+from mlprosection.nn.layers import BatchNormalization
+from mlprosection.nn.model.architecture import DeepCNN, MLP, SimpleCNN
+from mlprosection.nn.objective import SoftmaxCrossEntropy
 from mlprosection.optim.SGD import AdaGrad, Adam, Momentum, SGD
 from mlprosection.optim.transform import L2Regularization
 from mlprosection.trainer import ForwardTrainer
@@ -47,7 +48,7 @@ def get_observation_executor(config: dict[str, object]):
 @register_executor("supervised_classification")
 class SupervisedClassificationExecutor:
     def run(self, config: dict[str, object], context: ExperimentContext) -> ExperimentResult:
-        dataset, model_config, training_config, loader_config, optimizer_config = (_mapping(config, key) for key in ("dataset", "model", "training", "loader", "optimizer"))
+        dataset, model_config, objective_config, training_config, loader_config, optimizer_config = (_mapping(config, key) for key in ("dataset", "model", "objective", "training", "loader", "optimizer"))
         backend, streams, actual_runtime = configure_runtime(config)
         context.metadata["runtime"] = actual_runtime
         context.metadata["seed_streams"] = asdict(streams)
@@ -77,9 +78,13 @@ class SupervisedClassificationExecutor:
             "evaluation_sources": _mapping(config, "evaluation").get("sources", ()),
         }
         model = _model(model_config)
+        objective = _objective(objective_config, model.backend)
         if any(isinstance(layer, BatchNormalization) for layer in model.children()):
             model.forward(x_train[:1])
-        optimizer = _optimizer(optimizer_config, list(model.named_parameters()))
+        optimizer = _optimizer(
+            optimizer_config,
+            _training_parameters(model, objective),
+        )
         checkpoint_config = _mapping(config, "checkpoint")
         checkpoint_identity = dict(config)
         checkpoint_identity["checkpoint"] = dict(checkpoint_config)
@@ -151,7 +156,7 @@ class SupervisedClassificationExecutor:
         )
         trainer = ForwardTrainer(
             model,
-            SoftmaxWithLoss().to(model.backend),
+            objective,
             optimizer,
             max_epochs=int(training_config.get("max_epochs", 1)),
             max_updates=None if max_updates is None else int(max_updates),
@@ -164,6 +169,7 @@ class SupervisedClassificationExecutor:
         checkpoint_manager = CheckpointManager(
             root=Path(str(context.metadata["checkpoint_root"])),
             model=model,
+            objective=objective,
             optimizer=optimizer,
             trainer=trainer,
             config_digest=config_digest,
@@ -171,7 +177,7 @@ class SupervisedClassificationExecutor:
         )
         checkpoint_manager_holder["manager"] = checkpoint_manager
         if (resume := checkpoint_config.get("resume")):
-            load_epoch_checkpoint(path=str(resume), model=model, optimizer=optimizer, trainer=trainer, config_digest=config_digest)
+            load_epoch_checkpoint(path=str(resume), model=model, objective=objective, optimizer=optimizer, trainer=trainer, config_digest=config_digest)
         seed_batch_order(backend, streams)
         with training_summary(monitor):
             records = events.run(lambda: trainer.fit(x_train, t_train), start_update=trainer.global_step + 1)
@@ -301,8 +307,8 @@ def _device_timer(config: dict[str, object], backend):
 
 
 def _model(config: dict[str, object]):
-    name = str(config.get("alias", config.get("name", "MLP")))
-    values = {key: value for key, value in config.items() if key not in {"alias", "name", "family", "task_type", "input_shape", "output_shape", "structure_signature", "use_batchnorm", "use_dropout", "num_hidden_layers", "num_conv_layers", "normalization", "model/flops", "model/macs"}}
+    name = str(config.get("name", "MLP"))
+    values = {key: value for key, value in config.items() if key not in {"name", "family", "task_type", "input_shape", "output_shape", "structure_signature", "use_batchnorm", "use_dropout", "num_hidden_layers", "num_conv_layers", "normalization", "model/flops", "model/macs"}}
     if name == "MLP":
         if "activation" in values:
             values["activation_name"] = values.pop("activation")
@@ -313,7 +319,24 @@ def _model(config: dict[str, object]):
     if name == "MLP": return MLP(**values)
     if name == "SimpleCNN": return SimpleCNN(**values)
     if name == "DeepCNN": return DeepCNN(**values)
-    raise ValueError(f"unknown model alias: {name}")
+    raise ValueError(f"unknown model name: {name}")
+
+
+def _objective(config: dict[str, object], backend):
+    name = str(config.get("name", "SoftmaxCrossEntropy"))
+    if name == "SoftmaxCrossEntropy":
+        return SoftmaxCrossEntropy(
+            reduction=str(config.get("reduction", "mean")),
+            backend=backend,
+        )
+    raise ValueError(f"unknown objective name: {name}")
+
+
+def _training_parameters(model, objective):
+    return [
+        *((f"model.{name}", parameter) for name, parameter in model.named_parameters()),
+        *((f"objective.{name}", parameter) for name, parameter in objective.named_parameters()),
+    ]
 
 
 def _optimizer(config: dict[str, object], params):

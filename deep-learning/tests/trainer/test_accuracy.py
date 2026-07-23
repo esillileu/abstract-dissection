@@ -3,13 +3,13 @@ from __future__ import annotations
 import pytest
 
 from mlprosection import Tensor
-from mlprosection.nn.layers.base import Layer
-from mlprosection.nn.layers.criterion import SoftmaxWithLoss
+from mlprosection.nn.model import Model
+from mlprosection.nn.objective import SoftmaxCrossEntropy
 from mlprosection.trainer import ForwardTrainer
 
 
-class IdentityModel(Layer):
-    def forward_manual(self, x):
+class IdentityModel(Model):
+    def forward_manual(self, x, *, cache=True):
         return x
 
     def backward_manual(self, dout):
@@ -27,7 +27,7 @@ class DummyOptimizer:
 
 def test_evaluate_returns_requested_metrics_and_restores_training_mode() -> None:
     trainer = ForwardTrainer(
-        IdentityModel(), SoftmaxWithLoss(), DummyOptimizer(), max_epochs=1, batch_size=2
+        IdentityModel(), SoftmaxCrossEntropy(), DummyOptimizer(), max_epochs=1, batch_size=2
     )
     x = Tensor([[0.1, 0.9], [0.8, 0.2], [0.3, 0.7]])
     t = Tensor([1, 0, 0])
@@ -43,7 +43,7 @@ def test_evaluate_returns_requested_metrics_and_restores_training_mode() -> None
 
 def test_evaluate_can_skip_loss_or_accuracy() -> None:
     trainer = ForwardTrainer(
-        IdentityModel(), SoftmaxWithLoss(), DummyOptimizer(), max_epochs=1, batch_size=2
+        IdentityModel(), SoftmaxCrossEntropy(), DummyOptimizer(), max_epochs=1, batch_size=2
     )
     x = Tensor([[0.1, 0.9], [0.8, 0.2]])
     t = Tensor([1, 0])

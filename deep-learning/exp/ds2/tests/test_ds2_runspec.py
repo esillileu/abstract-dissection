@@ -24,8 +24,28 @@ def test_word2vec_runspec_connects_source_curve_contract() -> None:
     assert spec.source_curve is not None
     assert spec.source_curve.kind == "interval_mean_loss"
     assert spec.source_curve.every_updates == 20
-    assert spec.model["architecture"] == "cbow"
-    assert spec.model["objective"] == "negative_sampling"
+    assert spec.model["name"] == "CBOW"
+    assert spec.objective["name"] == "NegativeSampling"
+
+
+def test_toy_skipgram_matches_cbow_conditions_except_architecture() -> None:
+    cbow = parse_run_spec(
+        "exp/ds2/config/e01_toy_word2vec.yaml",
+        atomic_run_id="W2V-TOY-CBOW-FULL",
+    )
+    skipgram = parse_run_spec(
+        "exp/ds2/config/e01_toy_word2vec.yaml",
+        atomic_run_id="W2V-TOY-SKIPGRAM-FULL",
+    )
+
+    assert skipgram.model["name"] == "SkipGram"
+    assert skipgram.objective["name"] == "FullSoftmax"
+    assert skipgram.identity.structure_signature == "toy-skipgram-full-softmax-w1-e5"
+    assert skipgram.dataset == cbow.dataset
+    assert skipgram.loader == cbow.loader
+    assert skipgram.optimizer == cbow.optimizer
+    assert skipgram.budget == cbow.budget
+    assert skipgram.model["embedding_size"] == cbow.model["embedding_size"]
 
 
 def test_lm_recipe_runspec_declares_valid_selected_checkpoint_inputs() -> None:
@@ -45,7 +65,7 @@ def test_seq2seq_runspec_declares_predictions_and_attention_observation_inputs()
     assert spec.identity.group_id == "GT07"
     assert spec.recording["predictions"] == {"split": "test", "count": 10, "decode": "greedy"}
     assert spec.recording["attention"] == {"selection_seed": 1984, "count": 5}
-    assert spec.model["alias"] == "AttentionSeq2seq"
+    assert spec.model["name"] == "AttentionSeq2seq"
 
 
 def test_ds2_runspec_allows_device_timing_profiling_policy() -> None:
@@ -95,7 +115,9 @@ def test_ds2_optimizer_owns_group_gradient_clipping(
 ) -> None:
     spec = parse_run_spec(config_path, atomic_run_id=atomic_run_id)
 
-    optimizer = _optimizer(spec.config, _SingleParameterModel())
+    optimizer = _optimizer(
+        spec.config, _SingleParameterModel(), _SingleParameterModel()
+    )
     clipping = [
         hook for hook in optimizer.pre_step_hooks if isinstance(hook, ClipGradNorm)
     ]
