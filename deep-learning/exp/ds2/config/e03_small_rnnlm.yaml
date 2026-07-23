@@ -12,7 +12,7 @@ objective: {name: TemporalSoftmaxCrossEntropy, reduction: mean}
 budget: {max_epochs: 100}
 recording:
   source_curve: {kind: train_perplexity, every_updates: 20, reducer: exp_token_weighted_mean, plot_index: zero_based_append}
-  evaluations: [{axis: terminal, sources: [test]}]
+  evaluations: []
 numerics: {dtype: float32, backend: cupy, device: cuda:0, deterministic: true}
 checkpoint: {save_final: true, save_best: false, format: v2}
 profiling: {enabled: false}

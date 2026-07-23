@@ -15,6 +15,7 @@ from exp.ds2.executor import (
     Word2VecExecutor,
     _attention_example_ids,
     _contexts_targets,
+    _language_model_training_corpus,
     _source_curve_from_objective,
 )
 from exp.ds2.records import DS2Records
@@ -240,6 +241,20 @@ def test_word2vec_contexts_are_built_with_the_expected_window_order() -> None:
         [2, 3, 5, 6],
         [3, 4, 6, 7],
     ])
+
+
+def test_language_model_vocabulary_is_derived_from_the_training_slice() -> None:
+    corpus = np.array([0, 4, 1, 3, 9, 8], dtype=np.int64)
+
+    limited, limited_vocab_size = _language_model_training_corpus(
+        corpus, {"train_limit": 4}
+    )
+    full, full_vocab_size = _language_model_training_corpus(corpus, {})
+
+    assert np.array_equal(limited, [0, 4, 1, 3])
+    assert limited_vocab_size == 5
+    assert np.array_equal(full, corpus)
+    assert full_vocab_size == 10
 
 
 def test_source_curve_point_closes_a_probe_timing_window() -> None:

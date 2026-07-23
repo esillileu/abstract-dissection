@@ -290,14 +290,14 @@ class LanguageModelExecutor:
         ptb = load_ptb()
         model_config, loader, training = (_mapping(config, key) for key in ("model", "loader", "training"))
         dataset, evaluation = _mapping(config, "dataset"), _mapping(config, "evaluation")
-        model = _language_model(str(model_config.get("name")), len(ptb["word_to_id"]), model_config, backend)
+        train_corpus, vocab_size = _language_model_training_corpus(ptb["train"], dataset)
+        model = _language_model(str(model_config.get("name")), vocab_size, model_config, backend)
         objective = TemporalSoftmaxCrossEntropy(
             reduction=str(_mapping(config, "objective").get("reduction", "mean")),
             backend=backend,
         )
         optimizer = _optimizer(config, model, objective)
         seed_batch_order(backend, streams)
-        train_corpus = ptb["train"][:int(dataset.get("train_limit", len(ptb["train"])))]
         train = Tensor(backend.xp.asarray(train_corpus[:-1], dtype=backend.xp.int64), backend=backend)
         train_targets = Tensor(backend.xp.asarray(train_corpus[1:], dtype=backend.xp.int64), backend=backend)
         max_epochs = int(training.get("max_epochs", 4))
@@ -365,7 +365,7 @@ class LanguageModelExecutor:
         )
         with training_summary(monitor):
             records = controller.run(lambda: trainer.fit(train, train_targets))
-        if test_at_end or test_ppl == float("inf"):
+        if test_at_end:
             if bool(_mapping(config, "checkpoint").get("save_best", False)):
                 if selected_checkpoint_path is None:
                     raise RuntimeError("selected checkpoint is required before terminal test evaluation")
@@ -380,10 +380,13 @@ class LanguageModelExecutor:
         final_train_ppl = _backend_exp_float(backend, records.updates[-1]["loss"]) if records.updates else float("inf")
         final_metrics = {
             "final/train/perplexity": final_train_ppl,
-            "final/test/perplexity": test_ppl,
             "final/train/ppl": final_train_ppl,
-            "final/test/ppl": test_ppl,
         }
+        if test_ppl < float("inf"):
+            final_metrics.update({
+                "final/test/perplexity": test_ppl,
+                "final/test/ppl": test_ppl,
+            })
         if best_valid < float("inf"):
             final_metrics.update({
                 "final/valid/perplexity": valid_ppl,
@@ -663,6 +666,15 @@ def _contexts_targets(corpus, window: int):
     windows = np.lib.stride_tricks.sliding_window_view(corpus, width)
     contexts = np.concatenate((windows[:, :window], windows[:, window + 1:]), axis=1)
     return contexts, corpus[window:-window]
+
+
+def _language_model_training_corpus(corpus, dataset: dict[str, object]):
+    """Resolve the training slice and its source-compatible vocabulary size."""
+    train_limit = int(dataset.get("train_limit", len(corpus)))
+    train_corpus = corpus[:train_limit]
+    if len(train_corpus) < 2:
+        raise ValueError("language-model corpus must contain at least two tokens")
+    return train_corpus, int(np.max(train_corpus)) + 1
 
 
 def _word2vec_corpus(dataset: dict[str, object]):

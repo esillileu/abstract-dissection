@@ -89,6 +89,8 @@ def test_custom_language_model_defers_epoch_curve_to_raw_analysis() -> None:
     assert spec.source_curve.every_updates is None
     assert spec.source_curve.every_epochs == 1
     assert spec.config["training"]["loop"] == "epoch"
+    assert spec.evaluations == ()
+    assert spec.config["evaluation"]["test_at_end"] is False
 
 
 def test_ds2_runspec_still_rejects_legacy_evaluation_key() -> None:
