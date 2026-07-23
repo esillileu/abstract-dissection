@@ -58,6 +58,25 @@ def test_gt08_runspec_declares_20_update_train_and_test_cadence() -> None:
     assert spec.triggers[1].sources == ("mnist-test-full",)
 
 
+def test_go01_runspec_declares_optimizer_specific_learning_rates() -> None:
+    expected = {
+        "TOY-SGD": ("toy_sgd", 0.95),
+        "TOY-MOMENTUM": ("toy_momentum", 0.1),
+        "TOY-ADAGRAD": ("toy_adagrad", 1.5),
+        "TOY-ADAM": ("toy_adam", 0.3),
+    }
+
+    for atomic_run_id, (name, learning_rate) in expected.items():
+        spec = parse_run_spec(
+            "exp/ds1/config/e09_optimizer_trajectory.yaml",
+            atomic_run_id=atomic_run_id,
+        )
+
+        assert spec.identity.group_id == "GO01"
+        assert spec.optimizer["name"] == name
+        assert spec.optimizer["learning_rate"] == learning_rate
+
+
 def test_ds1_runspec_allows_device_timing_profiling_policy() -> None:
     spec = parse_run_spec(
         "exp/ds1/config/e01_mnist_optimizer.yaml",
