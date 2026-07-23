@@ -103,6 +103,18 @@ def parse_experiment_ids(values: list[str]) -> list[str]:
     return list(dict.fromkeys(selected))
 
 
+def parse_atomic_run_ids(values: list[str]) -> list[str]:
+    """Parse repeatable, comma-separated atomic run ID selections."""
+    selected: list[str] = []
+    for value in values:
+        for item in value.split(","):
+            item = item.strip()
+            if not item:
+                raise ValueError("atomic run ID must not be empty")
+            selected.append(item)
+    return list(dict.fromkeys(selected))
+
+
 def _config_root(domain: str) -> Path:
     if domain not in DOMAIN_EXECUTOR_MODULES:
         raise ValueError(f"unknown experiment domain: {domain}")
@@ -135,12 +147,30 @@ def build_plans(
     *, domain: str, experiment_ids: list[str], all_experiments: bool,
     seed_set: str, seed_indexes: str | None, device: str | None,
     overrides: dict[str, object],
+    atomic_run_ids: list[str] | None = None,
+    excluded_atomic_run_ids: list[str] | None = None,
+    seed_first: bool = False,
 ) -> list[RunPlan]:
     if bool(experiment_ids) == all_experiments:
         raise ValueError("choose exactly one of --all or --experiment/-e")
+    if atomic_run_ids and excluded_atomic_run_ids:
+        raise ValueError("choose at most one of --atomic-run/-a or --exclude-atomic-run/-x")
     selected = set(parse_experiment_ids(experiment_ids))
+    included_atomic_runs = set(parse_atomic_run_ids(atomic_run_ids or []))
+    excluded_atomic_runs = set(parse_atomic_run_ids(excluded_atomic_run_ids or []))
+    requested_atomic_runs = included_atomic_runs or excluded_atomic_runs
+    matched_atomic_runs: set[str] = set()
     seeds = _seed_values(domain, seed_set)
     requested_indexes = parse_seed_indexes(seed_indexes, count=len(seeds))
+    ordered_seed_indexes = (
+        requested_indexes
+        if requested_indexes is not None
+        else list(range(len(seeds)))
+    )
+    seed_order = {
+        seeds[index]: position
+        for position, index in enumerate(ordered_seed_indexes)
+    }
     plans: list[RunPlan] = []
     for path in sorted(_config_root(domain).glob("e[0-9][0-9]_*.yaml")):
         experiment_id = path.name[:3]
@@ -150,6 +180,22 @@ def build_plans(
         if not isinstance(source, dict):
             raise ValueError(f"invalid YAML object: {path}")
         resolved = _deep_merge(source, overrides)
+        variants = resolved.get("variants")
+        if not isinstance(variants, dict) or not variants:
+            raise ValueError(f"experiment YAML needs variants: {path}")
+        available_atomic_runs = {str(atomic_run_id) for atomic_run_id in variants}
+        matched_atomic_runs.update(requested_atomic_runs & available_atomic_runs)
+        selected_variants = [
+            str(atomic_run_id)
+            for atomic_run_id in variants
+            if (
+                not included_atomic_runs
+                or str(atomic_run_id) in included_atomic_runs
+            )
+            and str(atomic_run_id) not in excluded_atomic_runs
+        ]
+        if not selected_variants:
+            continue
         execution = resolved.get("execution", {})
         if not isinstance(execution, dict):
             raise ValueError(f"execution must be a mapping: {path}")
@@ -170,14 +216,25 @@ def build_plans(
             if invalid:
                 raise ValueError(f"{experiment_id} declares only {count} seed runs; invalid indexes: {invalid}")
             run_seeds = [seeds[index] for index in indexes]
-        variants = resolved.get("variants")
-        if not isinstance(variants, dict) or not variants:
-            raise ValueError(f"experiment YAML needs variants: {path}")
-        for atomic_run_id in variants:
+        for atomic_run_id in selected_variants:
             for seed in run_seeds:
                 plans.append(RunPlan(domain, experiment_id, path, str(atomic_run_id), seed, device or str(execution.get("default_device", _default_device(domain, experiment_id)))))
+    unknown_atomic_runs = requested_atomic_runs - matched_atomic_runs
+    if unknown_atomic_runs:
+        unknown = ", ".join(sorted(unknown_atomic_runs))
+        raise ValueError(f"unknown atomic run ID in selected experiments: {unknown}")
     if not plans:
+        if requested_atomic_runs:
+            raise ValueError("atomic run selection matched no plans")
         raise ValueError("no experiment YAML matched")
+    if seed_first:
+        plans.sort(
+            key=lambda plan: (
+                seed_order.get(plan.seed, len(seed_order))
+                if plan.seed is not None
+                else len(seed_order)
+            )
+        )
     return plans
 
 
@@ -237,8 +294,28 @@ def main(argv: list[str] | None = None) -> None:
     selection = parser.add_mutually_exclusive_group()
     selection.add_argument("--all", action="store_true")
     selection.add_argument("-e", "--experiment", action="append", default=[])
+    atomic_selection = parser.add_mutually_exclusive_group()
+    atomic_selection.add_argument(
+        "-a",
+        "--atomic-run",
+        action="append",
+        default=[],
+        help="Run only these atomic IDs; repeat or separate with commas",
+    )
+    atomic_selection.add_argument(
+        "-x",
+        "--exclude-atomic-run",
+        action="append",
+        default=[],
+        help="Exclude these atomic IDs; repeat or separate with commas",
+    )
     parser.add_argument("--seed-set", default="research_v1")
     parser.add_argument("-seed", "--seed", help="Seed-set indexes, for example 0-4 or 0,3,7")
+    parser.add_argument(
+        "--seed-first",
+        action="store_true",
+        help="Run all selected atomic runs for each seed before moving to the next seed",
+    )
     parser.add_argument("--device", choices=("cpu", "cuda:0"))
     parser.add_argument("--set", dest="override_values", action="append", default=[], metavar="KEY=VALUE")
     parser.add_argument("--dry-run", action="store_true")
@@ -250,6 +327,10 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
     try:
         if args.command == "analyze":
+            if args.atomic_run or args.exclude_atomic_run or args.seed_first:
+                parser.error(
+                    "atomic run selection and --seed-first are supported only for plan and run"
+                )
             analysis_argv: list[str] = []
             if args.all:
                 analysis_argv.extend(("-e", "all"))
@@ -268,7 +349,18 @@ def main(argv: list[str] | None = None) -> None:
         all_experiments = args.all or (args.command == "plan" and not args.experiment)
         if args.command == "run" and not all_experiments and not args.experiment:
             parser.error("run requires --all or --experiment/-e")
-        plans = build_plans(domain=args.domain, experiment_ids=args.experiment, all_experiments=all_experiments, seed_set=args.seed_set, seed_indexes=args.seed, device=args.device, overrides=overrides)
+        plans = build_plans(
+            domain=args.domain,
+            experiment_ids=args.experiment,
+            all_experiments=all_experiments,
+            seed_set=args.seed_set,
+            seed_indexes=args.seed,
+            device=args.device,
+            overrides=overrides,
+            atomic_run_ids=args.atomic_run,
+            excluded_atomic_run_ids=args.exclude_atomic_run,
+            seed_first=args.seed_first,
+        )
         _print_plans(plans)
         if args.command == "plan" or args.dry_run:
             return

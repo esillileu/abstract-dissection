@@ -13,6 +13,25 @@ just exp ds2 run -e 02 -seed 1
 등록 시드를 선택한다. `e02=GT02`이고 네 개의 Word2Vec atomic trial을 모두
 실행한다. 실제 실행 전에는 `just mlflow up`으로 MLflow를 시작한다.
 
+특정 atomic run만 실행하려면 `-a`/`--atomic-run`, 특정 atomic run을 빼려면
+`-x`/`--exclude-atomic-run`을 사용한다. 두 옵션은 함께 사용할 수 없으며, 반복하거나
+쉼표로 여러 ID를 지정할 수 있다. ID는 선택한 `-e`/`--all` 범위 안에서 검증된다.
+
+```bash
+just exp ds2 plan -e 02 -a W2V-PTB-CBOW-NS -seed 0
+just exp ds2 run -e 02 -a W2V-PTB-CBOW-NS,W2V-PTB-SKIPGRAM-NS -seed 0
+just exp ds2 run -e 02 -x W2V-PTB-CBOW-FULL -seed 0
+```
+
+기본 실행 순서는 atomic run 우선이다. 선택한 모든 atomic run을 같은 seed끼리 먼저
+실행하려면 `--seed-first`를 추가한다. 여러 experiment를 선택해도 전체 plan에
+적용되며, `-seed`에 지정한 인덱스 순서를 따른다.
+
+```bash
+just exp ds2 plan -e 01-02 -seed 0-2 --seed-first
+just exp ds2 run -e 01-02 -seed 0-2 --seed-first
+```
+
 | catalog ID | 실행 그룹 | YAML |
 | --- | --- | --- |
 | `e01` | `GT01` | `config/e01_toy_word2vec.yaml` |
