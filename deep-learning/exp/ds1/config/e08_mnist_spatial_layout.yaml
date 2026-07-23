@@ -10,10 +10,11 @@ loss: {name: SoftmaxWithLoss, reduction: mean, phase: post_update}
 budget: {max_epochs: 2}
 recording:
   evaluation_sources:
-    - {id: mnist-train-full, split: train, kind: full}
+    - {id: mnist-train-first-1000, split: train, kind: first_n, count: 1000}
+    - {id: mnist-test-first-1000, split: test, kind: first_n, count: 1000}
     - {id: mnist-test-full, split: test, kind: full}
   triggers:
-    - {type: updates, start: 20, every: 20, sources: [mnist-train-full, mnist-test-full]}
+    - {type: updates, start: 20, every: 20, sources: [mnist-train-first-1000, mnist-test-first-1000]}
     - {type: epoch_end, sources: [mnist-test-full]}
 numerics: {dtype: float64, backend: cupy, device: cuda:0}
 checkpoint: {save_final: true, save_on_eval: false, format: npz}
