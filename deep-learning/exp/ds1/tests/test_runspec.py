@@ -43,13 +43,17 @@ def test_gt08_runspec_declares_20_update_train_and_test_cadence() -> None:
     sources = {source.id: source for source in spec.evaluation_sources}
 
     assert spec.identity.group_id == "GT08"
-    assert sources["mnist-train-full"].split == "train"
-    assert sources["mnist-train-full"].kind == "full"
+    assert sources["mnist-train-first-1000"].split == "train"
+    assert sources["mnist-train-first-1000"].kind == "first_n"
+    assert sources["mnist-train-first-1000"].count == 1000
+    assert sources["mnist-test-first-1000"].split == "test"
+    assert sources["mnist-test-first-1000"].kind == "first_n"
+    assert sources["mnist-test-first-1000"].count == 1000
     assert sources["mnist-test-full"].split == "test"
     assert sources["mnist-test-full"].kind == "full"
     assert spec.triggers[0].type == "updates"
     assert (spec.triggers[0].start, spec.triggers[0].every, spec.triggers[0].stop) == (20, 20, None)
-    assert spec.triggers[0].sources == ("mnist-train-full", "mnist-test-full")
+    assert spec.triggers[0].sources == ("mnist-train-first-1000", "mnist-test-first-1000")
     assert spec.triggers[1].type == "epoch_end"
     assert spec.triggers[1].sources == ("mnist-test-full",)
 
