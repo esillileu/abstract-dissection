@@ -33,19 +33,32 @@ class FullSoftmax(Objective):
 
     def forward_manual(
         self, prediction: Tensor, target: Tensor, *, cache: bool = True,
-        replay_context=None,
+        replay_context=None, example_count: int | None = None,
     ) -> ObjectiveResult:
         hidden = prediction.data
         computation = softmax_cross_entropy(
             Tensor(hidden @ self.W_out.data.T, backend=prediction.backend),
             target.reshape(-1),
-            reduction=self.reduction,
+            reduction="sum",
         )
+        prediction_count = computation.unit_count
+        reporting_divisor = prediction_count if self.reduction == "mean" else 1
+        reporting_loss = computation.loss / reporting_divisor
+        optimized_divisor = (
+            example_count
+            if example_count is not None
+            else reporting_divisor
+        )
+        loss = computation.loss / optimized_divisor
+        gradient = computation.gradient.data / optimized_divisor
         if cache:
-            self._cache = (hidden, computation.gradient.data, prediction.backend)
+            self._cache = (hidden, gradient, prediction.backend)
         return ObjectiveResult(
-            computation.loss,
-            computation.unit_count,
+            loss,
+            prediction_count,
+            reporting_loss=(
+                reporting_loss if example_count is not None else None
+            ),
         )
 
     def backward_manual(self) -> Tensor:
@@ -87,7 +100,7 @@ class NegativeSampling(Objective):
 
     def forward_manual(
         self, prediction: Tensor, target: Tensor, *, cache: bool = True,
-        replay_context=None,
+        replay_context=None, example_count: int | None = None,
     ) -> ObjectiveResult:
         xp = self.backend.xp
         labels = target.data.reshape(-1).astype(xp.int64, copy=False)
@@ -106,19 +119,31 @@ class NegativeSampling(Objective):
         computation = binary_cross_entropy_with_logits(
             Tensor(scores, backend=prediction.backend),
             Tensor(binary_targets, backend=target.backend),
-            reduction="mean" if self.reduction == "mean" else "sum",
+            reduction="sum",
         )
-        loss = computation.loss
-        score_gradient = computation.gradient
-        if self.reduction == "sum":
-            loss = loss / len(labels)
-            score_gradient = score_gradient / len(labels)
+        candidate_count = self.negative_samples + 1
+        reporting_divisor = (
+            len(labels) * candidate_count
+            if self.reduction == "mean"
+            else len(labels)
+        )
+        reporting_loss = computation.loss / reporting_divisor
+        optimized_divisor = (
+            example_count
+            if example_count is not None
+            else reporting_divisor
+        )
+        loss = computation.loss / optimized_divisor
+        score_gradient = computation.gradient / optimized_divisor
         if cache:
             self._cache = (hidden, candidates, score_gradient.data, prediction.backend)
         return ObjectiveResult(
             loss,
             len(labels),
             negatives.copy(),
+            reporting_loss=(
+                reporting_loss if example_count is not None else None
+            ),
         )
 
     def backward_manual(self) -> Tensor:

@@ -22,6 +22,7 @@ class UpdateEvent:
     batch_size: int
     loss: Tensor
     learning_rate: float | tuple[float, ...]
+    book_loss: Tensor | None = None
 
 
 @dataclass(frozen=True)
@@ -33,6 +34,7 @@ class SourceObjectiveSample:
     local_iteration: int
     objective: Tensor
     unit_count: int
+    book_objective: Tensor | None = None
 
 
 @dataclass(frozen=True)

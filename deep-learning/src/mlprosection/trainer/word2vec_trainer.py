@@ -53,7 +53,9 @@ class Word2VecTrainer(EventTrainer):
                 for local_iteration, (batch_x, batch_t) in enumerate(self._iter_batches(shuffled_contexts, shuffled_targets)):
                     model_x, objective_t = self.batch_adapter.prepare(batch_x, batch_t)
                     prediction = self.model.forward(model_x)
-                    result = self.objective.forward(prediction, objective_t)
+                    result = self.objective.forward(
+                        prediction, objective_t, example_count=len(batch_x)
+                    )
                     gradient = self.objective.backward()
                     self.model.backward(gradient)
                     self.optimizer.update()
@@ -65,6 +67,7 @@ class Word2VecTrainer(EventTrainer):
                             objective_t,
                             cache=False,
                             replay_context=result.replay_context,
+                            example_count=len(batch_x),
                         )
                     finally:
                         self._restore_evaluation_state(probe_state)
@@ -72,12 +75,24 @@ class Word2VecTrainer(EventTrainer):
                     sample_count += len(batch_x)
                     self._emit_update(UpdateEvent(
                         update=self.global_step, epoch=self.epoch, batch_size=len(batch_x),
-                        loss=post_result.loss, learning_rate=self._learning_rate(),
+                        loss=(
+                            post_result.reporting_loss
+                            if post_result.reporting_loss is not None
+                            else post_result.loss
+                        ),
+                        learning_rate=self._learning_rate(),
+                        book_loss=post_result.loss,
                     ))
                     self._emit_source_objective(SourceObjectiveSample(
                         update=self.global_step, epoch=self.epoch,
-                        local_iteration=local_iteration, objective=result.loss,
+                        local_iteration=local_iteration,
+                        objective=(
+                            result.reporting_loss
+                            if result.reporting_loss is not None
+                            else result.loss
+                        ),
                         unit_count=result.unit_count,
+                        book_objective=result.loss,
                     ))
                     self.batch_cursor = local_iteration + 1
                     if self._at_update_limit():

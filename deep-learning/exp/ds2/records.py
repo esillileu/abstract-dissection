@@ -39,16 +39,26 @@ class DS2Records:
         self.artifact_root = artifact_root
 
     def on_update(self, event: UpdateEvent) -> None:
-        self.updates.append({"update": event.update, "epoch": event.epoch, "batch_size": event.batch_size, "loss": event.loss, "lr": event.learning_rate})
+        self.updates.append({"update": event.update, "epoch": event.epoch, "batch_size": event.batch_size, "loss": event.loss, "book_loss": event.book_loss, "lr": event.learning_rate})
         self._mark_dirty()
 
     def on_source_objective(self, event: SourceObjectiveSample) -> None:
-        self.source_samples.append({"update": event.update, "epoch": event.epoch, "local_iteration": event.local_iteration, "objective": event.objective, "unit_count": event.unit_count})
+        self.source_samples.append({"update": event.update, "epoch": event.epoch, "local_iteration": event.local_iteration, "objective": event.objective, "book_objective": event.book_objective, "unit_count": event.unit_count})
         self._mark_dirty()
 
     def add_source_curve(self, point: dict[str, object]) -> None:
-        self.source_curves.append(point)
-        self._mark_dirty()
+        standard = dict(point)
+        book_value = standard.pop("book_value", None)
+        self.source_curves.append(standard)
+        added = 1
+        if book_value is not None:
+            book = dict(standard)
+            book["series_id"] = f"{standard.get('series_id', 'source')}_book"
+            book["metric"] = "book_loss"
+            book["value"] = book_value
+            self.source_curves.append(book)
+            added += 1
+        self._mark_dirty(added)
 
     def on_epoch(self, event: EpochEvent) -> None:
         self.epochs.append(event)
@@ -111,6 +121,8 @@ class DS2Records:
         rows: list[tuple[int, str, float]] = []
         for row in self.updates:
             rows.append((int(row["update"]), "update/train/loss", float(row["loss"])))
+            if row.get("book_loss") is not None:
+                rows.append((int(row["update"]), "update/train/book_loss", float(row["book_loss"])))
             if isinstance(row["lr"], float):
                 rows.append((int(row["update"]), "update/train/lr", row["lr"]))
         for row in self.evaluations:
@@ -136,13 +148,13 @@ class DS2Records:
         self.artifact_root = artifact_root
         artifact_root.mkdir(parents=True, exist_ok=True)
         self._materialize_pending_scalars()
-        self._append("updates", artifact_root / "updates.csv", self.updates, columns=["update", "epoch", "batch_size", "loss", "lr"])
+        self._append("updates", artifact_root / "updates.csv", self.updates, columns=["update", "epoch", "batch_size", "loss", "book_loss", "lr"])
         self._append("evaluations", artifact_root / "evaluations.csv", self.evaluations, columns=["axis", "axis_step", "update", "epoch", "evaluation_set_id", "split", "unit", "unit_count", "metric", "value"])
         self._append("checkpoints", artifact_root / "checkpoints.csv", self.checkpoints, columns=["update", "epoch", "kind", "path", "sha256", "checkpoint_id", "selection_metric", "selection_value"])
         self._append("timing_windows", artifact_root / "timing_windows.csv", [{"start_update": item.start_update, "end_update": item.end_update, "update_count": item.update_count, "closed_by": item.closed_by, "train_wall_time_ns": item.train_wall_time_ns, "train_device_time_ns": item.train_device_time_ns, "eval_wall_time_ns": item.eval_wall_time_ns, "eval_device_time_ns": item.eval_device_time_ns} for item in self.timing_windows], columns=["start_update", "end_update", "update_count", "closed_by", "train_wall_time_ns", "train_device_time_ns", "eval_wall_time_ns", "eval_device_time_ns"])
         observations = artifact_root / "observations"
         observations.mkdir(exist_ok=True)
-        self._append("source_samples", observations / "source_objectives.csv", self.source_samples, columns=["update", "epoch", "local_iteration", "objective", "unit_count"])
+        self._append("source_samples", observations / "source_objectives.csv", self.source_samples, columns=["update", "epoch", "local_iteration", "objective", "book_objective", "unit_count"])
         self._append("source_curves", observations / "source_curves.csv", self.source_curves, columns=["series_id", "plot_index", "update_start", "update_end", "epoch_start", "epoch_end", "unit", "unit_count", "metric", "reducer", "value"])
         self._append("predictions", observations / "predictions.csv", self.predictions, columns=["epoch", "example_id", "source", "target", "prediction", "exact_match", "token_correct", "token_count"])
         self._append("attention", observations / "attention.csv", self.attention, columns=["example_id", "decode_step", "encoder_position", "weight"])
@@ -154,21 +166,26 @@ class DS2Records:
         if self.artifact_root is not None:
             self.write_csv(self.artifact_root)
 
-    def _mark_dirty(self) -> None:
-        self._pending_rows += 1
+    def _mark_dirty(self, count: int = 1) -> None:
+        self._pending_rows += count
         if self._pending_rows >= self.flush_interval:
             self.flush()
 
     def _materialize_pending_scalars(self) -> None:
         collections = (
-            ("updates", self.updates, "loss"),
-            ("source_samples", self.source_samples, "objective"),
-            ("source_curves", self.source_curves, "value"),
+            ("updates", self.updates, ("loss", "book_loss")),
+            ("source_samples", self.source_samples, ("objective", "book_objective")),
+            ("source_curves", self.source_curves, ("value",)),
         )
         entries = []
-        for name, rows, key in collections:
+        for name, rows, keys in collections:
             start = self._materialized_rows.get(name, 0)
-            entries.extend((row, key) for row in rows[start:])
+            entries.extend(
+                (row, key)
+                for row in rows[start:]
+                for key in keys
+                if row.get(key) is not None
+            )
             self._materialized_rows[name] = len(rows)
         self._materialize_scalars(entries)
 
@@ -222,6 +239,8 @@ class DS2Records:
 def _source_curve_metric_name(metric: str) -> str | None:
     if metric == "loss":
         return "series/train/loss"
+    if metric == "book_loss":
+        return "series/train/book_loss"
     if metric == "perplexity":
         return "series/train/perplexity"
     if metric == "exact_match_accuracy":

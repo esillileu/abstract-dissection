@@ -10,19 +10,24 @@ from .common import runs, source_curve
 def render(client, error_style, output):
     del output
     definitions = [
-        ("W2V-PTB-CBOW-NS", "CBOW / negative sampling", "o", "-", "tab:blue"),
-        ("W2V-PTB-SKIPGRAM-NS", "Skip-gram / negative sampling", "s", "-", "tab:orange"),
-        ("W2V-PTB-CBOW-FULL", "CBOW / full softmax", "o", "--", "tab:blue"),
-        ("W2V-PTB-SKIPGRAM-FULL", "Skip-gram / full softmax", "s", "--", "tab:orange"),
+        ("W2V-PTB-CBOW-NS", "CBOW", "negative sampling", "o", "-", "tab:blue"),
+        ("W2V-PTB-SKIPGRAM-NS", "Skip-gram", "negative sampling", "s", "-", "tab:orange"),
+        ("W2V-PTB-CBOW-FULL", "CBOW", "full softmax", "o", "--", "tab:blue"),
+        ("W2V-PTB-SKIPGRAM-FULL", "Skip-gram", "full softmax", "s", "--", "tab:orange"),
     ]
     grouped = runs(client, "GT02", [item[0] for item in definitions])
-    figure, axis = plt.subplots(figsize=(8, 5))
+    figure, axes = plt.subplots(1, 2, figsize=(12, 5))
+    objective_axes = dict(zip(
+        ("negative sampling", "full softmax"),
+        axes,
+        strict=True,
+    ))
     curves = {}
-    for atomic, label, marker, linestyle, color in definitions:
-        curve = source_curve(client, grouped[atomic], "loss")
+    for atomic, label, objective_name, marker, linestyle, color in definitions:
+        curve = source_curve(client, grouped[atomic], "book_loss")
         curves[atomic] = curve
         plot_curve(
-            axis,
+            objective_axes[objective_name],
             curve,
             label=label,
             marker=marker,
@@ -31,8 +36,14 @@ def render(client, error_style, output):
             error_style=error_style,
             error_every=5,
         )
-    axis.set(xlabel="iterations (x20)", ylabel="loss", title="PTB Word2Vec")
-    mark_empty(axis)
-    if axis.has_data():
-        axis.legend()
+    for objective_name, axis in objective_axes.items():
+        axis.set(
+            xlabel="iterations (x20)",
+            ylabel="book loss",
+            title=f"PTB Word2Vec — {objective_name}",
+        )
+        mark_empty(axis)
+        if axis.has_data():
+            axis.legend()
+    figure.tight_layout()
     return figure, curves

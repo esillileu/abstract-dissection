@@ -17,7 +17,7 @@ def render(client, error_style, output):
     curves = {}
     figure, axis = plt.subplots(figsize=(8, 5))
     for atomic, (label, color, linestyle, marker) in definitions.items():
-        curve = source_curve(client, grouped[atomic], "loss")
+        curve = source_curve(client, grouped[atomic], "book_loss")
         curves[atomic] = curve
         plot_curve(
             axis,
@@ -31,7 +31,7 @@ def render(client, error_style, output):
         )
     axis.set(
         xlabel="iterations (x20)",
-        ylabel="loss",
+        ylabel="book loss",
         title="Toy Word2Vec full-softmax",
     )
     mark_empty(axis)

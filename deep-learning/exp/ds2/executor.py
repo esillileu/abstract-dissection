@@ -142,6 +142,7 @@ def _source_curve_from_objective(config: dict[str, object]):
     metric = "perplexity" if kind == "train_perplexity" else "loss"
     unit = "token" if kind == "train_perplexity" else "example"
     total = None
+    book_total = None
     count = 0
     unit_count = 0
     update_start = None
@@ -149,13 +150,20 @@ def _source_curve_from_objective(config: dict[str, object]):
     plot_index = 0
 
     def reduce(event):
-        nonlocal total, count, unit_count, update_start, epoch_start, plot_index
+        nonlocal total, book_total, count, unit_count, update_start, epoch_start, plot_index
         if update_start is None:
             update_start = event.update
             epoch_start = event.epoch
         weight = int(event.unit_count) if reducer in {"token_weighted_mean", "exp_token_weighted_mean"} else 1
         weighted_objective = event.objective.data * weight
         total = weighted_objective if total is None else total + weighted_objective
+        if event.book_objective is not None:
+            weighted_book = event.book_objective.data * weight
+            book_total = (
+                weighted_book
+                if book_total is None
+                else book_total + weighted_book
+            )
         count += 1
         unit_count += int(event.unit_count)
         if event.local_iteration % every != 0:
@@ -180,7 +188,12 @@ def _source_curve_from_objective(config: dict[str, object]):
             "reducer": reducer,
             "value": value,
         }
-        total, count, unit_count = None, 0, 0
+        if book_total is not None:
+            point["book_value"] = Tensor(
+                book_total / denominator,
+                backend=event.book_objective.backend,
+            )
+        total, book_total, count, unit_count = None, None, 0, 0
         update_start, epoch_start = None, None
         plot_index += 1
         return point
@@ -279,6 +292,10 @@ class Word2VecExecutor:
         records.flush()
         final_loss = _recorded_float(records.updates[-1]["loss"]) if records.updates else 0.0
         final_metrics = {"final/train/loss": final_loss}
+        if records.updates and records.updates[-1].get("book_loss") is not None:
+            final_metrics["final/train/book_loss"] = _recorded_float(
+                records.updates[-1]["book_loss"]
+            )
         profiling_metrics = monitor.metrics()
         return ExperimentResult(
             metrics=_final(updates=trainer.global_step, epochs=trainer.epoch, samples=len(x) * trainer.epoch, **final_metrics),
