@@ -309,11 +309,13 @@ def build_tags(
     model: Any | None,
 ) -> dict[str, str]:
     backend = model.backend if model is not None else get_default_backend()
-    group_params = flatten_dict({
-        **build_condition_config(config, git_info),
-        "policy": _section(config, "policy"),
-        "regularization": _section(config, "regularization"),
-    })
+    group_identity = {
+        "experiment/ids": identity.experiment_ids,
+        "execution_group/id": identity.execution_group_id,
+        "recipe/id": identity.recipe_id,
+        "structure/signature": identity.structure_signature,
+        "atomic_run/id": identity.atomic_run_id,
+    }
     return {
         "schema.version": "1",
         "project.name": "mlprosection",
@@ -334,7 +336,7 @@ def build_tags(
         "recipe.id": identity.recipe_id,
         "structure.signature": identity.structure_signature,
         "condition.key": identity.condition_key,
-        "condition.group.key": make_parent_group_key(group_params),
+        "condition.group.key": make_parent_group_key(group_identity),
         "run.key": identity.run_key,
         "master_seed": str(identity.master_seed),
         "dataset.id": str(_section(config, "dataset").get("id", "")),

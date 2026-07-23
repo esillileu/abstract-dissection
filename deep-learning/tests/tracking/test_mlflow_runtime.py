@@ -169,3 +169,59 @@ def test_condition_parent_is_created_once_per_condition_key() -> None:
         "condition.status": "running", "condition.group.key": "condition-abc", "mlflow.runName": "MLP-ADAM-HE",
     }
     assert client.terminated == [("parent-1", "FINISHED")]
+
+
+class LegacyParentClient:
+    def __init__(self) -> None:
+        self.parent = SimpleNamespace(
+            info=SimpleNamespace(run_id="legacy-parent"),
+            data=SimpleNamespace(tags={
+                "run.type": "condition_parent",
+                "experiment.ids": "e07",
+                "execution_group.id": "GT07",
+                "recipe.id": "ds1-gt07-deep-cnn",
+                "structure.signature": "mnist-deepcnn-6conv-fc50",
+                "atomic_run.id": "CNN-DEEP-BOOK",
+                "condition.group.key": "legacy-key",
+            }),
+        )
+        self.updated_tags = []
+        self.created = False
+
+    def search_runs(self, *, filter_string, **kwargs):
+        if "condition.group.key" in filter_string:
+            return []
+        return [self.parent]
+
+    def set_tag(self, run_id, key, value):
+        self.updated_tags.append((run_id, key, value))
+
+    def create_run(self, **kwargs):
+        self.created = True
+        raise AssertionError("a new parent must not be created")
+
+
+def test_legacy_parent_is_reused_and_promoted_to_canonical_group_key() -> None:
+    client = LegacyParentClient()
+    child_tags = {
+        "run.type": "seed_trial",
+        "condition.key": "new-condition-key",
+        "condition.group.key": "canonical-key",
+        "experiment.ids": "e07",
+        "execution_group.id": "GT07",
+        "recipe.id": "ds1-gt07-deep-cnn",
+        "structure.signature": "mnist-deepcnn-6conv-fc50",
+        "atomic_run.id": "CNN-DEEP-BOOK",
+    }
+
+    parent_id = get_or_create_condition_parent(
+        client,
+        experiment_id="1",
+        child_tags=child_tags,
+    )
+
+    assert parent_id == "legacy-parent"
+    assert client.updated_tags == [
+        ("legacy-parent", "condition.group.key", "canonical-key")
+    ]
+    assert client.created is False

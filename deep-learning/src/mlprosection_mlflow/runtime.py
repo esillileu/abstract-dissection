@@ -47,7 +47,7 @@ def make_run_key(condition: dict[str, Any], seed: dict[str, Any]) -> str:
 
 
 def make_parent_group_key(params: dict[str, object]) -> str:
-    """Identify a seed group while intentionally ignoring code and seed provenance."""
+    """Hash the stable identity fields that define one seed-trial group."""
     stable = {
         key: value for key, value in params.items()
         if not key.startswith("code/") and not key.startswith("seed/")
@@ -301,6 +301,15 @@ def get_or_create_condition_parent(client, *, experiment_id: str, child_tags: di
     if parents:
         return parents[0].info.run_id
 
+    legacy_parent = _find_legacy_condition_parent(
+        client,
+        experiment_id=experiment_id,
+        child_tags=child_tags,
+    )
+    if legacy_parent is not None:
+        client.set_tag(legacy_parent.info.run_id, "condition.group.key", group_key)
+        return legacy_parent.info.run_id
+
     parent_tags = {
         key: value
         for key, value in child_tags.items()
@@ -318,6 +327,30 @@ def get_or_create_condition_parent(client, *, experiment_id: str, child_tags: di
     parent = client.create_run(experiment_id=experiment_id, tags=parent_tags)
     client.set_terminated(parent.info.run_id, status="FINISHED")
     return parent.info.run_id
+
+
+def _find_legacy_condition_parent(client, *, experiment_id: str, child_tags: dict[str, str]):
+    """Find a pre-canonical-key parent using the declared experiment identity."""
+    identity_tags = (
+        "experiment.ids",
+        "execution_group.id",
+        "recipe.id",
+        "structure.signature",
+        "atomic_run.id",
+    )
+    if any(not child_tags.get(key) for key in identity_tags):
+        return None
+    parents = client.search_runs(
+        experiment_ids=[experiment_id],
+        filter_string="tags.`run.type` = 'condition_parent'",
+        order_by=["attributes.start_time ASC"],
+        max_results=10_000,
+    )
+    for parent in parents:
+        parent_tags = parent.data.tags
+        if all(parent_tags.get(key) == child_tags[key] for key in identity_tags):
+            return parent
+    return None
 
 
 class _Callback:

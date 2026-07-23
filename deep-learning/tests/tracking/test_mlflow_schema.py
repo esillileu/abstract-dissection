@@ -37,6 +37,61 @@ def test_build_tags_includes_a_human_readable_model_name() -> None:
     assert tags["model.name"] == "MLP4Hidden"
 
 
+def test_parent_group_key_is_stable_across_config_representation_changes() -> None:
+    identity = RunIdentity(
+        1, "mlprosection", ("e07",), "CNN-DEEP-BOOK", "GT07",
+        "ds1-gt07-deep-cnn", "mnist-deepcnn-6conv-fc50", "condition", "run", 4,
+    )
+    git_info = {
+        "commit": "abc", "branch": "main", "dirty": False, "repository": "repo",
+        "entrypoint": "yaml", "diff_sha256": "diff",
+    }
+    old_tags = build_tags(
+        identity,
+        {
+            "kind": "test",
+            "model": {"alias": "DeepCNN"},
+            "loss": {"name": "SoftmaxWithLoss", "reduction": "mean"},
+            "checkpoint": {"format": "npz"},
+        },
+        git_info,
+        None,
+    )
+    new_tags = build_tags(
+        identity,
+        {
+            "kind": "test",
+            "model": {"name": "DeepCNN"},
+            "objective": {"name": "SoftmaxCrossEntropy", "reduction": "mean"},
+            "checkpoint": {"format": "v2"},
+        },
+        git_info,
+        None,
+    )
+
+    assert old_tags["condition.group.key"] == new_tags["condition.group.key"]
+
+
+def test_parent_group_key_distinguishes_reused_atomic_run_names() -> None:
+    git_info = {
+        "commit": "abc", "branch": "main", "dirty": False, "repository": "repo",
+        "entrypoint": "yaml", "diff_sha256": "diff",
+    }
+    optimizer_identity = RunIdentity(
+        1, "mlprosection", ("e02",), "MLP-SGD-HE", "GT02",
+        "optimizer-comparison", "mlp-v1", "condition-a", "run-a", 1,
+    )
+    initializer_identity = RunIdentity(
+        1, "mlprosection", ("e04",), "MLP-SGD-HE", "GT04",
+        "initializer-comparison", "mlp-v1", "condition-b", "run-b", 1,
+    )
+
+    optimizer_tags = build_tags(optimizer_identity, {"kind": "test"}, git_info, None)
+    initializer_tags = build_tags(initializer_identity, {"kind": "test"}, git_info, None)
+
+    assert optimizer_tags["condition.group.key"] != initializer_tags["condition.group.key"]
+
+
 def test_build_schema_metrics_maps_runtime_memory_and_profile_metrics() -> None:
     metrics = build_schema_metrics(
         train_loss=1.0,
