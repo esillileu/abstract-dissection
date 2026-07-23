@@ -260,7 +260,9 @@ class Word2VecExecutor:
             raise ValueError(f"unknown Word2Vec objective name: {objective_name}")
         optimizer = _optimizer(config, model, objective)
         seed_batch_order(backend, streams)
-        batch_size, epochs = int(_mapping(config, "loader").get("batch_size", 100)), int(training.get("max_epochs", 10))
+        loader = _mapping(config, "loader")
+        batch_size, epochs = int(loader.get("batch_size", 100)), int(training.get("max_epochs", 10))
+        max_updates = training.get("max_updates")
         x = backend.xp.asarray(contexts, dtype=backend.xp.int64)
         t = backend.xp.asarray(targets, dtype=backend.xp.int64)
         artifact_root = _artifact_root(config, context)
@@ -270,6 +272,8 @@ class Word2VecExecutor:
         trainer = Word2VecTrainer(
             model, objective, optimizer, batch_adapter=adapter,
             max_epochs=epochs, batch_size=batch_size,
+            max_updates=None if max_updates is None else int(max_updates),
+            drop_last=bool(loader.get("drop_last", True)),
             event_receivers=[],
         )
         checkpoint_manager = _checkpoint_manager(
@@ -283,6 +287,12 @@ class Word2VecExecutor:
             progress=context.metadata.get("progress_reporter"),
         )
         trainer.event_receivers = (controller,)
+        progress = context.metadata.get("progress_reporter")
+        if progress is not None:
+            progress.set_total_updates(
+                trainer.planned_total_updates(len(x)),
+                completed=trainer.global_step,
+            )
         with training_summary(monitor):
             records = controller.run(
                 lambda: trainer.fit(Tensor(x, backend=backend), Tensor(t, backend=backend)),
@@ -323,6 +333,7 @@ class LanguageModelExecutor:
         train = Tensor(backend.xp.asarray(train_corpus[:-1], dtype=backend.xp.int64), backend=backend)
         train_targets = Tensor(backend.xp.asarray(train_corpus[1:], dtype=backend.xp.int64), backend=backend)
         max_epochs = int(training.get("max_epochs", 4))
+        max_updates = training.get("max_updates")
         valid = Tensor(backend.xp.asarray(ptb["valid"][:-1], dtype=backend.xp.int64), backend=backend)
         valid_targets = Tensor(backend.xp.asarray(ptb["valid"][1:], dtype=backend.xp.int64), backend=backend)
         test = Tensor(backend.xp.asarray(ptb["test"][:-1], dtype=backend.xp.int64), backend=backend)
@@ -347,6 +358,7 @@ class LanguageModelExecutor:
         trainer = LanguageModelTrainer(
             model, objective, optimizer, max_epochs=max_epochs,
             batch_size=int(loader.get("batch_size", 20)), time_size=int(loader.get("time_size", 35)),
+            max_updates=None if max_updates is None else int(max_updates),
         )
         checkpoint_manager = _checkpoint_manager(
             config, context, model=model, objective=objective, optimizer=optimizer, trainer=trainer,
@@ -385,6 +397,13 @@ class LanguageModelExecutor:
             device_timer=_device_timer(config, backend),
             progress=context.metadata.get("progress_reporter"),
         )
+        trainer.event_receivers = (controller,)
+        progress = context.metadata.get("progress_reporter")
+        if progress is not None:
+            progress.set_total_updates(
+                trainer.planned_total_updates(len(train)),
+                completed=trainer.global_step,
+            )
         with training_summary(monitor):
             records = controller.run(lambda: trainer.fit(train, train_targets))
         if test_at_end:
@@ -457,6 +476,7 @@ class Seq2SeqExecutor:
         optimizer = _optimizer(config, model, objective)
         seed_batch_order(backend, streams)
         batch_size, epochs = int(loader.get("batch_size", 128)), int(training.get("max_epochs", 10))
+        max_updates = training.get("max_updates")
         train_x = Tensor(backend.xp.asarray(x_train, dtype=backend.xp.int64), backend=backend)
         train_t = Tensor(backend.xp.asarray(t_train, dtype=backend.xp.int64), backend=backend)
         test_source = (Tensor(backend.xp.asarray(x_test, dtype=backend.xp.int64), backend=backend), Tensor(backend.xp.asarray(t_test, dtype=backend.xp.int64), backend=backend))
@@ -464,6 +484,8 @@ class Seq2SeqExecutor:
         trainer = Seq2seqTrainer(
             model, objective, optimizer, max_epochs=epochs, batch_size=batch_size,
             start_id=data["char_to_id"]["_"],
+            max_updates=None if max_updates is None else int(max_updates),
+            drop_last=bool(loader.get("drop_last", False)),
         )
         artifact_root = _artifact_root(config, context)
         records = DS2Records()
@@ -517,6 +539,13 @@ class Seq2SeqExecutor:
             device_timer=_device_timer(config, backend),
             progress=context.metadata.get("progress_reporter"),
         )
+        trainer.event_receivers = (controller,)
+        progress = context.metadata.get("progress_reporter")
+        if progress is not None:
+            progress.set_total_updates(
+                trainer.planned_total_updates(len(train_x)),
+                completed=trainer.global_step,
+            )
         with training_summary(monitor):
             records = controller.run(lambda: trainer.fit(train_x, train_t))
         _record_retained_checkpoints(

@@ -156,6 +156,10 @@ class Seq2seqTrainer(EventTrainer):
     def _num_batches(self, size: int) -> int:
         return size // self.batch_size if self.drop_last else (size + self.batch_size - 1) // self.batch_size
 
+    def planned_total_updates(self, sample_count: int) -> int:
+        epoch_total = self._num_batches(sample_count) * self.max_epochs
+        return epoch_total if self.max_updates is None else min(epoch_total, self.max_updates)
+
     def state_dict(self) -> dict[str, object]:
         state = super().state_dict()
         state["batch_cursor"] = self.batch_cursor

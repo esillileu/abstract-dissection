@@ -16,11 +16,35 @@ from mlprosection.experiment import ExperimentContext
 from mlprosection.nn.model.architecture import AttentionSeq2seq
 
 
-def _context(root: Path) -> ExperimentContext:
+class _ProgressRecorder:
+    def __init__(self) -> None:
+        self.total: int | None = None
+        self.completed = 0
+        self.updates: list[int] = []
+
+    def set_total_updates(self, total: int, *, completed: int = 0) -> None:
+        self.total = total
+        self.completed = completed
+
+    def advance_to(self, update: int, *, epoch: int = 0) -> None:
+        self.updates.append(update)
+
+    def on_update(self, event) -> None:
+        self.advance_to(event.update, epoch=event.epoch)
+
+    def on_epoch(self, _event) -> None:
+        return None
+
+    def on_train_end(self, _event) -> None:
+        return None
+
+
+def _context(root: Path, progress=None) -> ExperimentContext:
     return ExperimentContext(
         metadata={
             "artifact_root": root,
             "checkpoint_root": root / "checkpoints",
+            **({} if progress is None else {"progress_reporter": progress}),
         }
     )
 
@@ -108,11 +132,14 @@ def test_ds2_language_model_config_runs_one_epoch(
     )
     config = spec.to_executor_config()
     config["seed"] = 1
+    progress = _ProgressRecorder()
 
-    result = LanguageModelExecutor().run(config, _context(tmp_path))
+    result = LanguageModelExecutor().run(config, _context(tmp_path, progress))
 
     assert result.metrics["final/status/success"] == 1.0
     assert result.metrics["final/system/total_updates"] > 0
+    assert progress.total == 2
+    assert progress.updates == [1, 2]
     assert (tmp_path / "updates.csv").is_file()
 
 
@@ -140,11 +167,14 @@ def test_ds2_seq2seq_config_runs_one_epoch(
     )
     config = spec.to_executor_config()
     config["seed"] = 1
+    progress = _ProgressRecorder()
 
-    result = Seq2SeqExecutor().run(config, _context(tmp_path))
+    result = Seq2SeqExecutor().run(config, _context(tmp_path, progress))
 
     assert result.metrics["final/status/success"] == 1.0
     assert result.metrics["final/system/total_updates"] == 2.0
+    assert progress.total == 2
+    assert progress.updates == [1, 2]
     assert (tmp_path / "evaluations.csv").is_file()
     assert (tmp_path / "observations" / "predictions.csv").is_file()
 

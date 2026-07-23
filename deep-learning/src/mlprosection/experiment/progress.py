@@ -13,6 +13,8 @@ ProgressMode = Literal["auto", "none", "line", "tqdm"]
 
 
 class ProgressReporter(Protocol):
+    def set_total_updates(self, total: int, *, completed: int = 0) -> None: ...
+    def advance_to(self, update: int, *, epoch: int = 0) -> None: ...
     def on_update(self, event: UpdateEvent) -> None: ...
     def on_epoch(self, event: EpochEvent) -> None: ...
     def on_train_end(self, event: TrainEndEvent) -> None: ...
@@ -21,6 +23,12 @@ class ProgressReporter(Protocol):
 
 
 class NullProgressReporter:
+    def set_total_updates(self, total: int, *, completed: int = 0) -> None:
+        return None
+
+    def advance_to(self, update: int, *, epoch: int = 0) -> None:
+        return None
+
     def on_update(self, event: UpdateEvent) -> None:
         return None
 
@@ -50,12 +58,18 @@ class LineProgressReporter:
         self.context = context
         self.every = max(1, every)
 
-    def on_update(self, event: UpdateEvent) -> None:
-        if event.update % self.every == 0:
+    def set_total_updates(self, total: int, *, completed: int = 0) -> None:
+        return None
+
+    def advance_to(self, update: int, *, epoch: int = 0) -> None:
+        if update % self.every == 0:
             self.write(
                 f"[{self.context.index}/{self.context.count}] {self.context.label} "
-                f"update={event.update} epoch={event.epoch}"
+                f"update={update} epoch={epoch}"
             )
+
+    def on_update(self, event: UpdateEvent) -> None:
+        self.advance_to(event.update, epoch=event.epoch)
 
     def on_epoch(self, event: EpochEvent) -> None:
         self.write(
@@ -93,13 +107,22 @@ class TqdmProgressReporter:
             file=sys.stderr,
         )
 
-    def on_update(self, event: UpdateEvent) -> None:
-        delta = max(0, event.update - self._last_update)
+    def set_total_updates(self, total: int, *, completed: int = 0) -> None:
+        self._bar.total = total
+        self._bar.n = completed
+        self._last_update = completed
+        self._bar.refresh()
+
+    def advance_to(self, update: int, *, epoch: int = 0) -> None:
+        delta = max(0, update - self._last_update)
         if delta:
             self._bar.update(delta)
-            self._last_update = event.update
-        if event.update % self.every == 0:
-            self._bar.set_postfix({"epoch": event.epoch, "update": event.update}, refresh=True)
+            self._last_update = update
+        if update % self.every == 0:
+            self._bar.set_postfix({"epoch": epoch, "update": update}, refresh=True)
+
+    def on_update(self, event: UpdateEvent) -> None:
+        self.advance_to(event.update, epoch=event.epoch)
 
     def on_epoch(self, event: EpochEvent) -> None:
         self._bar.set_postfix({"epoch": event.epoch, "update": event.end_update}, refresh=True)

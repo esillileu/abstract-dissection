@@ -187,6 +187,14 @@ class ForwardTrainer(Trainer):
     def _num_batches(self, size: int) -> int:
         return size // self.batch_size if self.drop_last else (size + self.batch_size - 1) // self.batch_size
 
+    def planned_total_updates(self, sample_count: int) -> int:
+        if self.sampling_method == "with_replacement":
+            updates_per_epoch = sample_count // self.batch_size
+        else:
+            updates_per_epoch = self._num_batches(sample_count)
+        epoch_total = updates_per_epoch * self.max_epochs
+        return epoch_total if self.max_updates is None else min(epoch_total, self.max_updates)
+
     def _correct_count(self, y: Tensor, t: Tensor):
         xp = self.backend.xp
         y_data, t_data = y.data, t.data

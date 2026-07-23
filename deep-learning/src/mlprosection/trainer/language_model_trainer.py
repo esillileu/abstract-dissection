@@ -93,6 +93,11 @@ class LanguageModelTrainer(EventTrainer):
         finally:
             self._emit_train_end(reason)
 
+    def planned_total_updates(self, token_count: int) -> int:
+        updates_per_epoch = token_count // (self.batch_size * self.time_size)
+        epoch_total = updates_per_epoch * self.max_epochs
+        return epoch_total if self.max_updates is None else min(epoch_total, self.max_updates)
+
     def evaluate(
         self,
         xs: Tensor,

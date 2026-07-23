@@ -178,6 +178,12 @@ class SupervisedClassificationExecutor:
         checkpoint_manager_holder["manager"] = checkpoint_manager
         if (resume := checkpoint_config.get("resume")):
             load_epoch_checkpoint(path=str(resume), model=model, objective=objective, optimizer=optimizer, trainer=trainer, config_digest=config_digest)
+        progress = context.metadata.get("progress_reporter")
+        if progress is not None:
+            progress.set_total_updates(
+                trainer.planned_total_updates(len(x_train)),
+                completed=trainer.global_step,
+            )
         seed_batch_order(backend, streams)
         with training_summary(monitor):
             records = events.run(lambda: trainer.fit(x_train, t_train), start_update=trainer.global_step + 1)
@@ -224,6 +230,9 @@ class OptimizerTrajectoryObservationExecutor:
         optimizer = str(_mapping(config, "optimizer").get("name", "toy_sgd"))
         lr = float(_mapping(config, "optimizer").get("learning_rate", 0.95))
         max_updates = int(_mapping(config, "training").get("max_updates", 30))
+        progress = context.metadata.get("progress_reporter")
+        if progress is not None:
+            progress.set_total_updates(max_updates)
         x, y = -7.0, 2.0
         vx = vy = gx2 = gy2 = mx = my = ux = uy = 0.0
         beta1, beta2, eps, momentum = 0.9, 0.999, 1e-7, 0.9
@@ -256,6 +265,8 @@ class OptimizerTrajectoryObservationExecutor:
                 y -= lr * grad_y
             else:
                 raise ValueError(f"unknown toy optimizer: {optimizer}")
+            if progress is not None:
+                progress.advance_to(update + 1)
         _write_rows(observations / "trajectory.csv", rows, ["update", "x", "y", "objective", "grad_x", "grad_y"])
         records = DS1Records()
         records.bind_artifact_root(artifact_root)

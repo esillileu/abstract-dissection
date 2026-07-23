@@ -13,11 +13,33 @@ from mlprosection import Tensor
 from mlprosection.experiment import ExperimentContext
 
 
-def _context(root: Path) -> ExperimentContext:
+class _ProgressRecorder:
+    def __init__(self) -> None:
+        self.total: int | None = None
+        self.updates: list[int] = []
+
+    def set_total_updates(self, total: int, *, completed: int = 0) -> None:
+        self.total = total
+
+    def advance_to(self, update: int, *, epoch: int = 0) -> None:
+        self.updates.append(update)
+
+    def on_update(self, event) -> None:
+        self.advance_to(event.update, epoch=event.epoch)
+
+    def on_epoch(self, _event) -> None:
+        return None
+
+    def on_train_end(self, _event) -> None:
+        return None
+
+
+def _context(root: Path, progress=None) -> ExperimentContext:
     return ExperimentContext(
         metadata={
             "artifact_root": root,
             "checkpoint_root": root / "checkpoints",
+            **({} if progress is None else {"progress_reporter": progress}),
         }
     )
 
@@ -51,14 +73,17 @@ def test_ds1_supervised_config_runs_one_update(
     )
     config = spec.to_executor_config()
     config["seed"] = 1
+    progress = _ProgressRecorder()
 
     result = SupervisedClassificationExecutor().run(
         config,
-        _context(tmp_path),
+        _context(tmp_path, progress),
     )
 
     assert result.metrics["final/status/success"] == 1.0
     assert result.metrics["final/system/total_updates"] == 1.0
+    assert progress.total == 1
+    assert progress.updates == [1]
     assert (tmp_path / "updates.csv").is_file()
 
 
@@ -75,13 +100,16 @@ def test_ds1_optimizer_observation_config_runs(
     )
     config = spec.to_executor_config()
     config["seed"] = 1
+    progress = _ProgressRecorder()
 
     result = get_observation_executor(config).run(
         config,
-        _context(tmp_path),
+        _context(tmp_path, progress),
     )
 
     assert result.metrics["final/system/total_updates"] == 2.0
+    assert progress.total == 2
+    assert progress.updates == [1, 2]
     assert (tmp_path / "observations" / "trajectory.csv").is_file()
 
 
