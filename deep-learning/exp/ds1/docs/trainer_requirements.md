@@ -94,7 +94,7 @@ trainer가 제공하는 것은 mode-safe하고 sampler/RNG를 소비하지 않�
 | GT04 | 각 epoch의 첫 update 뒤 train-first-300 및 test-full |
 | GT05 | update 1, 11, 21, …, 191 뒤 train-first-1000 |
 | GT06, GT07 | 각 epoch 첫 update 뒤 train/test first-1000, 종료 뒤 test-full |
-| GT08 | update 20, 40, … 뒤 train-full 및 test-full; 각 epoch 종료 뒤 test-full |
+| GT08 | update 20, 40, … 뒤 train/test first-1000; 각 epoch 종료 뒤 test-full |
 
 - evaluator는 executor가 준 sequential evaluation source만 사용하며 training sampler
   state/RNG를 바꾸지 않는다.

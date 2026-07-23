@@ -174,7 +174,7 @@ MLflow에는 layer histogram 전체를 넣지 않는다. `observation/activation
 | `GT05` | 모든 update | update `1, 11, 21, …, 191` 뒤: `mnist-train-first-1000` accuracy |
 | `GT06` | 모든 update | 매 epoch 시작 직후: `mnist-train-first-1000`, `mnist-test-first-1000` accuracy; 종료 후 `mnist-test-full` accuracy |
 | `GT07` | 모든 update | 매 epoch 시작 직후: `mnist-train-first-1000`, `mnist-test-first-1000` accuracy; 종료 후 `mnist-test-full` accuracy |
-| `GT08` | 모든 update | update `20, 40, …` 뒤: `mnist-train-full`, `mnist-test-full` accuracy; 매 epoch 종료 후: `mnist-test-full` accuracy |
+| `GT08` | 모든 update | update `20, 40, …` 뒤: `mnist-train-first-1000`, `mnist-test-first-1000` accuracy; 매 epoch 종료 후: `mnist-test-full` accuracy |
 
 `GT01`과 `GT02`의 loss graph는 `updates.csv`의 `update/loss`에서 직접 만든다. 원본형 smoothing이 필요하면 분석 단계에서 그 raw loss에 적용한다.
 
