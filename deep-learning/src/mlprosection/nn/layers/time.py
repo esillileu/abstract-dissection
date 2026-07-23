@@ -6,7 +6,6 @@ from mlprosection import Tensor
 from mlprosection.core.backend import Backend, get_default_backend, resolve_backend
 
 from .base import Layer
-from .criterion import Criterion
 from .embeding import Embedding
 from .linear import Affine
 from .regulizer import BatchNormalization, Dropout
@@ -28,16 +27,6 @@ def _as_index_array(value: Tensor | Any, backend: Backend):
 
 def _sigmoid_array(x, xp):
     return 1 / (1 + xp.exp(-x))
-
-
-def _softmax_array(x, xp):
-    if x.ndim == 2:
-        x = x - x.max(axis=1, keepdims=True)
-        x = xp.exp(x)
-        return x / x.sum(axis=1, keepdims=True)
-    x = x - x.max()
-    exp_x = xp.exp(x)
-    return exp_x / exp_x.sum()
 
 
 def _make_parameter(
@@ -525,54 +514,6 @@ class TimeAffine(TimeDistributed):
         return self.layer.b
 
 
-class TimeSoftmaxWithLoss(Criterion):
-    def __init__(self, ignore_label: int = -1) -> None:
-        super().__init__()
-        self.cache = None
-        self.ignore_label = ignore_label
-
-    def forward_manual(self, xs: Tensor, ts: Tensor, *, cache: bool = True) -> Tensor:
-        xp = xs.backend.xp
-        n, time_size, vocab_size = xs.shape
-        ts_data = ts.data
-        if ts.ndim == 3:
-            ts_data = ts_data.argmax(axis=2)
-
-        mask = ts_data != self.ignore_label
-        scores = xs.data.reshape(n * time_size, vocab_size)
-        labels = ts_data.reshape(n * time_size)
-        mask = mask.reshape(n * time_size)
-
-        ys = _softmax_array(scores, xp)
-        losses = xp.log(ys[xp.arange(n * time_size), labels] + 1e-7)
-        losses *= mask
-        loss = -xp.sum(losses) / mask.sum()
-
-        if cache:
-            self.y = Tensor(ys.reshape(n, time_size, vocab_size), backend=xs.backend)
-            self.t = Tensor(labels.reshape(n, time_size), backend=xs.backend)
-            self.cache = (labels, ys, mask, (n, time_size, vocab_size), xs.backend)
-        else:
-            self.y = None
-            self.t = None
-            self.cache = None
-        return Tensor(loss, backend=xs.backend)
-
-    def backward_manual(self, dout: Tensor | None = None) -> Tensor:
-        if self.cache is None:
-            raise RuntimeError("forward must be called before backward")
-
-        labels, ys, mask, (n, time_size, vocab_size), backend = self.cache
-        xp = backend.xp
-        scale = 1.0 if dout is None else float(dout.data)
-        dx = ys.copy()
-        dx[xp.arange(n * time_size), labels] -= 1
-        dx *= scale
-        dx /= mask.sum()
-        dx *= mask[:, xp.newaxis]
-        return Tensor(dx.reshape(n, time_size, vocab_size), backend=backend)
-
-
 class TimeDropout(TimeDistributed):
     def __init__(self, dropout_ratio: float = 0.5) -> None:
         super().__init__(Dropout(dropout_ratio, inverted=True))
@@ -634,44 +575,6 @@ class TimeBiLSTM(TimeLayer):
     def detach_state(self) -> None:
         self.forward_lstm.detach_state()
         self.backward_lstm.detach_state()
-
-
-class TimeSigmoidWithLoss(Criterion):
-    def __init__(self) -> None:
-        super().__init__()
-        self.xs_shape = None
-        self.layers: list[tuple[Any, Any]] = []
-        self._backend = None
-
-    def forward_manual(self, xs: Tensor, ts: Tensor) -> Tensor:
-        xp = xs.backend.xp
-        n, time_size = xs.shape
-        self.xs_shape = xs.shape
-        self.layers = []
-        self._backend = xs.backend
-        loss = 0
-
-        for index in range(time_size):
-            y = _sigmoid_array(xs.data[:, index], xp)
-            t = ts.data[:, index]
-            probs = xp.c_[1 - y, y]
-            loss += -xp.log(probs[xp.arange(n), t] + 1e-7).mean()
-            self.layers.append((y, t))
-
-        return Tensor(loss / time_size, backend=xs.backend)
-
-    def backward_manual(self, dout: Tensor | None = None) -> Tensor:
-        if self.xs_shape is None:
-            raise RuntimeError("forward must be called before backward")
-
-        backend = self._backend or get_default_backend()
-        xp = backend.xp
-        scale = 1.0 if dout is None else float(dout.data)
-        n, time_size = self.xs_shape
-        dxs = xp.empty(self.xs_shape, dtype=backend.float_dtype)
-        for index, (y, t) in enumerate(self.layers):
-            dxs[:, index] = (y - t) * scale / n / time_size
-        return Tensor(dxs, backend=backend)
 
 
 class GRU(Layer):
@@ -927,5 +830,4 @@ class TimeAttention(TimeLayer):
         return Tensor(denc, backend=dout.backend), Tensor(ddec, backend=dout.backend)
 
 
-SimpleTimeSoftmaxWithLoss = TimeSoftmaxWithLoss
 SimpleTimeAffine = TimeAffine

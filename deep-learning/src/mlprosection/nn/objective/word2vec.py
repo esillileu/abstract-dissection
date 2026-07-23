@@ -2,6 +2,10 @@ from __future__ import annotations
 
 from mlprosection import Tensor
 from mlprosection.core.backend import resolve_backend
+from mlprosection.nn.functional import (
+    binary_cross_entropy_with_logits,
+    softmax_cross_entropy,
+)
 from mlprosection.nn.sampling import UnigramSampler
 from mlprosection.nn.types import Parameter
 
@@ -31,31 +35,23 @@ class FullSoftmax(Objective):
         self, prediction: Tensor, target: Tensor, *, cache: bool = True,
         replay_context=None,
     ) -> ObjectiveResult:
-        xp = self.backend.xp
-        labels = target.data.reshape(-1).astype(xp.int64, copy=False)
         hidden = prediction.data
-        scores = hidden @ self.W_out.data.T
-        scores -= scores.max(axis=1, keepdims=True)
-        probabilities = xp.exp(scores)
-        probabilities /= probabilities.sum(axis=1, keepdims=True)
-        terms = -xp.log(probabilities[xp.arange(len(labels)), labels] + 1e-7)
-        value = terms.mean() if self.reduction == "mean" else terms.sum()
+        computation = softmax_cross_entropy(
+            Tensor(hidden @ self.W_out.data.T, backend=prediction.backend),
+            target.reshape(-1),
+            reduction=self.reduction,
+        )
         if cache:
-            self._cache = (hidden, labels, probabilities, prediction.backend)
+            self._cache = (hidden, computation.gradient.data, prediction.backend)
         return ObjectiveResult(
-            Tensor(xp.asarray(value, dtype=self.backend.float_dtype), backend=self.backend),
-            len(labels),
+            computation.loss,
+            computation.unit_count,
         )
 
     def backward_manual(self) -> Tensor:
         if self._cache is None:
             raise RuntimeError("forward(cache=True) must be called before backward")
-        hidden, labels, probabilities, backend = self._cache
-        xp = backend.xp
-        gradient = probabilities.copy()
-        gradient[xp.arange(len(labels)), labels] -= 1
-        if self.reduction == "mean":
-            gradient /= len(labels)
+        hidden, gradient, backend = self._cache
         self.W_out.grad[...] = gradient.T @ hidden
         return Tensor(gradient @ self.W_out.data, backend=backend)
 
@@ -107,22 +103,20 @@ class NegativeSampling(Objective):
         )
         binary_targets = xp.zeros_like(scores)
         binary_targets[:, 0] = 1
-        probabilities = 1 / (1 + xp.exp(-scores))
-        terms = -(
-            binary_targets * xp.log(probabilities + 1e-7)
-            + (1 - binary_targets) * xp.log(1 - probabilities + 1e-7)
+        computation = binary_cross_entropy_with_logits(
+            Tensor(scores, backend=prediction.backend),
+            Tensor(binary_targets, backend=target.backend),
+            reduction="mean" if self.reduction == "mean" else "sum",
         )
-        value = (
-            terms.mean()
-            if self.reduction == "mean"
-            else terms.sum(axis=1).mean()
-        )
+        loss = computation.loss
+        score_gradient = computation.gradient
+        if self.reduction == "sum":
+            loss = loss / len(labels)
+            score_gradient = score_gradient / len(labels)
         if cache:
-            self._cache = (
-                hidden, candidates, probabilities, binary_targets, prediction.backend
-            )
+            self._cache = (hidden, candidates, score_gradient.data, prediction.backend)
         return ObjectiveResult(
-            Tensor(xp.asarray(value, dtype=self.backend.float_dtype), backend=self.backend),
+            loss,
             len(labels),
             negatives.copy(),
         )
@@ -130,14 +124,8 @@ class NegativeSampling(Objective):
     def backward_manual(self) -> Tensor:
         if self._cache is None:
             raise RuntimeError("forward(cache=True) must be called before backward")
-        hidden, candidates, probabilities, targets, backend = self._cache
+        hidden, candidates, gradient, backend = self._cache
         xp = backend.xp
-        denominator = (
-            probabilities.size
-            if self.reduction == "mean"
-            else probabilities.shape[0]
-        )
-        gradient = (probabilities - targets) / denominator
         self.W_out.grad[...] = 0
         xp.add.at(
             self.W_out.grad,
