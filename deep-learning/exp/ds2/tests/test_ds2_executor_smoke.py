@@ -132,6 +132,11 @@ def test_ds2_language_model_config_runs_one_epoch(
     )
     config = spec.to_executor_config()
     config["seed"] = 1
+    config["checkpoint"]["save_best"] = True
+    config["evaluation"].update({
+        "valid_every_epochs": 1,
+        "test_at_end": True,
+    })
     progress = _ProgressRecorder()
 
     result = LanguageModelExecutor().run(config, _context(tmp_path, progress))
@@ -141,6 +146,8 @@ def test_ds2_language_model_config_runs_one_epoch(
     assert progress.total == 2
     assert progress.updates == [1, 2]
     assert (tmp_path / "updates.csv").is_file()
+    assert (tmp_path / "checkpoints" / "best.json").is_file()
+    assert "final/test/perplexity" in result.metrics
 
 
 def test_ds2_seq2seq_config_runs_one_epoch(
