@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+from pathlib import Path
 
 import numpy as np
 
@@ -281,3 +282,6 @@ def test_ds2_executor_returns_runtime_profiling_summary(tmp_path) -> None:
     assert "memory.run.end.cpu.rss_bytes" in result.profiling_metrics
     assert len(context.metadata["data"]["dataset_checksum"]) == 64
     assert len(context.metadata["data"]["split_checksum"]) == 64
+    checkpoints = list(csv.DictReader((tmp_path / "checkpoints.csv").open()))
+    assert [row["kind"] for row in checkpoints] == ["latest"]
+    assert Path(checkpoints[0]["path"]).is_dir()

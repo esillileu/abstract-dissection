@@ -66,3 +66,36 @@ def test_seq2seq_forward_backward_generate() -> None:
     assert loss.shape == ()
     assert len(sampled) == 4
     assert all(isinstance(sample_id, int) for sample_id in sampled)
+
+
+def test_rnnlm_cache_free_forward_preserves_loss_without_backward_caches() -> None:
+    model = Rnnlm(vocab_size=7, wordvec_size=4, hidden_size=5, backend="cpu")
+    xs = Tensor(np.array([[0, 1, 2], [3, 4, 5]]), backend="cpu")
+    ts = Tensor(np.array([[1, 2, 3], [4, 5, 6]]), backend="cpu")
+
+    model.reset_state()
+    expected = model.forward(xs, ts).data.copy()
+    model.reset_state()
+    actual = model.forward(xs, ts, cache=False)
+
+    np.testing.assert_array_equal(actual.data, expected)
+    assert model.lstm_layer.layers == []
+    assert model.loss_layer.cache is None
+    assert model.loss_layer.y is None
+    assert model.layers[0].layer.idx is None
+    assert model.layers[-1].layer.x is None
+
+
+def test_seq2seq_cache_free_forward_preserves_loss_without_recurrent_caches() -> None:
+    model = Seq2seq(vocab_size=10, wordvec_size=4, hidden_size=5, backend="cpu")
+    xs = Tensor(np.array([[1, 2, 3], [4, 5, 6]]), backend="cpu")
+    ts = Tensor(np.array([[0, 1, 2, 3], [0, 4, 5, 6]]), backend="cpu")
+
+    expected = model.forward(xs, ts).data.copy()
+    actual = model.forward(xs, ts, cache=False)
+
+    np.testing.assert_array_equal(actual.data, expected)
+    assert model.encoder.lstm.layers == []
+    assert model.decoder.lstm.layers == []
+    assert model.softmax.cache is None
+    assert model.softmax.y is None

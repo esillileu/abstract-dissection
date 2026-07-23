@@ -143,3 +143,19 @@ def test_seq2seq_generation_materializes_all_tokens_once() -> None:
 
     assert len(predicted) == 3
     assert copies == [3]
+
+
+def test_seq2seq_evaluation_materializes_predictions_and_targets_once() -> None:
+    backend, copies = _counting_backend()
+    model = Seq2seq(8, 3, 4, backend=backend)
+    trainer = Seq2seqTrainer(
+        model, SGD(list(model.named_parameters()), lr=0.1),
+        max_epochs=1, batch_size=2, start_id=0,
+    )
+    xs = Tensor(np.asarray([[1, 2, 3], [2, 3, 4]]), backend=backend)
+    ts = Tensor(np.asarray([[0, 4, 5], [0, 5, 6]]), backend=backend)
+
+    trainer.evaluate(xs, ts, metrics=("exact_match_accuracy", "token_accuracy"))
+
+    assert copies == [8]
+    assert trainer.last_predictions.shape == (2, 2)

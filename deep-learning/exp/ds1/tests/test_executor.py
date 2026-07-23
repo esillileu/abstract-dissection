@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+from pathlib import Path
 
 from mlprosection import Tensor
 from mlprosection.events import UpdateEvent
@@ -61,6 +62,9 @@ def test_supervised_executor_consumes_forward_events_for_updates_evaluation_and_
     assert "runtime.train_total.count" in result.profiling_metrics
     assert "memory.run.start.cpu.rss_bytes" in result.profiling_metrics
     assert "memory.run.end.cpu.rss_bytes" in result.profiling_metrics
+    checkpoint_rows = list(csv.DictReader((tmp_path / "checkpoints.csv").open()))
+    assert [row["kind"] for row in checkpoint_rows] == ["latest"]
+    assert Path(checkpoint_rows[0]["path"]).is_dir()
 
 
 def test_ds1_run_spec_rejects_legacy_trainer_policy(tmp_path) -> None:
