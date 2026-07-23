@@ -26,6 +26,7 @@ def test_word2vec_runspec_connects_source_curve_contract() -> None:
     assert spec.source_curve.every_updates == 20
     assert spec.model["name"] == "CBOW"
     assert spec.objective["name"] == "NegativeSampling"
+    assert spec.objective["book_reduction"] == "sum_terms_mean_examples"
 
 
 def test_toy_skipgram_matches_cbow_conditions_except_architecture() -> None:

@@ -100,6 +100,34 @@ def test_ds2_source_curve_from_objective_uses_documented_schema() -> None:
     assert value.backend.scalar_to_float(value.data) == 2.0
 
 
+def test_ds2_source_curve_reduces_standard_and_book_losses_together() -> None:
+    reducer = _source_curve_from_objective({
+        "recording": {
+            "source_curve": {
+                "kind": "interval_mean_loss",
+                "every_updates": 2,
+                "reducer": "mean",
+            }
+        }
+    })
+
+    first = reducer(
+        SourceObjectiveSample(
+            1,
+            1,
+            0,
+            Tensor(1.0),
+            2,
+            book_objective=Tensor(6.0),
+        )
+    )
+    assert first["value"].backend.scalar_to_float(first["value"].data) == 1.0
+    assert (
+        first["book_value"].backend.scalar_to_float(first["book_value"].data)
+        == 6.0
+    )
+
+
 def test_ds2_source_curves_csv_schema_and_mlflow_mapping(tmp_path) -> None:
     records = DS2Records()
     records.add_source_curve({
@@ -114,6 +142,7 @@ def test_ds2_source_curves_csv_schema_and_mlflow_mapping(tmp_path) -> None:
         "metric": "loss",
         "reducer": "mean",
         "value": 1.5,
+        "book_value": 9.0,
     })
     records.add_source_curve({
         "series_id": "full_test_exact_match",
@@ -139,9 +168,33 @@ def test_ds2_source_curves_csv_schema_and_mlflow_mapping(tmp_path) -> None:
         "metric", "reducer", "value",
     ]
     assert rows[0]["update_start"] == "1"
-    assert rows[1]["metric"] == "exact_match_accuracy"
+    assert rows[1]["metric"] == "book_loss"
+    assert rows[2]["metric"] == "exact_match_accuracy"
     assert (4, "series/train/loss", 1.5) in records.mlflow_metric_rows()
+    assert (4, "series/train/book_loss", 9.0) in records.mlflow_metric_rows()
     assert (0, "series/eval_test/exact_match_accuracy", 0.42) in records.mlflow_metric_rows()
+
+
+def test_ds2_update_records_optional_book_loss_metric(tmp_path) -> None:
+    records = DS2Records()
+    records.on_update(
+        UpdateEvent(
+            1,
+            1,
+            2,
+            Tensor(1.25),
+            0.1,
+            book_loss=Tensor(7.5),
+        )
+    )
+
+    records.write_csv(tmp_path)
+
+    rows = list(csv.DictReader((tmp_path / "updates.csv").open()))
+    assert rows[0]["loss"] == "1.25"
+    assert rows[0]["book_loss"] == "7.5"
+    assert (1, "update/train/loss", 1.25) in records.mlflow_metric_rows()
+    assert (1, "update/train/book_loss", 7.5) in records.mlflow_metric_rows()
 
 
 def test_ds2_writes_canonical_source_objectives_and_prediction_fields(tmp_path) -> None:
@@ -164,7 +217,7 @@ def test_ds2_writes_canonical_source_objectives_and_prediction_fields(tmp_path) 
     predictions = list(csv.DictReader((tmp_path / "observations/predictions.csv").open()))
     assert objectives == [{
         "update": "1", "epoch": "1", "local_iteration": "0",
-        "objective": "1.5", "unit_count": "20",
+        "objective": "1.5", "book_objective": "", "unit_count": "20",
     }]
     assert list(predictions[0]) == [
         "epoch", "example_id", "source", "target", "prediction",

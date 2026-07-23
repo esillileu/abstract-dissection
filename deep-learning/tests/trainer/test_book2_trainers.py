@@ -72,6 +72,8 @@ def test_word2vec_trainer_emits_update_and_source_objective_events() -> None:
 
     assert [event.update for event in receiver.updates] == [1, 2]
     assert [event.local_iteration for event in receiver.sources] == [0, 1]
+    assert all(event.book_loss is not None for event in receiver.updates)
+    assert all(event.book_objective is not None for event in receiver.sources)
     assert receiver.ends[-1].reason == "completed"
 
 

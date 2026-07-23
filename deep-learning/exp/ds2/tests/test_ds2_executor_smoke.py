@@ -71,6 +71,11 @@ def test_ds2_word2vec_config_runs_one_epoch(tmp_path: Path) -> None:
 
     assert result.metrics["final/status/success"] == 1.0
     assert result.metrics["final/system/total_updates"] > 0
+    assert "final/train/book_loss" in result.metrics
+    assert any(
+        metric == "update/train/book_loss"
+        for _step, metric, _value in result.metric_rows
+    )
     assert (tmp_path / "updates.csv").is_file()
 
 
