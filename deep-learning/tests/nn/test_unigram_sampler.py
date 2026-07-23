@@ -49,6 +49,43 @@ def test_word2vec_uses_unigram_sampler_for_negative_candidates() -> None:
     assert not np.any(result.replay_context == targets.data[:, None])
 
 
+def test_conditional_cdf_sampler_excludes_targets_and_reports_algorithm() -> None:
+    sampler = UnigramSampler.from_corpus(
+        np.array([0] * 80 + [1] * 15 + [2] * 5, dtype=np.int64),
+        vocab_size=3,
+        backend="cpu",
+        power=1.0,
+        algorithm=UnigramSampler.CONDITIONAL_CDF,
+    )
+    targets = Tensor(
+        np.repeat(np.arange(3, dtype=np.int64), 10_000),
+        backend="cpu",
+    )
+
+    drawn = sampler.sample(targets, sample_size=1).reshape(3, 10_000)
+
+    assert not np.any(drawn == np.arange(3)[:, None])
+    assert np.allclose(
+        np.bincount(drawn[0], minlength=3) / drawn.shape[1],
+        [0.0, 0.75, 0.25],
+        atol=0.02,
+    )
+    assert sampler.metadata == {
+        "algorithm": "conditional_cdf_target_exclusion_v1",
+        "power": 1.0,
+        "replacement": True,
+        "excludes_positive": True,
+        "rejection_rounds": None,
+    }
+
+
+def test_unigram_sampler_rejects_unknown_algorithm() -> None:
+    with np.testing.assert_raises_regex(
+        ValueError, "unsupported unigram sampling algorithm"
+    ):
+        UnigramSampler.uniform(3, backend="cpu", algorithm="unknown")
+
+
 def test_skipgram_samples_all_context_targets_in_one_call() -> None:
     sampler = UnigramSampler.uniform(8, backend="cpu")
     calls = []

@@ -6,7 +6,7 @@ seed_policy: {seed_set: research_v1, seed_count: 10, paired_execution: true}
 dataset: {id: DS-PTB-TRAIN, source: ptb_train, window_size: 5}
 loader: {batch_size: 100, drop_last: true}
 model: {name: CBOW, embedding_size: 100}
-objective: {name: NegativeSampling, reduction: mean, negative_samples: 5, sampler: {algorithm: alias_target_rejection_v1, power: 0.75, rejection_rounds: 4}}
+objective: {name: NegativeSampling, reduction: mean, negative_samples: 5, sampler: {algorithm: conditional_cdf_target_exclusion_v1, power: 0.75}}
 optimizer: {name: adam, learning_rate: 0.001}
 budget: {max_epochs: 10}
 recording:

@@ -17,18 +17,20 @@ class UnigramSamplerMetadata:
     power: float
     replacement: bool
     excludes_positive: bool
-    rejection_rounds: int
+    rejection_rounds: int | None
 
 
 class UnigramSampler:
-    """Alias-table sampler whose hot path stays entirely on the active device.
+    """Device-resident unigram sampler with exact target exclusion available.
 
-    The table is built once from a CPU corpus (or precomputed weights) and then
-    copied to the selected backend. Sampling uses replacement, which is the
-    usual efficient negative-sampling policy; the positive label is rejected.
+    Distribution tables are built once from CPU weights and copied to the
+    selected backend. The conditional-CDF algorithm removes the positive
+    target's probability interval before drawing, so it needs neither repeated
+    rejection draws nor a biased fallback.
     """
 
-    algorithm = "alias_target_rejection_v1"
+    ALIAS_REJECTION = "alias_target_rejection_v1"
+    CONDITIONAL_CDF = "conditional_cdf_target_exclusion_v1"
 
     def __init__(
         self,
@@ -37,11 +39,14 @@ class UnigramSampler:
         backend: Backend | str | None = None,
         power: float = 0.75,
         rejection_rounds: int = 4,
+        algorithm: str = ALIAS_REJECTION,
     ) -> None:
         if power <= 0:
             raise ValueError("power must be positive")
         if rejection_rounds < 0:
             raise ValueError("rejection_rounds must be non-negative")
+        if algorithm not in {self.ALIAS_REJECTION, self.CONDITIONAL_CDF}:
+            raise ValueError(f"unsupported unigram sampling algorithm: {algorithm}")
         resolved = resolve_backend(backend)
         source = np.asarray(weights, dtype=np.float64)
         if source.ndim != 1 or len(source) < 2:
@@ -51,13 +56,34 @@ class UnigramSampler:
 
         probabilities = source**power
         probabilities /= probabilities.sum()
-        probability, alias = _build_alias_table(probabilities)
+        if algorithm == self.CONDITIONAL_CDF and np.count_nonzero(probabilities) < 2:
+            raise ValueError(
+                "conditional-CDF sampling requires at least two positive weights"
+            )
         self.backend = resolved
         self.vocab_size = len(probabilities)
         self.power = power
+        self.algorithm = algorithm
         self.rejection_rounds = rejection_rounds
-        self.probability = resolved.asarray(probability, dtype=resolved.float_dtype)
-        self.alias = resolved.asarray(alias, dtype=resolved.xp.int64)
+        if algorithm == self.ALIAS_REJECTION:
+            probability, alias = _build_alias_table(probabilities)
+            self.probability = resolved.asarray(
+                probability, dtype=resolved.float_dtype
+            )
+            self.alias = resolved.asarray(alias, dtype=resolved.xp.int64)
+            self.distribution = None
+            self.cumulative_distribution = None
+        else:
+            cumulative = np.cumsum(probabilities, dtype=np.float64)
+            cumulative[-1] = 1.0
+            self.probability = None
+            self.alias = None
+            self.distribution = resolved.asarray(
+                probabilities, dtype=resolved.xp.float64
+            )
+            self.cumulative_distribution = resolved.asarray(
+                cumulative, dtype=resolved.xp.float64
+            )
 
     @classmethod
     def from_corpus(
@@ -68,6 +94,7 @@ class UnigramSampler:
         backend: Backend | str | None = None,
         power: float = 0.75,
         rejection_rounds: int = 4,
+        algorithm: str = ALIAS_REJECTION,
     ) -> UnigramSampler:
         """Build counts in one linear CPU pass, rather than scanning per token."""
         tokens = np.asarray(corpus, dtype=np.int64).reshape(-1)
@@ -79,6 +106,7 @@ class UnigramSampler:
             backend=backend,
             power=power,
             rejection_rounds=rejection_rounds,
+            algorithm=algorithm,
         )
 
     @classmethod
@@ -87,8 +115,14 @@ class UnigramSampler:
         vocab_size: int,
         *,
         backend: Backend | str | None = None,
+        algorithm: str = ALIAS_REJECTION,
     ) -> UnigramSampler:
-        return cls(np.ones(vocab_size), backend=backend, power=1.0)
+        return cls(
+            np.ones(vocab_size),
+            backend=backend,
+            power=1.0,
+            algorithm=algorithm,
+        )
 
     @property
     def metadata(self) -> dict[str, object]:
@@ -97,21 +131,23 @@ class UnigramSampler:
             power=self.power,
             replacement=True,
             excludes_positive=True,
-            rejection_rounds=self.rejection_rounds,
+            rejection_rounds=(
+                self.rejection_rounds
+                if self.algorithm == self.ALIAS_REJECTION
+                else None
+            ),
         ).__dict__
 
     def sample(self, targets: Tensor | Any, *, sample_size: int):
-        """Return ``(batch, sample_size)`` negatives, excluding each target.
-
-        Rejection has a fixed number of fully vectorized rounds to avoid a
-        host synchronization in the hot path. The final deterministic fallback
-        guarantees target exclusion even for an unusually frequent token.
-        """
+        """Return ``(batch, sample_size)`` negatives, excluding each target."""
         if sample_size < 1:
             raise ValueError("sample_size must be positive")
         xp = self.backend.xp
         values = targets.data if isinstance(targets, Tensor) else targets
         labels = xp.asarray(values, dtype=xp.int64).reshape(-1)
+
+        if self.algorithm == self.CONDITIONAL_CDF:
+            return self._sample_conditional_cdf(labels, sample_size)
 
         negatives = self._draw((len(labels), sample_size))
         expected = labels[:, None]
@@ -121,8 +157,26 @@ class UnigramSampler:
         fallback = (expected + 1) % self.vocab_size
         return xp.where(negatives == expected, fallback, negatives)
 
+    def _sample_conditional_cdf(self, labels, sample_size: int):
+        """Sample exactly from p(word | word != target) with one random draw."""
+        xp = self.backend.xp
+        distribution = self.distribution
+        cumulative = self.cumulative_distribution
+        if distribution is None or cumulative is None:
+            raise RuntimeError("conditional-CDF tables are unavailable")
+        target_probability = distribution[labels][:, None]
+        interval_start = (
+            cumulative[labels] - distribution[labels]
+        )[:, None]
+        draws = xp.random.random((len(labels), sample_size))
+        draws = draws.astype(xp.float64, copy=False) * (1.0 - target_probability)
+        adjusted = draws + (draws >= interval_start) * target_probability
+        return xp.searchsorted(cumulative, adjusted, side="right")
+
     def _draw(self, shape: tuple[int, int]):
         xp = self.backend.xp
+        if self.probability is None or self.alias is None:
+            raise RuntimeError("alias tables are unavailable")
         columns = xp.random.randint(self.vocab_size, size=shape)
         coin = xp.random.random(shape)
         return xp.where(coin < self.probability[columns], columns, self.alias[columns])

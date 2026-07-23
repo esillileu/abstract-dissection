@@ -211,6 +211,11 @@ class Word2VecExecutor:
                 backend=backend,
                 power=float(sampler_values.get("power", 0.75)),
                 rejection_rounds=int(sampler_values.get("rejection_rounds", 4)),
+                algorithm=str(
+                    sampler_values.get(
+                        "algorithm", UnigramSampler.ALIAS_REJECTION
+                    )
+                ),
             )
             context.metadata["negative_sampler"] = sampler.metadata
         architecture = str(model_config.get("name", "CBOW"))
