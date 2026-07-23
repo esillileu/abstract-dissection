@@ -91,9 +91,11 @@ MLflow mapping:
 | 열 | 의미 |
 | --- | --- |
 | `update`, `epoch` | 저장 시점 |
-| `kind` | `final` 또는 `periodic` |
+| `kind` | `final`, `latest`, `selected`, `periodic` 중 하나 |
 | `path` | artifact 내부 상대 경로 |
 | `sha256` | checkpoint bytes hash |
+
+`latest`와 metric-selected `selected`는 실제 보존된 한 세대만 기록한다. `periodic`은 명시적인 retention 정책이 있는 실행에서만 기록한다.
 
 ### `timing_windows.csv`
 

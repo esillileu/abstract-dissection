@@ -50,6 +50,7 @@
 - source-curve/evaluation probe 사이의 train 시간과 그 뒤 evaluation 시간을 분리해 `timing_windows.csv`에 기록한다.
 - record는 256 rows, epoch 끝, checkpoint 직전, 정상/예외 종료에 durable flush한다. MLflow 실패로 CSV를 되돌리거나 trainer update를 재실행하지 않는다.
 - checkpoint 전에 sink를 flush하고 model·optimizer·trainer·executor/sampler state, config/dataset/split digest를 함께 검증한다.
+- 공용 checkpoint manager는 `latest`와 metric-selected `best`를 각각 항상 한 세대 보존한다. 추가 periodic 세대는 `checkpoint.retention.periodic_every_epochs`와 `periodic_keep`를 함께 명시한 실행에서만 별도로 보존한다.
 
 ## DS1 정책 적용과 의도적 차이
 

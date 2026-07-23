@@ -123,6 +123,7 @@ trainer가 제공하는 것은 mode-safe하고 sampler/RNG를 소비하지 않�
 ### 4. Checkpoint와 재개 지원
 
 - checkpoint 시점·파일 저장·sha256 record·config/dataset 검증은 executor의 책임이다.
+- 공용 checkpoint manager는 `latest`와 metric-selected `best`를 각각 항상 한 세대 보존한다. 추가 periodic 세대는 `checkpoint.retention.periodic_every_epochs`와 `periodic_keep`를 함께 명시한 실행에서만 별도로 보존한다.
 - trainer는 executor가 checkpoint에 넣을 `TrainerState`를 `state_dict()`로 제공하고
   `load_state_dict()`로 복원한다.
 - trainer가 sampler를 직접 소유하는 API라면 epoch 내 batch 위치와 sampler RNG state도

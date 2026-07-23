@@ -98,7 +98,7 @@ MLflow metric은 `axis/eval_{split}/{metric}`이고 step은 `axis_step`이다. �
 update,epoch,kind,path,sha256,checkpoint_id,selection_metric,selection_value
 ```
 
-`kind`는 `final`, `periodic`, `selected` 중 하나다. `selection_metric/value`는 validation-selected checkpoint에만 채운다.
+`kind`는 `final`, `latest`, `periodic`, `selected` 중 하나다. `selection_metric/value`는 validation-selected checkpoint에만 채운다. `latest`와 `selected`는 실행별로 실제 보존된 한 세대만 기록하며, 삭제된 과거 payload 경로는 기록하지 않는다.
 
 ### `timing_windows.csv`
 
