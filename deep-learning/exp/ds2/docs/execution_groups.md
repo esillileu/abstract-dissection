@@ -56,6 +56,9 @@
 | `W2V-PTB-SKIPGRAM-FULL` | Skip-gram, window 5, embedding 100 | full vocabulary softmax |
 
 negative sampling과 full softmax는 objective 정의가 다르므로 raw loss를 직접 비교하지 않는다. 동일 architecture 안에서 objective별 runtime과 고정 query artifact를 비교한다.
+`update/train/loss`는 모든 prediction term의 mean으로 표준 비교 스케일을 유지하고,
+`update/train/book_loss`는 candidate/context 항을 합한 책 objective를 별도로 기록한다.
+원본형 interval graph는 `series/train/book_loss`를 사용한다.
 
 ### GT03 — small-corpus RNNLM
 

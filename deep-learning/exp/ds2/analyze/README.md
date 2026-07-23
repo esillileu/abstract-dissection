@@ -9,8 +9,9 @@
 - schema-v1 config, seed, dataset, reproducibility artifact를 결합해 분석용 run manifest를 만든다.
 - runtime metadata의 `dataset_checksum`, `split_checksum`을 condition 간에 검증한다.
 - domain checkpoint CSV와 checkpoint manifest를 결합해 final/selected checkpoint index를 만든다.
-- `source_objectives.csv`의 objective와 `unit_count`로 reducer를 적용하고 `plot_index`를
-  append 순서 `0..N-1`로 생성한다.
+- `source_objectives.csv`의 objective/book_objective와 `unit_count`로 reducer를
+  적용하고 `plot_index`를 append 순서 `0..N-1`로 생성한다. GT01/GT02 원본형
+  그래프는 book_objective를 사용하고 prediction-term mean은 진단값으로 유지한다.
 - terminal 값이 `metrics/final.json`에만 있으면 long-form evaluation row로 정규화한다.
 - prediction 문자열에서 token 통계를 재계산해 기록된 `token_correct`, `token_count`를 검증한다.
 - seed 평균, 표준편차, CI, paired difference, final/best/AUC와 순위는 분석에서 계산한다.

@@ -7,15 +7,18 @@
 - `final/status/*` - run 성공 여부와 NaN/Inf/divergence flag.
 - `final/system/*` - 총 update 수, 완료 epoch 수, 처리 sample/token/sequence 수.
 - `final/train/loss` - Word2Vec/Seq2seq final train loss.
+- `final/train/book_loss` - Word2Vec의 마지막 post-update 책 objective.
 - `final/train/perplexity`, `final/test/perplexity`, `final/{train,test}/ppl` - language modeling final perplexity.
 - `final/valid/perplexity`, `final/valid/ppl`, `final/best_valid_ppl`, `final/best_valid_epoch` - validation-selected LM recipe summary. valid evaluation이 있을 때만 기록한다.
 - `final/test/exact_match`, `final/test/token` - Seq2seq final exact-match/token accuracy projection.
 - `runtime/run_wall_total_s` - YAML runner 기준 전체 run wall time.
 - `runtime/train_total_s` - executor가 trainer fit 구간에서 측정한 전체 train wall time.
 - `memory/cpu_rss_start_bytes`, `memory/cpu_rss_end_bytes`, `memory/cpu_rss_peak_sampled_bytes` - profiling summary에서 투영한 CPU RSS 시작/종료/peak sampled memory.
-- `update/train/loss`, `update/train/lr` - 각 optimizer update 직후 post-update loss와 learning rate.
+- `update/train/loss`, `update/train/lr` - 각 optimizer update 직후 표준 mean loss와 learning rate.
+- `update/train/book_loss` - Word2Vec의 post-update sum-over-terms/mean-over-examples objective.
 - `{epoch,terminal}/eval_{valid,test}/{loss,perplexity,exact_match_accuracy,token_accuracy}` - LM/Seq2seq evaluation schedule이 요청한 long-form evaluation result.
 - `series/train/loss` - `observations/source_curves.csv`의 source objective loss. step은 `plot_index`.
+- `series/train/book_loss` - Word2Vec 원본 graph용 pre-update interval book loss. step은 `plot_index`.
 - `series/train/perplexity` - `observations/source_curves.csv`의 source objective perplexity. step은 `plot_index`.
 - `series/eval_test/exact_match_accuracy` - Seq2seq epoch exact-match source curve. step은 `plot_index`.
 - `update/runtime/window/{train,eval}_wall_time_ms` - timing window의 host wall time. step은 `end_update`.
@@ -23,7 +26,7 @@
 
 ## MLflow artifact 목록
 
-- `updates.csv` - update별 raw train loss/lr history.
+- `updates.csv` - update별 raw train loss, 선택적 book loss, lr history.
 - `evaluations.csv` - split/metric long-form evaluation history.
 - `timing_windows.csv` - source-curve/evaluation probe, epoch, terminal timing window history.
 - `checkpoints.csv` - executor가 기록한 selected/eval checkpoint index와 digest.
@@ -45,8 +48,10 @@
 | artifact 열 | MLflow metric | step |
 | --- | --- | ---: |
 | `updates.csv.loss` | `update/train/loss` | update |
+| `updates.csv.book_loss` | `update/train/book_loss` | update |
 | `updates.csv.lr` | `update/train/lr` | update |
 | `observations/source_curves.csv` loss | `series/train/loss` | `plot_index` |
+| `observations/source_curves.csv` book loss | `series/train/book_loss` | `plot_index` |
 | `observations/source_curves.csv` PPL | `series/train/perplexity` | `plot_index` |
 | `observations/source_curves.csv` exact-match | `series/eval_test/exact_match_accuracy` | `plot_index` |
 | valid PPL | `epoch/eval_valid/perplexity` | epoch |

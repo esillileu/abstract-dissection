@@ -42,7 +42,7 @@ artifact/
 | `split_id`, `split_checksum` | subset/split 식별·검증값 |
 | `resolved_config` | 모델·optimizer·sampler·budget 전체 |
 | `loss_phase` | 항상 `post_update` (`updates.csv.loss`) |
-| `loss_reduction` | 항상 `mean` |
+| `loss_reduction` | 표준 `loss`는 항상 prediction-term `mean`; Word2Vec `book_loss`는 `sum_terms_mean_examples` |
 | `evaluation_schedule` | 아래 그룹별 schedule 전체 |
 | `source_curve_schedule` | 원본 graph/console point의 trigger·reducer·x축 |
 | `timing_config` | timing window 경계, wall/device time 측정 여부와 단위 |
@@ -52,7 +52,7 @@ artifact/
 모든 GT 학습 group은 매 optimizer update 뒤 한 행을 기록한다.
 
 ```text
-update,epoch,batch_size,loss,lr
+update,epoch,batch_size,loss,book_loss,lr
 ```
 
 | 열 | 의미 |
@@ -60,7 +60,8 @@ update,epoch,batch_size,loss,lr
 | `update` | 완료된 optimizer update 수. 1부터 시작 |
 | `epoch` | 해당 update가 속한 epoch. 1부터 시작 |
 | `batch_size` | 실제 batch example 수 |
-| `loss` | update **후** 동일 batch에서 다시 계산한 mean objective |
+| `loss` | update **후** 동일 batch에서 다시 계산한 prediction-term mean objective |
+| `book_loss` | Word2Vec 선택 열. candidate/context 항을 합하고 batch example만 평균한 책 objective |
 | `lr` | 해당 update에 적용한 learning rate |
 
 `unit_count`는 모든 2권 batch가 config에서 결정된다(Word2Vec prediction term, LM token, Seq2seq example). 가변 길이 batch를 도입할 때만 `resolved_config`의 schema version을 올리고 update event에 명시적으로 추가한다.
@@ -70,6 +71,7 @@ MLflow mapping:
 | CSV 열 | MLflow metric | MLflow step |
 | --- | --- | --- |
 | `loss` | `update/train/loss` | `update` |
+| `book_loss` | `update/train/book_loss` | `update` |
 | `lr` | `update/train/lr` | `update` |
 
 ### `evaluations.csv`
@@ -122,11 +124,13 @@ GPU 일반 기록 모드는 update마다 synchronize하지 않는다. device tim
 ### `observations/source_objectives.csv`
 
 ```text
-update,epoch,local_iteration,objective,unit_count
+update,epoch,local_iteration,objective,book_objective,unit_count
 ```
 
-GT01-GT05가 매 update 발행한 pre-update objective의 canonical history다. 분석 단계는
-이 파일에서 원본 interval 또는 epoch reducer와 `plot_index`를 재구성한다.
+GT01-GT05가 매 update 발행한 pre-update objective의 canonical history다.
+`objective`는 표준 mean이고, Word2Vec의 선택 열 `book_objective`는 책의
+sum-over-terms/mean-over-examples objective다. 분석 단계는 이 파일에서 원본
+interval 또는 epoch reducer와 `plot_index`를 재구성한다.
 `updates.csv.loss`는 post-update 값이므로 이 파일을 대체할 수 없다.
 
 ### `observations/source_curves.csv`
@@ -150,6 +154,7 @@ MLflow mapping:
 | metric | MLflow metric | step |
 | --- | --- | --- |
 | `loss` | `series/train/loss` | `plot_index` |
+| `book_loss` | `series/train/book_loss` | `plot_index` |
 | `perplexity` | `series/train/perplexity` | `plot_index` |
 | `exact_match_accuracy` | `series/eval_test/exact_match_accuracy` | `plot_index` |
 
