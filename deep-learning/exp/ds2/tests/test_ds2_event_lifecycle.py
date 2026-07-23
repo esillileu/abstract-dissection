@@ -13,6 +13,7 @@ from mlprosection.experiment.executor import ExperimentContext
 from exp.ds2.executor import (
     Word2VecExecutor,
     _attention_example_ids,
+    _contexts_targets,
     _source_curve_from_objective,
 )
 from exp.ds2.records import DS2Records
@@ -204,6 +205,40 @@ def test_ds2_record_flush_materializes_pending_scalars_in_one_copy(tmp_path) -> 
     assert records.updates[0]["loss"] == 1.25
     assert records.source_samples[0]["objective"] == 1.5
     assert records.source_curves[0]["value"] == 1.5
+
+
+def test_ds2_record_flush_appends_only_new_rows_without_duplicates(tmp_path) -> None:
+    records = DS2Records(flush_interval=2)
+    records.bind_artifact_root(tmp_path)
+
+    for update in range(1, 4):
+        records.on_update(UpdateEvent(update, 1, 2, Tensor(float(update)), 0.1))
+        records.on_source_objective(
+            SourceObjectiveSample(update, 1, update - 1, Tensor(float(update)), 2)
+        )
+    records.flush()
+    records.flush()
+
+    updates = list(csv.DictReader((tmp_path / "updates.csv").open()))
+    objectives = list(
+        csv.DictReader((tmp_path / "observations/source_objectives.csv").open())
+    )
+    assert [row["update"] for row in updates] == ["1", "2", "3"]
+    assert [row["update"] for row in objectives] == ["1", "2", "3"]
+
+
+def test_word2vec_contexts_are_built_with_the_expected_window_order() -> None:
+    corpus = np.arange(8, dtype=np.int64)
+
+    contexts, targets = _contexts_targets(corpus, 2)
+
+    assert np.array_equal(targets, [2, 3, 4, 5])
+    assert np.array_equal(contexts, [
+        [0, 1, 3, 4],
+        [1, 2, 4, 5],
+        [2, 3, 5, 6],
+        [3, 4, 6, 7],
+    ])
 
 
 def test_source_curve_point_closes_a_probe_timing_window() -> None:
