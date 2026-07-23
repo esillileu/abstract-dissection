@@ -52,6 +52,7 @@ class Word2Vec(Layer):
             if self.sampler.backend.device != resolved.device:
                 raise ValueError("sampler backend must match the model backend")
         self.cache: list[tuple[Any, Any, Any, Any]] = []
+        self._gradient_scale = 1
 
     @property
     def word_vectors(self):
@@ -68,28 +69,49 @@ class Word2Vec(Layer):
         indices = xs.data.astype(xp.int64, copy=False)
         targets = ts.data.astype(xp.int64, copy=False)
         self.cache = []
-        candidate_index = 0
+        self._gradient_scale = 1
         if self.architecture == "cbow":
             hidden = self.W_in.data[indices].mean(axis=1)
-            fixed = None if negative_candidates is None else negative_candidates[candidate_index]
+            fixed = None if negative_candidates is None else negative_candidates[0]
             loss = self._objective(hidden, targets.reshape(-1), indices, fixed_candidates=fixed)
         else:
             centers = indices.reshape(-1)
             context_targets = targets if targets.ndim == 2 else targets[:, None]
-            losses = []
-            for column in range(context_targets.shape[1]):
-                fixed = None if negative_candidates is None else negative_candidates[candidate_index]
-                losses.append(self._objective(
-                    self.W_in.data[centers], context_targets[:, column], centers,
-                    fixed_candidates=fixed,
-                ))
-                candidate_index += 1
-            loss = xp.asarray(0.0, dtype=xp.float64)
-            for objective in losses:
-                loss = loss + objective.astype(xp.float64)
-            if self.loss_reduction == "mean":
-                loss = loss / len(losses)
+            context_width = context_targets.shape[1]
+            flat_centers = xp.repeat(centers, context_width)
+            flat_targets = context_targets.reshape(-1)
+            fixed = self._flatten_negative_candidates(
+                negative_candidates,
+                batch_size=len(centers),
+                context_width=context_width,
+            )
+            loss = self._objective(
+                self.W_in.data[flat_centers], flat_targets, flat_centers,
+                fixed_candidates=fixed,
+            )
+            # The former per-context implementation accumulated one gradient
+            # contribution per context. Preserve that optimizer behavior while
+            # issuing the objective and sampler kernels only once per batch.
+            self._gradient_scale = context_width
+            if self.loss_reduction == "sum":
+                loss = loss * context_width
         return Tensor(xp.asarray(loss, dtype=self.backend.float_dtype), backend=self.backend)
+
+    def _flatten_negative_candidates(
+        self,
+        candidates: Sequence[Any] | None,
+        *,
+        batch_size: int,
+        context_width: int,
+    ):
+        if candidates is None:
+            return None
+        if len(candidates) == 1:
+            return candidates[0]
+        if len(candidates) != context_width:
+            raise ValueError("negative candidate count must match the context width")
+        xp = self.backend.xp
+        return xp.stack(candidates, axis=1).reshape(batch_size * context_width, -1)
 
     def _objective(self, hidden, labels, source, *, fixed_candidates=None):
         xp = self.backend.xp
@@ -128,7 +150,7 @@ class Word2Vec(Layer):
         xp = self.backend.xp
         self.W_in.grad[...] = 0
         self.W_out.grad[...] = 0
-        scale = 1.0 if dout is None else float(dout.data)
+        scale = (1.0 if dout is None else float(dout.data)) * self._gradient_scale
         for hidden, labels_or_candidates, source, values in self.cache:
             if self.objective == "full_softmax":
                 labels, probabilities = labels_or_candidates, values

@@ -551,9 +551,9 @@ def _device_timer(config: dict[str, object], backend):
 
 
 def _contexts_targets(corpus, window: int):
-    import numpy as np
-    centers = np.arange(window, len(corpus) - window)
-    contexts = np.stack([np.concatenate((corpus[index - window:index], corpus[index + 1:index + window + 1])) for index in centers])
+    width = 2 * window + 1
+    windows = np.lib.stride_tricks.sliding_window_view(corpus, width)
+    contexts = np.concatenate((windows[:, :window], windows[:, window + 1:]), axis=1)
     return contexts, corpus[window:-window]
 
 

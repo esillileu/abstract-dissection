@@ -28,8 +28,14 @@ class DS2Records:
     artifact_root: Path | None = None
     flush_interval: int = 256
     _pending_rows: int = 0
+    _written_rows: dict[str, int] = field(default_factory=dict)
+    _written_root: Path | None = None
+    _materialized_rows: dict[str, int] = field(default_factory=dict)
 
     def bind_artifact_root(self, artifact_root: Path) -> None:
+        if self._written_root != artifact_root:
+            self._written_rows.clear()
+            self._written_root = artifact_root
         self.artifact_root = artifact_root
 
     def on_update(self, event: UpdateEvent) -> None:
@@ -124,19 +130,22 @@ class DS2Records:
         return tuple(rows)
 
     def write_csv(self, artifact_root: Path) -> None:
+        if self._written_root != artifact_root:
+            self._written_rows.clear()
+            self._written_root = artifact_root
         self.artifact_root = artifact_root
         artifact_root.mkdir(parents=True, exist_ok=True)
         self._materialize_pending_scalars()
-        self._write(artifact_root / "updates.csv", self.updates, columns=["update", "epoch", "batch_size", "loss", "lr"])
-        self._write(artifact_root / "evaluations.csv", self.evaluations, columns=["axis", "axis_step", "update", "epoch", "evaluation_set_id", "split", "unit", "unit_count", "metric", "value"])
-        self._write(artifact_root / "checkpoints.csv", self.checkpoints, columns=["update", "epoch", "kind", "path", "sha256", "checkpoint_id", "selection_metric", "selection_value"])
-        self._write(artifact_root / "timing_windows.csv", [{"start_update": item.start_update, "end_update": item.end_update, "update_count": item.update_count, "closed_by": item.closed_by, "train_wall_time_ns": item.train_wall_time_ns, "train_device_time_ns": item.train_device_time_ns, "eval_wall_time_ns": item.eval_wall_time_ns, "eval_device_time_ns": item.eval_device_time_ns} for item in self.timing_windows], columns=["start_update", "end_update", "update_count", "closed_by", "train_wall_time_ns", "train_device_time_ns", "eval_wall_time_ns", "eval_device_time_ns"])
+        self._append("updates", artifact_root / "updates.csv", self.updates, columns=["update", "epoch", "batch_size", "loss", "lr"])
+        self._append("evaluations", artifact_root / "evaluations.csv", self.evaluations, columns=["axis", "axis_step", "update", "epoch", "evaluation_set_id", "split", "unit", "unit_count", "metric", "value"])
+        self._append("checkpoints", artifact_root / "checkpoints.csv", self.checkpoints, columns=["update", "epoch", "kind", "path", "sha256", "checkpoint_id", "selection_metric", "selection_value"])
+        self._append("timing_windows", artifact_root / "timing_windows.csv", [{"start_update": item.start_update, "end_update": item.end_update, "update_count": item.update_count, "closed_by": item.closed_by, "train_wall_time_ns": item.train_wall_time_ns, "train_device_time_ns": item.train_device_time_ns, "eval_wall_time_ns": item.eval_wall_time_ns, "eval_device_time_ns": item.eval_device_time_ns} for item in self.timing_windows], columns=["start_update", "end_update", "update_count", "closed_by", "train_wall_time_ns", "train_device_time_ns", "eval_wall_time_ns", "eval_device_time_ns"])
         observations = artifact_root / "observations"
         observations.mkdir(exist_ok=True)
-        self._write(observations / "source_objectives.csv", self.source_samples, columns=["update", "epoch", "local_iteration", "objective", "unit_count"])
-        self._write(observations / "source_curves.csv", self.source_curves, columns=["series_id", "plot_index", "update_start", "update_end", "epoch_start", "epoch_end", "unit", "unit_count", "metric", "reducer", "value"])
-        self._write(observations / "predictions.csv", self.predictions, columns=["epoch", "example_id", "source", "target", "prediction", "exact_match", "token_correct", "token_count"])
-        self._write(observations / "attention.csv", self.attention, columns=["example_id", "decode_step", "encoder_position", "weight"])
+        self._append("source_samples", observations / "source_objectives.csv", self.source_samples, columns=["update", "epoch", "local_iteration", "objective", "unit_count"])
+        self._append("source_curves", observations / "source_curves.csv", self.source_curves, columns=["series_id", "plot_index", "update_start", "update_end", "epoch_start", "epoch_end", "unit", "unit_count", "metric", "reducer", "value"])
+        self._append("predictions", observations / "predictions.csv", self.predictions, columns=["epoch", "example_id", "source", "target", "prediction", "exact_match", "token_correct", "token_count"])
+        self._append("attention", observations / "attention.csv", self.attention, columns=["example_id", "decode_step", "encoder_position", "weight"])
         if self.attention_render is not None:
             (observations / "attention_render.json").write_text(json.dumps(self.attention_render, indent=2, sort_keys=True), encoding="utf-8")
         self._pending_rows = 0
@@ -151,10 +160,42 @@ class DS2Records:
             self.flush()
 
     def _materialize_pending_scalars(self) -> None:
-        entries = [(row, "loss") for row in self.updates]
-        entries.extend((row, "objective") for row in self.source_samples)
-        entries.extend((row, "value") for row in self.source_curves)
+        collections = (
+            ("updates", self.updates, "loss"),
+            ("source_samples", self.source_samples, "objective"),
+            ("source_curves", self.source_curves, "value"),
+        )
+        entries = []
+        for name, rows, key in collections:
+            start = self._materialized_rows.get(name, 0)
+            entries.extend((row, key) for row in rows[start:])
+            self._materialized_rows[name] = len(rows)
         self._materialize_scalars(entries)
+
+    def _append(
+        self,
+        name: str,
+        path: Path,
+        rows: list[dict[str, object]],
+        *,
+        columns: list[str],
+    ) -> None:
+        initialized = name in self._written_rows
+        start = self._written_rows.get(name, 0)
+        if not initialized or not path.exists():
+            start = 0
+        pending = rows[start:]
+        if initialized and not pending and path.exists():
+            return
+        path.parent.mkdir(parents=True, exist_ok=True)
+        mode = "a" if initialized and path.exists() else "w"
+        with path.open(mode, newline="") as file:
+            writer = csv.DictWriter(file, fieldnames=columns)
+            if mode == "w":
+                writer.writeheader()
+            for row in pending:
+                writer.writerow({key: self._csv_value(row.get(key, "")) for key in columns})
+        self._written_rows[name] = len(rows)
 
     @staticmethod
     def _materialize_scalars(entries: list[tuple[dict[str, object], str]]) -> None:
@@ -170,18 +211,6 @@ class DS2Records:
             host_values = backend.to_numpy(stacked)
             for (row, key, _), host_value in zip(values, host_values, strict=True):
                 row[key] = float(host_value)
-
-    @staticmethod
-    def _write(path: Path, rows: list[dict[str, object]], *, columns: list[str] | None = None) -> None:
-        columns = columns or (list(rows[0]) if rows else [])
-        if not columns:
-            return
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("w", newline="") as file:
-            writer = csv.DictWriter(file, fieldnames=columns)
-            writer.writeheader()
-            for row in rows:
-                writer.writerow({key: DS2Records._csv_value(row.get(key, "")) for key in columns})
 
     @staticmethod
     def _csv_value(value: object) -> object:
