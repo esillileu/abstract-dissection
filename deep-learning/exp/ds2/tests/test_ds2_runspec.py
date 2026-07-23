@@ -80,18 +80,12 @@ def test_ds2_runspec_allows_device_timing_profiling_policy() -> None:
     assert spec.config["profiling"] == {"enabled": False, "device_timing": True}
 
 
-def test_custom_language_model_defers_epoch_curve_to_raw_analysis() -> None:
-    spec = parse_run_spec(
-        "exp/ds2/config/e03_small_rnnlm.yaml",
-        atomic_run_id="LM-SMALL-RNN-CUSTOM",
-    )
-
-    assert spec.source_curve is not None
-    assert spec.source_curve.every_updates is None
-    assert spec.source_curve.every_epochs == 1
-    assert spec.config["training"]["loop"] == "epoch"
-    assert spec.evaluations == ()
-    assert spec.config["evaluation"]["test_at_end"] is False
+def test_gt03_catalog_excludes_the_custom_loop_variant() -> None:
+    with pytest.raises(ValueError, match="unknown atomic_run_id"):
+        parse_run_spec(
+            "exp/ds2/config/e03_small_rnnlm.yaml",
+            atomic_run_id="LM-SMALL-RNN-CUSTOM",
+        )
 
 
 def test_ds2_runspec_still_rejects_legacy_evaluation_key() -> None:
@@ -107,7 +101,7 @@ def test_ds2_runspec_still_rejects_legacy_evaluation_key() -> None:
     ("config_path", "atomic_run_id", "expected_max_norm"),
     [
         ("exp/ds2/config/e01_toy_word2vec.yaml", "W2V-TOY-CBOW-FULL", None),
-        ("exp/ds2/config/e03_small_rnnlm.yaml", "LM-SMALL-RNN", 0.25),
+        ("exp/ds2/config/e03_small_rnnlm.yaml", "LM-SMALL-RNN", None),
         ("exp/ds2/config/e06_addition_seq2seq.yaml", "SEQA-VAN-FWD", 5.0),
     ],
 )

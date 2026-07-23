@@ -23,7 +23,7 @@
 | --- | --- |
 | `GT01` | `local_iteration % every_updates == 0` 규칙으로 원본 interval mean loss 재구성, append plot index, toy CBOW/Skip-gram 비교와 seed 집계 |
 | `GT02` | GT01 reducer 적용, CBOW/Skip-gram 및 negative-sampling/full-softmax 조건 분리, word-vector checkpoint index와 조건 비교 |
-| `GT03` | standard variant는 원본 zero-based interval PPL, custom variant는 epoch별 token-weighted mean NLL의 exp로 PPL 재구성; 두 loop의 축을 별도 유지 |
+| `GT03` | 원본 zero-based interval train PPL과 seed CI |
 | `GT04` | interval token-weighted train PPL, terminal full-test PPL 정규화, train-test 비교와 seed CI |
 | `GT05` | interval train PPL, epoch valid PPL, selected-checkpoint terminal test PPL 결합, lr history와 best-valid 선택 검증, recipe 순위 |
 | `GT06` | epoch evaluation을 `plot_index=epoch-1` source series로 변환, epoch별 fixed prediction 변화와 exact/token accuracy 시각화 |

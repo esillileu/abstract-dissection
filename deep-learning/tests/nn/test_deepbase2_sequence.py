@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from mlprosection import Tensor
 from mlprosection.nn.layers import TimeAttention
@@ -51,6 +52,20 @@ def test_language_model_trainer_runs_truncated_bptt() -> None:
 
     assert trainer.global_step > 0
     assert trainer.evaluate(tokens[:-1], tokens[1:]).perplexity > 0
+
+
+def test_vanilla_rnnlm_uses_book_projection_initialization() -> None:
+    np.random.seed(7)
+    model = VanillaRnnlm(
+        vocab_size=418,
+        wordvec_size=100,
+        hidden_size=100,
+        backend="cpu",
+    )
+
+    projection = model.layers[-1].W.data
+
+    assert np.std(projection) == pytest.approx(0.1, rel=0.03)
 
 
 def test_time_sequential_resets_nested_state() -> None:

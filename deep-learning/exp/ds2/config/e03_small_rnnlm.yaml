@@ -2,7 +2,7 @@ domain: ds2
 kind: language_modeling
 run: {experiment_id: e03, group_id: GT03, protocol: small-corpus RNNLM, recipe_id: ds2-gt03-small-rnnlm, structure_signature: ptb1000-vanilla-rnn-100}
 execution: {mode: seeded, default_device: cuda:0}
-seed_policy: {seed_set: research_v1, seed_count: 10, paired_execution: true}
+seed_policy: {seed_set: research_v1, seed_count: 10, paired_execution: true, max_grad: null}
 dataset: {id: DS-PTB-TRAIN-1000, source: ptb, train_limit: 1000}
 loader: {batch_size: 10, time_size: 5}
 model: {name: VanillaRnnlm, wordvec_size: 100, hidden_size: 100}
@@ -18,5 +18,4 @@ checkpoint: {save_final: true, save_best: false, format: v2}
 profiling: {enabled: false}
 tracking: {enabled: true, experiment: ds2}
 variants:
-  LM-SMALL-RNN: {budget: {loop: interval}}
-  LM-SMALL-RNN-CUSTOM: {budget: {loop: epoch}, recording: {source_curve: {every_updates: null, every_epochs: 1}}}
+  LM-SMALL-RNN: {}

@@ -186,7 +186,7 @@ example_id,decode_step,encoder_position,weight
 | --- | --- | --- | --- |
 | `GT01` | 모든 update | 원본 Trainer의 zero-based interval mean train loss | 없음 |
 | `GT02` | 모든 update | 원본 Trainer의 zero-based interval mean train loss; objective는 manifest로 구분 | 없음 |
-| `GT03` | 모든 update | standard: 원본 interval train PPL; custom: epoch train PPL | 없음 |
+| `GT03` | 모든 update | 원본 interval train PPL | 없음 |
 | `GT04` | 모든 update | 원본 zero-based interval train PPL | terminal full-test PPL |
 | `GT05` | 모든 update | 원본 BetterRnnlm의 zero-based interval train PPL console series | epoch valid PPL; selected-checkpoint terminal test PPL |
 | `GT06` | 모든 update | epoch full-test exact-match (`plot_index = epoch - 1`) | epoch full-test exact-match; fixed first 10 predictions |

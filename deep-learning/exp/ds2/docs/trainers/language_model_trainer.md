@@ -32,8 +32,7 @@ Trainer는 model class나 `GT03`–`GT05` ID로 schedule을 분기하지 않는�
 
 | 그룹 | source curve | evaluator |
 | --- | --- | --- |
-| `GT03` standard | 원본 `iters % 20 == 0` interval train PPL | 없음 |
-| `GT03` custom | 매 epoch train PPL | 없음 |
+| `GT03` | 원본 `iters % 20 == 0` interval train PPL | 없음 |
 | `GT04` | 원본 zero-based interval train PPL | terminal full-test PPL |
 | `GT05` | 원본 BetterRnnlm zero-based interval train PPL console series | 매 epoch valid PPL, selected checkpoint terminal test PPL |
 

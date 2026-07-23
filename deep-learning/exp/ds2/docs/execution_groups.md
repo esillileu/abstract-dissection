@@ -18,7 +18,7 @@
 | --- | --- | --- | --- | ---: |
 | `GT01` | toy Word2Vec | toy corpus, full softmax, window 1, embedding 5, Adam .001, batch 3, 1,000 epochs | architecture | 2 |
 | `GT02` | PTB Word2Vec | PTB train, window 5, embedding 100, Adam .001, batch 100, 10 epochs | architecture × objective | 4 |
-| `GT03` | small-corpus RNNLM | PTB first 1,000 tokens, SimpleRnnlm 100/100, SGD .1, batch 10, BPTT 5, 100 epochs | training-loop implementation | 2 |
+| `GT03` | small-corpus RNNLM | PTB first 1,000 tokens, SimpleRnnlm 100/100, SGD .1, batch 10, BPTT 5, 100 epochs | 없음 | 1 |
 | `GT04` | PTB LSTM RNNLM | PTB train/test, LSTM 100/100, SGD 20, batch 20, BPTT 35, clip .25, 4 epochs | 없음 | 1 |
 | `GT05` | PTB LM recipe comparison | PTB train/valid/test, embedding/hidden 650, SGD 20, batch 20, BPTT 35, clip .25, max 40 epochs | architecture | 3 |
 | `GT06` | addition Seq2seq | addition split, embedding 16, hidden 128, Adam .001, batch 128, clip 5, 25 epochs | architecture × reverse input | 4 |
@@ -30,7 +30,7 @@
 | --- | --- |
 | `GT01` | `W2V-TOY-CBOW-FULL`, `W2V-TOY-SKIPGRAM-FULL` |
 | `GT02` | `W2V-PTB-CBOW-NS`, `W2V-PTB-SKIPGRAM-NS`, `W2V-PTB-CBOW-FULL`, `W2V-PTB-SKIPGRAM-FULL` |
-| `GT03` | `LM-SMALL-RNN`, `LM-SMALL-RNN-CUSTOM` |
+| `GT03` | `LM-SMALL-RNN` |
 | `GT04` | `LM-LSTM` |
 | `GT05` | `LM-RNN-RECIPE`, `LM-LSTM-RECIPE`, `LM-BETTER-RECIPE` |
 | `GT06` | `SEQA-VAN-FWD`, `SEQA-VAN-REV`, `SEQA-PEEKY-FWD`, `SEQA-PEEKY-REV` |
@@ -65,7 +65,6 @@ negative sampling과 full softmax는 objective 정의가 다르므로 raw loss�
 | atomic run ID | model | loop |
 | --- | --- | --- |
 | `LM-SMALL-RNN` | SimpleRnnlm, embedding/hidden 100 | RnnlmTrainer interval loop |
-| `LM-SMALL-RNN-CUSTOM` | SimpleRnnlm, embedding/hidden 100 | custom epoch loop |
 
 ### GT04 — LSTM RNNLM
 
@@ -110,7 +109,7 @@ negative sampling과 full softmax는 objective 정의가 다르므로 raw loss�
 | --- | --- |
 | `GT01` | `SRC-B2-CH03-TOY-CBOW`; toy Skip-gram 조건은 새 확장 |
 | `GT02` | `SRC-B2-CH04-PTB-CBOW`, `SRC-B2-CH04-PTB-SKIPGRAM`; full-softmax 조건은 새 확장 |
-| `GT03` | `SRC-B2-CH05-SMALL-RNNLM`, `SRC-B2-CH05-SMALL-RNNLM-CUSTOM` |
+| `GT03` | `SRC-B2-CH05-SMALL-RNNLM` |
 | `GT04` | `SRC-B2-CH06-LSTM-RNNLM` |
 | `GT05` | `SRC-B2-CH06-BETTER-RNNLM`; RNN/LSTM recipe 조건은 새 확장 |
 | `GT06` | `SRC-B2-CH07-ADDITION-SEQ2SEQ` |

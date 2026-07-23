@@ -1,4 +1,4 @@
-"""DS2 GT03: preserve the distinct interval-loop and epoch-loop axes."""
+"""DS2 GT03: reproduce the small-corpus SimpleRnnlm perplexity graph."""
 
 import matplotlib.pyplot as plt
 
@@ -9,19 +9,17 @@ from .common import runs, source_curve
 
 def render(client, error_style, output):
     del output
-    definitions = [
-        ("LM-SMALL-RNN", "interval loop", "iterations (x20)"),
-        ("LM-SMALL-RNN-CUSTOM", "custom loop", "epochs"),
-    ]
-    grouped = runs(client, "GT03", [item[0] for item in definitions])
-    figure, axes = plt.subplots(1, 2, figsize=(11, 4), sharey=True)
-    curves = {}
-    for axis, (atomic, title, xlabel) in zip(axes, definitions, strict=True):
-        curve = source_curve(client, grouped[atomic], "perplexity")
-        curves[atomic] = curve
-        plot_curve(axis, curve, label="train", error_style=error_style, error_every=5)
-        axis.set(title=title, xlabel=xlabel, ylabel="perplexity")
-        mark_empty(axis)
-        if axis.has_data():
-            axis.legend()
-    return figure, curves
+    atomic = "LM-SMALL-RNN"
+    grouped = runs(client, "GT03", [atomic])
+    curve = source_curve(client, grouped[atomic], "perplexity")
+    figure, axis = plt.subplots(figsize=(8, 5))
+    plot_curve(axis, curve, label="train", error_style=error_style, error_every=5)
+    axis.set(
+        title="PTB small-corpus SimpleRnnlm",
+        xlabel="iterations (x20)",
+        ylabel="perplexity",
+    )
+    mark_empty(axis)
+    if axis.has_data():
+        axis.legend()
+    return figure, {atomic: curve}

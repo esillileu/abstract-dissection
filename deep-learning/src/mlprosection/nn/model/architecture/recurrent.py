@@ -65,7 +65,12 @@ class VanillaRnnlm(Model):
         self.layers = [
             TimeEmbedding(vocab_size, wordvec_size, backend=self._backend),
             TimeRNN(wordvec_size, hidden_size, stateful=True, backend=self._backend),
-            TimeAffine(hidden_size, vocab_size, backend=self._backend),
+            TimeAffine(
+                hidden_size,
+                vocab_size,
+                backend=self._backend,
+                weight_scale=1 / hidden_size**0.5,
+            ),
         ]
         self.rnn_layer = self.layers[1]
 
