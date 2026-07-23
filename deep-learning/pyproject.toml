@@ -42,3 +42,6 @@ dev = [
 
 [tool.ruff]
 extend-exclude = ["01_deep-learning-from-base"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests", "exp"]
