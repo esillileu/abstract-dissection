@@ -24,6 +24,14 @@ Trainer는 `GT01`/`GT02` 또는 objective 이름으로 분기하지 않는다. e
 
 full softmax와 negative sampling은 objective 정의가 다르다. 공통 Trainer는 둘의 raw loss를 비교·정규화·순위화하지 않으며, `resolved_config.objective_id`만 보존한다.
 
+## 실행 최적화 계약
+
+- Skip-gram은 `(batch, context_width)` target을 `(batch * context_width)` prediction term으로 펼쳐 objective를 한 번 실행한다. context별 Python loop를 사용하지 않는다.
+- negative sampling은 펼친 prediction term 전체의 candidate를 한 번에 draw한다. post-update objective는 그 candidate block을 그대로 재사용한다.
+- 동일 candidate가 주어지면 벡터화 전 context별 구현과 같은 loss 및 embedding gradient를 유지한다. 최적화는 update 수와 기록 시점을 바꾸지 않으며, post-update 재계산은 RNG를 추가 소비하지 않는다.
+- PTB context/target 전처리는 sliding window를 벡터화해 원본의 왼쪽 context 뒤 오른쪽 context가 오는 순서를 유지한다.
+- recorder flush는 이미 기록한 행을 다시 쓰지 않고 새 canonical row만 append한다. CSV schema와 MLflow 매-update mapping은 바꾸지 않는다.
+
 ## source curve와 평가
 
 | 그룹 | source curve | evaluator |

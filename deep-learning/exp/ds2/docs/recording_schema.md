@@ -9,7 +9,7 @@ MLflow metric 이름과 artifact layout의 구현 계약은 [`mlflow/`](mlflow/)
 ## 저장 규칙
 
 - 값은 지정된 update/epoch에서 계산한다.
-- `updates.csv`, `evaluations.csv`, `timing_windows.csv`, `observations/source_objectives.csv`, `observations/source_curves.csv`는 메모리 buffer에 쌓아 256 records마다, epoch 종료, checkpoint 직전, run 종료에 flush한다.
+- `updates.csv`, `evaluations.csv`, `timing_windows.csv`, `observations/source_objectives.csv`, `observations/source_curves.csv`는 메모리 buffer에 쌓아 256 records마다, epoch 종료, checkpoint 직전, run 종료에 아직 쓰지 않은 row만 append한다.
 - buffer flush는 계산 step, 원본 graph `plot_index`, 값에 영향을 주지 않는다.
 - MLflow에는 같은 값을 batch로 전송한다. artifact CSV가 완전한 history의 기준이다.
 
