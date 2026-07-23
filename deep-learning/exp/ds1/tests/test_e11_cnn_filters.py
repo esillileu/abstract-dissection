@@ -7,15 +7,50 @@ import numpy as np
 
 from exp.analyze import RunRef
 from exp.ds1.analyze.e11_cnn_filters import (
+    RUN_GROUPS,
     _checkpoint_weights_path,
     _conv_weights,
     _filter_mosaic,
+    _shared_weight_limit,
+    _visualization_runs,
 )
 
 
 class _NoDownloadClient:
     def download_artifacts(self, run_id, artifact_path):
         raise FileNotFoundError((run_id, artifact_path))
+
+
+def test_visualization_runs_selects_only_seed_index_zero() -> None:
+    runs = [
+        RunRef("seed-1", "CNN", "1", 0, None),
+        RunRef("seed-2", "CNN", "2", 0, None),
+        RunRef("seed-10", "CNN", "10", 0, None),
+    ]
+
+    selected = _visualization_runs(runs)
+
+    assert [run.seed for run in selected] == ["1"]
+
+
+def test_run_groups_compare_only_the_three_simple_cnns() -> None:
+    assert RUN_GROUPS == (
+        ("GT06", "CNN-SIMPLE-BOOK"),
+        ("GT08", "CNN-SIMPLE-SPATIAL"),
+        ("GT08", "CNN-SIMPLE-SPATIAL-PERMUTED"),
+    )
+
+
+def test_shared_weight_limit_covers_every_panel_symmetrically() -> None:
+    limit = _shared_weight_limit(
+        [
+            np.asarray([-0.5, 0.25]),
+            np.asarray([-2.0, 1.0]),
+            np.asarray([0.0, 1.5]),
+        ]
+    )
+
+    assert limit == 2.0
 
 
 def test_conv_weights_selects_only_four_dimensional_weights_in_model_order(

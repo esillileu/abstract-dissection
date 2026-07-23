@@ -27,10 +27,10 @@
 | `GT05` | atomic run ID에서 scale와 BN on/off 조건 복원, scale축 reshape, paired BN difference, epoch curve와 순위 |
 | `GT06` | epoch-first subset accuracy와 terminal full-test accuracy 결합, learning curve, final checkpoint lookup, seed 집계 |
 | `GT07` | GT06과 같은 축·checkpoint 처리, SimpleCNN 대비 DeepCNN 비교, runtime/accuracy trade-off |
-| `GT08` | epoch-end full-test curve, spatial/permuted paired comparison, NN/CNN 구조별 차이와 seed CI |
+| `GT08` | epoch-end full-test curve, spatial/permuted paired comparison, NN/CNN 구조별 차이와 seed CI, MNIST 원본/고정 pixel-permutation 예시 |
 | `GO01` | 저장된 `0..29` trajectory update를 표시용 `1..30`으로 변환, optimizer별 경로·등고선 시각화 |
 | `GO02` | histogram count를 density/ratio로 변환, bin·layer 정렬, summary 검증과 activation 분포 시각화 |
-| `E11` | GT06 SimpleCNN, GT07 DeepCNN, GT08 CNN identity/permuted의 final checkpoint 합성곱 필터를 seed·층별로 시각화 |
+| `E11` | GT06 SimpleCNN과 GT08 CNN identity/permuted의 seed index 0 final checkpoint 첫 합성곱 필터를 공통 색상 범위의 3개 패널로 비교 |
 
 ## 분석 입력 우선순위
 

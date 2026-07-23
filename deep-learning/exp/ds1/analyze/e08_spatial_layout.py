@@ -1,8 +1,11 @@
 """DS1 GT08: compare identity and pixel-permuted NN/CNN accuracy."""
 
 import matplotlib.pyplot as plt
+import numpy as np
 
-from exp.analyze import aggregate, mark_empty, metric_histories, plot_curve
+from mlprosection.datasets.mnist import load_mnist
+
+from exp.analyze import aggregate, mark_empty, metric_histories, plot_curve, save_figure
 
 from .broken_axis import add_wave_break
 from .common import runs
@@ -12,6 +15,8 @@ METRICS = {
     "test": "update/eval_test/accuracy",
     "train": "update/eval_train/accuracy",
 }
+PIXEL_PERMUTATION_SEED = 20260808
+PERMUTATION_EXAMPLE_INDEX = 0
 PANELS = [
     (
         "ParameterMatchedNN",
@@ -30,8 +35,43 @@ PANELS = [
 ]
 
 
+def _permute_image(image: np.ndarray, *, seed: int) -> np.ndarray:
+    permutation = np.random.default_rng(seed).permutation(image.size)
+    return image.reshape(-1)[permutation].reshape(image.shape)
+
+
+def _render_permutation_example(output) -> None:
+    (_x_train, _t_train), (x_test, t_test) = load_mnist(flatten=False)
+    original = np.asarray(x_test[PERMUTATION_EXAMPLE_INDEX])
+    permuted = _permute_image(original, seed=PIXEL_PERMUTATION_SEED)
+
+    figure, axes = plt.subplots(1, 2, figsize=(7, 3.5))
+    for axis, image, title in zip(
+        axes,
+        (original, permuted),
+        ("Original", "Pixel-permuted"),
+        strict=True,
+    ):
+        axis.imshow(
+            image.squeeze(),
+            cmap="gray",
+            interpolation="nearest",
+            vmin=0.0,
+            vmax=1.0,
+        )
+        axis.set_title(title)
+        axis.set_xticks(())
+        axis.set_yticks(())
+    figure.suptitle(
+        f"MNIST test sample {PERMUTATION_EXAMPLE_INDEX} | "
+        f"label {int(t_test[PERMUTATION_EXAMPLE_INDEX])} | "
+        f"permutation seed {PIXEL_PERMUTATION_SEED}"
+    )
+    save_figure(figure, output)
+    plt.close(figure)
+
+
 def render(client, error_style, output):
-    del output
     atomic_ids = [definition[0] for _title, definitions in PANELS for definition in definitions]
     grouped = runs(client, "GT08", atomic_ids)
     curves = {
@@ -74,4 +114,7 @@ def render(client, error_style, output):
             upper.legend(loc="lower right")
     panel_axes[0][0].set_ylabel("accuracy")
     panel_axes[0][1].set_ylabel("accuracy")
+    example_output = output.with_name(f"{output.stem}_permutation-example.png")
+    _render_permutation_example(example_output)
+    figure._analysis_extra_outputs = [example_output]
     return figure, curves

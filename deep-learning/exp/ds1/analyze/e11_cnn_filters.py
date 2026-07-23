@@ -1,4 +1,4 @@
-"""DS1 E11: visualize every convolution layer from final CNN checkpoints."""
+"""DS1 E11: compare seed-index 0 SimpleCNN filters on one shared scale."""
 
 from __future__ import annotations
 
@@ -18,10 +18,11 @@ from .common import runs
 
 RUN_GROUPS = (
     ("GT06", "CNN-SIMPLE-BOOK"),
-    ("GT07", "CNN-DEEP-BOOK"),
     ("GT08", "CNN-SIMPLE-SPATIAL"),
     ("GT08", "CNN-SIMPLE-SPATIAL-PERMUTED"),
 )
+# Index 0 in exp/ds1/config/seeds.yaml (research_v1).
+VISUALIZATION_SEED = "1"
 SUMMARY_FIELDS = (
     "group",
     "condition",
@@ -140,30 +141,54 @@ def _checkpoint_weights_path(client, run):
     return downloaded, manifest
 
 
-def _render_layer(
-    weights: np.ndarray,
+def _shared_weight_limit(weight_sets: list[np.ndarray]) -> float:
+    limit = max(
+        (float(np.max(np.abs(weights))) for weights in weight_sets if weights.size),
+        default=1.0,
+    )
+    return limit if limit > 0.0 else 1.0
+
+
+def _render_comparison(
+    panels: list[tuple[str, str, np.ndarray]],
     *,
-    title: str,
     output: Path,
 ) -> None:
-    mosaic = _filter_mosaic(weights)
-    figure, axis = plt.subplots(figsize=(10, 10))
-    limit = float(np.max(np.abs(weights))) if weights.size else 1.0
-    if limit == 0.0:
-        limit = 1.0
+    figure = plt.figure(figsize=(6 * len(panels) + 0.6, 6))
+    grid = figure.add_gridspec(
+        1,
+        len(panels) + 1,
+        width_ratios=[1.0] * len(panels) + [0.035],
+        wspace=0.08,
+    )
+    axes = [figure.add_subplot(grid[0, index]) for index in range(len(panels))]
+    color_axis = figure.add_subplot(grid[0, -1])
+    limit = _shared_weight_limit([weights for _group, _condition, weights in panels])
     color_map = plt.colormaps["gray_r"].copy()
     color_map.set_bad("white")
-    image = axis.imshow(
-        mosaic,
-        cmap=color_map,
-        interpolation="nearest",
-        vmin=-limit,
-        vmax=limit,
+    images = []
+    for axis, (group, condition, weights) in zip(axes, panels, strict=True):
+        images.append(
+            axis.imshow(
+                _filter_mosaic(weights),
+                cmap=color_map,
+                interpolation="nearest",
+                vmin=-limit,
+                vmax=limit,
+            )
+        )
+        axis.set_title(f"{group} | {condition}\n{tuple(weights.shape)}")
+        axis.set_xticks(())
+        axis.set_yticks(())
+    figure.colorbar(
+        images[0],
+        cax=color_axis,
+        label="weight (shared scale)",
     )
-    axis.set_title(title)
-    axis.set_xticks(())
-    axis.set_yticks(())
-    figure.colorbar(image, ax=axis, fraction=0.046, pad=0.04, label="weight")
+    figure.suptitle(
+        f"SimpleCNN first-layer filters | seed index 0 (master {VISUALIZATION_SEED})"
+    )
+    figure._analysis_skip_tight_layout = True
     save_figure(figure, output)
     plt.close(figure)
 
@@ -177,13 +202,17 @@ def _write_summary(path: Path, rows: list[dict[str, object]]) -> Path:
     return path
 
 
+def _visualization_runs(run_refs):
+    return [run for run in run_refs if run.seed == VISUALIZATION_SEED]
+
+
 def render(client, error_style, output):
     del error_style
-    output_root = output.parent / output.stem
-    outputs: list[Path] = []
+    panels: list[tuple[str, str, np.ndarray]] = []
     summary_rows: list[dict[str, object]] = []
     for group, condition in RUN_GROUPS:
-        for run in runs(client, group, [condition])[condition]:
+        condition_runs = runs(client, group, [condition])[condition]
+        for run in _visualization_runs(condition_runs):
             checkpoint = _checkpoint_weights_path(client, run)
             if checkpoint is None:
                 continue
@@ -192,49 +221,39 @@ def render(client, error_style, output):
                 layers = _conv_weights(checkpoint_path)
             except (OSError, ValueError):
                 continue
+            if not layers:
+                continue
             final = manifest["final"]
             checkpoint_format = str(manifest.get("format", "unknown"))
-            for layer_number, (parameter, weights) in enumerate(layers, start=1):
-                image_path = (
-                    output_root
-                    / f"{condition.lower()}_seed-{run.seed}_conv-{layer_number:02d}.png"
-                )
-                _render_layer(
-                    weights,
-                    title=(
-                        f"{condition} | seed {run.seed} | conv {layer_number}\n"
-                        f"{parameter} {tuple(weights.shape)} | final checkpoint"
-                    ),
-                    output=image_path,
-                )
-                outputs.append(image_path)
-                summary_rows.append(
-                    {
-                        "group": group,
-                        "condition": condition,
-                        "seed": run.seed,
-                        "run_id": run.run_id,
-                        "checkpoint_format": checkpoint_format,
-                        "checkpoint_epoch": final.get("epoch", ""),
-                        "checkpoint_update": final.get("update", ""),
-                        "parameter": parameter,
-                        "shape": "x".join(str(size) for size in weights.shape),
-                        "weight_min": float(weights.min()),
-                        "weight_max": float(weights.max()),
-                        "weight_mean": float(weights.mean()),
-                        "weight_std": float(weights.std()),
-                        "image": image_path.as_posix(),
-                    }
-                )
+            parameter, weights = layers[0]
+            panels.append((group, condition, weights))
+            summary_rows.append(
+                {
+                    "group": group,
+                    "condition": condition,
+                    "seed": run.seed,
+                    "run_id": run.run_id,
+                    "checkpoint_format": checkpoint_format,
+                    "checkpoint_epoch": final.get("epoch", ""),
+                    "checkpoint_update": final.get("update", ""),
+                    "parameter": parameter,
+                    "shape": "x".join(str(size) for size in weights.shape),
+                    "weight_min": float(weights.min()),
+                    "weight_max": float(weights.max()),
+                    "weight_mean": float(weights.mean()),
+                    "weight_std": float(weights.std()),
+                    "image": output.as_posix(),
+                }
+            )
 
-    if not outputs:
+    if panels:
+        _render_comparison(panels, output=output)
+    else:
         figure, axis = plt.subplots(figsize=(8, 4))
-        axis.set_title("CNN final-checkpoint filters")
-        mark_empty(axis, "No completed runs with final CNN checkpoints")
+        axis.set_title("SimpleCNN final-checkpoint filters")
+        mark_empty(axis, "No completed seed-index 0 runs with final checkpoints")
         save_figure(figure, output)
         plt.close(figure)
-        outputs.append(output)
     summary = output.with_suffix(".csv")
     _write_summary(summary, summary_rows)
-    outputs.append(summary)
-    return outputs
+    return [output, summary]

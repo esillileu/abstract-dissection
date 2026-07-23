@@ -52,10 +52,11 @@ def _save_result(result, output):
     if isinstance(result, list):
         return result
     figure, curves = result
+    extra_outputs = list(getattr(figure, "_analysis_extra_outputs", ()))
     save_figure(figure, output)
     write_summary(output.with_suffix(".csv"), curves)
     plt.close(figure)
-    return [output, output.with_suffix(".csv")]
+    return [output, output.with_suffix(".csv"), *extra_outputs]
 
 
 def main(argv: list[str] | None = None) -> None:
