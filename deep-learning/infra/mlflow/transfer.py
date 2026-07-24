@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""CLI entry point for the repository's MLflow transfer utility."""
+"""CLI entry point for repository MLflow management and transfers."""
 
-from mlprosection_mlflow.transfer import main
+from mlprosection_mlflow.mlflow_cli import app
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    app()

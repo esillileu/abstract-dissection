@@ -6,6 +6,7 @@ experiments/data/
 
 # Local MLflow server state (SQLite backend and served artifacts)
 infra/mlflow/data/
+infra/mlflow/exports/
 
 *.tar.gz
 

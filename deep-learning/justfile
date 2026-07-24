@@ -1,8 +1,8 @@
 exp domain command *args:
     MLFLOW_SUPPRESS_PRINTING_URL_TO_STDOUT=true uv run python -m exp {{domain}} {{command}} {{args}}
 
-mlflow action:
-    if [ "{{action}}" = "up" ]; then docker compose -f infra/mlflow/compose.yaml up -d; elif [ "{{action}}" = "down" ]; then docker compose -f infra/mlflow/compose.yaml down; else echo "usage: just mlflow up|down" >&2; exit 2; fi
+mlflow *args:
+    uv run python infra/mlflow/transfer.py {{args}}
 
 cf:
     cloudflared tunnel --url http://127.0.0.1:5000
