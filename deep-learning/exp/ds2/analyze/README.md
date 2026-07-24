@@ -25,7 +25,7 @@
 | `GT02` | GT01 reducer 적용, CBOW/Skip-gram 및 negative-sampling/full-softmax 조건 분리, word-vector checkpoint index와 조건 비교 |
 | `GT03` | 원본 zero-based interval train PPL과 seed CI |
 | `GT04` | interval token-weighted train PPL, terminal full-test PPL 정규화, train-test 비교와 seed CI |
-| `GT05` | interval train PPL, epoch valid PPL, selected-checkpoint terminal test PPL 결합, lr history와 best-valid 선택 검증, recipe 순위 |
+| `GT05` | epoch valid PPL을 broken y-axis로 비교해 vanilla RNNLM과 나머지 두 recipe의 큰 scale 차이를 분리 |
 | `GT06` | epoch evaluation을 `plot_index=epoch-1` source series로 변환, epoch별 fixed prediction 변화와 exact/token accuracy 시각화 |
 | `GT07` | GT06 처리에 모델별 비교를 추가하고 selected Attention checkpoint를 GO01 run과 연결 |
 | `GO01` | seeded example ID 검증, source/target label 생성, input reversal에 맞춘 encoder 축 변환, attention heatmap과 prediction 표 생성 |
@@ -82,7 +82,8 @@ E08은 checkpoint를 읽어 attention alignment를 관찰하는 실행이며 자
 - 출력 기본 경로는 `exp/ds2/results/image/`이다.
 - `GT01`은 같은 toy/full-softmax 조건의 CBOW와 Skip-gram을 함께 표시한다.
 - `GT02`는 negative-sampling과 full-softmax 네 조건을 모두 표시한다.
-- `GT05`는 train/valid/test perplexity와 learning-rate history를 2×2로 표시한다.
+- `GT05`는 validation perplexity만 표시한다. 아래의 확대 축은 LSTM/BetterRNNLM
+  최댓값 바로 위에서 끊고, 작은 위쪽 축에는 훨씬 큰 vanilla RNNLM 범위를 표시한다.
 - `e01`–`e08`을 지원한다.
 
 각 실험의 reducer 결과 선택, 축과 원본 시각 형식은 `e01_toy_word2vec.py`부터

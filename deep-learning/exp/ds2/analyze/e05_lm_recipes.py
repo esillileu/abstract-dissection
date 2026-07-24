@@ -1,15 +1,16 @@
-"""DS2 GT05: render the documented PTB language-model recipe analysis."""
+"""DS2 GT05: compare validation perplexity on a broken y-axis."""
 
 import matplotlib.pyplot as plt
 import numpy as np
 
 from exp.analyze import aggregate, histories_from_artifact, mark_empty, plot_curve
 
-from .common import runs, source_curve
+from .broken_axis import add_wave_break
+from .common import runs
 
 
 DEFINITIONS = [
-    ("LM-RNN-RECIPE", "RNNLM", "o", "tab:blue"),
+    ("LM-RNN-RECIPE", "Vanilla RNNLM", "o", "tab:blue"),
     ("LM-LSTM-RECIPE", "LSTM RNNLM", "s", "tab:orange"),
     ("LM-BETTER-RECIPE", "BetterRNNLM", "D", "tab:green"),
 ]
@@ -31,67 +32,56 @@ def _evaluation_curve(client, run_refs, *, split, axis):
     )
 
 
-def _learning_rate_curve(client, run_refs):
-    return aggregate(
-        histories_from_artifact(
-            client,
-            run_refs,
-            artifact_path="updates.csv",
-            x="epoch",
-            y="lr",
-        )
-    )
+def _finite_extrema(curves):
+    values = [
+        values
+        for curve in curves
+        for values in (curve.minimum, curve.maximum)
+        if len(values)
+    ]
+    if not values:
+        return None
+    combined = np.concatenate(values)
+    finite = combined[np.isfinite(combined)]
+    if not len(finite):
+        return None
+    return float(finite.min()), float(finite.max())
 
 
-def _plot_terminal(axis, curves):
-    positions = []
-    labels = []
-    for atomic, label, _marker, color in DEFINITIONS:
-        curve = curves[f"{atomic}/test"]
-        if not len(curve.mean):
-            continue
-        position = len(positions)
-        positions.append(position)
-        labels.append(f"{label}\n(n={curve.run_count})")
-        errors = np.asarray(
-            [[curve.mean[-1] - curve.minimum[-1]], [curve.maximum[-1] - curve.mean[-1]]]
-        )
-        axis.bar(position, curve.mean[-1], color=color, alpha=0.75)
-        axis.errorbar(position, curve.mean[-1], yerr=errors, fmt="none", ecolor="black", capsize=3)
-    if positions:
-        axis.set_xticks(positions, labels)
-    mark_empty(axis)
+def _padded_limits(extrema, *, padding=0.06):
+    if extrema is None:
+        return None
+    minimum, maximum = extrema
+    span = maximum - minimum
+    margin = max(span * padding, abs(maximum) * 0.01, 1.0)
+    return minimum - margin, maximum + margin
 
 
 def render(client, error_style, output):
     del output
     atomic_ids = [item[0] for item in DEFINITIONS]
     grouped = runs(client, "GT05", atomic_ids)
-    curves = {}
-    for atomic in atomic_ids:
-        curves[f"{atomic}/train"] = source_curve(client, grouped[atomic], "perplexity")
-        curves[f"{atomic}/valid"] = _evaluation_curve(
+    curves = {
+        f"{atomic}/valid": _evaluation_curve(
             client, grouped[atomic], split="valid", axis="epoch"
         )
-        curves[f"{atomic}/test"] = _evaluation_curve(
-            client, grouped[atomic], split="test", axis="terminal"
-        )
-        curves[f"{atomic}/lr"] = _learning_rate_curve(client, grouped[atomic])
+        for atomic in atomic_ids
+    }
 
-    figure, axes = plt.subplots(2, 2, figsize=(13, 9))
-    train_axis, valid_axis, test_axis, lr_axis = axes.flat
-    for atomic, label, marker, color in DEFINITIONS:
-        plot_curve(
-            train_axis,
-            curves[f"{atomic}/train"],
-            label=label,
-            marker=marker,
-            color=color,
-            error_style=error_style,
-            error_every=5,
-        )
-        plot_curve(
-            valid_axis,
+    figure, (upper, lower) = plt.subplots(
+        2,
+        1,
+        figsize=(9, 6),
+        sharex=True,
+        gridspec_kw={"height_ratios": (1, 3), "hspace": 0.05},
+    )
+    figure.subplots_adjust(left=0.12, right=0.98, bottom=0.12, top=0.91)
+    figure._analysis_skip_tight_layout = True
+    lines = []
+    for index, (atomic, label, marker, color) in enumerate(DEFINITIONS):
+        axis = upper if index == 0 else lower
+        line = plot_curve(
+            axis,
             curves[f"{atomic}/valid"],
             label=label,
             marker=marker,
@@ -99,22 +89,25 @@ def render(client, error_style, output):
             error_style=error_style,
             error_every=1,
         )
-        plot_curve(
-            lr_axis,
-            curves[f"{atomic}/lr"],
-            label=label,
-            color=color,
-            error_style=error_style,
-            error_every=1,
-        )
-    _plot_terminal(test_axis, curves)
-
-    train_axis.set(title="Interval train perplexity", xlabel="iterations (x20)", ylabel="perplexity")
-    valid_axis.set(title="Validation perplexity", xlabel="epochs", ylabel="perplexity")
-    test_axis.set(title="Selected-checkpoint test perplexity", ylabel="perplexity")
-    lr_axis.set(title="Learning-rate history", xlabel="epochs", ylabel="learning rate")
-    for axis in (train_axis, valid_axis, lr_axis):
+        if line is not None:
+            lines.append(line)
+    for axis in (upper, lower):
         mark_empty(axis)
-        if axis.has_data():
-            axis.legend()
+    lower_limits = _padded_limits(
+        _finite_extrema([curves[f"{atomic}/valid"] for atomic in atomic_ids[1:]])
+    )
+    upper_extrema = _finite_extrema([curves[f"{atomic_ids[0]}/valid"]])
+    upper_limits = _padded_limits(upper_extrema)
+    if lower_limits is not None:
+        lower.set_ylim(*lower_limits)
+    if upper_limits is not None and upper_extrema is not None:
+        upper.set_ylim(max(1.0, upper_extrema[0] * 0.5), upper_limits[1])
+        upper.ticklabel_format(axis="y", style="plain", useOffset=False)
+
+    upper.set_title("Validation perplexity")
+    lower.set_xlabel("epochs")
+    figure.text(0.025, 0.5, "perplexity", va="center", rotation="vertical")
+    add_wave_break(figure, upper, lower)
+    if lines:
+        upper.legend(handles=lines, loc="upper right")
     return figure, curves
