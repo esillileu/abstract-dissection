@@ -9,8 +9,9 @@ served artifacts persist in `data/`, which is intentionally excluded from Git.
 From the repository root:
 
 ```bash
-docker compose -f infra/mlflow/compose.yaml up -d
-docker compose -f infra/mlflow/compose.yaml ps
+just mlflow up
+just mlflow logs
+just mlflow logs -f
 ```
 
 Open <http://127.0.0.1:5000>. Experiment runners use this address by default;
@@ -19,7 +20,7 @@ set `MLFLOW_TRACKING_URI` only when using another server.
 Stop the server without removing its data:
 
 ```bash
-docker compose -f infra/mlflow/compose.yaml down
+just mlflow down
 ```
 
 `down -v` is not appropriate here: the experiment state is a bind-mounted host
@@ -36,38 +37,42 @@ generated. Parent-run tags are remapped when an entire experiment is imported.
 An experiment export includes only runs whose status is `FINISHED`; exporting
 one explicitly selected run is allowed regardless of its status.
 
-Export one run:
+The Typer CLI stores archives in `infra/mlflow/exports/` by default. Export one
+run:
 
 ```bash
-uv run python infra/mlflow/transfer.py export-run \
-  --tracking-uri http://127.0.0.1:5000 \
-  --run-id RUN_ID \
-  --output /tmp/mlflow-run.zip
+just mlflow export-run RUN_ID
 ```
 
 Export an experiment by name or numeric ID:
 
 ```bash
-uv run python infra/mlflow/transfer.py export-experiment \
-  --tracking-uri http://127.0.0.1:5000 \
-  --experiment EXPERIMENT_NAME_OR_ID \
-  --output /tmp/mlflow-experiment.zip
+just mlflow export ds2
 ```
 
-Import into another store:
+Copy `infra/mlflow/exports/ds2.zip` to the same path on another machine, then
+import it. `MLFLOW_TRACKING_URI` selects the source or target server:
 
 ```bash
-uv run python infra/mlflow/transfer.py import \
-  --tracking-uri http://other-mlflow:5000 \
-  --input /tmp/mlflow-experiment.zip \
+MLFLOW_TRACKING_URI=http://other-mlflow:5000 \
+just mlflow import ds2 \
+  --reuse-experiment \
   --destination-tag server.name=training-box-a
 ```
 
-The target experiment name must not already exist. Use
-`--experiment-name NEW_NAME` to rename it during import. A normal MLflow server
-provides its own artifact location. When importing directly into a database
-tracking URI, `--artifact-location file:///target/artifacts` can set it
-explicitly.
+`--output/-o` and `--input/-i` override the default ZIP path.
+
+The Typer command reuses an existing experiment by default. Pass
+`--no-reuse-experiment` to require a new experiment and fail on a name
+collision. Reuse preserves existing target experiment tag values when source
+tags have the same keys; explicit `--destination-tag` values take precedence
+over both. Import does not deduplicate runs, so importing the same archive again
+appends another copy.
+
+A normal MLflow server provides its own artifact location. When creating a new
+experiment directly through a database tracking URI,
+`--artifact-location file:///target/artifacts` can set it explicitly. Reused
+experiments retain their existing artifact location.
 
 Import automatically adds `transfer.destination.*` tags to the experiment and
 every imported run. They describe the machine executing the import command:
