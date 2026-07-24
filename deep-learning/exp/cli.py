@@ -324,6 +324,12 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--tracking-uri")
     parser.add_argument("--error-style", choices=("band", "errorbar"), default="band")
     parser.add_argument("--output-dir", type=Path)
+    parser.add_argument(
+        "-s",
+        "--summary",
+        action="store_true",
+        help="Print final metric and training-time summaries for analyze",
+    )
     args = parser.parse_args(argv)
     try:
         if args.command == "analyze":
@@ -343,6 +349,8 @@ def main(argv: list[str] | None = None) -> None:
                 analysis_argv.extend(("--output-dir", str(args.output_dir)))
             if args.seed is not None:
                 analysis_argv.extend(("--seed", args.seed))
+            if args.summary:
+                analysis_argv.append("--summary")
             importlib.import_module(DOMAIN_ANALYSIS_MODULES[args.domain]).main(analysis_argv)
             return
         overrides = parse_overrides(args.override_values)

@@ -27,6 +27,7 @@ from . import (
     e07_date_seq2seq,
     e08_attention,
 )
+from .final_metrics import FINAL_METRIC_RENDERERS
 
 
 IMAGE_ROOT = Path("exp/ds2/results/image")
@@ -40,6 +41,7 @@ RENDERERS = {
     "e07": e07_date_seq2seq.render,
     "e08": e08_attention.render,
 }
+SUMMARY_RENDERERS = FINAL_METRIC_RENDERERS
 
 
 def _save_result(result, output):
@@ -59,9 +61,16 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--error-style", choices=("band", "errorbar"), default="band")
     parser.add_argument("--output-dir", type=Path, default=IMAGE_ROOT)
     parser.add_argument("--seed", type=int, help="actual MLflow seed/master value")
+    parser.add_argument(
+        "-s",
+        "--summary",
+        action="store_true",
+        help="print final metric and training-time summaries instead of rendering figures",
+    )
     args = parser.parse_args(argv)
+    renderers = SUMMARY_RENDERERS if args.summary else RENDERERS
     try:
-        selected, skipped = parse_experiment_selection(args.experiment, RENDERERS)
+        selected, skipped = parse_experiment_selection(args.experiment, renderers)
     except ValueError as exc:
         parser.error(str(exc))
     if skipped:
@@ -72,7 +81,10 @@ def main(argv: list[str] | None = None) -> None:
     outputs = []
     for experiment in selected:
         seed_suffix = "" if args.seed is None else f"_seed-{args.seed}"
-        output = args.output_dir / f"{experiment}_{args.error_style}{seed_suffix}.png"
-        outputs.extend(_save_result(RENDERERS[experiment](client, args.error_style, output), output))
+        if args.summary:
+            output = args.output_dir / f"{experiment}_summary{seed_suffix}.csv"
+        else:
+            output = args.output_dir / f"{experiment}_{args.error_style}{seed_suffix}.png"
+        outputs.extend(_save_result(renderers[experiment](client, args.error_style, output), output))
     for path in outputs:
         print(path)

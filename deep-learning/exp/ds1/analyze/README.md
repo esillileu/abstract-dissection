@@ -74,6 +74,20 @@ python -m exp ds1 analyze -e 06 --seed 1
 `e06`과 `e07`은 예외적으로 같은 `e06_e07_{band,errorbar}.png`를 만든다.
 SimpleCNN/DeepCNN의 train·test 네 곡선을 함께 그리고 y축 `0.25–0.9`는 생략한다.
 
+`-e 06 --summary`, `-e 07 --summary`, `-e 08 --summary`는 각 실험의 seed별
+마지막 `mnist-test-full` 정확도와 `timing_windows.csv`의 train wall time 합계를
+집계한다. `-s`는 `--summary`의 단축 옵션이다. E08은
+`NN-MATCHED`, `NN-MATCHED-PERMUTED`, `CNN-SIMPLE-SPATIAL`,
+`CNN-SIMPLE-SPATIAL-PERMUTED`를 각각 출력한다. 출력 CSV의 `mean`,
+`standard_deviation`, `minimum`, `maximum`이 각각 seed 평균, 표본
+표준편차, 최솟값, 최댓값이며 학습 시간 단위는 초다. 그림은 만들지 않고
+`평균 ± 표준편차, [최소, 최대]`를 터미널에 바로 출력한다. 정확도는 백분율로
+항상 소수점 둘째 자리까지, 학습 시간은 초 단위로 항상 소수점 첫째 자리까지
+표시하며 CSV도 같은 단위와 자릿수를 사용한다.
+
+summary CSV 이름은 `e06_summary.csv`, `e07_summary.csv`,
+`e08_summary.csv` 형식이다.
+
 `e08`은 `update/eval_{train,test}/accuracy`를 사용한다. 왼쪽은 NN identity/permuted,
 오른쪽은 CNN identity/permuted이며 test는 실선, train은 점선이다. 두 패널 모두 같은
 broken y축을 사용한다.

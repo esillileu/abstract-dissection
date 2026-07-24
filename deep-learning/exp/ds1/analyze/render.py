@@ -24,8 +24,11 @@ from . import (
     e04_dropout,
     e05_batchnorm,
     e06_simple_cnn,
+    e06_summary,
     e07_deep_cnn,
+    e07_summary,
     e08_spatial_layout,
+    e08_summary,
     e09_optimizer_trajectory,
     e10_activation,
     e11_cnn_filters,
@@ -45,6 +48,11 @@ RENDERERS = {
     "e09": e09_optimizer_trajectory.render,
     "e10": e10_activation.render,
     "e11": e11_cnn_filters.render,
+}
+SUMMARY_RENDERERS = {
+    "e06": e06_summary.render,
+    "e07": e07_summary.render,
+    "e08": e08_summary.render,
 }
 
 
@@ -66,9 +74,16 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--error-style", choices=("band", "errorbar"), default="band")
     parser.add_argument("--output-dir", type=Path, default=IMAGE_ROOT)
     parser.add_argument("--seed", type=int, help="actual MLflow seed/master value")
+    parser.add_argument(
+        "-s",
+        "--summary",
+        action="store_true",
+        help="print final metric and training-time summaries instead of rendering figures",
+    )
     args = parser.parse_args(argv)
+    renderers = SUMMARY_RENDERERS if args.summary else RENDERERS
     try:
-        selected, skipped = parse_experiment_selection(args.experiment, RENDERERS)
+        selected, skipped = parse_experiment_selection(args.experiment, renderers)
     except ValueError as exc:
         parser.error(str(exc))
     if skipped:
@@ -79,12 +94,19 @@ def main(argv: list[str] | None = None) -> None:
     outputs = []
     rendered: set[str] = set()
     for experiment in selected:
-        output_id = "e06_e07" if experiment in {"e06", "e07"} else experiment
+        output_id = (
+            experiment
+            if args.summary
+            else ("e06_e07" if experiment in {"e06", "e07"} else experiment)
+        )
         if output_id in rendered:
             continue
         rendered.add(output_id)
         seed_suffix = "" if args.seed is None else f"_seed-{args.seed}"
-        output = args.output_dir / f"{output_id}_{args.error_style}{seed_suffix}.png"
-        outputs.extend(_save_result(RENDERERS[experiment](client, args.error_style, output), output))
+        if args.summary:
+            output = args.output_dir / f"{output_id}_summary{seed_suffix}.csv"
+        else:
+            output = args.output_dir / f"{output_id}_{args.error_style}{seed_suffix}.png"
+        outputs.extend(_save_result(renderers[experiment](client, args.error_style, output), output))
     for path in outputs:
         print(path)

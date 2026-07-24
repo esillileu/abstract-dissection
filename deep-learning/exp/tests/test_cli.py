@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
-from exp.cli import build_plans, parse_experiment_ids
+from exp.cli import build_plans, main, parse_experiment_ids
 
 
 def test_experiment_selection_supports_ranges_and_commas() -> None:
@@ -140,3 +142,13 @@ def test_seed_first_orders_all_selected_atomic_runs_by_seed() -> None:
         ("MLP-OPT-SGD", 1),
         ("MLP-INIT-HE", 1),
     ]
+
+
+def test_analyze_forwards_summary_flag(monkeypatch) -> None:
+    captured = []
+    module = SimpleNamespace(main=lambda argv: captured.extend(argv))
+    monkeypatch.setattr("exp.cli.importlib.import_module", lambda _name: module)
+
+    main(["ds2", "analyze", "-e", "01", "--summary"])
+
+    assert captured == ["-e", "01", "--error-style", "band", "--summary"]

@@ -60,6 +60,22 @@ python -m exp ds2 analyze -e 01-08 --error-style errorbar
 `--seed 1`은 MLflow의 실제 `seed/master=1`인 완료 run만 선택하며 출력 이름에
 `_seed-1`을 붙인다.
 
+## 최종 metric과 학습 시간 요약
+
+`-e 01 --summary`부터 `-e 07 --summary`는 그림 없이 각 atomic run의 최종
+metric과 train wall time을 `평균 ± 표본표준편차, [최소, 최대]`로 터미널과
+CSV에 출력한다. `-s`는 `--summary`의 단축 옵션이며 CSV 이름은
+`e01_summary.csv` 형식이다.
+
+- E01–E02: 마지막 source-curve `book_loss`, 원본 스케일 소수점 세 자리
+- E03: 마지막 train perplexity, 원본 스케일 소수점 두 자리
+- E04–E05: terminal test perplexity, 원본 스케일 소수점 두 자리
+- E06–E07: 마지막 test exact-match accuracy, 백분율 소수점 두 자리
+- 학습 시간: 초 단위 소수점 한 자리
+
+E08은 checkpoint를 읽어 attention alignment를 관찰하는 실행이며 자체 학습이나
+최종 성능 metric이 없으므로 이 요약 ID를 제공하지 않는다.
+
 - `--error-style band`: 평균선 주변 min–max 반투명 영역
 - `--error-style errorbar`: 평균선 위 min–max error bar
 - 완료 run이 없으면 `No completed runs` 빈 그래프와 값이 비어 있는 summary CSV를 만든다.

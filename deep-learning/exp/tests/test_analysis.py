@@ -8,10 +8,16 @@ import numpy as np
 from exp.analyze import (
     AnalysisClient,
     Curve,
+    RunRef,
     aggregate,
     completed_seed_runs,
     parse_experiment_selection,
     plot_curve,
+)
+from exp.ds1.analyze.final_metrics import (
+    final_test_accuracy_curve,
+    summaries_for_runs,
+    training_time_curve,
 )
 from exp.ds2.analyze.e01_toy_word2vec import render
 from exp.ds2.analyze.render import _save_result
@@ -121,3 +127,59 @@ def test_experiment_selection_supports_ranges_and_reports_extensions():
 
     assert selected == ["e01", "e03", "e04", "e08"]
     assert skipped == ["e05"]
+
+
+def test_final_metrics_aggregate_full_test_accuracy_and_training_wall_time(tmp_path):
+    run_refs = []
+    for index, (accuracy, timing_ns) in enumerate(
+        ((0.991, (1_000_000_000, 2_000_000_000)), (0.993, (4_000_000_000,)))
+    ):
+        root = tmp_path / f"seed-{index}"
+        root.mkdir()
+        (root / "evaluations.csv").write_text(
+            "axis,axis_step,update,epoch,evaluation_set_id,split,example_count,loss,accuracy\n"
+            f"terminal,20,12000,20,mnist-test-full,test,10000,,{accuracy}\n",
+            encoding="utf-8",
+        )
+        (root / "timing_windows.csv").write_text(
+            "start_update,end_update,update_count,closed_by,train_wall_time_ns\n"
+            + "".join(
+                f"1,2,1,epoch,{value}\n"
+                for value in timing_ns
+            ),
+            encoding="utf-8",
+        )
+        run_refs.append(
+            RunRef(
+                run_id=f"run-{index}",
+                atomic_run_id="CNN-DEEP-BOOK",
+                seed=str(index),
+                start_time=index,
+                local_artifact_root=root,
+            )
+        )
+
+    accuracy_curve = final_test_accuracy_curve(FakeClient(), run_refs)
+    time_curve = training_time_curve(FakeClient(), run_refs)
+    summaries = summaries_for_runs(
+        FakeClient(),
+        {"CNN-DEEP-BOOK": run_refs},
+    )
+
+    np.testing.assert_allclose(
+        [accuracy_curve.mean[0], accuracy_curve.minimum[0], accuracy_curve.maximum[0]],
+        [0.992, 0.991, 0.993],
+    )
+    np.testing.assert_allclose(
+        [time_curve.mean[0], time_curve.minimum[0], time_curve.maximum[0]],
+        [3.5, 3.0, 4.0],
+    )
+    assert accuracy_curve.run_count == time_curve.run_count == 2
+    np.testing.assert_allclose(
+        summaries["CNN-DEEP-BOOK/final_test_accuracy"].standard_deviation,
+        np.sqrt(2) / 1000,
+    )
+    np.testing.assert_allclose(
+        summaries["CNN-DEEP-BOOK/training_time_s"].standard_deviation,
+        np.sqrt(0.5),
+    )
