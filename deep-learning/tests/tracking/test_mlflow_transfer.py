@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 import pytest
@@ -96,6 +97,67 @@ def _assert_restored(
         target_client.download_artifacts(target_run_id, "reports/result.txt")
     )
     assert restored_artifact.read_text(encoding="utf-8") == "portable artifact\n"
+
+
+def test_export_reports_all_phases_and_disables_mlflow_artifact_progress(
+    tmp_path: Path, monkeypatch
+) -> None:
+    source_uri = _tracking_uri(tmp_path / "source")
+    source_client = MlflowClient(tracking_uri=source_uri)
+    experiment_id = source_client.create_experiment(
+        "progress test",
+        artifact_location=_artifact_uri(tmp_path / "source-artifacts"),
+    )
+    _source_run(source_client, experiment_id, tmp_path / "scratch")
+
+    progress_calls = []
+
+    class RecordingProgress:
+        def __init__(self, iterable=None, **kwargs):
+            self.iterable = iterable
+            self.description = kwargs["desc"]
+            self.updates = []
+            progress_calls.append(self)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def __iter__(self):
+            return iter(self.iterable)
+
+        def update(self, amount):
+            self.updates.append(amount)
+
+    monkeypatch.setattr(transfer, "tqdm", RecordingProgress)
+    monkeypatch.delenv("MLFLOW_ENABLE_ARTIFACTS_PROGRESS_BAR", raising=False)
+    original_download = transfer._download_artifacts
+    artifact_progress_values = []
+
+    def checked_download(client, run_id, destination):
+        artifact_progress_values.append(
+            os.environ.get("MLFLOW_ENABLE_ARTIFACTS_PROGRESS_BAR")
+        )
+        original_download(client, run_id, destination)
+
+    monkeypatch.setattr(transfer, "_download_artifacts", checked_download)
+
+    archive = export_experiment(
+        source_uri, "progress test", tmp_path / "progress.zip"
+    )
+
+    assert archive.is_file()
+    assert [call.description for call in progress_calls] == [
+        "Finding finished runs",
+        "Collecting run data",
+        "Downloading artifacts",
+        "Creating archive",
+    ]
+    assert progress_calls[0].updates == [1]
+    assert artifact_progress_values == ["false"]
+    assert "MLFLOW_ENABLE_ARTIFACTS_PROGRESS_BAR" not in os.environ
 
 
 def test_export_import_single_run_restores_complete_run(

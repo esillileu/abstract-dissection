@@ -11,7 +11,8 @@ import socket
 import subprocess
 import tempfile
 import zipfile
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Iterator, Sequence
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -19,6 +20,7 @@ from urllib.parse import urlsplit
 
 from mlflow.entities import Metric, Param, RunTag, ViewType
 from mlflow.tracking import MlflowClient
+from tqdm.auto import tqdm
 
 FORMAT_NAME = "mlprosection.mlflow-transfer"
 FORMAT_VERSION = 1
@@ -45,18 +47,24 @@ def _experiment(client: MlflowClient, reference: str):
 def _finished_runs(client: MlflowClient, experiment_id: str) -> list[Any]:
     runs: list[Any] = []
     page_token: str | None = None
-    while True:
-        page = client.search_runs(
-            [experiment_id],
-            filter_string="attributes.status = 'FINISHED'",
-            run_view_type=ViewType.ALL,
-            max_results=1000,
-            page_token=page_token,
-        )
-        runs.extend(page)
-        page_token = page.token
-        if not page_token:
-            return runs
+    with tqdm(
+        desc="Finding finished runs",
+        unit="run",
+        disable=None,
+    ) as progress:
+        while True:
+            page = client.search_runs(
+                [experiment_id],
+                filter_string="attributes.status = 'FINISHED'",
+                run_view_type=ViewType.ALL,
+                max_results=1000,
+                page_token=page_token,
+            )
+            runs.extend(page)
+            progress.update(len(page))
+            page_token = page.token
+            if not page_token:
+                return runs
 
 
 def _metric_dict(metric: Metric) -> dict[str, Any]:
@@ -129,6 +137,20 @@ def _download_artifacts(client: MlflowClient, run_id: str, destination: Path) ->
                 shutil.copy2(child, target)
 
 
+@contextmanager
+def _mlflow_artifact_progress_disabled() -> Iterator[None]:
+    variable = "MLFLOW_ENABLE_ARTIFACTS_PROGRESS_BAR"
+    previous = os.environ.get(variable)
+    os.environ[variable] = "false"
+    try:
+        yield
+    finally:
+        if previous is None:
+            os.environ.pop(variable, None)
+        else:
+            os.environ[variable] = previous
+
+
 def _write_archive(
     client: MlflowClient,
     experiment: Any,
@@ -146,22 +168,41 @@ def _write_archive(
             "kind": kind,
             "exported_at": datetime.now(timezone.utc).isoformat(),
             "experiment": _experiment_dict(experiment),
-            "runs": [_run_dict(client, run) for run in runs],
+            "runs": [
+                _run_dict(client, run)
+                for run in tqdm(
+                    runs,
+                    desc="Collecting run data",
+                    unit="run",
+                    disable=None,
+                )
+            ],
         }
         (root / "manifest.json").write_text(
             json.dumps(manifest, ensure_ascii=False, indent=2, allow_nan=True),
             encoding="utf-8",
         )
-        for run in runs:
-            _download_artifacts(
-                client, run.info.run_id, root / "artifacts" / run.info.run_id
-            )
+        with _mlflow_artifact_progress_disabled():
+            for run in tqdm(
+                runs,
+                desc="Downloading artifacts",
+                unit="run",
+                disable=None,
+            ):
+                _download_artifacts(
+                    client, run.info.run_id, root / "artifacts" / run.info.run_id
+                )
+        archive_files = sorted(path for path in root.rglob("*") if path.is_file())
         with zipfile.ZipFile(
             output_path, mode="w", compression=zipfile.ZIP_DEFLATED, compresslevel=6
         ) as archive:
-            for path in sorted(root.rglob("*")):
-                if path.is_file():
-                    archive.write(path, path.relative_to(root))
+            for path in tqdm(
+                archive_files,
+                desc="Creating archive",
+                unit="file",
+                disable=None,
+            ):
+                archive.write(path, path.relative_to(root))
     return output_path
 
 
