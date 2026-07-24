@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from exp.ds2.executor import _optimizer
+from exp.ds2.executor import _apply_validation_decay, _optimizer
 from exp.ds2.spec import parse_run_spec
 from mlprosection import Tensor
 from mlprosection.nn.types import Parameter
@@ -58,6 +58,26 @@ def test_lm_recipe_runspec_declares_valid_selected_checkpoint_inputs() -> None:
     assert spec.evaluations[0].sources == ("valid",)
     assert spec.evaluations[1].axis == "terminal"
     assert spec.evaluations[1].sources == ("test",)
+
+
+@pytest.mark.parametrize(
+    "atomic_run_id",
+    ["LM-RNN-RECIPE", "LM-LSTM-RECIPE", "LM-BETTER-RECIPE"],
+)
+def test_lm_recipe_validation_decay_applies_to_every_model(
+    atomic_run_id: str,
+) -> None:
+    spec = parse_run_spec(
+        "exp/ds2/config/e05_ptb_lm_recipes.yaml",
+        atomic_run_id=atomic_run_id,
+    )
+    optimizer = _optimizer(
+        spec.config, _SingleParameterModel(), _SingleParameterModel()
+    )
+
+    _apply_validation_decay(spec.config, optimizer)
+
+    assert optimizer.lr == 5.0
 
 
 def test_seq2seq_runspec_declares_predictions_and_attention_observation_inputs() -> None:

@@ -103,6 +103,12 @@ def _optimizer(config: dict[str, object], model, objective):
     raise ValueError(f"unsupported sequence optimizer: {name}")
 
 
+def _apply_validation_decay(config: dict[str, object], optimizer) -> None:
+    scheduler = _mapping(config, "scheduler")
+    if str(scheduler.get("name", "constant")) == "validation_decay":
+        optimizer.lr /= float(scheduler.get("factor", 4.0))
+
+
 def _final(*, updates: int, epochs: int, samples: int, **values: float) -> dict[str, float]:
     return {
         "final/status/success": 1.0,
@@ -385,8 +391,8 @@ class LanguageModelExecutor:
                     if bool(_mapping(config, "checkpoint").get("save_best", False)):
                         records_sink.flush()
                         selected_checkpoint_path = checkpoint_manager.save_best().path
-                elif str(model_config.get("name")) == "BetterRnnlm" and str(_mapping(config, "scheduler").get("name", "constant")) == "validation_decay":
-                    optimizer.lr /= float(_mapping(config, "scheduler").get("factor", 4.0))
+                else:
+                    _apply_validation_decay(config, optimizer)
             else:
                 test_ppl = float(result.perplexity)
         controller = EventExperimentExecutor(
