@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import argparse
 import json
 import os
 import platform
@@ -376,6 +375,7 @@ def import_archive(
     artifact_location: str | None = None,
     capture_environment: bool = True,
     destination_tags: dict[str, str] | None = None,
+    reuse_experiment: bool = False,
 ) -> dict[str, Any]:
     archive_path = Path(archive).expanduser().resolve()
     client = MlflowClient(tracking_uri=tracking_uri)
@@ -398,16 +398,29 @@ def import_archive(
             applied_destination_tags.update(
                 {str(key): str(value) for key, value in destination_tags.items()}
             )
-        if client.get_experiment_by_name(target_name) is not None:
+        existing_experiment = client.get_experiment_by_name(target_name)
+        if existing_experiment is not None and not reuse_experiment:
             raise ValueError(
                 f"target experiment already exists: {target_name}; "
-                "use --experiment-name to choose a new name"
+                "use --reuse-experiment to append runs or "
+                "--experiment-name to choose a new name"
             )
-        experiment_id = client.create_experiment(
-            target_name,
-            artifact_location=artifact_location,
-            tags={**source_experiment["tags"], **applied_destination_tags},
-        )
+        reused_experiment = existing_experiment is not None
+        if existing_experiment is not None:
+            experiment_id = existing_experiment.experiment_id
+            merged_experiment_tags = {
+                **source_experiment["tags"],
+                **existing_experiment.tags,
+                **applied_destination_tags,
+            }
+            for key, value in merged_experiment_tags.items():
+                client.set_experiment_tag(experiment_id, key, value)
+        else:
+            experiment_id = client.create_experiment(
+                target_name,
+                artifact_location=artifact_location,
+                tags={**source_experiment["tags"], **applied_destination_tags},
+            )
         run_id_map: dict[str, str] = {}
         try:
             for run in _ordered_runs(manifest["runs"]):
@@ -419,7 +432,10 @@ def import_archive(
                     root / "artifacts" / run["original_run_id"],
                     applied_destination_tags,
                 )
-            if source_experiment["lifecycle_stage"] == "deleted":
+            if (
+                source_experiment["lifecycle_stage"] == "deleted"
+                and not reused_experiment
+            ):
                 client.delete_experiment(experiment_id)
         except Exception:
             # Keep the partially imported experiment for diagnosis and recovery.
@@ -427,73 +443,6 @@ def import_archive(
     return {
         "experiment_id": experiment_id,
         "experiment_name": target_name,
+        "reused_experiment": reused_experiment,
         "run_id_map": run_id_map,
     }
-
-
-def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        description="Transfer MLflow experiments/runs through a portable ZIP file."
-    )
-    subparsers = parser.add_subparsers(dest="command", required=True)
-    export_run_parser = subparsers.add_parser("export-run")
-    export_run_parser.add_argument("--tracking-uri", required=True)
-    export_run_parser.add_argument("--run-id", required=True)
-    export_run_parser.add_argument("--output", required=True)
-
-    export_experiment_parser = subparsers.add_parser("export-experiment")
-    export_experiment_parser.add_argument("--tracking-uri", required=True)
-    export_experiment_parser.add_argument("--experiment", required=True)
-    export_experiment_parser.add_argument("--output", required=True)
-
-    import_parser = subparsers.add_parser("import")
-    import_parser.add_argument("--tracking-uri", required=True)
-    import_parser.add_argument("--input", required=True)
-    import_parser.add_argument("--experiment-name")
-    import_parser.add_argument("--artifact-location")
-    import_parser.add_argument(
-        "--no-environment-tags",
-        action="store_true",
-        help="do not add automatically detected destination hardware tags",
-    )
-    import_parser.add_argument(
-        "--destination-tag",
-        action="append",
-        default=[],
-        metavar="KEY=VALUE",
-        help="add or override a destination tag on the experiment and every run",
-    )
-    return parser
-
-
-def _tag_arguments(values: Sequence[str]) -> dict[str, str]:
-    tags: dict[str, str] = {}
-    for value in values:
-        key, separator, tag_value = value.partition("=")
-        if not separator or not key:
-            raise ValueError(f"destination tag must be KEY=VALUE: {value}")
-        tags[key] = tag_value
-    return tags
-
-
-def main(argv: Sequence[str] | None = None) -> int:
-    args = _parser().parse_args(argv)
-    if args.command == "export-run":
-        path = export_run(args.tracking_uri, args.run_id, args.output)
-        print(json.dumps({"archive": str(path)}, ensure_ascii=False))
-    elif args.command == "export-experiment":
-        path = export_experiment(
-            args.tracking_uri, args.experiment, args.output
-        )
-        print(json.dumps({"archive": str(path)}, ensure_ascii=False))
-    else:
-        result = import_archive(
-            args.tracking_uri,
-            args.input,
-            experiment_name=args.experiment_name,
-            artifact_location=args.artifact_location,
-            capture_environment=not args.no_environment_tags,
-            destination_tags=_tag_arguments(args.destination_tag),
-        )
-        print(json.dumps(result, ensure_ascii=False))
-    return 0
