@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from exp.cli import build_plans, main, parse_experiment_ids
+from exp.cli import build_plans, main, parse_experiment_ids, parse_seed_values
 
 
 def test_experiment_selection_supports_ranges_and_commas() -> None:
@@ -24,7 +24,7 @@ def test_ds1_range_plans_each_selected_experiment() -> None:
         experiment_ids=["01-02"],
         all_experiments=False,
         seed_set="research_v1",
-        seed_indexes="0",
+        seed_values="1",
         device=None,
         overrides={},
     )
@@ -36,7 +36,7 @@ def test_ds1_range_plans_each_selected_experiment() -> None:
 def test_ds1_catalog_plans_all_variants_for_one_seed() -> None:
     plans = build_plans(
         domain="ds1", experiment_ids=[], all_experiments=True,
-        seed_set="research_v1", seed_indexes="0", device=None, overrides={},
+        seed_set="research_v1", seed_values="1", device=None, overrides={},
     )
 
     assert len(plans) == 65
@@ -48,7 +48,7 @@ def test_ds1_catalog_plans_all_variants_for_one_seed() -> None:
 def test_ds2_catalog_plans_all_variants_for_one_seed() -> None:
     plans = build_plans(
         domain="ds2", experiment_ids=[], all_experiments=True,
-        seed_set="research_v1", seed_indexes="0", device=None, overrides={},
+        seed_set="research_v1", seed_values="1", device=None, overrides={},
     )
 
     assert len(plans) == 19
@@ -63,7 +63,7 @@ def test_atomic_run_selection_plans_only_requested_variants() -> None:
         experiment_ids=["01"],
         all_experiments=False,
         seed_set="research_v1",
-        seed_indexes="0",
+        seed_values="1",
         device=None,
         overrides={},
         atomic_run_ids=["MLP-OPT-SGD,MLP-OPT-ADAM"],
@@ -79,7 +79,7 @@ def test_atomic_run_exclusion_plans_all_other_variants() -> None:
         experiment_ids=["01"],
         all_experiments=False,
         seed_set="research_v1",
-        seed_indexes="0",
+        seed_values="1",
         device=None,
         overrides={},
         excluded_atomic_run_ids=["MLP-OPT-SGD", "MLP-OPT-ADAM"],
@@ -101,7 +101,7 @@ def test_unknown_atomic_run_id_is_rejected_in_selected_experiments() -> None:
             experiment_ids=["01"],
             all_experiments=False,
             seed_set="research_v1",
-            seed_indexes="0",
+            seed_values="1",
             device=None,
             overrides={},
             atomic_run_ids=["MISSING"],
@@ -115,7 +115,7 @@ def test_atomic_run_include_and_exclude_are_mutually_exclusive() -> None:
             experiment_ids=["01"],
             all_experiments=False,
             seed_set="research_v1",
-            seed_indexes="0",
+            seed_values="1",
             device=None,
             overrides={},
             atomic_run_ids=["MLP-OPT-SGD"],
@@ -129,7 +129,7 @@ def test_seed_first_orders_all_selected_atomic_runs_by_seed() -> None:
         experiment_ids=["01-02"],
         all_experiments=False,
         seed_set="research_v1",
-        seed_indexes="1,0",
+        seed_values="2,1",
         device=None,
         overrides={},
         atomic_run_ids=["MLP-OPT-SGD,MLP-INIT-HE"],
@@ -152,3 +152,11 @@ def test_analyze_forwards_summary_flag(monkeypatch) -> None:
     main(["ds2", "analyze", "-e", "01", "--summary"])
 
     assert captured == ["-e", "01", "--error-style", "band", "--summary"]
+
+
+def test_seed_values_are_actual_registry_values() -> None:
+    available = [1, 2, 3, 4, 5]
+
+    assert parse_seed_values("1,3-5", available=available) == [1, 3, 4, 5]
+    with pytest.raises(ValueError, match="not in the selected seed set"):
+        parse_seed_values("0", available=available)

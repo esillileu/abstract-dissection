@@ -66,23 +66,30 @@ def parse_overrides(values: list[str]) -> dict[str, object]:
     return result
 
 
-def parse_seed_indexes(value: str | None, *, count: int) -> list[int] | None:
+def parse_seed_values(
+    value: str | None,
+    *,
+    available: list[int],
+) -> list[int] | None:
     if value is None:
         return None
-    indexes: list[int] = []
+    values: list[int] = []
     for item in value.split(","):
         if "-" in item:
             start_text, end_text = item.split("-", 1)
             start, end = int(start_text), int(end_text)
             if start > end:
                 raise ValueError(f"seed range must be ascending: {item}")
-            indexes.extend(range(start, end + 1))
+            values.extend(range(start, end + 1))
         else:
-            indexes.append(int(item))
-    selected = list(dict.fromkeys(indexes))
-    invalid = [index for index in selected if index < 0 or index >= count]
+            values.append(int(item))
+    selected = list(dict.fromkeys(values))
+    invalid = [seed for seed in selected if seed not in available]
     if invalid:
-        raise ValueError(f"seed indexes out of range 0-{count - 1}: {invalid}")
+        valid = ", ".join(str(seed) for seed in available)
+        raise ValueError(
+            f"seed values are not in the selected seed set ({valid}): {invalid}"
+        )
     return selected
 
 
@@ -145,7 +152,7 @@ def _default_device(_domain: str, _experiment_id: str) -> str:
 
 def build_plans(
     *, domain: str, experiment_ids: list[str], all_experiments: bool,
-    seed_set: str, seed_indexes: str | None, device: str | None,
+    seed_set: str, seed_values: str | None, device: str | None,
     overrides: dict[str, object],
     atomic_run_ids: list[str] | None = None,
     excluded_atomic_run_ids: list[str] | None = None,
@@ -161,15 +168,11 @@ def build_plans(
     requested_atomic_runs = included_atomic_runs or excluded_atomic_runs
     matched_atomic_runs: set[str] = set()
     seeds = _seed_values(domain, seed_set)
-    requested_indexes = parse_seed_indexes(seed_indexes, count=len(seeds))
-    ordered_seed_indexes = (
-        requested_indexes
-        if requested_indexes is not None
-        else list(range(len(seeds)))
-    )
+    requested_seeds = parse_seed_values(seed_values, available=seeds)
+    ordered_seeds = requested_seeds if requested_seeds is not None else seeds
     seed_order = {
-        seeds[index]: position
-        for position, index in enumerate(ordered_seed_indexes)
+        seed: position
+        for position, seed in enumerate(ordered_seeds)
     }
     plans: list[RunPlan] = []
     for path in sorted(_config_root(domain).glob("e[0-9][0-9]_*.yaml")):
@@ -203,7 +206,7 @@ def build_plans(
         if mode not in {"seeded", "single"}:
             raise ValueError(f"unsupported execution.mode in {path}: {mode}")
         if mode == "single":
-            if requested_indexes is not None:
+            if requested_seeds is not None:
                 raise ValueError(f"{experiment_id} is a single-run experiment and does not accept --seed")
             run_seeds: list[int | None] = [None]
         else:
@@ -211,11 +214,18 @@ def build_plans(
             if not isinstance(policy, dict):
                 raise ValueError(f"seed_policy must be a mapping: {path}")
             count = int(policy.get("seed_count", len(seeds)))
-            indexes = requested_indexes if requested_indexes is not None else list(range(count))
-            invalid = [index for index in indexes if index < 0 or index >= count]
+            available_seeds = seeds[:count]
+            run_seeds = (
+                requested_seeds
+                if requested_seeds is not None
+                else available_seeds
+            )
+            invalid = [seed for seed in run_seeds if seed not in available_seeds]
             if invalid:
-                raise ValueError(f"{experiment_id} declares only {count} seed runs; invalid indexes: {invalid}")
-            run_seeds = [seeds[index] for index in indexes]
+                raise ValueError(
+                    f"{experiment_id} declares seed values {available_seeds}; "
+                    f"invalid values: {invalid}"
+                )
         for atomic_run_id in selected_variants:
             for seed in run_seeds:
                 plans.append(RunPlan(domain, experiment_id, path, str(atomic_run_id), seed, device or str(execution.get("default_device", _default_device(domain, experiment_id)))))
@@ -310,7 +320,11 @@ def main(argv: list[str] | None = None) -> None:
         help="Exclude these atomic IDs; repeat or separate with commas",
     )
     parser.add_argument("--seed-set", default="research_v1")
-    parser.add_argument("-seed", "--seed", help="Seed-set indexes, for example 0-4 or 0,3,7")
+    parser.add_argument(
+        "-seed",
+        "--seed",
+        help="Seed values, for example 1-5 or 1,4,8",
+    )
     parser.add_argument(
         "--seed-first",
         action="store_true",
@@ -362,7 +376,7 @@ def main(argv: list[str] | None = None) -> None:
             experiment_ids=args.experiment,
             all_experiments=all_experiments,
             seed_set=args.seed_set,
-            seed_indexes=args.seed,
+            seed_values=args.seed,
             device=args.device,
             overrides=overrides,
             atomic_run_ids=args.atomic_run,
