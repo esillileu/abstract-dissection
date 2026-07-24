@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import pytest
 from mlflow.entities import Dataset, DatasetInput, InputTag, Metric
 from mlflow.tracking import MlflowClient
 
@@ -113,7 +114,7 @@ def test_export_import_single_run_restores_complete_run(
     experiment_id = source_client.create_experiment(
         "test experiment",
         artifact_location=_artifact_uri(tmp_path / "source-artifacts"),
-        tags={"purpose": "transfer verification"},
+        tags={"purpose": "transfer verification", "shared": "source"},
     )
     source_run_id = _source_run(source_client, experiment_id, tmp_path / "scratch")
 
@@ -122,18 +123,36 @@ def test_export_import_single_run_restores_complete_run(
         source_run_id,
         tmp_path / "run.zip",
     )
+    target_uri = _tracking_uri(tmp_path / "target")
+    target_client = MlflowClient(tracking_uri=target_uri)
+    target_experiment_id = target_client.create_experiment(
+        "imported test experiment",
+        artifact_location=_artifact_uri(tmp_path / "target-artifacts"),
+        tags={"target.only": "kept", "shared": "target"},
+    )
+    with pytest.raises(ValueError, match="--reuse-experiment"):
+        import_archive(
+            target_uri,
+            archive,
+            experiment_name="imported test experiment",
+            capture_environment=False,
+        )
+
     result = import_archive(
-        _tracking_uri(tmp_path / "target"),
+        target_uri,
         archive,
         experiment_name="imported test experiment",
-        artifact_location=_artifact_uri(tmp_path / "target-artifacts"),
         destination_tags={"server.name": "training-box-a"},
+        reuse_experiment=True,
     )
 
-    target_client = MlflowClient(tracking_uri=_tracking_uri(tmp_path / "target"))
     target_experiment = target_client.get_experiment(result["experiment_id"])
+    assert result["experiment_id"] == target_experiment_id
+    assert result["reused_experiment"] is True
     assert target_experiment.tags == {
         "purpose": "transfer verification",
+        "shared": "target",
+        "target.only": "kept",
         **detected_tags,
         "server.name": "training-box-a",
     }
@@ -186,6 +205,7 @@ def test_export_import_experiment_remaps_nested_run_ids(tmp_path: Path) -> None:
         archive,
         artifact_location=_artifact_uri(tmp_path / "target-artifacts"),
     )
+    assert result["reused_experiment"] is False
 
     target_client = MlflowClient(tracking_uri=target_uri)
     new_parent_id = result["run_id_map"][parent_id]
