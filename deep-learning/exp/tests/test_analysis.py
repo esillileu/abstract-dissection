@@ -138,11 +138,20 @@ def test_missing_experiment_still_renders_empty_figure(tmp_path):
     client = FakeClient()
     client.get_experiment_by_name = lambda _name: None
     output = tmp_path / "empty.png"
+    result = render(client, "band", output)
+    figure = result[0]
+    axis = figure.axes[0]
 
-    paths = _save_result(render(client, "band", output), output)
+    paths = _save_result(result, output)
 
     assert output in paths
     assert output.is_file()
+    assert plt.imread(output).shape[:2] == (480, 640)
+    np.testing.assert_allclose(
+        axis.get_position().bounds,
+        (0.125, 0.11, 0.775, 0.77),
+    )
+    assert axis.get_title() == "Toy Word2Vec full-softmax"
     assert output.with_suffix(".csv").is_file()
 
 

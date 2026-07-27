@@ -13,6 +13,8 @@ def render(client, error_style, output):
     atomic_ids = [f"BN-SCALE-{index:02d}-{state}" for index in range(1, 17) for state in ("ON", "OFF")]
     grouped = runs(client, "GT05", atomic_ids)
     figure, axes = plt.subplots(4, 4, figsize=(13, 10), sharex=True, sharey=True)
+    figure._analysis_match_original_canvas = True
+    figure.subplots_adjust(top=0.92, hspace=0.35, wspace=0.25)
     curves = {}
     for index, (axis, scale) in enumerate(zip(axes.flat, np.logspace(0, -4, 16), strict=True), start=1):
         for state, label, linestyle in (

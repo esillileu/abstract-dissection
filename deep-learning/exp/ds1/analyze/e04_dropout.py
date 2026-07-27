@@ -11,7 +11,8 @@ def render(client, error_style, output):
     del output
     definitions = [("REG-DROPOUT-OFF", "dropout off"), ("REG-DROPOUT-ON-02", "dropout 0.2")]
     grouped = runs(client, "GT04", [item[0] for item in definitions])
-    figure, axis = plt.subplots(figsize=(8, 5))
+    figure, axis = plt.subplots()
+    figure._analysis_match_original_canvas = True
     curves = {}
     for atomic, label in definitions:
         for split, marker, linestyle in (("train", "o", "-"), ("test", "s", "--")):

@@ -12,7 +12,8 @@ def render(client, error_style, output):
     atomic = "LM-SMALL-RNN"
     grouped = runs(client, "GT03", [atomic])
     curve = source_curve(client, grouped[atomic], "perplexity")
-    figure, axis = plt.subplots(figsize=(8, 5))
+    figure, axis = plt.subplots()
+    figure._analysis_match_original_canvas = True
     plot_curve(axis, curve, label="train", error_style=error_style, error_every=5)
     axis.set(
         title="PTB small-corpus SimpleRnnlm",

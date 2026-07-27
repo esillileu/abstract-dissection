@@ -249,7 +249,7 @@ def plot_curve(
         label=f"{label} (n={curve.run_count})",
         marker=marker,
         markevery=max(1, error_every),
-        markersize=3,
+        markersize=5,
         linestyle=linestyle,
         linewidth=1.6,
         color=color,
@@ -291,9 +291,16 @@ def mark_empty(axis, message: str = "No completed runs") -> None:
 
 def save_figure(figure, path: Path) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
-    if not getattr(figure, "_analysis_skip_tight_layout", False):
+    match_original = getattr(figure, "_analysis_match_original_canvas", False)
+    if (
+        not match_original
+        and not getattr(figure, "_analysis_skip_tight_layout", False)
+    ):
         figure.tight_layout()
-    figure.savefig(path, dpi=160, bbox_inches="tight")
+    if match_original:
+        figure.savefig(path, dpi=figure.dpi)
+    else:
+        figure.savefig(path, dpi=160, bbox_inches="tight")
     return path
 
 

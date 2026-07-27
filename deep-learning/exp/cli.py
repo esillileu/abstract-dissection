@@ -319,7 +319,7 @@ def main(argv: list[str] | None = None) -> None:
         default=[],
         help="Exclude these atomic IDs; repeat or separate with commas",
     )
-    parser.add_argument("--seed-set", default="research_v1")
+    parser.add_argument("--seed-set")
     parser.add_argument(
         "-seed",
         "--seed",
@@ -333,6 +333,17 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--device", choices=("cpu", "cuda:0"))
     parser.add_argument("--set", dest="override_values", action="append", default=[], metavar="KEY=VALUE")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument(
+        "-o",
+        "--original",
+        action="store_true",
+        help="Run or render the registered upstream-source trials at fixed seed 1",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Re-run selected original trials even when their cache is valid",
+    )
     parser.add_argument("--progress", choices=("auto", "none", "line", "tqdm"), default="auto")
     parser.add_argument("--progress-every", type=int, default=10)
     parser.add_argument("--tracking-uri")
@@ -346,6 +357,53 @@ def main(argv: list[str] | None = None) -> None:
     )
     args = parser.parse_args(argv)
     try:
+        if args.original:
+            if args.command == "plan":
+                parser.error("--original is supported only for run and analyze")
+            if args.atomic_run or args.exclude_atomic_run:
+                parser.error("atomic-run selection is incompatible with --original")
+            if args.seed_set is not None:
+                parser.error("--seed-set is incompatible with --original")
+            if args.seed is not None and args.seed != "1":
+                parser.error("original trials use fixed seed 1")
+            if args.seed_first:
+                parser.error("--seed-first is incompatible with --original")
+            if args.override_values:
+                parser.error("YAML overrides are incompatible with --original")
+            if args.device is not None:
+                parser.error("--device is incompatible with --original")
+            if args.force and args.command != "run":
+                parser.error("--force is supported only by run --original")
+            if args.summary or args.tracking_uri:
+                parser.error(
+                    "--summary and --tracking-uri are incompatible with --original"
+                )
+            from exp.original.dispatch import (
+                analyze_original,
+                run_original,
+                select_experiments,
+            )
+
+            experiments = select_experiments(args.domain, args.experiment)
+            if args.dry_run:
+                print(f"{args.domain}: original seed=1: {', '.join(experiments)}")
+                return
+            if args.command == "run":
+                run_original(
+                    args.domain,
+                    experiments,
+                    force=args.force,
+                    output_dir=args.output_dir,
+                )
+            else:
+                analyze_original(
+                    args.domain,
+                    experiments,
+                    output_dir=args.output_dir,
+                )
+            return
+        if args.force:
+            parser.error("--force requires --original")
         if args.command == "analyze":
             if args.atomic_run or args.exclude_atomic_run or args.seed_first:
                 parser.error(
@@ -375,7 +433,7 @@ def main(argv: list[str] | None = None) -> None:
             domain=args.domain,
             experiment_ids=args.experiment,
             all_experiments=all_experiments,
-            seed_set=args.seed_set,
+            seed_set=args.seed_set or "research_v1",
             seed_values=args.seed,
             device=args.device,
             overrides=overrides,

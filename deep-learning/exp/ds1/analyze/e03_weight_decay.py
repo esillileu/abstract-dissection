@@ -11,7 +11,8 @@ def render(client, error_style, output):
     del output
     definitions = [("REG-WD-OFF", "weight decay off"), ("REG-WD-01", "weight decay 0.1")]
     grouped = runs(client, "GT03", [item[0] for item in definitions])
-    figure, axis = plt.subplots(figsize=(8, 5))
+    figure, axis = plt.subplots()
+    figure._analysis_match_original_canvas = True
     curves = {}
     for atomic, label in definitions:
         for split, marker, linestyle in (("train", "o", "-"), ("test", "s", "--")):

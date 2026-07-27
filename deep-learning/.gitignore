@@ -10,9 +10,6 @@ infra/mlflow/exports/
 
 *.tar.gz
 
-**/checkpoints/
-**/mlflow_artifacts/
-**/run_logs/
-**/results/image/
+**/results/
 01_deep-learning-from-base/WegraLee-deep-learning-from-scratch/
 01_deep-learning-from-base/deep-learning-from-scratch-2/

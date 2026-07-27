@@ -16,7 +16,8 @@ def render(client, error_style, output):
     }
     grouped = runs(client, "GT01", list(definitions))
     curves = {}
-    figure, axis = plt.subplots(figsize=(8, 5))
+    figure, axis = plt.subplots()
+    figure._analysis_match_original_canvas = True
     for atomic, (label, color, linestyle, marker) in definitions.items():
         curve = source_curve(client, grouped[atomic], "book_loss")
         curves[atomic] = curve

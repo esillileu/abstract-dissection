@@ -16,7 +16,8 @@ def render(client, error_style, output):
         ("SEQA-PEEKY-REV", "peeky / reverse", "D"),
     ]
     grouped = runs(client, "GT06", [item[0] for item in definitions])
-    figure, axis = plt.subplots(figsize=(8, 5))
+    figure, axis = plt.subplots()
+    figure._analysis_match_original_canvas = True
     curves = {}
     for atomic, label, marker in definitions:
         curve = source_curve(client, grouped[atomic], "exact_match_accuracy")

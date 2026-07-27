@@ -39,12 +39,12 @@ def render(client, error_style, output):
     figure, (upper, lower) = plt.subplots(
         2,
         1,
-        figsize=(8, 6),
         sharex=True,
         gridspec_kw={"height_ratios": (3, 1), "hspace": 0.05},
     )
-    figure.subplots_adjust(left=0.12, right=0.98, bottom=0.12, top=0.92)
+    figure.subplots_adjust(left=0.125, right=0.9, bottom=0.11, top=0.88)
     figure._analysis_skip_tight_layout = True
+    figure._analysis_match_original_canvas = True
     styles = {
         "SimpleCNN/train": ("o", "-", ACCENT_COLORS[0]),
         "SimpleCNN/test": ("s", "--", ACCENT_COLORS[0]),

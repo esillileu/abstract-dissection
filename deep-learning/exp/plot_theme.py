@@ -34,6 +34,7 @@ FONT_FALLBACKS = (
     "Times",
     "DejaVu Serif",
 )
+FIGURE_SIZE = (6.4, 4.8)
 
 
 def apply_plot_theme() -> None:
@@ -46,6 +47,7 @@ def apply_plot_theme() -> None:
             "axes.prop_cycle": cycler(color=ACCENT_COLORS),
             "axes.titlecolor": INK,
             "figure.facecolor": BACKGROUND,
+            "figure.figsize": FIGURE_SIZE,
             "font.family": "serif",
             "font.serif": list(FONT_FALLBACKS),
             "grid.color": MUTED,

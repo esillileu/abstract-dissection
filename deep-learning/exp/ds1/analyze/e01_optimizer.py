@@ -15,7 +15,8 @@ def render(client, error_style, output):
         ("MLP-OPT-ADAM", "Adam", "D"),
     ]
     grouped = runs(client, "GT01", [item[0] for item in definitions])
-    figure, axis = plt.subplots(figsize=(8, 5))
+    figure, axis = plt.subplots()
+    figure._analysis_match_original_canvas = True
     curves = {}
     for atomic, label, marker in definitions:
         curve = loss_curve(client, grouped[atomic])
