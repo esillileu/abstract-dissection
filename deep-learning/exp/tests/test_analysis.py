@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib import rcParams
 
 from exp.analyze import (
     AnalysisClient,
@@ -21,6 +22,17 @@ from exp.ds1.analyze.final_metrics import (
 )
 from exp.ds2.analyze.e01_toy_word2vec import render
 from exp.ds2.analyze.render import _save_result
+from exp.plot_theme import (
+    ACCENT_COLORS,
+    BACKGROUND,
+    CORE_HIGHLIGHT,
+    FONT_FAMILY,
+    INK,
+    MPL_WINTER_FATAL,
+    MUTED,
+    SECONDARY_DATA,
+    SURFACE,
+)
 
 
 def _run(run_id: str, *, atomic: str, seed: int, start_time: int):
@@ -106,6 +118,20 @@ def test_both_minmax_plot_styles_are_supported():
         figure, axis = plt.subplots()
         assert plot_curve(axis, curve, label="series", error_style=style) is not None
         plt.close(figure)
+
+
+def test_plot_theme_uses_repository_palette():
+    assert rcParams["figure.facecolor"] == BACKGROUND
+    assert rcParams["axes.facecolor"] == SURFACE
+    assert rcParams["text.color"] == INK
+    assert rcParams["axes.edgecolor"] == MUTED
+    assert rcParams["axes.prop_cycle"].by_key()["color"] == list(ACCENT_COLORS)
+    assert ACCENT_COLORS == MPL_WINTER_FATAL
+    assert SECONDARY_DATA == "#879096"
+    assert CORE_HIGHLIGHT == "#A3163B"
+    assert rcParams["font.family"] == ["serif"]
+    assert rcParams["font.serif"][0] == FONT_FAMILY
+    assert rcParams["mathtext.fontset"] == "stix"
 
 
 def test_missing_experiment_still_renders_empty_figure(tmp_path):

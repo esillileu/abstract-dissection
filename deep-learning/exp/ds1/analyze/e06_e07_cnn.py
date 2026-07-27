@@ -3,14 +3,15 @@
 import matplotlib.pyplot as plt
 
 from exp.analyze import mark_empty, plot_curve
+from exp.plot_theme import ACCENT_COLORS
 
 from .broken_axis import add_wave_break
 from .common import accuracy_curve, runs
 
 
 DEFINITIONS = [
-    ("GT06", "CNN-SIMPLE-BOOK", "SimpleCNN", "tab:blue"),
-    ("GT07", "CNN-DEEP-BOOK", "DeepCNN", "tab:orange"),
+    ("GT06", "CNN-SIMPLE-BOOK", "SimpleCNN", ACCENT_COLORS[0]),
+    ("GT07", "CNN-DEEP-BOOK", "DeepCNN", ACCENT_COLORS[1]),
 ]
 
 
@@ -45,10 +46,10 @@ def render(client, error_style, output):
     figure.subplots_adjust(left=0.12, right=0.98, bottom=0.12, top=0.92)
     figure._analysis_skip_tight_layout = True
     styles = {
-        "SimpleCNN/train": ("o", "-", "tab:blue"),
-        "SimpleCNN/test": ("s", "--", "tab:blue"),
-        "DeepCNN/train": ("^", "-", "tab:orange"),
-        "DeepCNN/test": ("D", "--", "tab:orange"),
+        "SimpleCNN/train": ("o", "-", ACCENT_COLORS[0]),
+        "SimpleCNN/test": ("s", "--", ACCENT_COLORS[0]),
+        "DeepCNN/train": ("^", "-", ACCENT_COLORS[1]),
+        "DeepCNN/test": ("D", "--", ACCENT_COLORS[1]),
     }
     for axis in (upper, lower):
         for name, curve in curves.items():

@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from exp.analyze import artifact_file, mark_empty, save_figure
+from exp.plot_theme import SURFACE
 
 from .common import runs
 
@@ -165,7 +166,7 @@ def _render_comparison(
     color_axis = figure.add_subplot(grid[0, -1])
     limit = _shared_weight_limit([weights for _group, _condition, weights in panels])
     color_map = plt.colormaps["gray_r"].copy()
-    color_map.set_bad("white")
+    color_map.set_bad(SURFACE)
     images = []
     for axis, (group, condition, weights) in zip(axes, panels, strict=True):
         images.append(

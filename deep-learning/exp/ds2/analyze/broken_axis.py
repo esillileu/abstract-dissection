@@ -3,6 +3,8 @@
 import numpy as np
 from matplotlib.lines import Line2D
 
+from exp.plot_theme import INK, SURFACE
+
 
 def add_wave_break(figure, upper, lower) -> None:
     upper.spines.bottom.set_visible(False)
@@ -21,7 +23,7 @@ def add_wave_break(figure, upper, lower) -> None:
                 x,
                 y,
                 transform=figure.transFigure,
-                color="white",
+                color=SURFACE,
                 linewidth=5,
                 solid_capstyle="round",
                 clip_on=False,
@@ -33,7 +35,7 @@ def add_wave_break(figure, upper, lower) -> None:
                 x,
                 y,
                 transform=figure.transFigure,
-                color="0.2",
+                color=INK,
                 linewidth=1.2,
                 clip_on=False,
                 zorder=21,

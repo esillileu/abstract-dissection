@@ -11,6 +11,11 @@ from typing import Callable, Iterable, Mapping, Sequence
 
 import numpy as np
 
+from exp.plot_theme import MUTED, apply_plot_theme
+
+
+apply_plot_theme()
+
 
 DEFAULT_TRACKING_URI = "http://127.0.0.1:5000"
 
@@ -281,7 +286,7 @@ def plot_curve(
 def mark_empty(axis, message: str = "No completed runs") -> None:
     if axis.has_data():
         return
-    axis.text(0.5, 0.5, message, ha="center", va="center", transform=axis.transAxes, color="0.45")
+    axis.text(0.5, 0.5, message, ha="center", va="center", transform=axis.transAxes, color=MUTED)
 
 
 def save_figure(figure, path: Path) -> Path:

@@ -3,6 +3,7 @@
 import matplotlib.pyplot as plt
 
 from exp.analyze import mark_empty, plot_curve
+from exp.plot_theme import ACCENT_COLORS
 
 from .common import runs, source_curve
 
@@ -10,8 +11,8 @@ from .common import runs, source_curve
 def render(client, error_style, output):
     del output
     definitions = {
-        "W2V-TOY-CBOW-FULL": ("CBOW", "tab:blue", "-", "o"),
-        "W2V-TOY-SKIPGRAM-FULL": ("Skip-gram", "tab:orange", "--", "s"),
+        "W2V-TOY-CBOW-FULL": ("CBOW", ACCENT_COLORS[0], "-", "o"),
+        "W2V-TOY-SKIPGRAM-FULL": ("Skip-gram", ACCENT_COLORS[1], "--", "s"),
     }
     grouped = runs(client, "GT01", list(definitions))
     curves = {}

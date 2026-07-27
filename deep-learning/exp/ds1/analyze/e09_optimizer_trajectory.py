@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from exp.analyze import aggregate, histories_from_artifact, mark_empty
+from exp.plot_theme import CORE_HIGHLIGHT, SECONDARY_DATA
 
 from .common import runs
 
@@ -36,9 +37,22 @@ def render(client, error_style, output):
         curves[f"{atomic}/x"] = x_curve
         curves[f"{atomic}/y"] = y_curve
         if len(x_curve.steps) and np.array_equal(x_curve.steps, y_curve.steps):
-            axis.plot(x_curve.mean, y_curve.mean, "o-", color="red", ms=2, label=f"mean (n={x_curve.run_count})")
+            axis.plot(
+                x_curve.mean,
+                y_curve.mean,
+                "o-",
+                color=CORE_HIGHLIGHT,
+                ms=2,
+                label=f"mean (n={x_curve.run_count})",
+            )
             if error_style == "band":
-                axis.fill_between(x_curve.mean, y_curve.minimum, y_curve.maximum, color="red", alpha=0.2)
+                axis.fill_between(
+                    x_curve.mean,
+                    y_curve.minimum,
+                    y_curve.maximum,
+                    color=CORE_HIGHLIGHT,
+                    alpha=0.2,
+                )
             else:
                 axis.errorbar(
                     x_curve.mean,
@@ -46,11 +60,11 @@ def render(client, error_style, output):
                     xerr=np.vstack((x_curve.mean - x_curve.minimum, x_curve.maximum - x_curve.mean)),
                     yerr=np.vstack((y_curve.mean - y_curve.minimum, y_curve.maximum - y_curve.mean)),
                     fmt="none",
-                    ecolor="red",
+                    ecolor=CORE_HIGHLIGHT,
                     elinewidth=0.7,
                     capsize=1,
                 )
-        axis.contour(grid_x, grid_y, objective)
+        axis.contour(grid_x, grid_y, objective, colors=SECONDARY_DATA)
         axis.plot(0, 0, "+")
         axis.set(xlim=(-10, 10), ylim=(-10, 10), title=title, xlabel="x", ylabel="y")
         if not len(x_curve.steps):

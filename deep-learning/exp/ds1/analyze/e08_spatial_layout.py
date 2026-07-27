@@ -6,6 +6,7 @@ import numpy as np
 from mlprosection.datasets.mnist import load_mnist
 
 from exp.analyze import aggregate, mark_empty, metric_histories, plot_curve, save_figure
+from exp.plot_theme import ACCENT_COLORS
 
 from .broken_axis import add_wave_break
 from .common import runs
@@ -21,15 +22,15 @@ PANELS = [
     (
         "ParameterMatchedNN",
         [
-            ("NN-MATCHED", "NN", "o", "tab:blue"),
-            ("NN-MATCHED-PERMUTED", "NN permuted", "s", "tab:orange"),
+            ("NN-MATCHED", "NN", "o", ACCENT_COLORS[0]),
+            ("NN-MATCHED-PERMUTED", "NN permuted", "s", ACCENT_COLORS[1]),
         ],
     ),
     (
         "SimpleConvNet",
         [
-            ("CNN-SIMPLE-SPATIAL", "CNN", "o", "tab:blue"),
-            ("CNN-SIMPLE-SPATIAL-PERMUTED", "CNN permuted", "s", "tab:orange"),
+            ("CNN-SIMPLE-SPATIAL", "CNN", "o", ACCENT_COLORS[0]),
+            ("CNN-SIMPLE-SPATIAL-PERMUTED", "CNN permuted", "s", ACCENT_COLORS[1]),
         ],
     ),
 ]

@@ -4,15 +4,16 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from exp.analyze import aggregate, histories_from_artifact, mark_empty, plot_curve
+from exp.plot_theme import ACCENT_COLORS
 
 from .broken_axis import add_wave_break
 from .common import runs
 
 
 DEFINITIONS = [
-    ("LM-RNN-RECIPE", "Vanilla RNNLM", "o", "tab:blue"),
-    ("LM-LSTM-RECIPE", "LSTM RNNLM", "s", "tab:orange"),
-    ("LM-BETTER-RECIPE", "BetterRNNLM", "D", "tab:green"),
+    ("LM-RNN-RECIPE", "Vanilla RNNLM", "o", ACCENT_COLORS[0]),
+    ("LM-LSTM-RECIPE", "LSTM RNNLM", "s", ACCENT_COLORS[1]),
+    ("LM-BETTER-RECIPE", "BetterRNNLM", "D", ACCENT_COLORS[2]),
 ]
 
 
