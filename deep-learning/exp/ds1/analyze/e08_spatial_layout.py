@@ -5,8 +5,8 @@ import numpy as np
 
 from mlprosection.datasets.mnist import load_mnist
 
-from exp.analyze import aggregate, mark_empty, metric_histories, plot_curve, save_figure
-from exp.plot_theme import ACCENT_COLORS
+from exp.analyze import aggregate, mark_empty, metric_histories, plot_curve
+from exp.plot_theme import ACCENT_COLORS, SURFACE
 
 from .broken_axis import add_wave_break
 from .common import runs
@@ -22,15 +22,15 @@ PANELS = [
     (
         "ParameterMatchedNN",
         [
-            ("NN-MATCHED", "NN", "o", ACCENT_COLORS[0]),
-            ("NN-MATCHED-PERMUTED", "NN permuted", "s", ACCENT_COLORS[1]),
+            ("NN-MATCHED", "Normal", "o", ACCENT_COLORS[0]),
+            ("NN-MATCHED-PERMUTED", "Permutated", "s", ACCENT_COLORS[1]),
         ],
     ),
     (
         "SimpleConvNet",
         [
-            ("CNN-SIMPLE-SPATIAL", "CNN", "o", ACCENT_COLORS[0]),
-            ("CNN-SIMPLE-SPATIAL-PERMUTED", "CNN permuted", "s", ACCENT_COLORS[1]),
+            ("CNN-SIMPLE-SPATIAL", "Normal", "o", ACCENT_COLORS[0]),
+            ("CNN-SIMPLE-SPATIAL-PERMUTED", "Permutated", "s", ACCENT_COLORS[1]),
         ],
     ),
 ]
@@ -41,38 +41,38 @@ def _permute_image(image: np.ndarray, *, seed: int) -> np.ndarray:
     return image.reshape(-1)[permutation].reshape(image.shape)
 
 
-def _render_permutation_example(output) -> None:
-    (_x_train, _t_train), (x_test, t_test) = load_mnist(flatten=False)
-    original = np.asarray(x_test[PERMUTATION_EXAMPLE_INDEX])
-    permuted = _permute_image(original, seed=PIXEL_PERMUTATION_SEED)
-
-    figure, axes = plt.subplots(1, 2, figsize=(7, 3.5))
-    for axis, image, title in zip(
-        axes,
-        (original, permuted),
-        ("Original", "Pixel-permuted"),
+def _add_permutation_examples(
+    axis,
+    normal: np.ndarray,
+    permutated: np.ndarray,
+) -> None:
+    for bounds, image, title in zip(
+        ((0.37, 1.05, 0.14, 0.50), (0.37, 0.45, 0.14, 0.50)),
+        (normal, permutated),
+        ("Normal", "Permutated"),
         strict=True,
     ):
-        axis.imshow(
+        image_axis = axis.inset_axes(bounds)
+        image_axis.set_zorder(30)
+        image_axis.imshow(
             image.squeeze(),
             cmap="gray",
             interpolation="nearest",
             vmin=0.0,
             vmax=1.0,
         )
-        axis.set_title(title)
-        axis.set_xticks(())
-        axis.set_yticks(())
-    figure.suptitle(
-        f"MNIST test sample {PERMUTATION_EXAMPLE_INDEX} | "
-        f"label {int(t_test[PERMUTATION_EXAMPLE_INDEX])} | "
-        f"permutation seed {PIXEL_PERMUTATION_SEED}"
-    )
-    save_figure(figure, output)
-    plt.close(figure)
+        image_axis.set_title(
+            title,
+            fontsize=8,
+            pad=2,
+            bbox={"facecolor": SURFACE, "edgecolor": "none", "pad": 0.5},
+        )
+        image_axis.set_xticks(())
+        image_axis.set_yticks(())
 
 
 def render(client, error_style, output):
+    del output
     atomic_ids = [definition[0] for _title, definitions in PANELS for definition in definitions]
     grouped = runs(client, "GT08", atomic_ids)
     curves = {
@@ -80,6 +80,10 @@ def render(client, error_style, output):
         for atomic in atomic_ids
         for split, metric in METRICS.items()
     }
+    (_x_train, _t_train), (x_test, _t_test) = load_mnist(flatten=False)
+    normal = np.asarray(x_test[PERMUTATION_EXAMPLE_INDEX])
+    permutated = _permute_image(normal, seed=PIXEL_PERMUTATION_SEED)
+
     figure = plt.figure(figsize=(13, 6))
     grid = figure.add_gridspec(2, 2, height_ratios=(3, 1), hspace=0.05, wspace=0.16)
     figure.subplots_adjust(left=0.08, right=0.98, bottom=0.12, top=0.9)
@@ -88,6 +92,8 @@ def render(client, error_style, output):
     for column, (title, definitions) in enumerate(PANELS):
         upper = figure.add_subplot(grid[0, column])
         lower = figure.add_subplot(grid[1, column], sharex=upper)
+        lower.set_zorder(30)
+        lower.patch.set_visible(False)
         panel_axes.append((upper, lower))
         for axis in (upper, lower):
             for atomic, label, marker, color in definitions:
@@ -111,11 +117,17 @@ def render(client, error_style, output):
         upper.set_title(title)
         lower.set_xlabel("updates")
         add_wave_break(figure, upper, lower)
+        _add_permutation_examples(lower, normal, permutated)
         if upper.has_data():
-            upper.legend(loc="lower right")
+            lower.legend(
+                loc="center left",
+                bbox_to_anchor=(0.48, 1.0),
+                borderpad=0.8,
+                fontsize=11,
+                framealpha=1.0,
+                handlelength=3.0,
+                labelspacing=0.7,
+            ).set_zorder(30)
     panel_axes[0][0].set_ylabel("accuracy")
     panel_axes[0][1].set_ylabel("accuracy")
-    example_output = output.with_name(f"{output.stem}_permutation-example.png")
-    _render_permutation_example(example_output)
-    figure._analysis_extra_outputs = [example_output]
     return figure, curves

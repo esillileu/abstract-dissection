@@ -3,6 +3,7 @@
 import matplotlib.pyplot as plt
 
 from exp.analyze import mark_empty, plot_curve
+from exp.plot_theme import ACCENT_COLORS, SECONDARY_DATA
 
 from .common import accuracy_curve, runs
 
@@ -10,6 +11,10 @@ from .common import accuracy_curve, runs
 def render(client, error_style, output):
     del output
     definitions = [("REG-DROPOUT-OFF", "dropout off"), ("REG-DROPOUT-ON-02", "dropout 0.2")]
+    colors = {
+        "REG-DROPOUT-OFF": {"train": SECONDARY_DATA, "test": SECONDARY_DATA},
+        "REG-DROPOUT-ON-02": {"train": ACCENT_COLORS[0], "test": ACCENT_COLORS[1]},
+    }
     grouped = runs(client, "GT04", [item[0] for item in definitions])
     figure, axis = plt.subplots()
     figure._analysis_match_original_canvas = True
@@ -28,6 +33,7 @@ def render(client, error_style, output):
                 linestyle=linestyle,
                 error_style=error_style,
                 error_every=10,
+                color=colors[atomic][split],
             )
     axis.set(xlabel="epochs", ylabel="accuracy", ylim=(0, 1), title="Dropout")
     mark_empty(axis)
