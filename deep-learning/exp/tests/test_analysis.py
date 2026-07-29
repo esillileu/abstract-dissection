@@ -8,7 +8,6 @@ from matplotlib import rcParams
 
 from exp.analyze import (
     AnalysisClient,
-    Curve,
     RunRef,
     aggregate,
     completed_seed_runs,
@@ -70,6 +69,7 @@ def test_aggregate_uses_only_steps_common_to_every_seed():
     np.testing.assert_array_equal(curve.mean, [4.0])
     np.testing.assert_array_equal(curve.minimum, [3.0])
     np.testing.assert_array_equal(curve.maximum, [5.0])
+    np.testing.assert_allclose(curve.standard_deviation, [np.sqrt(2.0)])
     assert curve.run_count == 2
 
 
@@ -106,13 +106,47 @@ def test_completed_seed_runs_can_select_one_master_seed():
     assert [run.run_id for run in grouped["A"]] == ["seed-2"]
 
 
-def test_both_minmax_plot_styles_are_supported():
-    curve = Curve(
-        steps=np.asarray([0.0, 1.0]),
-        mean=np.asarray([2.0, 3.0]),
-        minimum=np.asarray([1.0, 2.0]),
-        maximum=np.asarray([4.0, 5.0]),
-        run_count=3,
+def test_band_uses_one_sample_standard_deviation(monkeypatch):
+    curve = aggregate(
+        [
+            {0.0: 0.0, 1.0: 0.0},
+            {0.0: 2.0, 1.0: 4.0},
+            {0.0: 10.0, 1.0: 8.0},
+        ]
+    )
+    figure, axis = plt.subplots()
+    captured = {}
+    fill_between = axis.fill_between
+
+    def capture_fill_between(steps, lower, upper, **kwargs):
+        captured["lower"] = lower
+        captured["upper"] = upper
+        return fill_between(steps, lower, upper, **kwargs)
+
+    monkeypatch.setattr(axis, "fill_between", capture_fill_between)
+
+    plot_curve(axis, curve, label="series", error_style="band")
+
+    np.testing.assert_allclose(
+        captured["lower"],
+        curve.mean - curve.standard_deviation,
+    )
+    np.testing.assert_allclose(
+        captured["upper"],
+        curve.mean + curve.standard_deviation,
+    )
+    assert not np.array_equal(captured["lower"], curve.minimum)
+    assert not np.array_equal(captured["upper"], curve.maximum)
+    plt.close(figure)
+
+
+def test_both_uncertainty_plot_styles_are_supported():
+    curve = aggregate(
+        [
+            {0.0: 1.0, 1.0: 2.0},
+            {0.0: 4.0, 1.0: 5.0},
+            {0.0: 2.0, 1.0: 3.0},
+        ]
     )
     for style in ("band", "errorbar"):
         figure, axis = plt.subplots()

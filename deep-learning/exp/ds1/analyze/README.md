@@ -25,7 +25,7 @@
 | `GT03` | update축 accuracy 정렬, train-test gap, weight-decay paired difference, final/best/AUC와 seed CI |
 | `GT04` | `epoch_first_update` 평가를 epoch plot index로 변환, dropout on/off·ratio 비교, generalization gap과 seed CI |
 | `GT05` | atomic run ID에서 scale와 BN on/off 조건 복원, scale축 reshape, paired BN difference, epoch curve와 순위 |
-| `GT06` | 원본 SimpleConvNet train/test learning curve 형식으로 seed 평균과 min–max 범위 표시, terminal full-test accuracy와 final checkpoint lookup |
+| `GT06` | 원본 SimpleConvNet train/test learning curve 형식으로 seed 평균과 ±1 표본 표준편차 범위 표시, terminal full-test accuracy와 final checkpoint lookup |
 | `GT07` | GT06과 같은 축·checkpoint 처리, SimpleCNN 대비 DeepCNN 비교, runtime/accuracy trade-off |
 | `GT08` | epoch-end full-test curve, spatial/permuted paired comparison, NN/CNN 구조별 차이와 seed CI, MNIST 원본/고정 pixel-permutation 예시 |
 | `GO01` | 저장된 `0..29` trajectory update를 표시용 `1..30`으로 변환, optimizer별 경로·등고선 시각화 |
@@ -60,7 +60,7 @@ python -m exp ds1 analyze -e 06 --seed 1
 
 이때 출력 이름에는 `_seed-1`이 붙어 전체-seed 집계 그래프를 덮어쓰지 않는다.
 
-- `--error-style band`: 평균선 주변 min–max 반투명 영역
+- `--error-style band`: 평균선 주변 ±1 표본 표준편차 반투명 영역
 - `--error-style errorbar`: 평균선 위 min–max error bar
 - 완료 run이 없으면 `No completed runs` 빈 그래프와 값이 비어 있는 summary CSV를 만든다.
 - 출력 기본 경로는 `exp/ds1/results/image/`이다.
@@ -72,7 +72,7 @@ python -m exp ds1 analyze -e 06 --seed 1
 `common.py`에는 DS1 CSV를 loss/accuracy curve로 읽는 공통 연산만 둔다.
 
 `e06`은 원본 `train_convnet.py`처럼 단일 축에 SimpleConvNet의 train·test 곡선을
-그리고, 10회 seed 평균 주변의 min–max 범위를 표시한다. 원본과 같은 `6.4 × 4.8`
+그리고, 10회 seed 평균 주변의 ±1 표본 표준편차 범위를 표시한다. 원본과 같은 `6.4 × 4.8`
 canvas, epoch 축, `0–1` accuracy 범위, marker와 범례 위치를 사용하되 저장소 테마를
 적용한다. 출력은 `e06_{band,errorbar}.png`이다.
 

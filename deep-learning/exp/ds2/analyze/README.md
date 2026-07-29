@@ -78,7 +78,7 @@ CSV에 출력한다. `-s`는 `--summary`의 단축 옵션이며 CSV 이름은
 E08은 checkpoint를 읽어 attention alignment를 관찰하는 실행이며 자체 학습이나
 최종 성능 metric이 없으므로 이 요약 ID를 제공하지 않는다.
 
-- `--error-style band`: 평균선 주변 min–max 반투명 영역
+- `--error-style band`: 평균선 주변 ±1 표본 표준편차 반투명 영역
 - `--error-style errorbar`: 평균선 위 min–max error bar
 - 완료 run이 없으면 빈 그래프 또는 값이 비어 있는 분석 CSV를 만든다.
 - 출력 기본 경로는 `exp/ds2/results/image/`이다.

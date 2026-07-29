@@ -47,11 +47,12 @@ class Curve:
     minimum: np.ndarray
     maximum: np.ndarray
     run_count: int
+    standard_deviation: np.ndarray | None = None
 
     @classmethod
     def empty(cls) -> "Curve":
         empty = np.asarray([], dtype=float)
-        return cls(empty, empty, empty, empty, 0)
+        return cls(empty, empty, empty, empty, 0, empty)
 
 
 def mlflow_client(tracking_uri: str):
@@ -200,12 +201,18 @@ def aggregate(histories: Sequence[Mapping[float, float]]) -> Curve:
         return Curve.empty()
     steps = np.asarray(sorted(common_steps), dtype=float)
     values = np.asarray([[history[step] for step in steps] for history in histories], dtype=float)
+    standard_deviation = (
+        values.std(axis=0, ddof=1)
+        if len(histories) > 1
+        else np.zeros_like(steps)
+    )
     return Curve(
         steps=steps,
         mean=values.mean(axis=0),
         minimum=values.min(axis=0),
         maximum=values.max(axis=0),
         run_count=len(histories),
+        standard_deviation=standard_deviation,
     )
 
 
@@ -255,10 +262,15 @@ def plot_curve(
         color=color,
     )[0]
     if error_style == "band":
+        if curve.standard_deviation is None:
+            lower, upper = curve.minimum, curve.maximum
+        else:
+            lower = curve.mean - curve.standard_deviation
+            upper = curve.mean + curve.standard_deviation
         axis.fill_between(
             curve.steps,
-            curve.minimum,
-            curve.maximum,
+            lower,
+            upper,
             color=line.get_color(),
             alpha=0.2,
             linewidth=0,
