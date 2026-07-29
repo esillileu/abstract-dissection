@@ -29,13 +29,22 @@ local MLflow history and artifacts.
 
 ## Export and import
 
-`transfer.py` moves one run or an entire experiment through a portable ZIP
+`transfer.py` moves one run or an entire experiment through a portable v2 ZIP
 archive. It preserves the complete metric history (value, timestamp, and step),
 parameters, tags, run name/status/start/end times, dataset inputs, experiment
 tags, and artifacts. Run and experiment IDs and target artifact URIs are newly
 generated. Parent-run tags are remapped when an entire experiment is imported.
 An experiment export includes only runs whose status is `FINISHED`; exporting
 one explicitly selected run is allowed regardless of its status.
+
+The v2 manifest inventories `latest` and `best` as `present`, `missing`, or
+`not_applicable`, including artifact paths and SHA-256 digests. Export falls
+back to the exporting machine's local checkpoint path when MLflow has only the
+checkpoint manifest. Import is idempotent by `run.key` for seed trials,
+`condition.group.key` for condition parents, and source experiment/run identity
+for other runs. Re-import verifies existing values and fills only missing
+metrics and artifacts. Conflicting params, metric tuples, or artifact digests
+fail without overwriting. Legacy v1 archives remain importable.
 
 The Typer CLI stores archives in `infra/mlflow/exports/` by default. Export one
 run:
@@ -66,8 +75,7 @@ The Typer command reuses an existing experiment by default. Pass
 `--no-reuse-experiment` to require a new experiment and fail on a name
 collision. Reuse preserves existing target experiment tag values when source
 tags have the same keys; explicit `--destination-tag` values take precedence
-over both. Import does not deduplicate runs, so importing the same archive again
-appends another copy.
+over both. Importing the same archive again reuses the prior target runs.
 
 A normal MLflow server provides its own artifact location. When creating a new
 experiment directly through a database tracking URI,
@@ -81,3 +89,23 @@ NVIDIA GPU name/memory/driver. Run the command on the destination server when
 those tags must describe that server. Repeat `--destination-tag KEY=VALUE` for
 deployment-specific identity such as a server or cluster name. Use
 `--no-environment-tags` when automatic hardware tags are not wanted.
+
+## Checkpoint maintenance
+
+All maintenance commands are dry-run unless `--apply` is present and write a
+JSON report under `infra/mlflow/data/maintenance-reports/`.
+
+```bash
+just mlflow checkpoint-backfill ds1 ds2
+just mlflow checkpoint-backfill ds1 ds2 --apply
+just mlflow dedupe ds2
+just mlflow dedupe ds2 --apply --purge-artifacts
+just mlflow checkpoint-prune ds1 ds2
+just mlflow checkpoint-prune ds1 ds2 --apply
+```
+
+Use the fixed order: canonical selection/backfill, digest verification,
+deduplication, then pruning. `checkpoint-prune` directly removes artifacts only
+inside the trusted self-hosted root `infra/mlflow/data/artifacts`; use
+`--artifact-root` to declare another trusted root. A `file:` artifact URI
+outside that root is rejected.
