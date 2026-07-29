@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from exp.original.measurement import OriginalMeasurements
+
 from .common import COMMON_SOURCES, Trial, importlib, np, save_csv, source_imports
 
 
@@ -36,7 +38,10 @@ def run(worktree: Path, output: Path) -> None:
             optimizer_param={"lr": 0.01},
             verbose=False,
         )
-        trainer.train()
+        measurements = OriginalMeasurements(output)
+        with measurements.training():
+            trainer.train()
+        measurements.save(network.params, scope="source_training_and_evaluation")
         rows = []
         for epoch, (train_acc, test_acc) in enumerate(
             zip(trainer.train_acc_list, trainer.test_acc_list, strict=True)

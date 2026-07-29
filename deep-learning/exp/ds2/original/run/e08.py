@@ -4,7 +4,7 @@ from pathlib import Path
 
 from exp.original.cache import cache_is_valid
 
-from .common import COMMON_SOURCES, Trial, importlib, load_npz, np, restore_params, save_csv, save_npz, source_imports
+from .common import COMMON_SOURCES, Trial, importlib, load_npz, np, restore_params, save_csv, save_npz, source_imports, to_host
 
 
 ATTENTION_TRIAL = "dlfs2.ch08.date.attention-seq2seq-reverse"
@@ -18,17 +18,22 @@ def run(worktree: Path, output: Path, root: Path) -> None:
             f"e07/{ATTENTION_TRIAL}"
         )
     archive = load_npz(checkpoint_dir / "checkpoint.npz")
-    with source_imports(worktree):
+    with source_imports(worktree, gpu=True):
+        cp = importlib.import_module("cupy")
         sequence = importlib.import_module("dataset.sequence")
+        sequence.numpy.int = int
+        util = importlib.import_module("common.util")
         model_cls = importlib.import_module(
             "ch08.attention_seq2seq"
         ).AttentionSeq2seq
         (_, _), (x_test, t_test) = sequence.load_data("date.txt")
         x_test = x_test[:, ::-1]
         char_to_id, id_to_char = sequence.get_vocab()
+        x_test, t_test = util.to_gpu(x_test), util.to_gpu(t_test)
         model = model_cls(len(char_to_id), 16, 256)
         restore_params(model.params, archive)
         np.random.seed(1984)
+        cp.random.seed(1984)
         arrays = {}
         labels = []
         for example in range(5):
@@ -36,9 +41,10 @@ def run(worktree: Path, output: Path, root: Path) -> None:
             x = x_test[[index]]
             t = t_test[[index]]
             model.forward(x, t)
-            weights = np.asarray(model.decoder.attention.attention_weights)
+            weights = to_host(model.decoder.attention.attention_weights)
             attention = weights.reshape(weights.shape[0], weights.shape[2])[:, ::-1]
-            source = x[:, ::-1]
+            source = to_host(x[:, ::-1])
+            target = to_host(t)
             arrays[f"attention_{example}"] = attention
             labels.append(
                 {
@@ -46,10 +52,11 @@ def run(worktree: Path, output: Path, root: Path) -> None:
                     "dataset_index": index,
                     "row_labels": "".join(id_to_char[int(i)] for i in source[0]),
                     "column_labels": "".join(
-                        id_to_char[int(i)] for i in t[0][1:]
+                        id_to_char[int(i)] for i in target[0][1:]
                     ),
                 }
             )
+        cp.cuda.get_current_stream().synchronize()
     save_npz(output / "attention.npz", **arrays)
     save_csv(output / "labels.csv", labels)
 
@@ -57,7 +64,7 @@ def run(worktree: Path, output: Path, root: Path) -> None:
 TRIALS = (
     Trial(
         "dlfs2.ch08.attention-alignment",
-        "numpy",
+        "cupy",
         {"selection_seed": 1984, "examples": 5, "checkpoint_trial": ATTENTION_TRIAL},
         COMMON_SOURCES
         + (

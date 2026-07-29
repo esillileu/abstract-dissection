@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+from exp.original.measurement import OriginalMeasurements
+
 from .common import COMMON_SOURCES, Trial, checkpoint_arrays, importlib, np, save_csv, save_npz, source_imports, to_host
 
 
@@ -27,8 +29,10 @@ def _run(kind: str, worktree: Path, output: Path, _root: Path) -> None:
         np.random.seed(1)
         model = model_cls(len(word_to_id), 100, 5, corpus)
         trainer = trainer_cls(model, optimizer_cls())
-        trainer.fit(contexts, target, 10, 100)
-        cp.cuda.get_current_stream().synchronize()
+        measurements = OriginalMeasurements(output)
+        with measurements.training():
+            trainer.fit(contexts, target, 10, 100)
+        measurements.save(model.params)
         rows = [
             {"plot_index": index, "loss": value, "eval_interval": 20}
             for index, value in enumerate(trainer.loss_list)

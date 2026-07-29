@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+from exp.original.measurement import OriginalMeasurements
+
 from .common import COMMON_SOURCES, Trial, checkpoint_arrays, evaluate_seq2seq, importlib, np, save_csv, save_npz, source_imports
 
 
@@ -15,8 +17,11 @@ CONDITIONS = {
 
 def _run(name: str, worktree: Path, output: Path, _root: Path) -> None:
     class_name, reverse = CONDITIONS[name]
-    with source_imports(worktree):
+    with source_imports(worktree, gpu=True):
+        cp = importlib.import_module("cupy")
         sequence = importlib.import_module("dataset.sequence")
+        sequence.numpy.int = int
+        util = importlib.import_module("common.util")
         optimizer_cls = importlib.import_module("common.optimizer").Adam
         trainer_cls = importlib.import_module("common.trainer").Trainer
         module = (
@@ -29,18 +34,24 @@ def _run(name: str, worktree: Path, output: Path, _root: Path) -> None:
         if reverse:
             x_train, x_test = x_train[:, ::-1], x_test[:, ::-1]
         np.random.seed(1)
+        cp.random.seed(1)
+        x_train, t_train = util.to_gpu(x_train), util.to_gpu(t_train)
+        x_test, t_test = util.to_gpu(x_test), util.to_gpu(t_test)
         model = model_cls(len(sequence.get_vocab()[0]), 16, 128)
         trainer = trainer_cls(model, optimizer_cls())
+        measurements = OriginalMeasurements(output)
         rows = []
         predictions = []
         for epoch in range(25):
-            trainer.fit(x_train, t_train, 1, 128, max_grad=5.0)
+            with measurements.training():
+                trainer.fit(x_train, t_train, 1, 128, max_grad=5.0)
             accuracy, examples = evaluate_seq2seq(
                 model, x_test, t_test, reverse=reverse
             )
             rows.append({"epoch": epoch, "accuracy": accuracy})
             if epoch == 24:
                 predictions = examples
+        measurements.save(model.params)
         params = checkpoint_arrays(model.params)
     save_csv(output / "metrics.csv", rows)
     save_csv(output / "predictions.csv", predictions)
@@ -50,7 +61,7 @@ def _run(name: str, worktree: Path, output: Path, _root: Path) -> None:
 TRIALS = tuple(
     Trial(
         f"dlfs2.ch07.addition.{name}",
-        "numpy",
+        "cupy",
         {
             "model": class_name,
             "reverse": reverse,

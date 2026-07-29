@@ -78,6 +78,7 @@ def source_imports(worktree: Path, *, gpu: bool = False) -> Iterator[None]:
 
 def _is_upstream_name(name: str) -> bool:
     return name.split(".", 1)[0] in {
+        "b2",
         "common",
         "dataset",
         "ch03",
@@ -87,6 +88,18 @@ def _is_upstream_name(name: str) -> bool:
         "ch07",
         "ch08",
     }
+
+
+def install_b2_compatibility_aliases() -> None:
+    """Map the migrated ch05 ``b2.common`` imports back to book modules."""
+    b2 = types.ModuleType("b2")
+    b2.__path__ = []  # type: ignore[attr-defined]
+    b2_common = types.ModuleType("b2.common")
+    b2_common.__path__ = []  # type: ignore[attr-defined]
+    sys.modules["b2"] = b2
+    sys.modules["b2.common"] = b2_common
+    for name in ("np", "time_layers"):
+        sys.modules[f"b2.common.{name}"] = importlib.import_module(f"common.{name}")
 
 
 def checkpoint_arrays(params: list[object]) -> dict[str, np.ndarray]:
@@ -111,18 +124,19 @@ def evaluate_seq2seq(model, x_test, t_test, *, reverse: bool):
     for index in range(len(x_test)):
         question = x_test[[index]]
         correct = t_test[[index]]
-        start_id = correct.flatten()[0]
+        start_id = int(correct.flatten()[0])
         generated = model.generate(question, start_id, len(correct.flatten()) - 1)
-        target = correct.flatten()[1:]
-        matched = bool(np.array_equal(np.asarray(generated), np.asarray(target)))
+        target = to_host(correct.flatten()[1:])
+        generated_host = to_host(generated)
+        matched = bool(np.array_equal(generated_host, target))
         correct_count += int(matched)
         if index < 10:
             predictions.append(
                 {
                     "example_id": index,
-                    "source_ids": " ".join(map(str, question.flatten())),
+                    "source_ids": " ".join(map(str, to_host(question).flatten())),
                     "target_ids": " ".join(map(str, target)),
-                    "prediction_ids": " ".join(map(str, generated)),
+                    "prediction_ids": " ".join(map(str, generated_host)),
                     "exact_match": matched,
                     "reverse": reverse,
                 }
@@ -136,6 +150,7 @@ __all__ = [
     "checkpoint_arrays",
     "evaluate_seq2seq",
     "importlib",
+    "install_b2_compatibility_aliases",
     "load_npz",
     "np",
     "restore_params",

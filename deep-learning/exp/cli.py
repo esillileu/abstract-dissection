@@ -374,17 +374,23 @@ def main(argv: list[str] | None = None) -> None:
                 parser.error("--device is incompatible with --original")
             if args.force and args.command != "run":
                 parser.error("--force is supported only by run --original")
-            if args.summary or args.tracking_uri:
-                parser.error(
-                    "--summary and --tracking-uri are incompatible with --original"
-                )
+            if args.summary and args.command != "analyze":
+                parser.error("--summary requires analyze")
+            if args.tracking_uri:
+                parser.error("--tracking-uri is incompatible with --original")
             from exp.original.dispatch import (
                 analyze_original,
                 run_original,
                 select_experiments,
+                select_summary_experiments,
+                summarize_original,
             )
 
-            experiments = select_experiments(args.domain, args.experiment)
+            experiments = (
+                select_summary_experiments(args.domain, args.experiment)
+                if args.summary
+                else select_experiments(args.domain, args.experiment)
+            )
             if args.dry_run:
                 print(f"{args.domain}: original seed=1: {', '.join(experiments)}")
                 return
@@ -393,6 +399,12 @@ def main(argv: list[str] | None = None) -> None:
                     args.domain,
                     experiments,
                     force=args.force,
+                    output_dir=args.output_dir,
+                )
+            elif args.summary:
+                summarize_original(
+                    args.domain,
+                    experiments,
                     output_dir=args.output_dir,
                 )
             else:

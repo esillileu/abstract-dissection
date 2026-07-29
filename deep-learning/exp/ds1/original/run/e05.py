@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from exp.original.measurement import OriginalMeasurements
+
 from .common import COMMON_SOURCES, Trial, importlib, np, save_csv, source_imports
 
 
@@ -28,23 +30,26 @@ def _run(scale_index: int, batchnorm: bool, worktree: Path, output: Path) -> Non
         normal_network = network_cls(784, [100] * 5, 10, weight_init_std=scale)
         network = bn_network if batchnorm else normal_network
         rows = []
-        for epoch in range(20):
-            for _ in range(1 if epoch == 0 else 10):
-                mask = np.random.choice(1000, 100)
-                x_batch, t_batch = x_train[mask], t_train[mask]
-                optimizer.update(
-                    network.params, network.gradient(x_batch, t_batch)
+        measurements = OriginalMeasurements(output)
+        with measurements.training():
+            for epoch in range(20):
+                for _ in range(1 if epoch == 0 else 10):
+                    mask = np.random.choice(1000, 100)
+                    x_batch, t_batch = x_train[mask], t_train[mask]
+                    optimizer.update(
+                        network.params, network.gradient(x_batch, t_batch)
+                    )
+                rows.append(
+                    {
+                        "update": epoch * 10 + 1,
+                        "epoch": epoch,
+                        "scale_index": scale_index + 1,
+                        "weight_scale": scale,
+                        "batchnorm": batchnorm,
+                        "accuracy": float(network.accuracy(x_train, t_train)),
+                    }
                 )
-            rows.append(
-                {
-                    "update": epoch * 10 + 1,
-                    "epoch": epoch,
-                    "scale_index": scale_index + 1,
-                    "weight_scale": scale,
-                    "batchnorm": batchnorm,
-                    "accuracy": float(network.accuracy(x_train, t_train)),
-                }
-            )
+        measurements.save(network.params, scope="source_training_and_evaluation")
     save_csv(output / "metrics.csv", rows)
 
 

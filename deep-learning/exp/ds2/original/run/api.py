@@ -15,6 +15,7 @@ from .common import Trial
 UPSTREAM = Path(
     "01_deep-learning-from-base/deep-learning-from-scratch-2"
 ).resolve()
+RUNNER_SCHEMA_VERSION = 2
 
 
 def trials_for(experiments: list[str]) -> list[tuple[str, Trial]]:
@@ -52,12 +53,18 @@ def run(experiments: list[str], *, root: Path, force: bool = False) -> None:
 def _identity(trial: Trial, commit: str) -> dict[str, object]:
     hashes = source_hashes(UPSTREAM, trial.source_files)
     return {
+        "runner_schema_version": RUNNER_SCHEMA_VERSION,
         "seed": 1,
         "backend": trial.backend,
         "upstream_commit": commit,
         "source_hashes": hashes,
         "conditions": trial.conditions,
         "config_hash": stable_hash(
-            {"seed": 1, "backend": trial.backend, "conditions": trial.conditions}
+            {
+                "runner_schema_version": RUNNER_SCHEMA_VERSION,
+                "seed": 1,
+                "backend": trial.backend,
+                "conditions": trial.conditions,
+            }
         ),
     }

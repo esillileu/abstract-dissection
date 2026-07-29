@@ -78,6 +78,20 @@ CSV에 출력한다. `-s`는 `--summary`의 단축 옵션이며 CSV 이름은
 E08은 checkpoint를 읽어 attention alignment를 관찰하는 실행이며 자체 학습이나
 최종 성능 metric이 없으므로 이 요약 ID를 제공하지 않는다.
 
+원본 코드의 고정 seed 실행 캐시만 요약하려면 `--original`을 함께 사용한다.
+
+```bash
+python -m exp ds2 analyze --original -e 01-04,06-07 -s
+```
+
+이 경로는 MLflow 재현 run을 조회하지 않고
+`exp/ds2/results/original/data/`의 `metrics.csv`와 `manifest.json`만 읽는다.
+원본 시행이 없는 확장 E05와 관찰 전용 E08은 제외한다. 단일 원본 시행은
+`seed_runs=1`, 표준편차 `0`으로 기록한다. 기존 원본 캐시에 학습 시간이나
+parameter count가 없으면 해당 CSV 행은 빈 값으로 남긴다. 계측 schema-v2
+runner로 재실행하면 synchronized training wall time과 공유 텐서를 중복 제거한
+parameter count를 `timing.json`, `parameter_manifest.json`에서 읽는다.
+
 - `--error-style band`: 평균선 주변 ±1 표본 표준편차 반투명 영역
 - `--error-style errorbar`: 평균선 위 min–max error bar
 - 완료 run이 없으면 빈 그래프 또는 값이 비어 있는 분석 CSV를 만든다.

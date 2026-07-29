@@ -1,4 +1,4 @@
-"""Original ch07 SimpleConvNet through a module-global CuPy adapter."""
+"""Original ch08 DeepConvNet through a module-global CuPy adapter."""
 
 from __future__ import annotations
 
@@ -6,7 +6,15 @@ from pathlib import Path
 
 from exp.original.measurement import OriginalMeasurements
 
-from .common import COMMON_SOURCES, Trial, importlib, patch_cupy_modules, save_csv, save_params, source_imports, to_host
+from .common import (
+    COMMON_SOURCES,
+    Trial,
+    importlib,
+    patch_cupy_modules,
+    save_csv,
+    save_params,
+    source_imports,
+)
 
 
 GPU_MODULES = (
@@ -16,7 +24,7 @@ GPU_MODULES = (
     "common.optimizer",
     "common.trainer",
     "common.util",
-    "ch07.simple_convnet",
+    "ch08.deep_convnet",
 )
 
 
@@ -28,14 +36,7 @@ def run(worktree: Path, output: Path) -> None:
         x_train, t_train = cp.asarray(x_train), cp.asarray(t_train)
         x_test, t_test = cp.asarray(x_test), cp.asarray(t_test)
         cp.random.seed(1)
-        network = modules["ch07.simple_convnet"].SimpleConvNet(
-            input_dim=(1, 28, 28),
-            conv_param={"filter_num": 30, "filter_size": 5, "pad": 0, "stride": 1},
-            hidden_size=100,
-            output_size=10,
-            weight_init_std=0.01,
-        )
-        initial_w1 = to_host(network.params["W1"])
+        network = modules["ch08.deep_convnet"].DeepConvNet()
         trainer = modules["common.trainer"].Trainer(
             network,
             x_train,
@@ -70,17 +71,13 @@ def run(worktree: Path, output: Path) -> None:
                 "accuracy": float(network.accuracy(x_test, t_test)),
             }
         )
-        save_params(
-            output / "checkpoint.npz",
-            network.params,
-            initial_W1=initial_w1,
-        )
+        save_params(output / "checkpoint.npz", network.params)
     save_csv(output / "metrics.csv", rows)
 
 
 TRIALS = (
     Trial(
-        "dlfs1.ch07.simple-convnet",
+        "dlfs1.ch08.deep-convnet",
         "cupy",
         {
             "epochs": 20,
@@ -89,8 +86,7 @@ TRIALS = (
             "learning_rate": 0.001,
             "evaluation_size": 1000,
         },
-        COMMON_SOURCES
-        + ("ch07/simple_convnet.py", "ch07/train_convnet.py", "ch07/visualize_filter.py"),
+        COMMON_SOURCES + ("ch08/deep_convnet.py", "ch08/train_deepnet.py"),
         run,
     ),
 )

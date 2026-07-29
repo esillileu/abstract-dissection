@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from exp.original.measurement import OriginalMeasurements
+
 from .common import COMMON_SOURCES, Trial, importlib, np, rows_for_series, save_csv, source_imports
 
 
@@ -25,12 +27,15 @@ def _run(condition: str, worktree: Path, output: Path) -> None:
             for name, value in INITIALIZERS.items()
         }
         losses = []
-        for _ in range(2000):
-            mask = np.random.choice(len(x_train), 128)
-            x_batch, t_batch = x_train[mask], t_train[mask]
-            network = networks[condition]
-            sgd.update(network.params, network.gradient(x_batch, t_batch))
-            losses.append(network.loss(x_batch, t_batch))
+        network = networks[condition]
+        measurements = OriginalMeasurements(output)
+        with measurements.training():
+            for _ in range(2000):
+                mask = np.random.choice(len(x_train), 128)
+                x_batch, t_batch = x_train[mask], t_train[mask]
+                sgd.update(network.params, network.gradient(x_batch, t_batch))
+                losses.append(network.loss(x_batch, t_batch))
+        measurements.save(network.params)
     save_csv(
         output / "metrics.csv",
         rows_for_series(

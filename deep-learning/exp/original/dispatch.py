@@ -7,7 +7,17 @@ from pathlib import Path
 
 
 ORIGINAL_EXPERIMENTS = {
-    "ds1": ("e01", "e02", "e03", "e04", "e05", "e06", "e09", "e10"),
+    "ds1": (
+        "e01",
+        "e02",
+        "e03",
+        "e04",
+        "e05",
+        "e06",
+        "e07",
+        "e09",
+        "e10",
+    ),
     "ds2": ("e01", "e02", "e03", "e04", "e06", "e07", "e08"),
 }
 
@@ -52,4 +62,34 @@ def analyze_original(
     root = output_dir or Path("exp") / domain / "results" / "original"
     importlib.import_module(f"exp.{domain}.original.render.api").render(
         experiments, root=root
+    )
+
+
+def select_summary_experiments(domain: str, requested: list[str]) -> list[str]:
+    module = importlib.import_module(f"exp.{domain}.original.summary")
+    available = tuple(module.SUPPORTED_EXPERIMENTS)
+    if not requested:
+        return list(available)
+    from exp.cli import parse_experiment_ids
+
+    selected = parse_experiment_ids(requested)
+    unknown = [item for item in selected if item not in available]
+    if unknown:
+        raise ValueError(
+            f"experiments have no original summary for {domain}: "
+            + ", ".join(unknown)
+        )
+    return selected
+
+
+def summarize_original(
+    domain: str,
+    experiments: list[str],
+    *,
+    output_dir: Path | None,
+) -> None:
+    root = output_dir or Path("exp") / domain / "results" / "original"
+    importlib.import_module(f"exp.{domain}.original.summary").summarize(
+        experiments,
+        root=root,
     )

@@ -104,6 +104,20 @@ canvas, epoch 축, `0–1` accuracy 범위, marker와 범례 위치를 사용하
 summary CSV 이름은 `e06_summary.csv`, `e07_summary.csv`,
 `e08_summary.csv` 형식이다.
 
+원본 코드의 고정 seed 실행 캐시만 요약하려면 `--original`을 함께 사용한다.
+
+```bash
+python -m exp ds1 analyze --original -e 01-07 -s
+```
+
+이 경로는 MLflow 재현 run을 조회하지 않고
+`exp/ds1/results/original/data/`의 `metrics.csv`와 `manifest.json`만 읽는다.
+원본 최종 성능 metric이 있는 E01–E07을 지원하며 관찰 전용 E09–E10은 제외한다.
+단일 원본 시행은 `seed_runs=1`, 표준편차 `0`으로 기록한다. 기존 원본 캐시에
+학습 시간이나 parameter count가 없으면 해당 CSV 행은 빈 값으로 남긴다. 계측
+schema-v2 runner로 재실행하면 synchronized training wall time과 공유 텐서를
+중복 제거한 parameter count를 `timing.json`, `parameter_manifest.json`에서 읽는다.
+
 `e08`은 `update/eval_{train,test}/accuracy`를 사용한다. 왼쪽은 NN identity/permuted,
 오른쪽은 CNN identity/permuted이며 test는 실선, train은 점선이다. 두 패널 모두 같은
 broken y축을 사용한다.

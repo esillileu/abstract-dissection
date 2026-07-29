@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from exp.original.measurement import OriginalMeasurements
+
 from .common import COMMON_SOURCES, Trial, importlib, np, save_csv, source_imports
 
 
@@ -19,27 +21,30 @@ def run(worktree: Path, output: Path) -> None:
         network = network_cls(
             784, [100] * 6, 10, weight_decay_lambda=0.1
         )
-        for epoch in range(201):
-            for _ in range(1 if epoch == 0 else 3):
-                mask = np.random.choice(300, 100)
-                x_batch, t_batch = x_train[mask], t_train[mask]
-                optimizer.update(
-                    network.params, network.gradient(x_batch, t_batch)
-                )
-            for split, x_value, t_value, count in (
-                ("train", x_train, t_train, 300),
-                ("test", x_test, t_test, len(x_test)),
-            ):
-                rows.append(
-                    {
-                        "update": epoch * 3 + 1,
-                        "epoch": epoch,
-                        "split": split,
-                        "evaluation_set_id": f"mnist-{split}-full",
-                        "example_count": count,
-                        "accuracy": float(network.accuracy(x_value, t_value)),
-                    }
-                )
+        measurements = OriginalMeasurements(output)
+        with measurements.training():
+            for epoch in range(201):
+                for _ in range(1 if epoch == 0 else 3):
+                    mask = np.random.choice(300, 100)
+                    x_batch, t_batch = x_train[mask], t_train[mask]
+                    optimizer.update(
+                        network.params, network.gradient(x_batch, t_batch)
+                    )
+                for split, x_value, t_value, count in (
+                    ("train", x_train, t_train, 300),
+                    ("test", x_test, t_test, len(x_test)),
+                ):
+                    rows.append(
+                        {
+                            "update": epoch * 3 + 1,
+                            "epoch": epoch,
+                            "split": split,
+                            "evaluation_set_id": f"mnist-{split}-full",
+                            "example_count": count,
+                            "accuracy": float(network.accuracy(x_value, t_value)),
+                        }
+                    )
+        measurements.save(network.params, scope="source_training_and_evaluation")
     save_csv(output / "metrics.csv", rows)
 
 
