@@ -1,16 +1,29 @@
-"""Shared text summary for final full-test accuracy and training wall time."""
+"""Shared text summaries for final accuracy and training wall time."""
 
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 import csv
 from dataclasses import dataclass
+import json
+from pathlib import Path
 
 import numpy as np
 
 from exp.analyze import Curve, RunRef, aggregate, artifact_rows
 
 from .common import runs
+
+
+ORIGINAL_DATA_ROOT = Path(__file__).resolve().parents[1] / "results/original/data"
+ORIGINAL_TRIAL_IDS = {
+    "CNN-SIMPLE-BOOK": ("e06", "dlfs1.ch07.simple-convnet"),
+    "CNN-DEEP-BOOK": ("e07", "dlfs1.ch08.deep-convnet"),
+}
+FINAL_ACCURACY_SOURCES = {
+    "train_accuracy": ("train", "mnist-train-first-1000"),
+    "test_accuracy": ("test", "mnist-test-first-1000"),
+}
 
 
 @dataclass(frozen=True)
@@ -130,6 +143,89 @@ def _final_accuracy(rows: list[dict[str, str]]) -> float | None:
     return values[-1] if values else None
 
 
+def _final_sampled_accuracy(
+    rows: list[dict[str, str]],
+    *,
+    split: str,
+    evaluation_set_id: str,
+) -> float | None:
+    values = []
+    for position, row in enumerate(rows):
+        if (
+            row.get("split") != split
+            or row.get("evaluation_set_id") != evaluation_set_id
+        ):
+            continue
+        try:
+            step = float(row["axis_step"])
+            accuracy = float(row["accuracy"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if np.isfinite(step) and np.isfinite(accuracy):
+            values.append((step, position, accuracy))
+    return max(values)[2] if values else None
+
+
+def _original_final_accuracy(
+    atomic_run_id: str,
+    split: str,
+    *,
+    original_data_root: Path = ORIGINAL_DATA_ROOT,
+) -> float | None:
+    try:
+        experiment_id, trial_id = ORIGINAL_TRIAL_IDS[atomic_run_id]
+    except KeyError:
+        return None
+    path = original_data_root / experiment_id / trial_id / "metrics.csv"
+    try:
+        with path.open(encoding="utf-8", newline="") as file:
+            rows = list(csv.DictReader(file))
+    except OSError:
+        return None
+    values = []
+    for position, row in enumerate(rows):
+        if row.get("split") != split:
+            continue
+        try:
+            epoch = float(row["epoch"])
+            accuracy = float(row["accuracy"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if np.isfinite(epoch) and np.isfinite(accuracy):
+            values.append((epoch, position, accuracy))
+    return max(values)[2] if values else None
+
+
+def _original_projected_training_seconds(
+    atomic_run_id: str,
+    *,
+    original_data_root: Path = ORIGINAL_DATA_ROOT,
+) -> float | None:
+    try:
+        experiment_id, _trial_id = ORIGINAL_TRIAL_IDS[atomic_run_id]
+        payload = json.loads(
+            (original_data_root.parent / "cupy_estimate.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        result = next(
+            item
+            for item in payload["results"]
+            if item.get("experiment_id") == experiment_id
+        )
+        value = float(result["projected_update_time_s"])
+    except (
+        OSError,
+        json.JSONDecodeError,
+        KeyError,
+        StopIteration,
+        TypeError,
+        ValueError,
+    ):
+        return None
+    return value if np.isfinite(value) else None
+
+
 def _training_seconds(rows: list[dict[str, str]]) -> float | None:
     values = []
     for row in rows:
@@ -161,6 +257,163 @@ def summaries_for_runs(
             artifact_path="timing_windows.csv",
         )
     return summaries
+
+
+def accuracy_summaries_for_runs(
+    client,
+    grouped_runs: Mapping[str, Sequence[RunRef]],
+) -> dict[str, MetricSummary | None]:
+    """Summarize each seed's last plotted train and test accuracy."""
+
+    summaries = {}
+    for atomic_run_id, run_refs in grouped_runs.items():
+        for metric_name, (split, evaluation_set_id) in FINAL_ACCURACY_SOURCES.items():
+            summaries[f"{atomic_run_id}/{metric_name}"] = _metric_summary(
+                client,
+                run_refs,
+                lambda rows, split=split, evaluation_set_id=evaluation_set_id: (
+                    _final_sampled_accuracy(
+                        rows,
+                        split=split,
+                        evaluation_set_id=evaluation_set_id,
+                    )
+                ),
+                artifact_path="evaluations.csv",
+            )
+        summaries[f"{atomic_run_id}/training_time_s"] = _metric_summary(
+            client,
+            run_refs,
+            _training_seconds,
+            artifact_path="timing_windows.csv",
+        )
+    return summaries
+
+
+def _format_accuracy_comparison(
+    name: str,
+    original: float | None,
+    summary: MetricSummary | None,
+) -> str:
+    original_text = "unavailable" if original is None else f"{original * 100:.2f}"
+    if summary is None:
+        reproduced_text = "no completed runs"
+    else:
+        reproduced_text = (
+            f"{summary.run_count}-run mean ± sample standard deviation "
+            f"{summary.mean * 100:.2f} ± "
+            f"{summary.standard_deviation * 100:.2f} (n={summary.run_count})"
+        )
+    return f"{name} (%): original {original_text} | {reproduced_text}"
+
+
+def _format_training_time_comparison(
+    original_estimate: float | None,
+    summary: MetricSummary | None,
+) -> str:
+    original_text = (
+        "unavailable"
+        if original_estimate is None
+        else f"{original_estimate:.1f}"
+    )
+    if summary is None:
+        reproduced_text = "no completed runs"
+    else:
+        reproduced_text = (
+            f"{summary.run_count}-run mean ± sample standard deviation "
+            f"{summary.mean:.1f} ± {summary.standard_deviation:.1f} "
+            f"(n={summary.run_count})"
+        )
+    return (
+        f"training_time (s): original projected {original_text} | "
+        f"{reproduced_text}"
+    )
+
+
+def _write_accuracy_comparisons(
+    path: Path,
+    atomic_run_ids: Sequence[str],
+    summaries: Mapping[str, MetricSummary | None],
+    *,
+    original_data_root: Path,
+) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8", newline="") as file:
+        writer = csv.DictWriter(
+            file,
+            fieldnames=[
+                "series",
+                "metric",
+                "evaluation_set",
+                "original",
+                "original_kind",
+                "seed_runs",
+                "unit",
+                "mean",
+                "standard_deviation",
+                "minimum",
+                "maximum",
+            ],
+        )
+        writer.writeheader()
+        for atomic_run_id in atomic_run_ids:
+            for metric_name, (split, evaluation_set_id) in FINAL_ACCURACY_SOURCES.items():
+                summary = summaries[f"{atomic_run_id}/{metric_name}"]
+                original = _original_final_accuracy(
+                    atomic_run_id,
+                    split,
+                    original_data_root=original_data_root,
+                )
+                display = None if summary is None else _display_values(
+                    f"{atomic_run_id}/final_test_accuracy",
+                    summary,
+                )
+                writer.writerow(
+                    {
+                        "series": atomic_run_id,
+                        "metric": metric_name,
+                        "evaluation_set": evaluation_set_id,
+                        "original": (
+                            "" if original is None else f"{original * 100:.2f}"
+                        ),
+                        "original_kind": "measured",
+                        "seed_runs": "" if summary is None else summary.run_count,
+                        "unit": "percent",
+                        "mean": "" if display is None else display[1],
+                        "standard_deviation": "" if display is None else display[2],
+                        "minimum": "" if display is None else display[3],
+                        "maximum": "" if display is None else display[4],
+                    }
+                )
+            time_summary = summaries[f"{atomic_run_id}/training_time_s"]
+            original_time = _original_projected_training_seconds(
+                atomic_run_id,
+                original_data_root=original_data_root,
+            )
+            time_display = None if time_summary is None else _display_values(
+                f"{atomic_run_id}/training_time_s",
+                time_summary,
+            )
+            writer.writerow(
+                {
+                    "series": atomic_run_id,
+                    "metric": "training_time_s",
+                    "evaluation_set": "",
+                    "original": (
+                        "" if original_time is None else f"{original_time:.1f}"
+                    ),
+                    "original_kind": "projected",
+                    "seed_runs": (
+                        "" if time_summary is None else time_summary.run_count
+                    ),
+                    "unit": "seconds",
+                    "mean": "" if time_display is None else time_display[1],
+                    "standard_deviation": (
+                        "" if time_display is None else time_display[2]
+                    ),
+                    "minimum": "" if time_display is None else time_display[3],
+                    "maximum": "" if time_display is None else time_display[4],
+                }
+            )
 
 
 def _format_metric(name: str, summary: MetricSummary | None) -> str:
@@ -260,4 +513,49 @@ def render_summary(
         )
     summary_path = output.with_suffix(".csv")
     _write_summaries(summary_path, summaries)
+    return [summary_path]
+
+
+def render_accuracy_comparison_summary(
+    client,
+    *,
+    analysis_id: str,
+    group_id: str,
+    atomic_run_ids: Sequence[str],
+    output,
+    original_data_root: Path = ORIGINAL_DATA_ROOT,
+):
+    grouped_runs = runs(client, group_id, list(atomic_run_ids))
+    summaries = accuracy_summaries_for_runs(client, grouped_runs)
+    print(f"{analysis_id} (original | seed-run mean ± sample standard deviation)")
+    for atomic_run_id in atomic_run_ids:
+        print(f"[{atomic_run_id}]")
+        for metric_name, (split, _evaluation_set_id) in FINAL_ACCURACY_SOURCES.items():
+            print(
+                _format_accuracy_comparison(
+                    metric_name,
+                    _original_final_accuracy(
+                        atomic_run_id,
+                        split,
+                        original_data_root=original_data_root,
+                    ),
+                    summaries[f"{atomic_run_id}/{metric_name}"],
+                )
+            )
+        print(
+            _format_training_time_comparison(
+                _original_projected_training_seconds(
+                    atomic_run_id,
+                    original_data_root=original_data_root,
+                ),
+                summaries[f"{atomic_run_id}/training_time_s"],
+            )
+        )
+    summary_path = output.with_suffix(".csv")
+    _write_accuracy_comparisons(
+        summary_path,
+        atomic_run_ids,
+        summaries,
+        original_data_root=original_data_root,
+    )
     return [summary_path]

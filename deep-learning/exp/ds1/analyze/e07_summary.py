@@ -1,6 +1,6 @@
-"""DS1 E07 summary: print DeepCNN final accuracy and training wall time."""
+"""DS1 E07 summary: compare original and ten-run final accuracies."""
 
-from .final_metrics import render_summary
+from .final_metrics import render_accuracy_comparison_summary
 
 
 ATOMIC_RUN_ID = "CNN-DEEP-BOOK"
@@ -8,7 +8,7 @@ ATOMIC_RUN_ID = "CNN-DEEP-BOOK"
 
 def render(client, error_style, output):
     del error_style
-    return render_summary(
+    return render_accuracy_comparison_summary(
         client,
         analysis_id="e07 summary",
         group_id="GT07",

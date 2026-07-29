@@ -79,9 +79,20 @@ canvas, epoch 축, `0–1` accuracy 범위, marker와 범례 위치를 사용하
 `e07`은 SimpleCNN/DeepCNN의 train·test 네 곡선을 비교하고 y축 `0.25–0.9`를
 생략한다. 출력은 `e07_{band,errorbar}.png`이다.
 
-`-e 06 --summary`, `-e 07 --summary`, `-e 08 --summary`는 각 실험의 seed별
-마지막 `mnist-test-full` 정확도와 `timing_windows.csv`의 train wall time 합계를
-집계한다. `-s`는 `--summary`의 단축 옵션이다. E08은
+`-e 06 --summary`와 `-e 07 --summary`는 원본 실행의 마지막 train/test 정확도와
+10회 seed 실행의 마지막 정확도 `평균 ± 표본 표준편차`를 나란히 출력한다. 양쪽 모두
+학습 곡선과 같은 first-1000 평가를 사용한다. 원본은
+`results/original/data/e{06,07}/.../metrics.csv`, 10회 실행은 각각
+`mnist-train-first-1000`, `mnist-test-first-1000` 평가를 기준으로 한다.
+정확도는 백분율로 항상 소수점 둘째 자리까지 표시한다. 학습 시간은 원본 캐시에
+실측값이 없으므로 `results/original/cupy_estimate.json`의
+`projected_update_time_s`를 `original projected`로 명시하고, 재현 실행은
+`timing_windows.csv`의 평가 시간을 제외한 순수 학습 wall time 합계를
+10회 `평균 ± 표본 표준편차`로 표시한다.
+
+`-e 08 --summary`는 각 조건의 seed별 마지막 `mnist-test-full` 정확도와
+`timing_windows.csv`의 train wall time 합계를 집계한다. `-s`는 `--summary`의
+단축 옵션이다. E08은
 `NN-MATCHED`, `NN-MATCHED-PERMUTED`, `CNN-SIMPLE-SPATIAL`,
 `CNN-SIMPLE-SPATIAL-PERMUTED`를 각각 출력한다. 출력 CSV의 `mean`,
 `standard_deviation`, `minimum`, `maximum`이 각각 seed 평균, 표본
