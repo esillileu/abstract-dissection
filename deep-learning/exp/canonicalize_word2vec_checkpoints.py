@@ -23,6 +23,7 @@ class MigrationReport:
     checkpoint_generations: int
     moved_output_weights: int
     renamed_optimizer_states: int
+    updated_config_digests: int
     parameter_manifests: int
     mirrors: int
 
@@ -112,7 +113,12 @@ def _rename_optimizer_state(path: Path, *, apply: bool) -> bool:
     return changed
 
 
-def _canonicalize_generation(path: Path, *, apply: bool) -> tuple[bool, bool]:
+def _canonicalize_generation(
+    path: Path,
+    *,
+    config_digest: str | None,
+    apply: bool,
+) -> tuple[bool, bool, bool]:
     model_path = path / "model_parameters.npz"
     objective_path = path / "objective_parameters.npz"
     model = _read_npz(model_path)
@@ -132,7 +138,43 @@ def _canonicalize_generation(path: Path, *, apply: bool) -> tuple[bool, bool]:
         path / "optimizer_state.pkl",
         apply=apply,
     )
-    return moved, renamed
+    manifest_path = path / "manifest.json"
+    manifest = (
+        _read_json(manifest_path)
+        if config_digest is not None
+        else None
+    )
+    updated_digest = bool(
+        manifest is not None
+        and manifest.get("config_digest") != config_digest
+    )
+    if updated_digest and apply:
+        assert manifest is not None
+        manifest["config_digest"] = config_digest
+        _write_json(manifest_path, manifest)
+    return moved, renamed, updated_digest
+
+
+def _current_config_digest(root: Path) -> str | None:
+    condition = _read_json(root / "config/condition.json")
+    training = condition.get("training")
+    if not isinstance(training, dict) or "entrypoint" not in training:
+        return None
+    seed_path = root / "config/seed.json"
+    if not seed_path.is_file():
+        return None
+    entrypoint = Path(str(training["entrypoint"]))
+    if not entrypoint.is_file():
+        return None
+    from exp.ds2.executor import _config_digest
+    from exp.ds2.spec import parse_run_spec
+
+    config = parse_run_spec(
+        entrypoint,
+        atomic_run_id=str(condition["atomic_run_id"]),
+    ).to_executor_config()
+    config["seed"] = int(_read_json(seed_path)["master"])
+    return _config_digest(config)
 
 
 def _update_parameter_manifest(
@@ -241,9 +283,11 @@ def canonicalize(
     generations = 0
     moved = 0
     renamed = 0
+    updated_config_digests = 0
     manifests = 0
     mirrors = 0
     for root in roots:
+        config_digest = _current_config_digest(root)
         checkpoint_generations = sorted(
             path
             for path in (root / "checkpoints/generations").iterdir()
@@ -252,13 +296,15 @@ def canonicalize(
         if not checkpoint_generations:
             continue
         for generation in checkpoint_generations:
-            did_move, did_rename = _canonicalize_generation(
+            did_move, did_rename, did_update_digest = _canonicalize_generation(
                 generation,
+                config_digest=config_digest,
                 apply=apply,
             )
             generations += 1
             moved += int(did_move)
             renamed += int(did_rename)
+            updated_config_digests += int(did_update_digest)
         latest_pointer = _read_json(root / "checkpoints/latest.json")
         latest = root / "checkpoints" / str(latest_pointer["path"])
         manifests += int(
@@ -277,6 +323,7 @@ def canonicalize(
         checkpoint_generations=generations,
         moved_output_weights=moved,
         renamed_optimizer_states=renamed,
+        updated_config_digests=updated_config_digests,
         parameter_manifests=manifests,
         mirrors=mirrors,
     )

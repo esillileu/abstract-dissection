@@ -7,7 +7,7 @@ from mlprosection import Tensor
 from mlprosection.nn.layers import TimeAttention
 from mlprosection.nn.model import TimeSequential
 from mlprosection.nn.model.architecture import AttentionSeq2seq, CBOW, PeekySeq2seq, VanillaRnnlm
-from mlprosection.nn.objective import FullSoftmax, NegativeSampling, TemporalSoftmaxCrossEntropy
+from mlprosection.nn.objective import NegativeSampling, SoftmaxWithLoss, TemporalSoftmaxCrossEntropy
 from mlprosection.optim.SGD import Adam
 from mlprosection.optim.transform import ClipGradNorm
 from mlprosection.trainer import LanguageModelTrainer
@@ -17,12 +17,15 @@ def test_word2vec_objectives_populate_embedding_gradients() -> None:
     contexts = Tensor(np.array([[0, 1], [1, 2], [2, 3]]), backend="cpu")
     targets = Tensor(np.array([2, 3, 4]), backend="cpu")
     for objective in (
-        FullSoftmax(backend="cpu"),
+        SoftmaxWithLoss(backend="cpu"),
         NegativeSampling(6, negative_samples=2, backend="cpu"),
     ):
         model = CBOW(6, 4, backend="cpu")
+        objective_batch = objective.prepare(targets)
         result = objective.forward(
-            model.forward(contexts), targets, output_weight=model.W_out
+            model.forward(contexts, candidates=objective_batch.candidates),
+            objective_batch.target,
+            replay_context=objective_batch.replay_context,
         )
         model.backward(objective.backward())
         assert float(result.loss.data) > 0
@@ -32,13 +35,25 @@ def test_word2vec_objectives_populate_embedding_gradients() -> None:
 
 def test_word2vec_model_owns_both_embedding_matrices() -> None:
     model = CBOW(7, 5, backend="cpu")
-    objective = FullSoftmax(backend="cpu")
+    objective = SoftmaxWithLoss(backend="cpu")
 
     assert [(name, parameter.data.shape) for name, parameter in model.named_parameters()] == [
         ("W_in", (7, 5)),
         ("W_out", (7, 5)),
     ]
     assert list(objective.named_parameters()) == []
+
+
+def test_cbow_forward_matches_original_one_hot_projection() -> None:
+    model = CBOW(7, 5, backend="cpu")
+    contexts = np.array([[0, 1], [2, 3]], dtype=np.int64)
+    one_hot = np.eye(7, dtype=np.float32)[contexts]
+
+    expected_hidden = (one_hot @ model.W_in.data).mean(axis=1)
+    expected_scores = expected_hidden @ model.W_out.data.T
+    scores = model.forward(Tensor(contexts, backend="cpu"))
+
+    np.testing.assert_allclose(scores.data, expected_scores)
 
 
 def test_language_model_trainer_runs_truncated_bptt() -> None:

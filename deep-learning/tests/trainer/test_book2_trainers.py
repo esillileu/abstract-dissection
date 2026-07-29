@@ -5,7 +5,7 @@ import numpy as np
 from mlprosection import Tensor
 from mlprosection.core.backend import Backend
 from mlprosection.nn.model.architecture import CBOW, CBOWBatchAdapter, Seq2seq, VanillaRnnlm
-from mlprosection.nn.objective import FullSoftmax, NegativeSampling, TemporalSoftmaxCrossEntropy
+from mlprosection.nn.objective import NegativeSampling, SoftmaxWithLoss, TemporalSoftmaxCrossEntropy
 from mlprosection.optim.SGD import SGD
 from mlprosection.trainer import LanguageModelTrainer, Seq2seqTrainer, Word2VecTrainer
 
@@ -58,7 +58,7 @@ def _params(model, objective):
 
 def test_word2vec_trainer_emits_update_and_source_objective_events() -> None:
     model = CBOW(8, 3)
-    objective = FullSoftmax()
+    objective = SoftmaxWithLoss()
     receiver = Receiver()
     trainer = Word2VecTrainer(
         model, objective, SGD(_params(model, objective), lr=0.1),

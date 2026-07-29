@@ -40,7 +40,7 @@ def test_toy_skipgram_matches_cbow_conditions_except_architecture() -> None:
     )
 
     assert skipgram.model["name"] == "SkipGram"
-    assert skipgram.objective["name"] == "FullSoftmax"
+    assert skipgram.objective["name"] == "SoftmaxWithLoss"
     assert skipgram.identity.structure_signature == "toy-skipgram-full-softmax-w1-e5"
     assert skipgram.dataset == cbow.dataset
     assert skipgram.loader == cbow.loader

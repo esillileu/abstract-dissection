@@ -7,7 +7,7 @@ import numpy as np
 
 from exp.canonicalize_word2vec_checkpoints import canonicalize
 from mlprosection.nn.model.architecture import CBOW
-from mlprosection.nn.objective import FullSoftmax
+from mlprosection.nn.objective import SoftmaxWithLoss
 from mlprosection.optim.SGD import Adam
 
 
@@ -96,7 +96,7 @@ def test_canonicalize_moves_word2vec_output_parameters(tmp_path):
     assert "model.W_out" in state["m"]
     assert "objective.W_out" not in state["m"]
     model = CBOW(3, 2, backend="cpu")
-    objective = FullSoftmax(backend="cpu")
+    objective = SoftmaxWithLoss(backend="cpu")
     model.load_params_npz(generation / "model_parameters.npz")
     objective.load_params_npz(generation / "objective_parameters.npz")
     optimizer = Adam(

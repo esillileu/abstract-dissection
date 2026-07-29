@@ -52,11 +52,15 @@ class Word2VecTrainer(EventTrainer):
                 shuffled_contexts, shuffled_targets = contexts[order], targets[order]
                 for local_iteration, (batch_x, batch_t) in enumerate(self._iter_batches(shuffled_contexts, shuffled_targets)):
                     model_x, objective_t = self.batch_adapter.prepare(batch_x, batch_t)
-                    prediction = self.model.forward(model_x)
+                    objective_batch = self.objective.prepare(objective_t)
+                    prediction = self.model.forward(
+                        model_x,
+                        candidates=objective_batch.candidates,
+                    )
                     result = self.objective.forward(
                         prediction,
-                        objective_t,
-                        output_weight=self.model.W_out,
+                        objective_batch.target,
+                        replay_context=objective_batch.replay_context,
                         example_count=len(batch_x),
                     )
                     gradient = self.objective.backward()
@@ -64,13 +68,20 @@ class Word2VecTrainer(EventTrainer):
                     self.optimizer.update()
                     probe_state = self._snapshot_evaluation_state()
                     try:
-                        post_prediction = self.model.forward(model_x, cache=False)
+                        post_objective_batch = self.objective.prepare(
+                            objective_t,
+                            replay_context=result.replay_context,
+                        )
+                        post_prediction = self.model.forward(
+                            model_x,
+                            candidates=post_objective_batch.candidates,
+                            cache=False,
+                        )
                         post_result = self.objective.forward(
                             post_prediction,
-                            objective_t,
-                            output_weight=self.model.W_out,
+                            post_objective_batch.target,
                             cache=False,
-                            replay_context=result.replay_context,
+                            replay_context=post_objective_batch.replay_context,
                             example_count=len(batch_x),
                         )
                     finally:

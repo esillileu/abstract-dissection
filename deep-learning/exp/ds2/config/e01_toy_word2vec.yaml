@@ -6,7 +6,7 @@ seed_policy: {seed_set: research_v1, seed_count: 10, paired_execution: true}
 dataset: {id: DS-TOY-W2V, source: toy_sentence, text: "You say goodbye and I say hello.", window_size: 1}
 loader: {batch_size: 3, drop_last: true}
 model: {name: CBOW, embedding_size: 5}
-objective: {name: FullSoftmax, reduction: mean, book_reduction: sum_terms_mean_examples}
+objective: {name: SoftmaxWithLoss, reduction: mean, book_reduction: sum_terms_mean_examples}
 optimizer: {name: adam, learning_rate: 0.001}
 budget: {max_epochs: 1000}
 recording:

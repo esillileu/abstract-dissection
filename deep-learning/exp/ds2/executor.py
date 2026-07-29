@@ -25,8 +25,8 @@ from mlprosection.nn.model.architecture import (
     VanillaRnnlm,
 )
 from mlprosection.nn.objective import (
-    FullSoftmax,
     NegativeSampling,
+    SoftmaxWithLoss,
     TemporalSoftmaxCrossEntropy,
 )
 from mlprosection.optim.SGD import Adam, SGD
@@ -248,8 +248,8 @@ class Word2VecExecutor:
         model = model_type(
             len(word_to_id), embedding_size, backend=backend
         )
-        if objective_name == "FullSoftmax":
-            objective = FullSoftmax(
+        if objective_name == "SoftmaxWithLoss":
+            objective = SoftmaxWithLoss(
                 reduction=str(objective_config.get("reduction", "mean")),
                 backend=backend,
             )

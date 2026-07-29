@@ -23,8 +23,8 @@ from mlprosection.nn.model.architecture import (
     SkipGramBatchAdapter,
 )
 from mlprosection.nn.objective import (
-    FullSoftmax,
     NegativeSampling,
+    SoftmaxWithLoss,
     TemporalSoftmaxCrossEntropy,
 )
 
@@ -58,7 +58,7 @@ def test_all_ds2_variants_resolve_and_build_the_declared_components() -> None:
                 }[str(model_values["name"])]
                 model = model_type(11, 3, backend=backend)
                 objective_type = {
-                    "FullSoftmax": FullSoftmax,
+                    "SoftmaxWithLoss": SoftmaxWithLoss,
                     "NegativeSampling": NegativeSampling,
                 }[str(config["objective"]["name"])]
                 objective = (
