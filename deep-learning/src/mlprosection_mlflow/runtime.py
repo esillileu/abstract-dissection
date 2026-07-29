@@ -30,7 +30,7 @@ class RunIdentity:
 @dataclass(frozen=True)
 class RuntimeOptions:
     tracking_uri: str; experiment_name: str; mlflow_enabled: bool = True
-    upload_checkpoint: bool = True; upload_eval_checkpoints: bool = False
+    upload_checkpoint: bool = True; upload_eval_checkpoints: bool = True
     queue_size: int = 256; metric_batch_size: int = 1000
 
 
@@ -237,21 +237,32 @@ class _Sink:
                             artifact_path = None if relative_parent == Path(".") else relative_parent.as_posix()
                             client.log_artifact(self.run_id, str(path), artifact_path=artifact_path)
                 elif kind == "checkpoint" and client:
-                    path, checkpoint_kind = value
+                    path, checkpoint_kind, artifact_path = (
+                        (*value, None) if len(value) == 2 else value
+                    )
+                    checkpoint_kind = (
+                        "latest" if checkpoint_kind == "final" else checkpoint_kind
+                    )
                     should_upload = (
-                        checkpoint_kind == "final" and self.options.upload_checkpoint
+                        checkpoint_kind == "latest" and self.options.upload_checkpoint
                     ) or (
-                        checkpoint_kind == "eval" and self.options.upload_eval_checkpoints
+                        checkpoint_kind in {"best", "eval"}
+                        and self.options.upload_eval_checkpoints
                     )
                     if should_upload:
                         if path.is_dir():
                             client.log_artifacts(
                                 self.run_id,
                                 str(path),
-                                artifact_path=f"checkpoints/{path.name}",
+                                artifact_path=artifact_path
+                                or f"checkpoints/generations/{path.name}",
                             )
                         else:
-                            client.log_artifact(self.run_id, str(path), artifact_path="checkpoints")
+                            client.log_artifact(
+                                self.run_id,
+                                str(path),
+                                artifact_path=artifact_path or "checkpoints",
+                            )
             except Exception as exc: self.errors.append(f"MLflow upload failed: {exc}")
             finally: self.events.task_done()
     def _start_mlflow(self):
@@ -366,14 +377,32 @@ class ExperimentRun:
     def emit_metric(self, *, step: int, metrics: dict[str, float], kind: str = "step") -> None:
         """Forward progress to the console only; MLflow metrics upload after training."""
         self.sink.put(("console", _format_progress(step, metrics)), drop=True)
-    def emit_checkpoint(self, path: Path, *, checkpoint_kind: str) -> None:
-        self.sink.put(("checkpoint", (path, checkpoint_kind)))
-    def complete(self, *, artifact_root: Path, metric_rows: list[tuple[int, str, float]], final_metrics: dict[str, float], checkpoint_path: Path | None = None) -> list[str]:
+    def emit_checkpoint(
+        self,
+        path: Path,
+        *,
+        checkpoint_kind: str,
+        artifact_path: str | None = None,
+    ) -> None:
+        self.sink.put(("checkpoint", (path, checkpoint_kind, artifact_path)))
+    def complete(self, *, artifact_root: Path, metric_rows: list[tuple[int, str, float]], final_metrics: dict[str, float], checkpoint_path: Path | None = None, checkpoint_paths: dict[str, Path] | None = None) -> list[str]:
         self.finished = True
         rows = list(metric_rows)
         rows.extend((0, key, value) for key, value in final_metrics.items())
         self.sink.put(("metrics", rows)); self.sink.put(("artifact", artifact_root))
-        if checkpoint_path is not None and checkpoint_path.exists(): self.emit_checkpoint(checkpoint_path, checkpoint_kind="final")
+        roles = dict(checkpoint_paths or {})
+        if checkpoint_path is not None:
+            roles.setdefault("latest", checkpoint_path)
+        uploaded: set[Path] = set()
+        for role in ("latest", "best"):
+            path = roles.get(role)
+            if path is None or not path.exists():
+                continue
+            resolved = path.resolve()
+            if resolved in uploaded:
+                continue
+            uploaded.add(resolved)
+            self.emit_checkpoint(path, checkpoint_kind=role)
         self.sink.put(("stop", "FINISHED")); self.sink.thread.join()
         return self.sink.errors
     def __exit__(self, exc_type, exc, traceback) -> bool:

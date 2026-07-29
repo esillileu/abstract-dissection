@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import csv
 import json
 import os
 import sys
@@ -108,7 +109,7 @@ class SchemaV1Run:
                 mlflow_enabled=bool(tracking.get("enabled", True)),
                 upload_checkpoint=bool(tracking.get("upload_checkpoint", True)),
                 upload_eval_checkpoints=bool(
-                    tracking.get("upload_eval_checkpoints", False)
+                    tracking.get("upload_eval_checkpoints", True)
                 ),
             ),
             run_name=f"{self.identity.atomic_run_id}-s{self.identity.master_seed:02d}",
@@ -219,11 +220,17 @@ class SchemaV1Run:
                 "metrics": profiling_metrics,
             },
         )
+        roles = {
+            role: _checkpoint_role_manifest(self.local_checkpoint_root, role)
+            for role in ("latest", "best")
+        }
+        _normalize_checkpoints_csv(self.artifact_root / "checkpoints.csv", roles)
         write_json(
             self.artifact_root / "checkpoints/checkpoint_manifest.json",
             {
                 "format": "v2" if checkpoint_path else "none",
                 "local_root": str(self.local_checkpoint_root.resolve()),
+                # final remains a compatibility alias for latest.
                 "final": None
                 if checkpoint_path is None
                 else {
@@ -232,13 +239,10 @@ class SchemaV1Run:
                     "update": final_metrics.get("final/system/total_updates"),
                     "digest": checkpoint_digest,
                 },
-                "best": _checkpoint_role_manifest(self.local_checkpoint_root, "best"),
-                "latest": _checkpoint_role_manifest(self.local_checkpoint_root, "latest"),
-                "periodic": _periodic_checkpoint_manifests(self.local_checkpoint_root),
-                "epoch_checkpoints": [
-                    {"path": str(path.resolve())}
-                    for path in evaluation_checkpoints or []
-                ],
+                "best": roles["best"],
+                "latest": roles["latest"],
+                "periodic": [],
+                "epoch_checkpoints": [],
                 "contains": {
                     "model": checkpoint_path is not None,
                     "optimizer": True,
@@ -387,6 +391,41 @@ def _checkpoint_role_manifest(root: Path, role: str) -> dict[str, object] | None
         "update": int(payload["update"]),
         "digest": str(payload["sha256"]),
     }
+
+
+def _normalize_checkpoints_csv(
+    path: Path,
+    roles: dict[str, dict[str, object] | None],
+) -> None:
+    """Keep the raw checkpoint index aligned with the retained semantic roles."""
+    if not path.exists():
+        return
+    with path.open(encoding="utf-8", newline="") as file:
+        reader = csv.DictReader(file)
+        fieldnames = list(reader.fieldnames or [])
+        rows = list(reader)
+    retained: list[dict[str, str]] = []
+    for role, accepted_kinds in (
+        ("latest", {"latest", "final"}),
+        ("best", {"best", "selected"}),
+    ):
+        manifest = roles.get(role)
+        if manifest is None:
+            continue
+        candidates = [row for row in rows if row.get("kind") in accepted_kinds]
+        if candidates:
+            row = dict(candidates[-1])
+        else:
+            row = {key: "" for key in fieldnames}
+        row["kind"] = "selected" if role == "best" else "latest"
+        row["path"] = str(manifest["path"])
+        if "sha256" in fieldnames:
+            row["sha256"] = str(manifest["digest"])
+        retained.append(row)
+    with path.open("w", encoding="utf-8", newline="") as file:
+        writer = csv.DictWriter(file, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(retained)
 
 
 def _periodic_checkpoint_manifests(root: Path) -> list[dict[str, object]]:

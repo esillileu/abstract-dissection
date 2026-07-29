@@ -559,6 +559,10 @@ class Seq2SeqExecutor:
             best_metric="test/exact_match_accuracy",
             best_value=None if best_exact < 0 else best_exact,
         )
+        selected = checkpoint_manager.current("best")
+        record_checkpoint = context.metadata.get("record_eval_checkpoint")
+        if selected is not None and callable(record_checkpoint):
+            record_checkpoint(selected.path)
         records.flush()
         last_evaluation = records.evaluations[-2:] if len(records.evaluations) >= 2 else []
         final_values = {"final/train/loss": _recorded_float(records.updates[-1]["loss"]) if records.updates else 0.0}

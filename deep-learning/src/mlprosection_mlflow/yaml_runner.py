@@ -8,6 +8,7 @@ import time
 from mlprosection.experiment import ExperimentContext, run_config
 from mlprosection.experiment.progress import ProgressReporter
 
+from .checkpoint_source import resolve_checkpoint_source
 from .schema_v1 import SchemaV1Run
 from .runtime import build_profiling_metric_rows, build_schema_metrics, write_json
 
@@ -46,6 +47,7 @@ def run_yaml(
         assert isinstance(checkpoint, dict)
         checkpoint["resume"] = resume
     record = SchemaV1Run(config)
+    resolve_checkpoint_source(config)
     runtime = record.runtime()
     if progress_reporter is not None:
         runtime.sink.console_writer = progress_reporter.write
@@ -53,7 +55,6 @@ def run_yaml(
 
     def record_eval_checkpoint(path: Path) -> None:
         evaluation_checkpoints.append(path)
-        runtime.emit_checkpoint(path, checkpoint_kind="eval")
 
     context = ExperimentContext(
         emit_metric=lambda step, metrics: runtime.emit_metric(step=step, metrics=metrics),
@@ -95,18 +96,20 @@ def run_yaml(
             },
             evaluation_checkpoints=evaluation_checkpoints,
         )
-        latest_pointer = record.local_checkpoint_root / "latest.json"
-        final_checkpoint = None
-        if latest_pointer.exists():
-            payload = json.loads(latest_pointer.read_text(encoding="utf-8"))
-            final_checkpoint = (
-                record.local_checkpoint_root / str(payload["path"])
-            )
+        checkpoint_paths: dict[str, Path] = {}
+        for role in ("latest", "best"):
+            pointer = record.local_checkpoint_root / f"{role}.json"
+            if not pointer.exists():
+                continue
+            payload = json.loads(pointer.read_text(encoding="utf-8"))
+            candidate = record.local_checkpoint_root / str(payload["path"])
+            if candidate.exists():
+                checkpoint_paths[role] = candidate
         errors = runtime.complete(
             artifact_root=record.artifact_root,
             metric_rows=metric_rows,
             final_metrics=result.metrics,
-            checkpoint_path=final_checkpoint,
+            checkpoint_paths=checkpoint_paths,
         )
     write_json(
         record.artifact_root / "runtime" / "upload_summary.json",

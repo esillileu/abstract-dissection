@@ -20,6 +20,6 @@ recording:
 numerics: {dtype: float64, backend: cupy, device: cuda:0}
 checkpoint: {save_final: true, save_on_eval: false, format: v2}
 profiling: {enabled: false}
-tracking: {enabled: true, experiment: ds1, upload_checkpoint: false}
+tracking: {enabled: true, experiment: ds1}
 variants:
   CNN-DEEP-BOOK: {}
