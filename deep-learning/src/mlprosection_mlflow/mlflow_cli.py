@@ -6,12 +6,20 @@ import json
 import os
 import re
 import subprocess
+from collections import Counter
 from pathlib import Path
 from typing import Annotated
 
 import typer
 
 from .transfer import export_experiment, export_run, import_archive
+from .checkpoint_maintenance import (
+    DEFAULT_ARTIFACT_ROOT,
+    checkpoint_backfill,
+    checkpoint_prune,
+    dedupe as dedupe_runs,
+    write_report,
+)
 
 DEFAULT_TRACKING_URI = "http://127.0.0.1:5000"
 DEFAULT_EXPORT_DIRECTORY = Path("infra/mlflow/exports")
@@ -45,6 +53,23 @@ def _destination_tags(values: list[str] | None) -> dict[str, str]:
             )
         tags[key] = tag_value
     return tags
+
+
+def _maintenance_output(report: dict[str, object], path: Path) -> str:
+    entries = report.get("entries", [])
+    assert isinstance(entries, list)
+    actions = Counter(
+        str(item.get("action", ",".join(item.get("actions", []))))
+        for item in entries
+        if isinstance(item, dict)
+    )
+    return json.dumps({
+        "report": str(path),
+        "command": report["command"],
+        "mode": report["mode"],
+        "entry_count": len(entries),
+        "action_counts": dict(sorted(actions.items())),
+    }, ensure_ascii=False)
 
 
 def _compose(*arguments: str) -> None:
@@ -193,3 +218,81 @@ def import_experiment_command(
         reuse_experiment=reuse_experiment,
     )
     typer.echo(json.dumps(result, ensure_ascii=False))
+
+
+@app.command("checkpoint-backfill")
+def checkpoint_backfill_command(
+    experiments: Annotated[
+        list[str], typer.Argument(help="Experiment names, for example ds1 ds2.")
+    ],
+    apply: Annotated[
+        bool, typer.Option("--apply", help="Upload and tag; default is dry-run.")
+    ] = False,
+    tracking_uri: Annotated[
+        str | None, typer.Option("--tracking-uri")
+    ] = None,
+) -> None:
+    """Backfill canonical seed-run latest/best checkpoints."""
+    report = checkpoint_backfill(
+        tracking_uri or _tracking_uri(), experiments, apply=apply
+    )
+    path = write_report(report)
+    typer.echo(_maintenance_output(report, path))
+
+
+@app.command("checkpoint-prune")
+def checkpoint_prune_command(
+    experiments: Annotated[list[str], typer.Argument(help="Experiment names.")],
+    apply: Annotated[
+        bool, typer.Option("--apply", help="Delete payloads; default is dry-run.")
+    ] = False,
+    tracking_uri: Annotated[str | None, typer.Option("--tracking-uri")] = None,
+    artifact_root: Annotated[
+        Path,
+        typer.Option(
+            "--artifact-root",
+            help="Trusted self-hosted MLflow artifact root.",
+        ),
+    ] = DEFAULT_ARTIFACT_ROOT,
+) -> None:
+    """Remove all checkpoint payloads except current latest/best."""
+    report = checkpoint_prune(
+        tracking_uri or _tracking_uri(),
+        experiments,
+        apply=apply,
+        artifact_root=artifact_root,
+    )
+    path = write_report(report)
+    typer.echo(_maintenance_output(report, path))
+
+
+@app.command("dedupe")
+def dedupe_command(
+    experiment: Annotated[str, typer.Argument(help="Experiment name (ds2).")],
+    apply: Annotated[
+        bool, typer.Option("--apply", help="Soft-delete losers; default is dry-run.")
+    ] = False,
+    purge_artifacts: Annotated[
+        bool,
+        typer.Option(
+            "--purge-artifacts",
+            help="Physically delete loser artifacts (requires --apply).",
+        ),
+    ] = False,
+    tracking_uri: Annotated[str | None, typer.Option("--tracking-uri")] = None,
+    artifact_root: Annotated[
+        Path, typer.Option("--artifact-root")
+    ] = DEFAULT_ARTIFACT_ROOT,
+) -> None:
+    """Keep one canonical run per parent/seed identity."""
+    if purge_artifacts and not apply:
+        raise typer.BadParameter("--purge-artifacts requires --apply")
+    report = dedupe_runs(
+        tracking_uri or _tracking_uri(),
+        experiment,
+        apply=apply,
+        purge_artifacts=purge_artifacts,
+        artifact_root=artifact_root,
+    )
+    path = write_report(report)
+    typer.echo(_maintenance_output(report, path))
