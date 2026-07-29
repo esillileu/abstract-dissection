@@ -58,7 +58,7 @@ def _params(model, objective):
 
 def test_word2vec_trainer_emits_update_and_source_objective_events() -> None:
     model = CBOW(8, 3)
-    objective = FullSoftmax(8, 3)
+    objective = FullSoftmax()
     receiver = Receiver()
     trainer = Word2VecTrainer(
         model, objective, SGD(_params(model, objective), lr=0.1),
@@ -79,7 +79,7 @@ def test_word2vec_trainer_emits_update_and_source_objective_events() -> None:
 
 def test_word2vec_negative_sampling_reuses_update_candidates_for_post_loss() -> None:
     model = CBOW(8, 3)
-    objective = NegativeSampling(8, 3, negative_samples=2)
+    objective = NegativeSampling(8, negative_samples=2)
     receiver = Receiver()
     trainer = Word2VecTrainer(
         model, objective, SGD(_params(model, objective), lr=0.1),

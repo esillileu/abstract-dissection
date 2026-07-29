@@ -61,7 +61,11 @@ def test_all_ds2_variants_resolve_and_build_the_declared_components() -> None:
                     "FullSoftmax": FullSoftmax,
                     "NegativeSampling": NegativeSampling,
                 }[str(config["objective"]["name"])]
-                objective = objective_type(11, 3, backend=backend)
+                objective = (
+                    objective_type(11, backend=backend)
+                    if objective_type is NegativeSampling
+                    else objective_type(backend=backend)
+                )
                 _optimizer(config, model, objective)
                 executor = Word2VecExecutor()
             elif kind == "language_modeling":

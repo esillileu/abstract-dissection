@@ -17,15 +17,28 @@ def test_word2vec_objectives_populate_embedding_gradients() -> None:
     contexts = Tensor(np.array([[0, 1], [1, 2], [2, 3]]), backend="cpu")
     targets = Tensor(np.array([2, 3, 4]), backend="cpu")
     for objective in (
-        FullSoftmax(6, 4, backend="cpu"),
-        NegativeSampling(6, 4, negative_samples=2, backend="cpu"),
+        FullSoftmax(backend="cpu"),
+        NegativeSampling(6, negative_samples=2, backend="cpu"),
     ):
         model = CBOW(6, 4, backend="cpu")
-        result = objective.forward(model.forward(contexts), targets)
+        result = objective.forward(
+            model.forward(contexts), targets, output_weight=model.W_out
+        )
         model.backward(objective.backward())
         assert float(result.loss.data) > 0
         assert np.any(model.W_in.grad)
-        assert np.any(objective.W_out.grad)
+        assert np.any(model.W_out.grad)
+
+
+def test_word2vec_model_owns_both_embedding_matrices() -> None:
+    model = CBOW(7, 5, backend="cpu")
+    objective = FullSoftmax(backend="cpu")
+
+    assert [(name, parameter.data.shape) for name, parameter in model.named_parameters()] == [
+        ("W_in", (7, 5)),
+        ("W_out", (7, 5)),
+    ]
+    assert list(objective.named_parameters()) == []
 
 
 def test_language_model_trainer_runs_truncated_bptt() -> None:

@@ -54,7 +54,10 @@ class Word2VecTrainer(EventTrainer):
                     model_x, objective_t = self.batch_adapter.prepare(batch_x, batch_t)
                     prediction = self.model.forward(model_x)
                     result = self.objective.forward(
-                        prediction, objective_t, example_count=len(batch_x)
+                        prediction,
+                        objective_t,
+                        output_weight=self.model.W_out,
+                        example_count=len(batch_x),
                     )
                     gradient = self.objective.backward()
                     self.model.backward(gradient)
@@ -65,6 +68,7 @@ class Word2VecTrainer(EventTrainer):
                         post_result = self.objective.forward(
                             post_prediction,
                             objective_t,
+                            output_weight=self.model.W_out,
                             cache=False,
                             replay_context=result.replay_context,
                             example_count=len(batch_x),

@@ -44,12 +44,13 @@ def test_word2vec_uses_unigram_sampler_for_negative_candidates() -> None:
     )
     model = CBOW(4, 3, backend="cpu")
     objective = NegativeSampling(
-        4, 3, negative_samples=16, sampler=sampler, backend="cpu"
+        4, negative_samples=16, sampler=sampler, backend="cpu"
     )
     targets = Tensor(np.array([0, 1], dtype=np.int64), backend="cpu")
     result = objective.forward(
         model.forward(Tensor(np.array([[1, 2], [2, 3]], dtype=np.int64), backend="cpu")),
         targets,
+        output_weight=model.W_out,
     )
     assert not np.any(result.replay_context == targets.data[:, None])
 
@@ -103,7 +104,7 @@ def test_skipgram_samples_all_context_targets_in_one_call() -> None:
     sampler.sample = counted_sample
     model = SkipGram(8, 3, backend="cpu")
     objective = NegativeSampling(
-        8, 3, negative_samples=2, sampler=sampler, backend="cpu"
+        8, negative_samples=2, sampler=sampler, backend="cpu"
     )
     centers = Tensor(np.array([1, 2], dtype=np.int64), backend="cpu")
     contexts = Tensor(
@@ -112,9 +113,12 @@ def test_skipgram_samples_all_context_targets_in_one_call() -> None:
     )
 
     model_x, objective_t = SkipGramBatchAdapter().prepare(contexts, centers)
-    result = objective.forward(model.forward(model_x), objective_t)
+    result = objective.forward(
+        model.forward(model_x), objective_t, output_weight=model.W_out
+    )
     objective.forward(
         model.forward(model_x), objective_t,
+        output_weight=model.W_out,
         replay_context=result.replay_context,
     )
 
@@ -134,22 +138,28 @@ def test_vectorized_skipgram_preserves_per_context_loss_and_gradients() -> None:
         np.array([[6, 7], [0, 7]], dtype=np.int64),
     ], axis=1).reshape(6, 2)
     model = SkipGram(8, 3, backend="cpu")
-    objective = NegativeSampling(8, 3, negative_samples=2, backend="cpu")
+    objective = NegativeSampling(8, negative_samples=2, backend="cpu")
     model_x, objective_t = SkipGramBatchAdapter().prepare(contexts, centers)
     first = objective.forward(
-        model.forward(model_x), objective_t, replay_context=candidates
+        model.forward(model_x),
+        objective_t,
+        output_weight=model.W_out,
+        replay_context=candidates,
     )
     model.backward(objective.backward())
     input_gradient = model.W_in.grad.copy()
-    output_gradient = objective.W_out.grad.copy()
+    output_gradient = model.W_out.grad.copy()
     second = objective.forward(
-        model.forward(model_x), objective_t, replay_context=candidates
+        model.forward(model_x),
+        objective_t,
+        output_weight=model.W_out,
+        replay_context=candidates,
     )
     model.backward(objective.backward())
 
     assert np.allclose(first.loss.data, second.loss.data)
     assert np.allclose(input_gradient, model.W_in.grad)
-    assert np.allclose(output_gradient, objective.W_out.grad)
+    assert np.allclose(output_gradient, model.W_out.grad)
 
 
 def test_negative_sampling_book_loss_sums_candidates_for_cbow() -> None:
@@ -160,18 +170,22 @@ def test_negative_sampling_book_loss_sums_candidates_for_cbow() -> None:
     targets = Tensor(np.array([1, 2], dtype=np.int64), backend="cpu")
     candidates = np.array([[4, 5], [5, 6]], dtype=np.int64)
     model = CBOW(8, 3, backend="cpu")
-    objective = NegativeSampling(8, 3, negative_samples=2, backend="cpu")
+    objective = NegativeSampling(8, negative_samples=2, backend="cpu")
     model_x, objective_t = CBOWBatchAdapter().prepare(contexts, targets)
     prediction = model.forward(model_x)
 
     standard = objective.forward(
-        prediction, objective_t, replay_context=candidates
+        prediction,
+        objective_t,
+        output_weight=model.W_out,
+        replay_context=candidates,
     )
     standard_input_gradient = objective.backward().data.copy()
-    standard_output_gradient = objective.W_out.grad.copy()
+    standard_output_gradient = model.W_out.grad.copy()
     book = objective.forward(
         prediction,
         objective_t,
+        output_weight=model.W_out,
         replay_context=candidates,
         example_count=len(contexts),
     )
@@ -181,7 +195,7 @@ def test_negative_sampling_book_loss_sums_candidates_for_cbow() -> None:
     assert np.allclose(book.loss.data, standard.loss.data * 3)
     assert np.allclose(book.reporting_loss.data, standard.loss.data)
     assert np.allclose(book_input_gradient, standard_input_gradient * 3)
-    assert np.allclose(objective.W_out.grad, standard_output_gradient * 3)
+    assert np.allclose(model.W_out.grad, standard_output_gradient * 3)
 
 
 def test_negative_sampling_book_loss_sums_contexts_and_candidates_for_skipgram() -> None:
@@ -195,18 +209,22 @@ def test_negative_sampling_book_loss_sums_contexts_and_candidates_for_skipgram()
         dtype=np.int64,
     )
     model = SkipGram(8, 3, backend="cpu")
-    objective = NegativeSampling(8, 3, negative_samples=2, backend="cpu")
+    objective = NegativeSampling(8, negative_samples=2, backend="cpu")
     model_x, objective_t = SkipGramBatchAdapter().prepare(contexts, targets)
     prediction = model.forward(model_x)
 
     standard = objective.forward(
-        prediction, objective_t, replay_context=candidates
+        prediction,
+        objective_t,
+        output_weight=model.W_out,
+        replay_context=candidates,
     )
     standard_input_gradient = objective.backward().data.copy()
-    standard_output_gradient = objective.W_out.grad.copy()
+    standard_output_gradient = model.W_out.grad.copy()
     book = objective.forward(
         prediction,
         objective_t,
+        output_weight=model.W_out,
         replay_context=candidates,
         example_count=len(contexts),
     )
@@ -216,7 +234,7 @@ def test_negative_sampling_book_loss_sums_contexts_and_candidates_for_skipgram()
     assert np.allclose(book.loss.data, standard.loss.data * 9)
     assert np.allclose(book.reporting_loss.data, standard.loss.data)
     assert np.allclose(book_input_gradient, standard_input_gradient * 9)
-    assert np.allclose(objective.W_out.grad, standard_output_gradient * 9)
+    assert np.allclose(model.W_out.grad, standard_output_gradient * 9)
 
 
 def test_full_softmax_book_loss_sums_skipgram_contexts_only() -> None:
@@ -226,15 +244,20 @@ def test_full_softmax_book_loss_sums_skipgram_contexts_only() -> None:
     )
     targets = Tensor(np.array([1, 2], dtype=np.int64), backend="cpu")
     model = SkipGram(8, 3, backend="cpu")
-    objective = FullSoftmax(8, 3, backend="cpu")
+    objective = FullSoftmax(backend="cpu")
     model_x, objective_t = SkipGramBatchAdapter().prepare(contexts, targets)
     prediction = model.forward(model_x)
 
-    standard = objective.forward(prediction, objective_t)
+    standard = objective.forward(
+        prediction, objective_t, output_weight=model.W_out
+    )
     standard_input_gradient = objective.backward().data.copy()
-    standard_output_gradient = objective.W_out.grad.copy()
+    standard_output_gradient = model.W_out.grad.copy()
     book = objective.forward(
-        prediction, objective_t, example_count=len(contexts)
+        prediction,
+        objective_t,
+        output_weight=model.W_out,
+        example_count=len(contexts),
     )
     book_input_gradient = objective.backward().data.copy()
 
@@ -242,4 +265,4 @@ def test_full_softmax_book_loss_sums_skipgram_contexts_only() -> None:
     assert np.allclose(book.loss.data, standard.loss.data * 3)
     assert np.allclose(book.reporting_loss.data, standard.loss.data)
     assert np.allclose(book_input_gradient, standard_input_gradient * 3)
-    assert np.allclose(objective.W_out.grad, standard_output_gradient * 3)
+    assert np.allclose(model.W_out.grad, standard_output_gradient * 3)

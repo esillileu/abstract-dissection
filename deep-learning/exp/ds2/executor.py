@@ -250,13 +250,12 @@ class Word2VecExecutor:
         )
         if objective_name == "FullSoftmax":
             objective = FullSoftmax(
-                len(word_to_id), embedding_size,
                 reduction=str(objective_config.get("reduction", "mean")),
                 backend=backend,
             )
         elif objective_name == "NegativeSampling":
             objective = NegativeSampling(
-                len(word_to_id), embedding_size,
+                len(word_to_id),
                 negative_samples=int(objective_config.get("negative_samples", 5)),
                 reduction=str(objective_config.get("reduction", "mean")),
                 sampler=sampler,

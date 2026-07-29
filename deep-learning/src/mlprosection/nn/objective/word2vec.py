@@ -14,30 +14,22 @@ from .base import Objective, ObjectiveResult
 
 class FullSoftmax(Objective):
     def __init__(
-        self, vocab_size: int, embedding_size: int, *, reduction: str = "mean",
-        backend=None,
+        self, *, reduction: str = "mean", backend=None,
     ) -> None:
         resolved = resolve_backend(backend)
         super().__init__(resolved)
         if reduction not in {"mean", "sum"}:
             raise ValueError("reduction must be 'mean' or 'sum'")
         self.reduction = reduction
-        self.W_out = Parameter(
-            (0.01 * resolved.xp.random.randn(vocab_size, embedding_size)).astype(
-                resolved.float_dtype
-            ),
-            backend=resolved,
-            name="W_out",
-        )
         self._cache = None
 
     def forward_manual(
-        self, prediction: Tensor, target: Tensor, *, cache: bool = True,
-        replay_context=None, example_count: int | None = None,
+        self, prediction: Tensor, target: Tensor, *, output_weight: Parameter,
+        cache: bool = True, replay_context=None, example_count: int | None = None,
     ) -> ObjectiveResult:
         hidden = prediction.data
         computation = softmax_cross_entropy(
-            Tensor(hidden @ self.W_out.data.T, backend=prediction.backend),
+            Tensor(hidden @ output_weight.data.T, backend=prediction.backend),
             target.reshape(-1),
             reduction="sum",
         )
@@ -52,7 +44,7 @@ class FullSoftmax(Objective):
         loss = computation.loss / optimized_divisor
         gradient = computation.gradient.data / optimized_divisor
         if cache:
-            self._cache = (hidden, gradient, prediction.backend)
+            self._cache = (hidden, gradient, output_weight, prediction.backend)
         return ObjectiveResult(
             loss,
             prediction_count,
@@ -64,16 +56,15 @@ class FullSoftmax(Objective):
     def backward_manual(self) -> Tensor:
         if self._cache is None:
             raise RuntimeError("forward(cache=True) must be called before backward")
-        hidden, gradient, backend = self._cache
-        self.W_out.grad[...] = gradient.T @ hidden
-        return Tensor(gradient @ self.W_out.data, backend=backend)
+        hidden, gradient, output_weight, backend = self._cache
+        output_weight.grad[...] = gradient.T @ hidden
+        return Tensor(gradient @ output_weight.data, backend=backend)
 
 
 class NegativeSampling(Objective):
     def __init__(
         self,
         vocab_size: int,
-        embedding_size: int,
         *,
         negative_samples: int = 5,
         reduction: str = "mean",
@@ -89,18 +80,11 @@ class NegativeSampling(Objective):
         self.sampler = sampler or UnigramSampler.uniform(vocab_size, backend=resolved)
         if self.sampler.vocab_size != vocab_size:
             raise ValueError("sampler vocabulary does not match objective vocabulary")
-        self.W_out = Parameter(
-            (0.01 * resolved.xp.random.randn(vocab_size, embedding_size)).astype(
-                resolved.float_dtype
-            ),
-            backend=resolved,
-            name="W_out",
-        )
         self._cache = None
 
     def forward_manual(
-        self, prediction: Tensor, target: Tensor, *, cache: bool = True,
-        replay_context=None, example_count: int | None = None,
+        self, prediction: Tensor, target: Tensor, *, output_weight: Parameter,
+        cache: bool = True, replay_context=None, example_count: int | None = None,
     ) -> ObjectiveResult:
         xp = self.backend.xp
         labels = target.data.reshape(-1).astype(xp.int64, copy=False)
@@ -112,7 +96,7 @@ class NegativeSampling(Objective):
         candidates = xp.concatenate((labels[:, None], negatives), axis=1)
         hidden = prediction.data
         scores = xp.sum(
-            hidden[:, None, :] * self.W_out.data[candidates], axis=2
+            hidden[:, None, :] * output_weight.data[candidates], axis=2
         )
         binary_targets = xp.zeros_like(scores)
         binary_targets[:, 0] = 1
@@ -136,7 +120,13 @@ class NegativeSampling(Objective):
         loss = computation.loss / optimized_divisor
         score_gradient = computation.gradient / optimized_divisor
         if cache:
-            self._cache = (hidden, candidates, score_gradient.data, prediction.backend)
+            self._cache = (
+                hidden,
+                candidates,
+                score_gradient.data,
+                output_weight,
+                prediction.backend,
+            )
         return ObjectiveResult(
             loss,
             len(labels),
@@ -149,17 +139,17 @@ class NegativeSampling(Objective):
     def backward_manual(self) -> Tensor:
         if self._cache is None:
             raise RuntimeError("forward(cache=True) must be called before backward")
-        hidden, candidates, gradient, backend = self._cache
+        hidden, candidates, gradient, output_weight, backend = self._cache
         xp = backend.xp
-        self.W_out.grad[...] = 0
+        output_weight.grad[...] = 0
         xp.add.at(
-            self.W_out.grad,
+            output_weight.grad,
             candidates,
             gradient[:, :, None] * hidden[:, None, :],
         )
         return Tensor(
             xp.sum(
-                gradient[:, :, None] * self.W_out.data[candidates], axis=1
+                gradient[:, :, None] * output_weight.data[candidates], axis=1
             ),
             backend=backend,
         )

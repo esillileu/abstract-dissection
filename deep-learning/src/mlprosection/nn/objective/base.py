@@ -26,7 +26,7 @@ class ObjectiveResult:
 
 
 class Objective(Layer):
-    """A trainable objective that caches its own backward state."""
+    """An objective that caches the state required for its backward pass."""
 
     def forward_manual(
         self,

@@ -21,6 +21,13 @@ class _EmbeddingArchitecture(Model):
             backend=resolved,
             name="W_in",
         )
+        self.W_out = Parameter(
+            (0.01 * resolved.xp.random.randn(vocab_size, embedding_size)).astype(
+                resolved.float_dtype
+            ),
+            backend=resolved,
+            name="W_out",
+        )
         self._source = None
 
     @property
