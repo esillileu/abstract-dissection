@@ -25,7 +25,7 @@
 | `GT03` | update축 accuracy 정렬, train-test gap, weight-decay paired difference, final/best/AUC와 seed CI |
 | `GT04` | `epoch_first_update` 평가를 epoch plot index로 변환, dropout on/off·ratio 비교, generalization gap과 seed CI |
 | `GT05` | atomic run ID에서 scale와 BN on/off 조건 복원, scale축 reshape, paired BN difference, epoch curve와 순위 |
-| `GT06` | epoch-first subset accuracy와 terminal full-test accuracy 결합, learning curve, final checkpoint lookup, seed 집계 |
+| `GT06` | 원본 SimpleConvNet train/test learning curve 형식으로 seed 평균과 min–max 범위 표시, terminal full-test accuracy와 final checkpoint lookup |
 | `GT07` | GT06과 같은 축·checkpoint 처리, SimpleCNN 대비 DeepCNN 비교, runtime/accuracy trade-off |
 | `GT08` | epoch-end full-test curve, spatial/permuted paired comparison, NN/CNN 구조별 차이와 seed CI, MNIST 원본/고정 pixel-permutation 예시 |
 | `GO01` | 저장된 `0..29` trajectory update를 표시용 `1..30`으로 변환, optimizer별 경로·등고선 시각화 |
@@ -71,8 +71,13 @@ python -m exp ds1 analyze -e 06 --seed 1
 `e01_optimizer.py`부터 `e11_cnn_filters.py`까지의 개별 모듈이 소유한다.
 `common.py`에는 DS1 CSV를 loss/accuracy curve로 읽는 공통 연산만 둔다.
 
-`e06`과 `e07`은 예외적으로 같은 `e06_e07_{band,errorbar}.png`를 만든다.
-SimpleCNN/DeepCNN의 train·test 네 곡선을 함께 그리고 y축 `0.25–0.9`는 생략한다.
+`e06`은 원본 `train_convnet.py`처럼 단일 축에 SimpleConvNet의 train·test 곡선을
+그리고, 10회 seed 평균 주변의 min–max 범위를 표시한다. 원본과 같은 `6.4 × 4.8`
+canvas, epoch 축, `0–1` accuracy 범위, marker와 범례 위치를 사용하되 저장소 테마를
+적용한다. 출력은 `e06_{band,errorbar}.png`이다.
+
+`e07`은 SimpleCNN/DeepCNN의 train·test 네 곡선을 비교하고 y축 `0.25–0.9`를
+생략한다. 출력은 `e07_{band,errorbar}.png`이다.
 
 `-e 06 --summary`, `-e 07 --summary`, `-e 08 --summary`는 각 실험의 seed별
 마지막 `mnist-test-full` 정확도와 `timing_windows.csv`의 train wall time 합계를

@@ -92,16 +92,8 @@ def main(argv: list[str] | None = None) -> None:
         parser.error("selection contains no supported analyses")
     client = AnalysisClient(mlflow_client(args.tracking_uri), seed=args.seed)
     outputs = []
-    rendered: set[str] = set()
     for experiment in selected:
-        output_id = (
-            experiment
-            if args.summary
-            else ("e06_e07" if experiment in {"e06", "e07"} else experiment)
-        )
-        if output_id in rendered:
-            continue
-        rendered.add(output_id)
+        output_id = experiment
         seed_suffix = "" if args.seed is None else f"_seed-{args.seed}"
         if args.summary:
             output = args.output_dir / f"{output_id}_summary{seed_suffix}.csv"
