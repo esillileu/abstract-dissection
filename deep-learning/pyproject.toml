@@ -39,6 +39,7 @@ dev = [
     "pydeps>=3.0.6",
     "pytest>=9.1.1",
     "pytest-cov>=7.1.0",
+    "python-pptx>=1.0.2",
 ]
 
 [tool.ruff]
