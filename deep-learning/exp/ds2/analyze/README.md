@@ -65,7 +65,8 @@ python -m exp ds2 analyze -e 01-08 --error-style errorbar
 `-e 01 --summary`부터 `-e 07 --summary`는 그림 없이 각 atomic run의 최종
 metric과 train wall time을 `평균 ± 표본표준편차, [최소, 최대]`로 터미널과
 CSV에 출력한다. `-s`는 `--summary`의 단축 옵션이며 CSV 이름은
-`e01_summary.csv` 형식이다.
+`e01_summary.csv` 형식이다. 각 seed run의 `model/parameter_manifest.json`에서
+합산한 모델별 `parameter_count`도 함께 출력하며 seed 간 값이 같은지 검증한다.
 
 - E01–E02: 마지막 source-curve `book_loss`, 원본 스케일 소수점 세 자리.
   E02의 값은 objective 간 품질 비교가 아니라 재현 조건 확인용이다.

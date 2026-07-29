@@ -10,11 +10,17 @@ import matplotlib.pyplot as plt
 
 from exp.analyze import (
     AnalysisClient,
+    completed_seed_runs,
     mlflow_client,
     parse_experiment_selection,
     save_figure,
     tracking_uri_default,
     write_summary,
+)
+from exp.model_parameters import (
+    append_parameter_counts,
+    format_parameter_count,
+    parameter_count_for_runs,
 )
 
 from . import (
@@ -53,6 +59,11 @@ SUMMARY_RENDERERS = {
     "e06": e06_summary.render,
     "e07": e07_summary.render,
     "e08": e08_summary.render,
+}
+SUMMARY_MODELS = {
+    "e06": ("GT06", e06_summary.ATOMIC_RUN_IDS),
+    "e07": ("GT07", [e07_summary.ATOMIC_RUN_ID]),
+    "e08": ("GT08", e08_summary.ATOMIC_RUN_IDS),
 }
 
 
@@ -100,5 +111,23 @@ def main(argv: list[str] | None = None) -> None:
         else:
             output = args.output_dir / f"{output_id}_{args.error_style}{seed_suffix}.png"
         outputs.extend(_save_result(renderers[experiment](client, args.error_style, output), output))
+        if args.summary:
+            group_id, atomic_run_ids = SUMMARY_MODELS[experiment]
+            grouped_runs = completed_seed_runs(
+                client,
+                experiment_name="ds1",
+                group_id=group_id,
+                atomic_run_ids=atomic_run_ids,
+            )
+            parameter_counts = {
+                atomic_run_id: parameter_count_for_runs(
+                    client,
+                    grouped_runs[atomic_run_id],
+                )
+                for atomic_run_id in atomic_run_ids
+            }
+            for atomic_run_id, parameter_count in parameter_counts.items():
+                print(f"[{atomic_run_id}] {format_parameter_count(parameter_count)}")
+            append_parameter_counts(output.with_suffix(".csv"), parameter_counts)
     for path in outputs:
         print(path)

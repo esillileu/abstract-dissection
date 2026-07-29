@@ -11,6 +11,11 @@ import json
 import numpy as np
 
 from exp.analyze import RunRef, artifact_file, artifact_rows
+from exp.model_parameters import (
+    ParameterCount,
+    format_parameter_count,
+    parameter_count_for_runs,
+)
 
 from .common import runs
 
@@ -289,6 +294,7 @@ def _write_summaries(
         str,
         tuple[MetricSpec, MetricSummary | None, MetricSummary | None],
     ],
+    parameter_counts: Mapping[str, ParameterCount | None],
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fields = [
@@ -330,6 +336,23 @@ def _write_summaries(
                         "maximum": "" if values is None else values[3],
                     }
                 )
+            parameter_count = parameter_counts[atomic_run_id]
+            writer.writerow(
+                {
+                    "series": atomic_run_id,
+                    "metric": "parameter_count",
+                    "seed_runs": (
+                        "" if parameter_count is None else parameter_count.run_count
+                    ),
+                    "unit": "parameters",
+                    "mean": (
+                        "" if parameter_count is None else parameter_count.value
+                    ),
+                    "standard_deviation": "",
+                    "minimum": "",
+                    "maximum": "",
+                }
+            )
 
 
 def render_summary(client, error_style, output, *, analysis_id: str):
@@ -343,9 +366,14 @@ def render_summary(client, error_style, output, *, analysis_id: str):
         )
         for atomic_run_id in spec.atomic_run_ids
     }
+    parameter_counts = {
+        atomic_run_id: parameter_count_for_runs(client, grouped_runs[atomic_run_id])
+        for atomic_run_id in spec.atomic_run_ids
+    }
     print(f"{analysis_id} summary (mean ± sample standard deviation; min-max)")
     for atomic_run_id, (metric, performance, training_time) in summaries.items():
         print(f"[{atomic_run_id}]")
+        print(format_parameter_count(parameter_counts[atomic_run_id]))
         print(
             _format_summary(
                 metric.name,
@@ -365,7 +393,7 @@ def render_summary(client, error_style, output, *, analysis_id: str):
             )
         )
     summary_path = output.with_suffix(".csv")
-    _write_summaries(summary_path, summaries)
+    _write_summaries(summary_path, summaries, parameter_counts)
     return [summary_path]
 
 

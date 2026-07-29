@@ -3,11 +3,14 @@ from __future__ import annotations
 import numpy as np
 
 from exp.analyze import RunRef
+from exp.model_parameters import ParameterCount
 from exp.ds2.analyze.final_metrics import (
     FINAL_LOSS,
     FINAL_TEST_ACCURACY,
     FINAL_TEST_PERPLEXITY,
+    MetricSummary,
     _format_summary,
+    _write_summaries,
     summarize_atomic_runs,
 )
 
@@ -131,3 +134,17 @@ def test_terminal_metric_falls_back_to_final_json(tmp_path):
 
     assert performance is not None
     assert performance.mean == 134.5
+
+
+def test_summary_csv_includes_model_parameter_count(tmp_path):
+    output = tmp_path / "summary.csv"
+    summary = MetricSummary(0.25, 0.05, 0.2, 0.3, 2)
+
+    _write_summaries(
+        output,
+        {"MODEL": (FINAL_LOSS, summary, summary)},
+        {"MODEL": ParameterCount(value=1234, run_count=2)},
+    )
+
+    rows = output.read_text(encoding="utf-8").splitlines()
+    assert rows[-1] == "MODEL,parameter_count,2,parameters,1234,,,"
