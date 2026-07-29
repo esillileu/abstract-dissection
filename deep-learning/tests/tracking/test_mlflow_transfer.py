@@ -1,3 +1,4 @@
+import json
 import os
 from pathlib import Path
 
@@ -281,3 +282,87 @@ def test_export_import_experiment_remaps_nested_run_ids(tmp_path: Path) -> None:
     assert [(item.value, item.timestamp, item.step) for item in history] == [
         (42.0, 1_700_000_021_000, 3)
     ]
+
+
+def test_importing_same_archive_twice_reuses_run(tmp_path: Path) -> None:
+    source_uri = _tracking_uri(tmp_path / "source")
+    source_client = MlflowClient(tracking_uri=source_uri)
+    experiment_id = source_client.create_experiment(
+        "idempotent source",
+        artifact_location=_artifact_uri(tmp_path / "source-artifacts"),
+    )
+    source_run_id = _source_run(source_client, experiment_id, tmp_path / "scratch")
+    archive = export_run(source_uri, source_run_id, tmp_path / "run.zip")
+    target_uri = _tracking_uri(tmp_path / "target")
+
+    first = import_archive(
+        target_uri,
+        archive,
+        experiment_name="idempotent target",
+        artifact_location=_artifact_uri(tmp_path / "target-artifacts"),
+        capture_environment=False,
+    )
+    second = import_archive(
+        target_uri,
+        archive,
+        experiment_name="idempotent target",
+        capture_environment=False,
+        reuse_experiment=True,
+    )
+
+    assert second["run_id_map"] == first["run_id_map"]
+    client = MlflowClient(tracking_uri=target_uri)
+    assert len(client.search_runs([first["experiment_id"]])) == 1
+
+
+def test_export_includes_local_only_checkpoint_and_import_verifies_it(
+    tmp_path: Path,
+) -> None:
+    source_uri = _tracking_uri(tmp_path / "source")
+    source_client = MlflowClient(tracking_uri=source_uri)
+    experiment_id = source_client.create_experiment(
+        "checkpoint source",
+        artifact_location=_artifact_uri(tmp_path / "source-artifacts"),
+    )
+    run = source_client.create_run(
+        experiment_id,
+        tags={
+            "run.type": "seed_trial",
+            "run.key": "seed-key",
+            "execution_group.id": "GT07",
+        },
+    )
+    checkpoint = tmp_path / "local-checkpoints" / "generations" / "latest-1"
+    checkpoint.mkdir(parents=True)
+    (checkpoint / "weights.bin").write_bytes(b"checkpoint")
+    digest = transfer._path_digest(checkpoint)
+    manifest_dir = tmp_path / "manifest"
+    manifest_dir.mkdir()
+    manifest = manifest_dir / "checkpoint_manifest.json"
+    manifest.write_text(json.dumps({
+        "format": "v2",
+        "local_root": str(checkpoint.parent.parent),
+        "latest": {"path": str(checkpoint), "digest": digest},
+        "best": None,
+    }), encoding="utf-8")
+    source_client.log_artifact(
+        run.info.run_id, str(manifest), artifact_path="checkpoints"
+    )
+    source_client.set_terminated(run.info.run_id)
+
+    archive = export_run(source_uri, run.info.run_id, tmp_path / "checkpoint.zip")
+    target_uri = _tracking_uri(tmp_path / "target")
+    result = import_archive(
+        target_uri,
+        archive,
+        experiment_name="checkpoint target",
+        artifact_location=_artifact_uri(tmp_path / "target-artifacts"),
+        capture_environment=False,
+    )
+
+    imported = MlflowClient(tracking_uri=target_uri).get_run(
+        result["run_id_map"][run.info.run_id]
+    )
+    assert imported.data.tags["checkpoint.latest.status"] == "present"
+    assert imported.data.tags["checkpoint.latest.sha256"] == digest
+    assert imported.data.tags["checkpoint.best.status"] == "missing"

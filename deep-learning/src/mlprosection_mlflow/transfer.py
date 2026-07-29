@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import platform
 import shutil
@@ -23,7 +24,8 @@ from mlflow.tracking import MlflowClient
 from tqdm.auto import tqdm
 
 FORMAT_NAME = "mlprosection.mlflow-transfer"
-FORMAT_VERSION = 1
+FORMAT_VERSION = 2
+SUPPORTED_FORMAT_VERSIONS = {1, 2}
 PARENT_TAGS = ("mlflow.parentRunId", "parent.mlflow_run_id")
 
 
@@ -104,7 +106,101 @@ def _run_dict(client: MlflowClient, run: Any) -> dict[str, Any]:
         "tags": dict(run.data.tags),
         "metrics": histories,
         "dataset_inputs": dataset_inputs,
+        "checkpoint_inventory": [],
     }
+
+
+def _path_digest(path: Path) -> str:
+    digest = hashlib.sha256()
+    if path.is_file():
+        with path.open("rb") as file:
+            for chunk in iter(lambda: file.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
+    for item in sorted(value for value in path.rglob("*") if value.is_file()):
+        digest.update(item.relative_to(path).as_posix().encode())
+        with item.open("rb") as file:
+            for chunk in iter(lambda: file.read(1024 * 1024), b""):
+                digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _read_json(path: Path) -> dict[str, Any] | None:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return value if isinstance(value, dict) else None
+
+
+def _checkpoint_inventory(run: dict[str, Any], artifact_dir: Path) -> list[dict[str, Any]]:
+    """Materialize remote or local-only checkpoint roles into an archive run."""
+    checkpoint_dir = artifact_dir / "checkpoints"
+    manifest = _read_json(checkpoint_dir / "checkpoint_manifest.json") or {}
+    local_root_value = manifest.get("local_root")
+    local_root = Path(str(local_root_value)) if local_root_value else None
+    not_applicable = (
+        run["tags"].get("run.type") != "seed_trial"
+        or str(run["tags"].get("execution_group.id", "")).upper().startswith("GO")
+    )
+    inventory: list[dict[str, Any]] = []
+    for role in ("latest", "best"):
+        if not_applicable:
+            inventory.append({"role": role, "status": "not_applicable"})
+            continue
+        pointer = _read_json(checkpoint_dir / f"{role}.json")
+        candidate: Path | None = None
+        if pointer and pointer.get("path"):
+            possible = checkpoint_dir / str(pointer["path"])
+            if possible.exists():
+                candidate = possible
+        item = manifest.get(role)
+        if role == "latest" and not item:
+            item = manifest.get("final")
+        if candidate is None and isinstance(item, dict) and item.get("path"):
+            possible = Path(str(item["path"]))
+            if not possible.is_absolute() and local_root is not None:
+                possible = local_root / possible
+            if possible.exists():
+                candidate = possible
+        if candidate is None and role == "latest" and local_root is not None:
+            legacy = local_root / "final.npz"
+            if legacy.exists():
+                candidate = legacy
+        if candidate is None:
+            inventory.append({
+                "role": role,
+                "status": "missing",
+                "reason": "checkpoint absent from MLflow and export machine",
+            })
+            continue
+        digest = _path_digest(candidate)
+        destination = checkpoint_dir / "generations" / candidate.name
+        if candidate.is_dir():
+            if candidate.resolve() != destination.resolve():
+                shutil.copytree(candidate, destination, dirs_exist_ok=True)
+        else:
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            if candidate.resolve() != destination.resolve():
+                shutil.copy2(candidate, destination)
+        relative = destination.relative_to(artifact_dir).as_posix()
+        pointer_path = destination.relative_to(checkpoint_dir).as_posix()
+        (checkpoint_dir / f"{role}.json").write_text(
+            json.dumps({
+                "schema_version": 2,
+                "role": role,
+                "path": pointer_path,
+                "sha256": digest,
+            }, indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
+        inventory.append({
+            "role": role,
+            "status": "present",
+            "artifact_path": relative,
+            "digest": digest,
+        })
+    return inventory
 
 
 def _experiment_dict(experiment: Any) -> dict[str, Any]:
@@ -162,26 +258,15 @@ def _write_archive(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="mlflow-export-") as temp_dir:
         root = Path(temp_dir)
-        manifest = {
-            "format": FORMAT_NAME,
-            "version": FORMAT_VERSION,
-            "kind": kind,
-            "exported_at": datetime.now(timezone.utc).isoformat(),
-            "experiment": _experiment_dict(experiment),
-            "runs": [
-                _run_dict(client, run)
-                for run in tqdm(
-                    runs,
-                    desc="Collecting run data",
-                    unit="run",
-                    disable=None,
-                )
-            ],
-        }
-        (root / "manifest.json").write_text(
-            json.dumps(manifest, ensure_ascii=False, indent=2, allow_nan=True),
-            encoding="utf-8",
-        )
+        run_records = [
+            _run_dict(client, run)
+            for run in tqdm(
+                runs,
+                desc="Collecting run data",
+                unit="run",
+                disable=None,
+            )
+        ]
         with _mlflow_artifact_progress_disabled():
             for run in tqdm(
                 runs,
@@ -192,6 +277,23 @@ def _write_archive(
                 _download_artifacts(
                     client, run.info.run_id, root / "artifacts" / run.info.run_id
                 )
+        for run_record in run_records:
+            run_record["checkpoint_inventory"] = _checkpoint_inventory(
+                run_record,
+                root / "artifacts" / run_record["original_run_id"],
+            )
+        manifest = {
+            "format": FORMAT_NAME,
+            "version": FORMAT_VERSION,
+            "kind": kind,
+            "exported_at": datetime.now(timezone.utc).isoformat(),
+            "experiment": _experiment_dict(experiment),
+            "runs": run_records,
+        }
+        (root / "manifest.json").write_text(
+            json.dumps(manifest, ensure_ascii=False, indent=2, allow_nan=True),
+            encoding="utf-8",
+        )
         archive_files = sorted(path for path in root.rglob("*") if path.is_file())
         with zipfile.ZipFile(
             output_path, mode="w", compression=zipfile.ZIP_DEFLATED, compresslevel=6
@@ -342,22 +444,40 @@ def _restore_run(
     destination_tags: dict[str, str],
 ) -> str:
     info = run["info"]
-    created = client.create_run(
-        experiment_id,
-        start_time=info["start_time"],
-        run_name=info["run_name"],
-    )
-    new_run_id = created.info.run_id
+    existing = _find_existing_run(client, experiment_id, run)
+    if existing is None:
+        created = client.create_run(
+            experiment_id,
+            start_time=info["start_time"],
+            run_name=info["run_name"],
+            tags=_identity_tags(run),
+        )
+        new_run_id = created.info.run_id
+    else:
+        created = existing
+        new_run_id = existing.info.run_id
     run_id_map[run["original_run_id"]] = new_run_id
 
-    params = [Param(key, value) for key, value in run["params"].items()]
+    current = client.get_run(new_run_id)
+    for key, value in run["params"].items():
+        previous = current.data.params.get(key)
+        if previous is not None and previous != value:
+            raise ValueError(
+                f"param conflict for {new_run_id}/{key}: {previous!r} != {value!r}"
+            )
+    params = [
+        Param(key, value)
+        for key, value in run["params"].items()
+        if key not in current.data.params
+    ]
     tags_dict = {**run["tags"], **destination_tags}
+    tags_dict.update(_identity_tags(run))
     for parent_tag in PARENT_TAGS:
         old_parent = tags_dict.get(parent_tag)
         if old_parent in run_id_map:
             tags_dict[parent_tag] = run_id_map[old_parent]
     tags = [RunTag(key, value) for key, value in tags_dict.items()]
-    metrics = [
+    source_metrics = [
         Metric(
             item["key"],
             item["value"],
@@ -369,6 +489,21 @@ def _restore_run(
         )
         for item in run["metrics"]
     ]
+    existing_metric_tuples: dict[tuple[str, int, int], float] = {}
+    for key in current.data.metrics:
+        for metric in client.get_metric_history(new_run_id, key):
+            existing_metric_tuples[(key, metric.step, metric.timestamp)] = metric.value
+    metrics = []
+    for metric in source_metrics:
+        identity = (metric.key, metric.step, metric.timestamp)
+        if identity in existing_metric_tuples:
+            if existing_metric_tuples[identity] != metric.value:
+                raise ValueError(
+                    f"metric conflict for {new_run_id}/{identity}: "
+                    f"{existing_metric_tuples[identity]} != {metric.value}"
+                )
+            continue
+        metrics.append(metric)
 
     for batch in _chunks(params, 100):
         client.log_batch(new_run_id, params=batch)
@@ -378,7 +513,15 @@ def _restore_run(
         client.log_batch(new_run_id, metrics=batch)
 
     dataset_inputs = run.get("dataset_inputs", [])
-    if dataset_inputs:
+    current_inputs = client.get_run(new_run_id).inputs
+    existing_inputs = (
+        []
+        if current_inputs is None
+        else [item.to_dictionary() for item in current_inputs.dataset_inputs]
+    )
+    if existing_inputs and existing_inputs != dataset_inputs:
+        raise ValueError(f"dataset input conflict for {new_run_id}")
+    if dataset_inputs and not existing_inputs:
         from mlflow.entities import Dataset, DatasetInput, InputTag
 
         client.log_inputs(
@@ -395,7 +538,7 @@ def _restore_run(
             ],
         )
     if artifact_dir.is_dir() and any(artifact_dir.iterdir()):
-        client.log_artifacts(new_run_id, str(artifact_dir))
+        _supplement_artifacts(client, new_run_id, artifact_dir)
 
     if info["end_time"] is not None:
         client.set_terminated(
@@ -406,6 +549,101 @@ def _restore_run(
     if info["lifecycle_stage"] == "deleted":
         client.delete_run(new_run_id)
     return new_run_id
+
+
+def _identity_tags(run: dict[str, Any]) -> dict[str, str]:
+    tags = run["tags"]
+    run_type = tags.get("run.type")
+    if run_type == "seed_trial" and tags.get("run.key"):
+        return {"run.key": str(tags["run.key"])}
+    if run_type == "condition_parent" and tags.get("condition.group.key"):
+        return {"condition.group.key": str(tags["condition.group.key"])}
+    return {
+        "transfer.source.run_id": str(run["original_run_id"]),
+        "transfer.source.experiment_id": str(
+            run.get("source_experiment_id", "")
+        ),
+        "transfer.source.experiment_name": str(
+            run.get("source_experiment_name", "")
+        ),
+    }
+
+
+def _find_existing_run(
+    client: MlflowClient,
+    experiment_id: str,
+    run: dict[str, Any],
+):
+    identity = _identity_tags(run)
+    filters = []
+    if "run.key" in identity:
+        filters = [
+            "tags.`run.type` = 'seed_trial'",
+            f"tags.`run.key` = '{identity['run.key']}'",
+        ]
+    elif "condition.group.key" in identity:
+        filters = [
+            "tags.`run.type` = 'condition_parent'",
+            f"tags.`condition.group.key` = '{identity['condition.group.key']}'",
+        ]
+    else:
+        filters = [
+            f"tags.`transfer.source.run_id` = '{identity['transfer.source.run_id']}'",
+            "tags.`transfer.source.experiment_id` = "
+            f"'{identity['transfer.source.experiment_id']}'",
+            "tags.`transfer.source.experiment_name` = "
+            f"'{identity['transfer.source.experiment_name']}'",
+        ]
+    matches = client.search_runs(
+        [experiment_id],
+        filter_string=" AND ".join(filters),
+        run_view_type=ViewType.ALL,
+        order_by=["attributes.start_time DESC"],
+        max_results=2,
+    )
+    if len(matches) > 1:
+        raise ValueError(
+            f"multiple target runs already match import identity: {identity}"
+        )
+    return matches[0] if matches else None
+
+
+def _supplement_artifacts(
+    client: MlflowClient,
+    run_id: str,
+    artifact_dir: Path,
+) -> None:
+    existing = {
+        item.path
+        for item in _walk_artifacts(client, run_id)
+        if not item.is_dir
+    }
+    with tempfile.TemporaryDirectory(prefix="mlflow-artifact-verify-") as temp:
+        for source in sorted(path for path in artifact_dir.rglob("*") if path.is_file()):
+            relative = source.relative_to(artifact_dir).as_posix()
+            if relative in existing:
+                target = Path(client.download_artifacts(run_id, relative, temp))
+                if _path_digest(target) != _path_digest(source):
+                    raise ValueError(
+                        f"artifact digest conflict for {run_id}/{relative}"
+                    )
+                continue
+            parent = source.parent.relative_to(artifact_dir)
+            client.log_artifact(
+                run_id,
+                str(source),
+                artifact_path=None if parent == Path(".") else parent.as_posix(),
+            )
+
+
+def _walk_artifacts(client: MlflowClient, run_id: str):
+    pending = [""]
+    while pending:
+        parent = pending.pop()
+        for item in client.list_artifacts(run_id, parent):
+            yield item
+            if item.is_dir:
+                pending.append(item.path)
 
 
 def import_archive(
@@ -426,7 +664,7 @@ def import_archive(
         manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
         if (
             manifest.get("format") != FORMAT_NAME
-            or manifest.get("version") != FORMAT_VERSION
+            or manifest.get("version") not in SUPPORTED_FORMAT_VERSIONS
         ):
             raise ValueError("unsupported MLflow transfer archive")
 
@@ -464,14 +702,23 @@ def import_archive(
             )
         run_id_map: dict[str, str] = {}
         try:
+            source_identity = str(source_experiment["original_experiment_id"])
+            for run in manifest["runs"]:
+                run["source_experiment_id"] = source_identity
+                run["source_experiment_name"] = str(source_experiment["name"])
             for run in _ordered_runs(manifest["runs"]):
-                _restore_run(
+                target_run_id = _restore_run(
                     client,
                     experiment_id,
                     run,
                     run_id_map,
                     root / "artifacts" / run["original_run_id"],
                     applied_destination_tags,
+                )
+                _verify_checkpoint_inventory(
+                    client,
+                    target_run_id,
+                    run.get("checkpoint_inventory", []),
                 )
             if (
                 source_experiment["lifecycle_stage"] == "deleted"
@@ -487,3 +734,39 @@ def import_archive(
         "reused_experiment": reused_experiment,
         "run_id_map": run_id_map,
     }
+
+
+def _verify_checkpoint_inventory(
+    client: MlflowClient,
+    run_id: str,
+    inventory: Sequence[dict[str, Any]],
+) -> None:
+    for item in inventory:
+        role = str(item.get("role"))
+        status = item.get("status")
+        if status == "missing":
+            client.set_tag(run_id, f"checkpoint.{role}.status", "missing")
+            client.set_tag(
+                run_id,
+                f"checkpoint.{role}.missing_reason",
+                str(item.get("reason", "missing in source archive")),
+            )
+            continue
+        if status == "not_applicable":
+            client.set_tag(run_id, f"checkpoint.{role}.status", "not_applicable")
+            continue
+        if status != "present":
+            raise ValueError(f"invalid checkpoint inventory status: {status!r}")
+        artifact_path = str(item["artifact_path"])
+        with tempfile.TemporaryDirectory(prefix="mlflow-checkpoint-verify-") as temp:
+            downloaded = Path(
+                client.download_artifacts(run_id, artifact_path, temp)
+            )
+            digest = _path_digest(downloaded)
+        if digest != item["digest"]:
+            raise ValueError(
+                f"checkpoint digest mismatch after import for "
+                f"{run_id}/{role}: {digest} != {item['digest']}"
+            )
+        client.set_tag(run_id, f"checkpoint.{role}.status", "present")
+        client.set_tag(run_id, f"checkpoint.{role}.sha256", str(item["digest"]))
