@@ -2,21 +2,11 @@
 
 from __future__ import annotations
 
-from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal
+from typing import Literal
 
-import yaml
-
-
-@dataclass(frozen=True)
-class RunIdentity:
-    experiment_id: str
-    group_id: str
-    protocol: str
-    recipe_id: str
-    structure_signature: str
+from exp.spec import RunIdentity, load_variant, mapping
 
 
 @dataclass(frozen=True)
@@ -126,14 +116,14 @@ def parse_run_spec(
     overrides: dict[str, object] | None = None,
 ) -> RunSpec:
     path = Path(path)
-    raw = _load_variant(path, atomic_run_id=atomic_run_id, overrides=overrides)
+    raw = load_variant(path, atomic_run_id=atomic_run_id, overrides=overrides)
     if raw.get("domain") != "ds2":
         raise ValueError(f"DS2 YAML requires domain: ds2: {path}")
     if raw.get("kind") not in {"word2vec", "language_modeling", "seq2seq", "observation"}:
         raise ValueError(f"DS2 does not support kind: {raw.get('kind')}")
     _reject_old_catalog_keys(raw)
-    run = _mapping(raw, "run")
-    recording = _mapping(raw, "recording")
+    run = mapping(raw, "run")
+    recording = mapping(raw, "recording")
     spec = RunSpec(
         kind=str(raw["kind"]),  # type: ignore[arg-type]
         identity=RunIdentity(
@@ -144,44 +134,25 @@ def parse_run_spec(
             structure_signature=str(run["structure_signature"]),
         ),
         atomic_run_id=str(raw["atomic_run_id"]),
-        seed_policy=_mapping(raw, "seed_policy"),
-        dataset=_mapping(raw, "dataset"),
-        model=_mapping(raw, "model"),
-        optimizer=_mapping(raw, "optimizer"),
-        loader=_mapping(raw, "loader"),
-        budget=_mapping(raw, "budget"),
+        seed_policy=mapping(raw, "seed_policy"),
+        dataset=mapping(raw, "dataset"),
+        model=mapping(raw, "model"),
+        optimizer=mapping(raw, "optimizer"),
+        loader=mapping(raw, "loader"),
+        budget=mapping(raw, "budget"),
         recording=recording,
         source_curve=_source_curve(recording),
         evaluations=_evaluations(recording),
-        checkpoint=_mapping(raw, "checkpoint"),
-        tracking=_mapping(raw, "tracking"),
-        numerics=_mapping(raw, "numerics"),
-        profiling=_mapping(raw, "profiling"),
-        scheduler=_mapping(raw, "scheduler"),
-        objective=_mapping(raw, "objective"),
+        checkpoint=mapping(raw, "checkpoint"),
+        tracking=mapping(raw, "tracking"),
+        numerics=mapping(raw, "numerics"),
+        profiling=mapping(raw, "profiling"),
+        scheduler=mapping(raw, "scheduler"),
+        objective=mapping(raw, "objective"),
         path=path,
     )
     _validate(spec)
     return spec
-
-
-def _load_variant(path: Path, *, atomic_run_id: str | None, overrides: dict[str, object] | None) -> dict[str, object]:
-    value = yaml.safe_load(path.read_text(encoding="utf-8"))
-    if not isinstance(value, dict):
-        raise ValueError(f"invalid YAML object: {path}")
-    variants = value.pop("variants", None)
-    if not isinstance(variants, dict) or not variants:
-        raise ValueError(f"RunSpec YAML needs variants: {path}")
-    if atomic_run_id is None:
-        raise ValueError("this YAML defines variants; choose --atomic-run-id")
-    selected = variants.get(atomic_run_id)
-    if not isinstance(selected, dict):
-        raise ValueError(f"unknown atomic_run_id: {atomic_run_id}")
-    value = _merge(value, selected)
-    value["atomic_run_id"] = atomic_run_id
-    if overrides:
-        value = _merge(value, overrides)
-    return value
 
 
 def _source_curve(recording: dict[str, object]) -> SourceCurveSpec | None:
@@ -237,22 +208,3 @@ def _reject_old_catalog_keys(raw: dict[str, object]) -> None:
             "training/evaluation/policy must be replaced by RunSpec budget/recording/seed_policy fields; "
             f"old catalog keys are not supported: {old_keys}"
         )
-
-
-def _mapping(config: dict[str, object], key: str) -> dict[str, object]:
-    value = config.get(key, {})
-    if value is None:
-        return {}
-    if not isinstance(value, dict):
-        raise ValueError(f"{key} must be a mapping")
-    return dict(value)
-
-
-def _merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, object]:
-    result = deepcopy(base)
-    for key, value in override.items():
-        if isinstance(value, dict) and isinstance(result.get(key), dict):
-            result[key] = _merge(result[key], value)
-        else:
-            result[key] = deepcopy(value)
-    return result

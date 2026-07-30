@@ -46,8 +46,8 @@
 최댓값을 계산한다.
 
 ```bash
-python -m exp ds1 analyze --all --error-style band
-python -m exp ds1 analyze -e 01-07 --error-style errorbar
+python -m exp analyze ds1 --all --error-style band
+python -m exp analyze ds1 -e 01-07 --error-style errorbar
 ```
 
 `-e`는 `01`, `e01`, `01-07`, `01,03,05-07` 형식을 지원한다.
@@ -55,10 +55,10 @@ python -m exp ds1 analyze -e 01-07 --error-style errorbar
 특정 완료 seed만 그리려면 MLflow의 실제 `seed/master` 값을 지정한다.
 
 ```bash
-python -m exp ds1 analyze -e 06 --seed 1
+python -m exp analyze ds1 -e 06 --seed 1
 ```
 
-이때 출력 이름에는 `_seed-1`이 붙어 전체-seed 집계 그래프를 덮어쓰지 않는다.
+이때 출력 이름에는 `_seed-1`이 붙어 전체 seed 집계 그래프를 덮어쓰지 않는다.
 
 - `--error-style band`: 평균선 주변 ±1 표본 표준편차 반투명 영역
 - `--error-style errorbar`: 평균선 위 min–max error bar
@@ -107,7 +107,7 @@ summary CSV 이름은 `e06_summary.csv`, `e07_summary.csv`,
 원본 코드의 고정 seed 실행 캐시만 요약하려면 `--original`을 함께 사용한다.
 
 ```bash
-python -m exp ds1 analyze --original -e 01-07 -s
+python -m exp analyze ds1 --original -e 01-07 -s
 ```
 
 이 경로는 MLflow 재현 run을 조회하지 않고

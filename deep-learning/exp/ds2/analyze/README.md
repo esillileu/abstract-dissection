@@ -51,8 +51,8 @@
 집계한다. 공통 x축의 평균과 최솟값, 최댓값으로 원본 그래프를 복원한다.
 
 ```bash
-python -m exp ds2 analyze --all --error-style band
-python -m exp ds2 analyze -e 01-08 --error-style errorbar
+python -m exp analyze ds2 --all --error-style band
+python -m exp analyze ds2 -e 01-08 --error-style errorbar
 ```
 
 `-e`는 `01`, `e01`, `01-08`, `01,03,06-08` 형식을 지원한다.
@@ -81,7 +81,7 @@ E08은 checkpoint를 읽어 attention alignment를 관찰하는 실행이며 자
 원본 코드의 고정 seed 실행 캐시만 요약하려면 `--original`을 함께 사용한다.
 
 ```bash
-python -m exp ds2 analyze --original -e 01-04,06-07 -s
+python -m exp analyze ds2 --original -e 01-04,06-07 -s
 ```
 
 이 경로는 MLflow 재현 run을 조회하지 않고

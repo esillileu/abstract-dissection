@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import argparse
 import sys
 from pathlib import Path
 
@@ -54,37 +53,38 @@ def _save_result(result, output):
     return [output, output.with_suffix(".csv")]
 
 
-def main(argv: list[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--experiment", "-e", action="append", default=[])
-    parser.add_argument("--tracking-uri", default=tracking_uri_default())
-    parser.add_argument("--error-style", choices=("band", "errorbar"), default="band")
-    parser.add_argument("--output-dir", type=Path, default=IMAGE_ROOT)
-    parser.add_argument("--seed", type=int, help="actual MLflow seed/master value")
-    parser.add_argument(
-        "-s",
-        "--summary",
-        action="store_true",
-        help="print final metric and training-time summaries instead of rendering figures",
-    )
-    args = parser.parse_args(argv)
-    renderers = SUMMARY_RENDERERS if args.summary else RENDERERS
-    try:
-        selected, skipped = parse_experiment_selection(args.experiment, renderers)
-    except ValueError as exc:
-        parser.error(str(exc))
+def analyze(
+    *,
+    experiments: list[str],
+    tracking_uri: str | None,
+    error_style: str,
+    output_dir: Path | None,
+    seed: int | None,
+    summary: bool,
+) -> None:
+    if error_style not in {"band", "errorbar"}:
+        raise ValueError(f"unsupported error style: {error_style}")
+    renderers = SUMMARY_RENDERERS if summary else RENDERERS
+    selected, skipped = parse_experiment_selection(experiments, renderers)
     if skipped:
         print(f"skipping unsupported or extension analyses: {', '.join(skipped)}", file=sys.stderr)
     if not selected:
-        parser.error("selection contains no supported analyses")
-    client = AnalysisClient(mlflow_client(args.tracking_uri), seed=args.seed)
+        raise ValueError("selection contains no supported analyses")
+    client = AnalysisClient(
+        mlflow_client(tracking_uri or tracking_uri_default()), seed=seed
+    )
+    root = output_dir or IMAGE_ROOT
     outputs = []
     for experiment in selected:
-        seed_suffix = "" if args.seed is None else f"_seed-{args.seed}"
-        if args.summary:
-            output = args.output_dir / f"{experiment}_summary{seed_suffix}.csv"
+        seed_suffix = "" if seed is None else f"_seed-{seed}"
+        if summary:
+            output = root / f"{experiment}_summary{seed_suffix}.csv"
         else:
-            output = args.output_dir / f"{experiment}_{args.error_style}{seed_suffix}.png"
-        outputs.extend(_save_result(renderers[experiment](client, args.error_style, output), output))
+            output = root / f"{experiment}_{error_style}{seed_suffix}.png"
+        outputs.extend(
+            _save_result(
+                renderers[experiment](client, error_style, output), output
+            )
+        )
     for path in outputs:
         print(path)

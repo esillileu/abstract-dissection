@@ -8,7 +8,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from exp.cli import main
+from exp.cli import app
+from typer.testing import CliRunner
 from exp.original.cache import (
     SCHEMA_VERSION,
     cache_is_valid,
@@ -17,6 +18,8 @@ from exp.original.cache import (
     save_npz,
     staging_directory,
 )
+
+runner = CliRunner()
 
 
 def _publish(target: Path, *, value: str = "one") -> None:
@@ -79,15 +82,16 @@ def test_original_run_defaults_to_all_registered_experiments(
 
     def fake_run(domain, experiments, *, force, output_dir):
         captured.update(
-            domain=domain,
+            domain=domain.name,
             experiments=experiments,
             force=force,
             output_dir=output_dir,
         )
 
-    monkeypatch.setattr("exp.original.dispatch.run_original", fake_run)
-    main(["ds1", "run", "-o"])
+    monkeypatch.setattr("exp.commands.run_original", fake_run)
+    result = runner.invoke(app, ["run", "ds1", "-o"])
 
+    assert result.exit_code == 0
     assert captured["domain"] == "ds1"
     assert captured["experiments"] == [
         "e01",
@@ -111,9 +115,12 @@ def test_original_partial_selection_and_force(
     def fake_run(domain, experiments, *, force, output_dir):
         captured.update(experiments=experiments, force=force)
 
-    monkeypatch.setattr("exp.original.dispatch.run_original", fake_run)
-    main(["ds2", "run", "-o", "-e", "02,08", "--force"])
+    monkeypatch.setattr("exp.commands.run_original", fake_run)
+    result = runner.invoke(
+        app, ["run", "ds2", "-o", "-e", "02,08", "--force"]
+    )
 
+    assert result.exit_code == 0
     assert captured == {"experiments": ["e02", "e08"], "force": True}
 
 
@@ -124,17 +131,20 @@ def test_original_summary_dispatches_to_fixed_seed_cache(
 
     def fake_summary(domain, experiments, *, output_dir):
         captured.update(
-            domain=domain,
+            domain=domain.name,
             experiments=experiments,
             output_dir=output_dir,
         )
 
     monkeypatch.setattr(
-        "exp.original.dispatch.summarize_original",
+        "exp.commands.summarize_original",
         fake_summary,
     )
-    main(["ds1", "analyze", "--original", "-e", "01,07", "-s"])
+    result = runner.invoke(
+        app, ["analyze", "ds1", "--original", "-e", "01,07", "-s"]
+    )
 
+    assert result.exit_code == 0
     assert captured == {
         "domain": "ds1",
         "experiments": ["e01", "e07"],
@@ -210,18 +220,19 @@ def test_ds2_original_summary_reads_only_original_cache(
 def test_original_rejects_experiments_without_source_figures(
     domain: str,
     experiment: str,
-    capsys: pytest.CaptureFixture[str],
 ) -> None:
-    with pytest.raises(SystemExit):
-        main([domain, "run", "-o", "-e", experiment, "--dry-run"])
-    assert "no registered original trials" in capsys.readouterr().err
+    result = runner.invoke(
+        app, ["run", domain, "-o", "-e", experiment, "--dry-run"]
+    )
+    assert result.exit_code != 0
+    assert "no registered original trials" in result.output
 
 
 @pytest.mark.parametrize(
     "arguments,message",
     [
         (["--seed-set", "research_v1"], "--seed-set"),
-        (["--seed", "2"], "fixed seed 1"),
+        (["--seed", "2"], "--seed"),
         (["--atomic-run", "ANY"], "atomic-run"),
         (["--set", "budget.max_epochs=1"], "YAML overrides"),
     ],
@@ -229,19 +240,19 @@ def test_original_rejects_experiments_without_source_figures(
 def test_original_rejects_conflicting_options(
     arguments: list[str],
     message: str,
-    capsys: pytest.CaptureFixture[str],
 ) -> None:
-    with pytest.raises(SystemExit):
-        main(["ds1", "run", "-o", *arguments])
-    assert message in capsys.readouterr().err
+    result = runner.invoke(app, ["run", "ds1", "-o", *arguments])
+    assert result.exit_code != 0
+    assert message in result.output
 
 
 def test_original_summary_rejects_observation_without_final_metric(
-    capsys: pytest.CaptureFixture[str],
 ) -> None:
-    with pytest.raises(SystemExit):
-        main(["ds2", "analyze", "--original", "-e", "08", "-s"])
-    assert "no original summary" in capsys.readouterr().err
+    result = runner.invoke(
+        app, ["analyze", "ds2", "--original", "-e", "08", "-s"]
+    )
+    assert result.exit_code != 0
+    assert "no original summary" in result.output
 
 
 def test_ds1_renderer_uses_only_persisted_fixture(

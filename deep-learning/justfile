@@ -1,5 +1,5 @@
-exp domain command *args:
-    MLFLOW_SUPPRESS_PRINTING_URL_TO_STDOUT=true uv run python -m exp {{domain}} {{command}} {{args}}
+exp *args:
+    MLFLOW_SUPPRESS_PRINTING_URL_TO_STDOUT=true uv run python -m exp {{args}}
 
 mlflow *args:
     uv run python infra/mlflow/transfer.py {{args}}
