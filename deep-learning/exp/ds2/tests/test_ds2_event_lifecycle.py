@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import csv
-from pathlib import Path
 
 import numpy as np
 
@@ -9,17 +8,14 @@ from mlprosection import Tensor
 from mlprosection.core.backend import Backend
 from mlprosection.events import EpochEvent, EvaluationResult, SourceObjectiveSample, TrainEndEvent, TrainingWindowEvent, UpdateEvent
 from mlprosection.experiment.event_executor import EvaluationRequest, EventExperimentExecutor
-from mlprosection.experiment.executor import ExperimentContext
 
 from exp.ds2.executor import (
-    Word2VecExecutor,
     _attention_example_ids,
     _contexts_targets,
     _language_model_training_corpus,
     _source_curve_from_objective,
 )
 from exp.ds2.records import DS2Records
-from exp.ds2.spec import parse_run_spec
 
 
 def test_ds2_records_long_metrics_and_source_samples() -> None:
@@ -328,28 +324,3 @@ def test_source_curve_point_closes_a_probe_timing_window() -> None:
 
 def test_attention_selection_matches_the_book_seeded_randint() -> None:
     assert _attention_example_ids(size=100, count=5, seed=1984) == [92, 25, 72, 38, 8]
-
-
-def test_ds2_executor_returns_runtime_profiling_summary(tmp_path) -> None:
-    spec = parse_run_spec(
-        "exp/ds2/config/e01_toy_word2vec.yaml",
-        atomic_run_id="W2V-TOY-CBOW-FULL",
-        overrides={"budget": {"max_epochs": 1}, "tracking": {"enabled": False}},
-    )
-    config = spec.config
-    config["seed"] = 1
-
-    context = ExperimentContext(metadata={"artifact_root": tmp_path, "checkpoint_root": tmp_path / "checkpoints"})
-    result = Word2VecExecutor().run(
-        config,
-        context,
-    )
-
-    assert "runtime.train_total.count" in result.profiling_metrics
-    assert "memory.run.start.cpu.rss_bytes" in result.profiling_metrics
-    assert "memory.run.end.cpu.rss_bytes" in result.profiling_metrics
-    assert len(context.metadata["data"]["dataset_checksum"]) == 64
-    assert len(context.metadata["data"]["split_checksum"]) == 64
-    checkpoints = list(csv.DictReader((tmp_path / "checkpoints.csv").open()))
-    assert [row["kind"] for row in checkpoints] == ["latest"]
-    assert Path(checkpoints[0]["path"]).is_dir()

@@ -38,6 +38,7 @@ from . import (
     e10_activation,
     e11_cnn_filters,
 )
+from .generic_summary import SUMMARY_RENDERERS as GENERIC_SUMMARY_RENDERERS
 
 
 IMAGE_ROOT = Path("exp/ds1/results/image")
@@ -55,11 +56,28 @@ RENDERERS = {
     "e11": e11_cnn_filters.render,
 }
 SUMMARY_RENDERERS = {
+    **GENERIC_SUMMARY_RENDERERS,
     "e06": e06_summary.render,
     "e07": e07_summary.render,
     "e08": e08_summary.render,
+    "e11": e11_cnn_filters.render_summary,
 }
 SUMMARY_MODELS = {
+    "e01": (
+        "GT01",
+        ("MLP-OPT-SGD", "MLP-OPT-MOMENTUM", "MLP-OPT-ADAGRAD", "MLP-OPT-ADAM"),
+    ),
+    "e02": ("GT02", ("MLP-INIT-STD001", "MLP-INIT-XAVIER", "MLP-INIT-HE")),
+    "e03": ("GT03", ("REG-WD-OFF", "REG-WD-01")),
+    "e04": ("GT04", ("REG-DROPOUT-OFF", "REG-DROPOUT-ON-02")),
+    "e05": (
+        "GT05",
+        tuple(
+            f"BN-SCALE-{index:02d}-{state}"
+            for index in range(1, 17)
+            for state in ("ON", "OFF")
+        ),
+    ),
     "e06": ("GT06", e06_summary.ATOMIC_RUN_IDS),
     "e07": ("GT07", [e07_summary.ATOMIC_RUN_ID]),
     "e08": ("GT08", e08_summary.ATOMIC_RUN_IDS),
@@ -91,7 +109,10 @@ def analyze(
     renderers = SUMMARY_RENDERERS if summary else RENDERERS
     selected, skipped = parse_experiment_selection(experiments, renderers)
     if skipped:
-        print(f"skipping unsupported or extension analyses: {', '.join(skipped)}", file=sys.stderr)
+        print(
+            f"skipping unsupported or extension analyses: {', '.join(skipped)}",
+            file=sys.stderr,
+        )
     if not selected:
         raise ValueError("selection contains no supported analyses")
     client = AnalysisClient(
@@ -107,11 +128,9 @@ def analyze(
         else:
             output = root / f"{output_id}_{error_style}{seed_suffix}.png"
         outputs.extend(
-            _save_result(
-                renderers[experiment](client, error_style, output), output
-            )
+            _save_result(renderers[experiment](client, error_style, output), output)
         )
-        if summary:
+        if summary and experiment in SUMMARY_MODELS:
             group_id, atomic_run_ids = SUMMARY_MODELS[experiment]
             grouped_runs = completed_seed_runs(
                 client,

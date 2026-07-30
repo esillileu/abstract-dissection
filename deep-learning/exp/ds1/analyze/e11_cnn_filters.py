@@ -44,8 +44,7 @@ SUMMARY_FIELDS = (
 
 def _natural_key(value: str) -> tuple[object, ...]:
     return tuple(
-        int(part) if part.isdigit() else part
-        for part in re.split(r"(\d+)", value)
+        int(part) if part.isdigit() else part for part in re.split(r"(\d+)", value)
     )
 
 
@@ -85,7 +84,9 @@ def _tiled_array(images: np.ndarray, *, maximum_columns: int = 8) -> np.ndarray:
 def _filter_mosaic(weights: np.ndarray) -> np.ndarray:
     """Make one tile per output filter, retaining every input-channel kernel."""
     if weights.ndim != 4:
-        raise ValueError(f"convolution weights must be four-dimensional, got {weights.shape}")
+        raise ValueError(
+            f"convolution weights must be four-dimensional, got {weights.shape}"
+        )
     filter_tiles = np.asarray(
         [_tiled_array(output_filter) for output_filter in weights],
         dtype=float,
@@ -207,8 +208,12 @@ def _visualization_runs(run_refs):
     return [run for run in run_refs if run.seed == VISUALIZATION_SEED]
 
 
-def render(client, error_style, output):
-    del error_style
+def _collect(
+    client, *, image: str
+) -> tuple[
+    list[tuple[str, str, np.ndarray]],
+    list[dict[str, object]],
+]:
     panels: list[tuple[str, str, np.ndarray]] = []
     summary_rows: list[dict[str, object]] = []
     for group, condition in RUN_GROUPS:
@@ -243,10 +248,15 @@ def render(client, error_style, output):
                     "weight_max": float(weights.max()),
                     "weight_mean": float(weights.mean()),
                     "weight_std": float(weights.std()),
-                    "image": output.as_posix(),
+                    "image": image,
                 }
             )
+    return panels, summary_rows
 
+
+def render(client, error_style, output):
+    del error_style
+    panels, summary_rows = _collect(client, image=output.as_posix())
     if panels:
         _render_comparison(panels, output=output)
     else:
@@ -258,3 +268,20 @@ def render(client, error_style, output):
     summary = output.with_suffix(".csv")
     _write_summary(summary, summary_rows)
     return [output, summary]
+
+
+def render_summary(client, error_style, output):
+    """Write final-checkpoint filter statistics without rendering an image."""
+    del error_style
+    _panels, summary_rows = _collect(client, image="")
+    summary = output.with_suffix(".csv")
+    _write_summary(summary, summary_rows)
+    for row in summary_rows:
+        print(
+            f"[{row['condition']}] {row['parameter']} {row['shape']}: "
+            f"mean={float(row['weight_mean']):.4f}, "
+            f"std={float(row['weight_std']):.4f}, "
+            f"min={float(row['weight_min']):.4f}, "
+            f"max={float(row['weight_max']):.4f}"
+        )
+    return [summary]
