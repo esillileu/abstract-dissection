@@ -284,6 +284,149 @@ def test_export_import_experiment_remaps_nested_run_ids(tmp_path: Path) -> None:
     ]
 
 
+def test_export_run_includes_non_finished_parent_dependency(
+    tmp_path: Path,
+) -> None:
+    source_uri = _tracking_uri(tmp_path / "source")
+    source_client = MlflowClient(tracking_uri=source_uri)
+    experiment_id = source_client.create_experiment(
+        "single child source",
+        artifact_location=_artifact_uri(tmp_path / "source-artifacts"),
+    )
+    parent = source_client.create_run(
+        experiment_id,
+        tags={
+            "run.type": "condition_parent",
+            "condition.group.key": "group",
+        },
+    )
+    child = source_client.create_run(
+        experiment_id,
+        tags={
+            "run.type": "seed_trial",
+            "run.key": "seed",
+            "condition.group.key": "group",
+            "mlflow.parentRunId": parent.info.run_id,
+            "parent.mlflow_run_id": parent.info.run_id,
+        },
+    )
+    source_client.set_terminated(child.info.run_id)
+
+    archive = export_run(source_uri, child.info.run_id, tmp_path / "child.zip")
+    result = import_archive(
+        _tracking_uri(tmp_path / "target"),
+        archive,
+        capture_environment=False,
+    )
+
+    assert set(result["run_id_map"]) == {
+        parent.info.run_id,
+        child.info.run_id,
+    }
+    target_client = MlflowClient(tracking_uri=_tracking_uri(tmp_path / "target"))
+    imported_child = target_client.get_run(result["run_id_map"][child.info.run_id])
+    assert imported_child.data.tags["mlflow.parentRunId"] == result["run_id_map"][
+        parent.info.run_id
+    ]
+
+
+def test_importing_parent_relinks_existing_children_in_reused_experiment(
+    tmp_path: Path,
+) -> None:
+    source_uri = _tracking_uri(tmp_path / "source")
+    source_client = MlflowClient(tracking_uri=source_uri)
+    source_experiment_id = source_client.create_experiment("source")
+    source_parent = source_client.create_run(
+        source_experiment_id,
+        tags={
+            "run.type": "condition_parent",
+            "condition.group.key": "group",
+        },
+    )
+    source_client.set_terminated(source_parent.info.run_id)
+    archive = export_run(
+        source_uri,
+        source_parent.info.run_id,
+        tmp_path / "parent.zip",
+    )
+
+    target_uri = _tracking_uri(tmp_path / "target")
+    target_client = MlflowClient(tracking_uri=target_uri)
+    target_experiment_id = target_client.create_experiment("target")
+    child = target_client.create_run(
+        target_experiment_id,
+        tags={
+            "run.type": "seed_trial",
+            "run.key": "seed",
+            "condition.group.key": "group",
+            "mlflow.parentRunId": "source-only-parent",
+            "parent.mlflow_run_id": "source-only-parent",
+        },
+    )
+
+    result = import_archive(
+        target_uri,
+        archive,
+        experiment_name="target",
+        capture_environment=False,
+        reuse_experiment=True,
+    )
+
+    imported_parent_id = result["run_id_map"][source_parent.info.run_id]
+    tags = target_client.get_run(child.info.run_id).data.tags
+    assert tags["mlflow.parentRunId"] == imported_parent_id
+    assert tags["parent.mlflow_run_id"] == imported_parent_id
+    assert result["relationship_repairs"][0]["run_id"] == child.info.run_id
+
+
+def test_import_restores_reused_target_when_source_run_is_active(
+    tmp_path: Path,
+) -> None:
+    source_uri = _tracking_uri(tmp_path / "source")
+    source_client = MlflowClient(tracking_uri=source_uri)
+    source_experiment_id = source_client.create_experiment("source")
+    source_parent = source_client.create_run(
+        source_experiment_id,
+        tags={
+            "run.type": "condition_parent",
+            "condition.group.key": "group",
+        },
+    )
+    source_client.set_terminated(source_parent.info.run_id)
+    archive = export_run(
+        source_uri,
+        source_parent.info.run_id,
+        tmp_path / "parent.zip",
+    )
+
+    target_uri = _tracking_uri(tmp_path / "target")
+    target_client = MlflowClient(tracking_uri=target_uri)
+    target_experiment_id = target_client.create_experiment("target")
+    deleted_parent = target_client.create_run(
+        target_experiment_id,
+        tags={
+            "run.type": "condition_parent",
+            "condition.group.key": "group",
+        },
+    )
+    target_client.delete_run(deleted_parent.info.run_id)
+
+    result = import_archive(
+        target_uri,
+        archive,
+        experiment_name="target",
+        capture_environment=False,
+        reuse_experiment=True,
+    )
+
+    assert result["run_id_map"][source_parent.info.run_id] == (
+        deleted_parent.info.run_id
+    )
+    assert target_client.get_run(
+        deleted_parent.info.run_id
+    ).info.lifecycle_stage == "active"
+
+
 def test_importing_same_archive_twice_reuses_run(tmp_path: Path) -> None:
     source_uri = _tracking_uri(tmp_path / "source")
     source_client = MlflowClient(tracking_uri=source_uri)

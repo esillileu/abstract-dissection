@@ -23,10 +23,11 @@ from mlflow.entities import Metric, Param, RunTag, ViewType
 from mlflow.tracking import MlflowClient
 from tqdm.auto import tqdm
 
+from .run_relationships import PARENT_TAGS, reconcile_parent_links
+
 FORMAT_NAME = "mlprosection.mlflow-transfer"
 FORMAT_VERSION = 2
 SUPPORTED_FORMAT_VERSIONS = {1, 2}
-PARENT_TAGS = ("mlflow.parentRunId", "parent.mlflow_run_id")
 
 
 def _chunks(values: Sequence[Any], size: int) -> Iterable[Sequence[Any]]:
@@ -67,6 +68,30 @@ def _finished_runs(client: MlflowClient, experiment_id: str) -> list[Any]:
             page_token = page.token
             if not page_token:
                 return runs
+
+
+def _with_parent_dependencies(
+    client: MlflowClient,
+    runs: Sequence[Any],
+) -> list[Any]:
+    """Include every available parent referenced by the selected runs."""
+    selected = {run.info.run_id: run for run in runs}
+    pending = list(runs)
+    while pending:
+        run = pending.pop()
+        parent_id = run.data.tags.get("mlflow.parentRunId")
+        if not parent_id or parent_id in selected:
+            continue
+        try:
+            parent = client.get_run(parent_id)
+        except Exception:
+            # Preserve exportability of legacy runs with already-dangling tags.
+            continue
+        if parent.info.experiment_id != run.info.experiment_id:
+            continue
+        selected[parent.info.run_id] = parent
+        pending.append(parent)
+    return list(selected.values())
 
 
 def _metric_dict(metric: Metric) -> dict[str, Any]:
@@ -314,7 +339,13 @@ def export_run(
     client = MlflowClient(tracking_uri=tracking_uri)
     run = client.get_run(run_id)
     experiment = client.get_experiment(run.info.experiment_id)
-    return _write_archive(client, experiment, [run], "run", output)
+    return _write_archive(
+        client,
+        experiment,
+        _with_parent_dependencies(client, [run]),
+        "run",
+        output,
+    )
 
 
 def export_experiment(
@@ -325,7 +356,10 @@ def export_experiment(
     return _write_archive(
         client,
         source_experiment,
-        _finished_runs(client, source_experiment.experiment_id),
+        _with_parent_dependencies(
+            client,
+            _finished_runs(client, source_experiment.experiment_id),
+        ),
         "experiment",
         output,
     )
@@ -456,6 +490,11 @@ def _restore_run(
     else:
         created = existing
         new_run_id = existing.info.run_id
+        if existing.info.lifecycle_stage == "deleted":
+            # MLflow rejects metadata and artifact writes to deleted runs.
+            # Restore temporarily; the source lifecycle is reapplied below.
+            client.restore_run(new_run_id)
+            created = client.get_run(new_run_id)
     run_id_map[run["original_run_id"]] = new_run_id
 
     current = client.get_run(new_run_id)
@@ -701,6 +740,7 @@ def import_archive(
                 tags={**source_experiment["tags"], **applied_destination_tags},
             )
         run_id_map: dict[str, str] = {}
+        relationship_entries: list[dict[str, Any]] = []
         try:
             source_identity = str(source_experiment["original_experiment_id"])
             for run in manifest["runs"]:
@@ -720,6 +760,17 @@ def import_archive(
                     target_run_id,
                     run.get("checkpoint_inventory", []),
                 )
+            touched_group_keys = {
+                str(run["tags"]["condition.group.key"])
+                for run in manifest["runs"]
+                if run["tags"].get("condition.group.key")
+            }
+            relationship_entries = reconcile_parent_links(
+                client,
+                experiment_id,
+                group_keys=touched_group_keys,
+                apply=True,
+            )
             if (
                 source_experiment["lifecycle_stage"] == "deleted"
                 and not reused_experiment
@@ -733,6 +784,7 @@ def import_archive(
         "experiment_name": target_name,
         "reused_experiment": reused_experiment,
         "run_id_map": run_id_map,
+        "relationship_repairs": relationship_entries,
     }
 
 

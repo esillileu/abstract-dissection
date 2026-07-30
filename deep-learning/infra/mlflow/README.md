@@ -33,7 +33,9 @@ local MLflow history and artifacts.
 archive. It preserves the complete metric history (value, timestamp, and step),
 parameters, tags, run name/status/start/end times, dataset inputs, experiment
 tags, and artifacts. Run and experiment IDs and target artifact URIs are newly
-generated. Parent-run tags are remapped when an entire experiment is imported.
+generated. Parent-run tags are remapped on import. Exports include referenced
+parent runs even when a parent is not `FINISHED`, and importing a parent also
+relinks existing children with the same unique `condition.group.key`.
 An experiment export includes only runs whose status is `FINISHED`; exporting
 one explicitly selected run is allowed regardless of its status.
 
@@ -102,6 +104,8 @@ just mlflow dedupe ds2
 just mlflow dedupe ds2 --apply --purge-artifacts
 just mlflow checkpoint-prune ds1 ds2
 just mlflow checkpoint-prune ds1 ds2 --apply
+just mlflow relink-parents ds1 ds2
+just mlflow relink-parents ds1 ds2 --apply
 ```
 
 Use the fixed order: canonical selection/backfill, digest verification,
@@ -109,3 +113,10 @@ deduplication, then pruning. `checkpoint-prune` directly removes artifacts only
 inside the trusted self-hosted root `infra/mlflow/data/artifacts`; use
 `--artifact-root` to declare another trusted root. A `file:` artifact URI
 outside that root is rejected.
+
+`relink-parents` audits seed trials against the active condition parent selected
+by `condition.group.key`. It updates both `mlflow.parentRunId` and the repository
+compatibility tag `parent.mlflow_run_id` only when exactly one parent matches.
+If every child in a group points to the same soft-deleted matching parent and no
+active parent exists, that parent is restored. Missing and ambiguous parents
+remain unchanged and are recorded in the report.

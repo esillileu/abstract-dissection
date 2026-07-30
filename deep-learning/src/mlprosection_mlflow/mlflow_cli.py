@@ -20,6 +20,7 @@ from .checkpoint_maintenance import (
     dedupe as dedupe_runs,
     write_report,
 )
+from .run_relationships import relink_parents
 
 DEFAULT_TRACKING_URI = "http://127.0.0.1:5000"
 DEFAULT_EXPORT_DIRECTORY = Path("infra/mlflow/exports")
@@ -293,6 +294,27 @@ def dedupe_command(
         apply=apply,
         purge_artifacts=purge_artifacts,
         artifact_root=artifact_root,
+    )
+    path = write_report(report)
+    typer.echo(_maintenance_output(report, path))
+
+
+@app.command("relink-parents")
+def relink_parents_command(
+    experiments: Annotated[
+        list[str], typer.Argument(help="Experiment names, for example ds1 ds2.")
+    ],
+    apply: Annotated[
+        bool,
+        typer.Option("--apply", help="Update parent tags; default is dry-run."),
+    ] = False,
+    tracking_uri: Annotated[str | None, typer.Option("--tracking-uri")] = None,
+) -> None:
+    """Repair seed trials that point at an absent or incorrect parent."""
+    report = relink_parents(
+        tracking_uri or _tracking_uri(),
+        experiments,
+        apply=apply,
     )
     path = write_report(report)
     typer.echo(_maintenance_output(report, path))
