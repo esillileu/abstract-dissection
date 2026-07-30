@@ -26,12 +26,12 @@ training_time (s): 41082.8 ± 1200.6, [39685.3, 42606.4], n=5
 `e02_summary.csv`의 training-time 행과 같은 열 및 표시 정밀도를 사용한다.
 여기서 `seed_runs`는 외삽에 사용한 benchmark 반복 수다.
 
-| series | metric | seed_runs | unit | mean | standard_deviation | minimum | maximum |
-|---|---|---:|---|---:|---:|---:|---:|
-| W2V-PTB-CBOW-NS | training_time_s | 5 | seconds | 4070.5 | 576.5 | 3561.5 | 4781.8 |
-| W2V-PTB-SKIPGRAM-NS | training_time_s | 5 | seconds | 6676.0 | 296.8 | 6233.9 | 7043.5 |
-| W2V-PTB-CBOW-FULL | training_time_s | 5 | seconds | 8126.3 | 1288.0 | 6663.1 | 9617.2 |
-| W2V-PTB-SKIPGRAM-FULL | training_time_s | 5 | seconds | 41082.8 | 1200.6 | 39685.3 | 42606.4 |
+| series                | metric          | seed_runs | unit    |    mean | standard_deviation | minimum | maximum |
+| --------------------- | --------------- | --------: | ------- | ------: | -----------------: | ------: | ------: |
+| W2V-PTB-CBOW-NS       | training_time_s |         5 | seconds |  4070.5 |              576.5 |  3561.5 |  4781.8 |
+| W2V-PTB-SKIPGRAM-NS   | training_time_s |         5 | seconds |  6676.0 |              296.8 |  6233.9 |  7043.5 |
+| W2V-PTB-CBOW-FULL     | training_time_s |         5 | seconds |  8126.3 |             1288.0 |  6663.1 |  9617.2 |
+| W2V-PTB-SKIPGRAM-FULL | training_time_s |         5 | seconds | 41082.8 |             1200.6 | 39685.3 | 42606.4 |
 
 ## 측정 조건
 
