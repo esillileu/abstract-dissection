@@ -1,4 +1,4 @@
-"""Render the four original addition Seq2seq condition figures."""
+"""Render the four original addition Seq2seq conditions in one figure."""
 
 from pathlib import Path
 
@@ -12,22 +12,28 @@ SUFFIXES = (
     "peeky-seq2seq-reverse",
 )
 TRIAL_IDS = tuple(f"dlfs2.ch07.addition.{suffix}" for suffix in SUFFIXES)
+LABELS = (
+    "vanilla / forward",
+    "vanilla / reverse",
+    "peeky / forward",
+    "peeky / reverse",
+)
 
 
 def render(root: Path, image_dir: Path) -> list[Path]:
-    outputs = []
-    for trial_id, suffix in zip(TRIAL_IDS, SUFFIXES, strict=True):
+    for trial_id, label in zip(TRIAL_IDS, LABELS, strict=True):
         rows = load_csv(trial(root, "e06", trial_id) / "metrics.csv")
         plt.plot(
             np.arange(len(rows)),
             [float(row["accuracy"]) for row in rows],
             marker="o",
+            label=label,
         )
-        plt.xlabel("epochs")
-        plt.ylabel("accuracy")
-        plt.ylim(0, 1.0)
-        plt.title("Original Addition Seq2seq")
-        path = image_dir / f"e06_{suffix}.png"
-        save(path)
-        outputs.append(path)
-    return outputs
+    plt.xlabel("epochs")
+    plt.ylabel("accuracy")
+    plt.ylim(0, 1.0)
+    plt.title("Original Addition Seq2seq")
+    plt.legend()
+    path = image_dir / "e06_addition_seq2seq.png"
+    save(path)
+    return [path]
