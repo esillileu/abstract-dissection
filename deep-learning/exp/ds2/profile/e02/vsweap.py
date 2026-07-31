@@ -38,9 +38,11 @@ DEFAULT_VOCAB_SIZES = (
 )
 DEFAULT_CPU_VOCAB_SIZES = (
     1_000,
-    2_500,
+    2_000,
     5_000,
     10_000,
+    20_000,
+    50_000,
 )
 CONDITIONS = (
     "implemented-cbow-ns",

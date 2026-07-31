@@ -22,7 +22,14 @@ runner = CliRunner()
 
 
 def test_vocab_sweep_uses_device_specific_defaults() -> None:
-    assert _default_vocab_sizes("cpu") == (1_000, 2_500, 5_000, 10_000)
+    assert _default_vocab_sizes("cpu") == (
+        1_000,
+        2_000,
+        5_000,
+        10_000,
+        20_000,
+        50_000,
+    )
     assert _default_vocab_sizes("cpu:0") == DEFAULT_CPU_VOCAB_SIZES
     assert _default_vocab_sizes("cuda:0") == DEFAULT_VOCAB_SIZES
 
