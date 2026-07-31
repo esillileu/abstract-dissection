@@ -153,7 +153,8 @@ class NegativeSampling(Objective):
             target,
             reduction="sum",
         )
-        prediction_count, candidate_count = prediction.shape
+        candidate_count = prediction.shape[-1]
+        prediction_count = prediction.size // candidate_count
         reporting_divisor = (
             prediction_count * candidate_count
             if self.reduction == "mean"
@@ -190,18 +191,20 @@ class NegativeSampling(Objective):
         replay_context=None,
     ) -> Word2VecObjectiveBatch:
         xp = self.backend.xp
-        labels = target.data.reshape(-1).astype(xp.int64, copy=False)
+        labels = target.data.astype(xp.int64, copy=False)
+        flat_labels = labels.reshape(-1)
         negatives = (
-            self.sampler.sample(labels, sample_size=self.negative_samples)
+            self.sampler.sample(flat_labels, sample_size=self.negative_samples)
             if replay_context is None
-            else replay_context
+            else xp.asarray(replay_context, dtype=xp.int64)
         )
-        candidates = xp.concatenate((labels[:, None], negatives), axis=1)
+        negatives = negatives.reshape(labels.shape + (self.negative_samples,))
+        candidates = xp.concatenate((labels[..., None], negatives), axis=-1)
         binary_targets = xp.zeros(
             candidates.shape,
             dtype=self.backend.float_dtype,
         )
-        binary_targets[:, 0] = 1
+        binary_targets[..., 0] = 1
         return Word2VecObjectiveBatch(
             target=Tensor(binary_targets, backend=target.backend),
             candidates=Tensor(candidates, backend=target.backend),

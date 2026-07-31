@@ -15,8 +15,13 @@ SUPPORTED_EXPERIMENTS = ("e01", "e02", "e03", "e04", "e06", "e07")
 TRIAL_IDS = {
     "e01": ("dlfs2.ch03.toy-cbow-full-softmax",),
     "e02": tuple(
-        f"dlfs2.ch04.ptb-{name}-negative-sampling"
+        (
+            f"dlfs2.ch04.ptb-{name}-negative-sampling"
+            if objective == "negative-sampling"
+            else f"ext.ds2.ptb-{name}-full-softmax"
+        )
         for name in ("cbow", "skipgram")
+        for objective in ("negative-sampling", "full-softmax")
     ),
     "e03": ("dlfs2.ch05.ptb-small-rnnlm",),
     "e04": ("dlfs2.ch06.ptb-lstm-rnnlm",),

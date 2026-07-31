@@ -4,6 +4,7 @@ from .benchmark import (
     SectionRecorder,
     TimingStats,
     TrainingTimeEstimate,
+    UpdateBenchmarkResult,
     estimate_training_time,
 )
 from .config import ProfilingConfig, profiling_config_from_mapping
@@ -17,6 +18,7 @@ __all__ = [
     "SectionRecorder",
     "TimingStats",
     "TrainingTimeEstimate",
+    "UpdateBenchmarkResult",
     "estimate_training_time",
     "profiling_config_from_mapping",
 ]

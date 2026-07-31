@@ -38,7 +38,8 @@
 | 시행 ID | 고정 조건 | raw 기록 |
 | --- | --- | --- |
 | `ext.ds2.toy-skipgram-full-softmax` | toy sentence, window 1, vocab 7, SimpleSkipGram embedding 5, Adam .001, batch 3, 1,000 epochs | 20 update interval mean loss, word-vector checkpoint |
-| `ext.ds2.ptb-word2vec-full-softmax` | PTB train, window 5, embedding 100, Adam .001, batch 100, 10 epochs; CBOW와 Skip-gram full softmax | 20 update interval mean loss, word-vector checkpoint |
+| `ext.ds2.ptb-cbow-full-softmax` | ch04 CBOW의 embedding 입력부에 ch03 `MatMul` + `SoftmaxWithLoss` 출력부를 적용; PTB train, window 5, embedding 100, Adam .001, batch 100, 10 epochs | 20 update interval mean loss, word-vector checkpoint |
+| `ext.ds2.ptb-skipgram-full-softmax` | ch04 Skip-gram의 embedding 입력부에 ch03 `MatMul` + context별 `SoftmaxWithLoss` 출력부를 적용; 나머지 조건은 CBOW 확장과 동일 | 20 update interval mean loss, word-vector checkpoint |
 | `ext.ds2.ptb-lm-recipe-comparison` | PTB train/valid/test, embedding/hidden 650, SGD 20, batch 20, BPTT 35, clip .25, max 40 epochs; Rnnlm/LSTM Rnnlm/BetterRnnlm | 20 update train PPL, epoch valid PPL, selected-checkpoint terminal test PPL |
 
 ## 시행 선택의 범위

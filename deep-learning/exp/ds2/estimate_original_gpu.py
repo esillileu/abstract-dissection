@@ -317,7 +317,7 @@ def main(argv: list[str] | None = None) -> None:
             "official config.GPU=True CuPy path, with common.np bypassed only "
             "because its legacy np.add.at assignment is read-only in CuPy 14. "
             "Native CuPy add.at has the same scatter-add semantics. When e02 is "
-            "selected, catalog-only full-softmax extensions are excluded."
+            "selected, adapted full-softmax trials are excluded."
         ),
         "book_root": str(BOOK_ROOT),
         "results": [asdict(result) for result in results],

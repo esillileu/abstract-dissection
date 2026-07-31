@@ -130,6 +130,20 @@ def analyze(
 @cli_errors
 def profile(
     experiment: Experiments = None,
+    vsweap: Annotated[
+        bool,
+        typer.Option(
+            "--vsweap",
+            help="Run the explicit implemented-only e02 vocabulary sweep.",
+        ),
+    ] = False,
+    vocab_size: Annotated[
+        list[int] | None,
+        typer.Option(
+            "--vocab-size",
+            help="Repeat to override --vsweap vocabulary sizes.",
+        ),
+    ] = None,
     device: Annotated[
         list[str] | None,
         typer.Option("--device", help="Repeat to select CPU/CUDA devices."),
@@ -148,12 +162,12 @@ def profile(
     ] = None,
     batch_size: Annotated[int, typer.Option("--batch-size")] = 100,
     epochs: Annotated[int, typer.Option("--epochs")] = 10,
-    update_warmup: Annotated[int, typer.Option("--update-warmup")] = 5,
+    update_warmup: Annotated[int, typer.Option("--update-warmup")] = 20,
     update_repetitions: Annotated[
         int,
         typer.Option("--update-repetitions"),
-    ] = 20,
-    measured_updates: Annotated[int, typer.Option("--measured-updates")] = 1,
+    ] = 5,
+    measured_updates: Annotated[int, typer.Option("--measured-updates")] = 50,
     module_warmup: Annotated[int, typer.Option("--module-warmup")] = 5,
     module_iterations: Annotated[
         int,
@@ -167,6 +181,8 @@ def profile(
     selected = parse_experiment_ids(experiment or [])
     if selected != ["e02"]:
         raise ValueError("DS2 profiling currently requires exactly -e 02")
+    if vocab_size and not vsweap:
+        raise ValueError("--vocab-size requires --vsweap")
     if (
         min(
             batch_size,
@@ -182,6 +198,26 @@ def profile(
         )
     if min(update_warmup, module_warmup) < 0:
         raise ValueError("warmup counts must be non-negative")
+
+    if vsweap:
+        from exp.ds2.profile.e02.vsweap import (
+            DEFAULT_VOCAB_SIZES,
+            run as run_vsweap,
+        )
+
+        run_vsweap(
+            devices=tuple(device or ("cuda:0",)),
+            conditions=tuple(condition) if condition else None,
+            vocab_sizes=(
+                tuple(vocab_size) if vocab_size else DEFAULT_VOCAB_SIZES
+            ),
+            batch_size=batch_size,
+            warmup_updates=update_warmup,
+            measured_updates=measured_updates,
+            repetitions=update_repetitions,
+            output_dir=output_dir or DEFAULT_RESULTS,
+        )
+        return
 
     run(
         devices=tuple(device or ("cpu", "cuda:0")),

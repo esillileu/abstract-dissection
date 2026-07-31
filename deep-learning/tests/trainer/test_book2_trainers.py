@@ -80,6 +80,14 @@ def test_word2vec_trainer_emits_update_and_source_objective_events() -> None:
 def test_word2vec_negative_sampling_reuses_update_candidates_for_post_loss() -> None:
     model = CBOW(8, 3)
     objective = NegativeSampling(8, negative_samples=2)
+    prepare_calls = []
+    prepare = objective.prepare
+
+    def counted_prepare(target, *, replay_context=None):
+        prepare_calls.append(replay_context)
+        return prepare(target, replay_context=replay_context)
+
+    objective.prepare = counted_prepare
     receiver = Receiver()
     trainer = Word2VecTrainer(
         model, objective, SGD(_params(model, objective), lr=0.1),
@@ -91,6 +99,7 @@ def test_word2vec_negative_sampling_reuses_update_candidates_for_post_loss() -> 
 
     assert len(receiver.updates) == 1
     assert len(receiver.sources) == 1
+    assert prepare_calls == [None]
 
 
 def test_language_model_trainer_emits_bptt_events_and_evaluates_ppl() -> None:

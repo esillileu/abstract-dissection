@@ -150,10 +150,12 @@ def test_skipgram_samples_all_context_targets_in_one_call() -> None:
     )
 
     assert calls == [(6, 2)]
-    assert result.replay_context.shape == (6, 2)
+    assert model_x.shape == (2,)
+    assert objective_t.shape == (2, 3)
+    assert result.replay_context.shape == (2, 3, 2)
 
 
-def test_vectorized_skipgram_preserves_per_context_loss_and_gradients() -> None:
+def test_grouped_skipgram_matches_pair_expansion_loss_and_gradients() -> None:
     centers = Tensor(np.array([1, 2], dtype=np.int64), backend="cpu")
     contexts = Tensor(
         np.array([[0, 2, 3], [1, 3, 4]], dtype=np.int64),
@@ -164,31 +166,45 @@ def test_vectorized_skipgram_preserves_per_context_loss_and_gradients() -> None:
         np.array([[5, 6], [6, 7]], dtype=np.int64),
         np.array([[6, 7], [0, 7]], dtype=np.int64),
     ], axis=1).reshape(6, 2)
-    model = SkipGram(8, 3, backend="cpu")
-    objective = NegativeSampling(8, negative_samples=2, backend="cpu")
-    model_x, objective_t = SkipGramBatchAdapter().prepare(contexts, centers)
-    first = _word2vec_forward(
-        model,
-        objective,
-        model_x,
-        objective_t,
-        replay_context=candidates,
+    expanded_model = SkipGram(8, 3, backend="cpu")
+    grouped_model = SkipGram(8, 3, backend="cpu")
+    grouped_model.W_in.data[...] = expanded_model.W_in.data
+    grouped_model.W_out.data[...] = expanded_model.W_out.data
+    expanded_objective = NegativeSampling(
+        8, negative_samples=2, backend="cpu"
     )
-    model.backward(objective.backward())
-    input_gradient = model.W_in.grad.copy()
-    output_gradient = model.W_out.grad.copy()
-    second = _word2vec_forward(
-        model,
-        objective,
-        model_x,
-        objective_t,
-        replay_context=candidates,
+    grouped_objective = NegativeSampling(
+        8, negative_samples=2, backend="cpu"
     )
-    model.backward(objective.backward())
+    expanded_x = Tensor(
+        np.repeat(centers.data, contexts.shape[1]),
+        backend="cpu",
+    )
+    expanded_t = contexts.reshape(-1)
+    grouped_x, grouped_t = SkipGramBatchAdapter().prepare(contexts, centers)
 
-    assert np.allclose(first.loss.data, second.loss.data)
-    assert np.allclose(input_gradient, model.W_in.grad)
-    assert np.allclose(output_gradient, model.W_out.grad)
+    expanded = _word2vec_forward(
+        expanded_model,
+        expanded_objective,
+        expanded_x,
+        expanded_t,
+        replay_context=candidates,
+    )
+    expanded_model.backward(expanded_objective.backward())
+    grouped = _word2vec_forward(
+        grouped_model,
+        grouped_objective,
+        grouped_x,
+        grouped_t,
+        replay_context=candidates,
+    )
+    grouped_model.backward(grouped_objective.backward())
+
+    assert grouped_x.shape == (2,)
+    assert grouped_t.shape == (2, 3)
+    assert np.allclose(grouped.loss.data, expanded.loss.data)
+    assert np.allclose(grouped_model.W_in.grad, expanded_model.W_in.grad)
+    assert np.allclose(grouped_model.W_out.grad, expanded_model.W_out.grad)
 
 
 def test_negative_sampling_book_loss_sums_candidates_for_cbow() -> None:
@@ -280,7 +296,11 @@ def test_softmax_with_loss_book_objective_sums_skipgram_contexts_only() -> None:
     targets = Tensor(np.array([1, 2], dtype=np.int64), backend="cpu")
     model = SkipGram(8, 3, backend="cpu")
     objective = SoftmaxWithLoss(backend="cpu")
-    model_x, objective_t = SkipGramBatchAdapter().prepare(contexts, targets)
+    model_x = Tensor(
+        np.repeat(targets.data, contexts.shape[1]),
+        backend="cpu",
+    )
+    objective_t = contexts.reshape(-1)
 
     standard = _word2vec_forward(
         model,
@@ -319,10 +339,11 @@ def test_grouped_skipgram_softmax_matches_pair_expansion() -> None:
     grouped_model.W_in.data[...] = expanded_model.W_in.data
     grouped_model.W_out.data[...] = expanded_model.W_out.data
 
-    expanded_x, expanded_t = SkipGramBatchAdapter().prepare(
-        contexts,
-        centers,
+    expanded_x = Tensor(
+        np.repeat(centers.data, contexts.shape[1]),
+        backend="cpu",
     )
+    expanded_t = contexts.reshape(-1)
     grouped_x, grouped_t = SkipGramFullSoftmaxBatchAdapter().prepare(
         contexts,
         centers,

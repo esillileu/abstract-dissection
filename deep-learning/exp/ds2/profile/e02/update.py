@@ -38,6 +38,7 @@ from mlprosection.profiling import (
     TimingStats,
     estimate_training_time,
 )
+from exp.ds2.original.run.e02 import build_full_softmax_model
 
 
 ROOT = Path(__file__).resolve().parents[4]
@@ -48,7 +49,9 @@ DEFAULT_EPOCHS = 10
 
 CONDITIONS = (
     "original-cbow-ns",
+    "original-cbow-fs",
     "original-skipgram-ns",
+    "original-skipgram-fs",
     "implemented-cbow-ns",
     "implemented-skipgram-ns",
     "implemented-cbow-fs",
@@ -56,26 +59,26 @@ CONDITIONS = (
 )
 
 STAGES = {
-    # One warm-up avoids charging lazy initialization to the single estimate.
+    # Always measures one cold update before the requested steady-state work.
     "update": {
-        "warmup_updates": 1,
-        "measured_updates": 1,
-        "phase_updates": 0,
-        "repetitions": 1,
-    },
-    # Short repeated windows provide a more useful planning estimate.
-    "estimate": {
-        "warmup_updates": 3,
+        "warmup_updates": 5,
         "measured_updates": 10,
         "phase_updates": 0,
         "repetitions": 3,
     },
+    # Enough samples to expose update-level variance without an epoch run.
+    "estimate": {
+        "warmup_updates": 20,
+        "measured_updates": 50,
+        "phase_updates": 0,
+        "repetitions": 5,
+    },
     # Long throughput windows plus a separately synchronized phase pass.
     "detail": {
-        "warmup_updates": 5,
-        "measured_updates": 100,
+        "warmup_updates": 50,
+        "measured_updates": 200,
         "phase_updates": 5,
-        "repetitions": 3,
+        "repetitions": 5,
     },
 }
 
@@ -93,17 +96,25 @@ class ConditionResult:
     warmup_updates: int
     measured_updates: int
     repetitions: int
+    cold_ms_per_update: float
     warmup_total_ms: float
     warmup_mean_ms: float
+    steady_event_mean_ms_per_update: float
+    steady_event_stdev_ms_per_update: float
+    steady_event_min_ms_per_update: float
+    steady_event_max_ms_per_update: float
+    steady_event_p50_ms_per_update: float
+    steady_event_p95_ms_per_update: float
     mean_ms_per_update: float
     stdev_ms_per_update: float
     min_ms_per_update: float
     max_ms_per_update: float
     samples_per_second: float
+    estimated_first_epoch_seconds: float
     estimated_seconds_per_epoch: float
-    estimated_stdev_seconds_per_epoch: float
+    estimated_repeat_stdev_seconds_per_epoch: float
     estimated_seconds_total: float
-    estimated_stdev_seconds_total: float
+    estimated_repeat_stdev_seconds_total: float
     phase_ms_per_update: dict[str, float]
     phase_stats: dict[str, dict[str, float | int]]
     phase_share: dict[str, float]
@@ -113,6 +124,7 @@ class OriginalWord2Vec:
     def __init__(
         self,
         model_name: str,
+        objective_name: str,
         corpus,
         contexts,
         targets,
@@ -120,13 +132,22 @@ class OriginalWord2Vec:
     ) -> None:
         trainer_module = importlib.import_module("common.trainer")
         optimizer_class = importlib.import_module("common.optimizer").Adam
-        module_name = "ch04.cbow" if model_name == "CBOW" else "ch04.skip_gram"
-        model_class = getattr(importlib.import_module(module_name), model_name)
         self.backend = backend
         self.contexts = backend.xp.asarray(contexts)
         self.targets = backend.xp.asarray(targets)
         vocab_size = int(np.max(corpus)) + 1
-        self.model = model_class(vocab_size, 100, 5, corpus)
+        if objective_name == "FullSoftmax":
+            kind = "cbow" if model_name == "CBOW" else "skipgram"
+            self.model = build_full_softmax_model(kind, vocab_size, 100, 5)
+        else:
+            module_name = (
+                "ch04.cbow" if model_name == "CBOW" else "ch04.skip_gram"
+            )
+            model_class = getattr(
+                importlib.import_module(module_name),
+                model_name,
+            )
+            self.model = model_class(vocab_size, 100, 5, corpus)
         self.optimizer = optimizer_class()
         self.remove_duplicate = trainer_module.remove_duplicate
 
@@ -202,46 +223,64 @@ class ImplementedWord2Vec:
         self.optimizer = Adam(params, lr=0.001)
 
     def update(self, batch_x, batch_t, recorder: SectionRecorder | None = None):
-        with _phase(recorder, "batch_adapter"):
-            model_x, objective_t = self.adapter.prepare(batch_x, batch_t)
-        with _phase(recorder, "objective_prepare"):
-            objective_batch = self.objective.prepare(objective_t)
-        with _phase(recorder, "model_forward"):
-            prediction = self.model.forward(
-                model_x,
-                candidates=objective_batch.candidates,
-            )
-        with _phase(recorder, "objective_forward"):
-            result = self.objective.forward(
-                prediction,
-                objective_batch.target,
-                replay_context=objective_batch.replay_context,
-                example_count=len(batch_x),
-            )
-        with _phase(recorder, "objective_backward"):
-            gradient = self.objective.backward()
-        with _phase(recorder, "model_backward"):
-            self.model.backward(gradient)
-        with _phase(recorder, "optimizer"):
-            self.optimizer.update()
-        with _phase(recorder, "post_update_loss"):
-            post_batch = self.objective.prepare(
-                objective_t,
-                replay_context=result.replay_context,
-            )
-            post_prediction = self.model.forward(
-                model_x,
-                candidates=post_batch.candidates,
-                cache=False,
-            )
-            post_result = self.objective.forward(
-                post_prediction,
-                post_batch.target,
-                cache=False,
-                replay_context=post_batch.replay_context,
-                example_count=len(batch_x),
-            )
-        return post_result.loss
+        return run_implemented_update(
+            model=self.model,
+            adapter=self.adapter,
+            objective=self.objective,
+            optimizer=self.optimizer,
+            batch_x=batch_x,
+            batch_t=batch_t,
+            recorder=recorder,
+        )
+
+
+def run_implemented_update(
+    *,
+    model,
+    adapter,
+    objective,
+    optimizer,
+    batch_x,
+    batch_t,
+    recorder: SectionRecorder | None = None,
+):
+    """Run the implemented Word2Vec update path shared by all e02 profiles."""
+    with _phase(recorder, "batch_adapter"):
+        model_x, objective_t = adapter.prepare(batch_x, batch_t)
+    with _phase(recorder, "objective_prepare"):
+        objective_batch = objective.prepare(objective_t)
+    with _phase(recorder, "model_forward"):
+        prediction = model.forward(
+            model_x,
+            candidates=objective_batch.candidates,
+        )
+    with _phase(recorder, "objective_forward"):
+        objective.forward(
+            prediction,
+            objective_batch.target,
+            replay_context=objective_batch.replay_context,
+            example_count=len(batch_x),
+        )
+    with _phase(recorder, "objective_backward"):
+        gradient = objective.backward()
+    with _phase(recorder, "model_backward"):
+        model.backward(gradient)
+    with _phase(recorder, "optimizer"):
+        optimizer.update()
+    with _phase(recorder, "post_update_loss"):
+        post_prediction = model.forward(
+            model_x,
+            candidates=objective_batch.candidates,
+            cache=False,
+        )
+        post_result = objective.forward(
+            post_prediction,
+            objective_batch.target,
+            cache=False,
+            replay_context=objective_batch.replay_context,
+            example_count=len(batch_x),
+        )
+    return post_result.loss
 
 
 def _implemented_components(model_name: str, objective_name: str):
@@ -329,7 +368,14 @@ def _build_condition(
     objective_name = "NegativeSampling" if objective_token == "ns" else "FullSoftmax"
     if condition.startswith("original-"):
         return (
-            OriginalWord2Vec(model_name, corpus, contexts, targets, backend),
+            OriginalWord2Vec(
+                model_name,
+                objective_name,
+                corpus,
+                contexts,
+                targets,
+                backend,
+            ),
             model_name,
             objective_name,
             "original",
@@ -429,11 +475,11 @@ def profile_condition(
         workload.update(batch_x, batch_t)
         next_index += 1
 
-    benchmark = BenchmarkRunner(backend).measure_windows(
+    benchmark = BenchmarkRunner(backend).measure_update_protocol(
         f"{condition}.update",
         update_once,
         warmup_iterations=warmup_updates,
-        iterations_per_window=measured_updates,
+        measured_iterations=measured_updates,
         repetitions=repetitions,
     )
 
@@ -454,7 +500,12 @@ def profile_condition(
         dataset_samples=len(contexts),
         batch_size=batch_size,
         epochs=epochs,
+        cold_update_ms=benchmark.cold_ms,
     )
+    first_epoch_seconds = (
+        benchmark.cold_ms
+        + benchmark.timing.mean_ms * max(estimate.updates_per_epoch - 1, 0)
+    ) / 1_000
     return ConditionResult(
         condition=condition,
         implementation=implementation,
@@ -467,17 +518,27 @@ def profile_condition(
         warmup_updates=warmup_updates,
         measured_updates=measured_updates,
         repetitions=repetitions,
+        cold_ms_per_update=benchmark.cold_ms,
         warmup_total_ms=benchmark.warmup_total_ms,
         warmup_mean_ms=benchmark.warmup_mean_ms,
+        steady_event_mean_ms_per_update=benchmark.event_timing.mean_ms,
+        steady_event_stdev_ms_per_update=benchmark.event_timing.stdev_ms,
+        steady_event_min_ms_per_update=benchmark.event_timing.min_ms,
+        steady_event_max_ms_per_update=benchmark.event_timing.max_ms,
+        steady_event_p50_ms_per_update=benchmark.event_timing.p50_ms,
+        steady_event_p95_ms_per_update=benchmark.event_timing.p95_ms,
         mean_ms_per_update=benchmark.timing.mean_ms,
         stdev_ms_per_update=benchmark.timing.stdev_ms,
         min_ms_per_update=benchmark.timing.min_ms,
         max_ms_per_update=benchmark.timing.max_ms,
         samples_per_second=(batch_size / (benchmark.timing.mean_ms / 1_000)),
+        estimated_first_epoch_seconds=first_epoch_seconds,
         estimated_seconds_per_epoch=estimate.mean_seconds_per_epoch,
-        estimated_stdev_seconds_per_epoch=(estimate.stdev_seconds_per_epoch),
+        estimated_repeat_stdev_seconds_per_epoch=(
+            estimate.repeat_stdev_seconds_per_epoch
+        ),
         estimated_seconds_total=estimate.mean_seconds_total,
-        estimated_stdev_seconds_total=estimate.stdev_seconds_total,
+        estimated_repeat_stdev_seconds_total=estimate.repeat_stdev_seconds_total,
         phase_ms_per_update=phase_means,
         phase_stats={name: asdict(timing) for name, timing in phase_timings.items()},
         phase_share={name: value / phase_total for name, value in phase_means.items()}
@@ -494,9 +555,14 @@ def _metadata(backend, *, stage: str) -> dict[str, object]:
         "numpy_version": np.__version__,
         "stage": stage,
         "method": (
-            "device-synchronized throughput windows; optional separately "
-            "synchronized phase pass; epoch/full-run values extrapolated from "
-            "mean measured update time; implemented post-update loss included"
+            "one workload-cold synchronized update; warmup; consecutive "
+            "per-update CUDA events resolved with one synchronization; "
+            "independent device-synchronized steady throughput windows; "
+            "epoch/full-run estimate = cold + steady * (total_updates - 1); "
+            "repeat standard deviations extrapolate between-window steady-rate "
+            "variation linearly and treat the single cold observation as fixed; "
+            "optional separately synchronized phase pass; implemented "
+            "post-update loss included"
         ),
     }
     if backend.is_gpu:
@@ -545,7 +611,7 @@ def main(argv: list[str] | None = None) -> None:
         "--stage",
         choices=tuple(STAGES),
         default="estimate",
-        help="update=1 update, estimate=short repeated estimate, detail=phases.",
+        help="update=quick precise estimate, estimate=stable estimate, detail=phases.",
     )
     parser.add_argument("--batch-size", type=int, default=100)
     parser.add_argument("--epochs", type=int, default=DEFAULT_EPOCHS)
@@ -603,14 +669,14 @@ def main(argv: list[str] | None = None) -> None:
             f"{condition}: {result.mean_ms_per_update:.3f} ± "
             f"{result.stdev_ms_per_update:.3f} ms/update, "
             f"{result.estimated_seconds_per_epoch:.1f} ± "
-            f"{result.estimated_stdev_seconds_per_epoch:.1f} s/epoch, "
+            f"{result.estimated_repeat_stdev_seconds_per_epoch:.1f} s/epoch, "
             f"{result.estimated_seconds_total:.1f} ± "
-            f"{result.estimated_stdev_seconds_total:.1f} "
+            f"{result.estimated_repeat_stdev_seconds_total:.1f} "
             f"s/{args.epochs} epochs",
             flush=True,
         )
     payload = {
-        "schema_version": 3,
+        "schema_version": 6,
         "metadata": _metadata(backend, stage=args.stage),
         "results": [asdict(result) for result in results],
     }

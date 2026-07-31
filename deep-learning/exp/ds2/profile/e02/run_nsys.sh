@@ -8,7 +8,9 @@ mkdir -p "${profile_root}"
 
 conditions=(
   original-cbow-ns
+  original-cbow-fs
   original-skipgram-ns
+  original-skipgram-fs
   implemented-cbow-ns
   implemented-skipgram-ns
   implemented-cbow-fs

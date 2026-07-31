@@ -68,20 +68,16 @@ class Word2VecTrainer(EventTrainer):
                     self.optimizer.update()
                     probe_state = self._snapshot_evaluation_state()
                     try:
-                        post_objective_batch = self.objective.prepare(
-                            objective_t,
-                            replay_context=result.replay_context,
-                        )
                         post_prediction = self.model.forward(
                             model_x,
-                            candidates=post_objective_batch.candidates,
+                            candidates=objective_batch.candidates,
                             cache=False,
                         )
                         post_result = self.objective.forward(
                             post_prediction,
-                            post_objective_batch.target,
+                            objective_batch.target,
                             cache=False,
-                            replay_context=post_objective_batch.replay_context,
+                            replay_context=objective_batch.replay_context,
                             example_count=len(batch_x),
                         )
                     finally:

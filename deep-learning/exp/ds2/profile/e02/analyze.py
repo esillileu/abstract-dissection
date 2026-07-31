@@ -59,6 +59,26 @@ def build_comparisons(
             "SkipGram NS: original → implemented",
         ),
         (
+            "original-cbow-fs",
+            "implemented-cbow-fs",
+            "CBOW FS: original adaptation → implemented",
+        ),
+        (
+            "original-skipgram-fs",
+            "implemented-skipgram-fs",
+            "SkipGram FS: original adaptation → implemented",
+        ),
+        (
+            "original-cbow-ns",
+            "original-cbow-fs",
+            "Original adaptation CBOW: NS → FS",
+        ),
+        (
+            "original-skipgram-ns",
+            "original-skipgram-fs",
+            "Original adaptation SkipGram: NS → FS",
+        ),
+        (
             "implemented-cbow-ns",
             "implemented-cbow-fs",
             "Implemented CBOW: NS → FS",
@@ -82,6 +102,7 @@ def build_comparisons(
     return [
         _comparison(rows, baseline, candidate, question)
         for baseline, candidate, question in specs
+        if baseline in rows and candidate in rows
     ]
 
 
@@ -148,24 +169,42 @@ def render_report(
         f"(`{metadata['device']}`)",
         f"- CuPy: `{metadata['cupy_version']}`",
         "- PTB train, window 5, embedding 100, batch 100, Adam 0.001",
+        "- One workload-cold update is measured before warmup.",
+        "- Consecutive steady updates use CUDA event pairs and synchronize once.",
         "- Throughput windows synchronize before and after all measured updates.",
+        "- Runtime estimate: cold + steady throughput × (total updates - 1).",
+        "- Repeat SD extrapolates between-window steady-rate variation linearly.",
         "- Phase timings use a separate synchronized diagnostic pass.",
         "- Implemented timings include the trainer's post-update loss recomputation.",
         "",
         "## Synchronized throughput",
         "",
-        "| condition | ms/update | samples/s | s/epoch (estimated) | "
+        "| condition | cold ms | steady event p50 / p95 ms | "
+        "throughput ms/update | samples/s | "
+        "s/epoch | "
         "s/total (estimated) |",
-        "| --- | ---: | ---: | ---: | ---: |",
+        "| --- | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
     for condition, row in rows.items():
         epoch_seconds = row.get("estimated_seconds_per_epoch")
         total_seconds = row.get("estimated_seconds_total")
+        cold_ms = float(row.get("cold_ms_per_update", 0.0))
+        event_p50 = float(
+            row.get("steady_event_p50_ms_per_update", row["mean_ms_per_update"])
+        )
+        event_p95 = float(
+            row.get("steady_event_p95_ms_per_update", row["mean_ms_per_update"])
+        )
         update_stdev = float(row.get("stdev_ms_per_update", 0.0))
-        epoch_stdev = float(row.get("estimated_stdev_seconds_per_epoch", 0.0))
-        total_stdev = float(row.get("estimated_stdev_seconds_total", 0.0))
+        epoch_stdev = float(
+            row.get("estimated_repeat_stdev_seconds_per_epoch", 0.0)
+        )
+        total_stdev = float(
+            row.get("estimated_repeat_stdev_seconds_total", 0.0)
+        )
         lines.append(
             f"| `{condition}` | "
+            f"{cold_ms:.3f} | {event_p50:.3f} / {event_p95:.3f} | "
             f"{float(row['mean_ms_per_update']):.3f} ± {update_stdev:.3f} | "
             f"{float(row['samples_per_second']):.1f} | "
             f"{float(epoch_seconds):.1f} ± {epoch_stdev:.1f} | "
@@ -173,6 +212,7 @@ def render_report(
             if epoch_seconds is not None and total_seconds is not None
             else (
                 f"| `{condition}` | "
+                f"{cold_ms:.3f} | {event_p50:.3f} / {event_p95:.3f} | "
                 f"{float(row['mean_ms_per_update']):.3f} | "
                 f"{float(row['samples_per_second']):.1f} | — | — |"
             )
@@ -180,6 +220,9 @@ def render_report(
 
     lines.extend(
         [
+            "",
+            "_All ± values are standard deviations across repeated throughput "
+            "windows; epoch and total values use the same linear extrapolation._",
             "",
             "## Direct comparisons",
             "",

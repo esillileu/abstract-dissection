@@ -27,7 +27,9 @@ from .update import (
 
 CONDITIONS = (
     "original-cbow-ns",
+    "original-cbow-fs",
     "original-skipgram-ns",
+    "original-skipgram-fs",
     "implemented-cbow-ns",
     "implemented-skipgram-ns",
     "implemented-cbow-fs",
