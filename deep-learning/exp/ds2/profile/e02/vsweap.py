@@ -36,6 +36,12 @@ DEFAULT_VOCAB_SIZES = (
     500_000,
     1_000_000,
 )
+DEFAULT_CPU_VOCAB_SIZES = (
+    1_000,
+    2_500,
+    5_000,
+    10_000,
+)
 CONDITIONS = (
     "implemented-cbow-ns",
     "implemented-cbow-fs",
@@ -161,7 +167,7 @@ class SweepWorkload:
 def run(
     *,
     devices: tuple[str, ...] = ("cuda:0",),
-    vocab_sizes: tuple[int, ...] = DEFAULT_VOCAB_SIZES,
+    vocab_sizes: tuple[int, ...] | None = None,
     conditions: tuple[str, ...] | None = None,
     batch_size: int = 100,
     warmup_updates: int = 20,
@@ -184,12 +190,13 @@ def run(
             "batch size, measured updates, and repetitions must be positive; "
             "warmup updates must be non-negative"
         )
-    if not vocab_sizes or min(vocab_sizes) < 2:
-        raise ValueError("vocabulary sizes must contain integers of at least 2")
-    if len(set(vocab_sizes)) != len(vocab_sizes):
-        raise ValueError("vocabulary sizes must not contain duplicates")
+    if vocab_sizes is not None:
+        _validate_vocab_sizes(vocab_sizes)
 
     for device in devices:
+        device_vocab_sizes = (
+            _default_vocab_sizes(device) if vocab_sizes is None else vocab_sizes
+        )
         backend = make_backend(
             BackendConfig(
                 device=device,
@@ -199,7 +206,7 @@ def run(
             )
         )
         rows: list[dict[str, object]] = []
-        for vocab_size in vocab_sizes:
+        for vocab_size in device_vocab_sizes:
             contexts, targets = _synthetic_batches(
                 vocab_size,
                 batch_size=batch_size,
@@ -258,7 +265,7 @@ def run(
                 "warmup_updates": warmup_updates,
                 "measured_updates": measured_updates,
                 "repetitions": repetitions,
-                "vocab_sizes": list(vocab_sizes),
+                "vocab_sizes": list(device_vocab_sizes),
             },
             "results": rows,
             "crossovers": _crossovers(rows),
@@ -269,6 +276,21 @@ def run(
         )
         print(f"saved: {output}", flush=True)
         print(_render_crossovers(device, payload["crossovers"]), flush=True)
+
+
+def _default_vocab_sizes(device: str) -> tuple[int, ...]:
+    return (
+        DEFAULT_CPU_VOCAB_SIZES
+        if not device.startswith("cuda:")
+        else DEFAULT_VOCAB_SIZES
+    )
+
+
+def _validate_vocab_sizes(vocab_sizes: tuple[int, ...]) -> None:
+    if not vocab_sizes or min(vocab_sizes) < 2:
+        raise ValueError("vocabulary sizes must contain integers of at least 2")
+    if len(set(vocab_sizes)) != len(vocab_sizes):
+        raise ValueError("vocabulary sizes must not contain duplicates")
 
 
 def _measure_condition(

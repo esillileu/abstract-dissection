@@ -206,7 +206,9 @@ nsys stats \
 just exp profile ds2 -e 02 --vsweap
 ```
 
-기본값은 GPU에서 `V=10k, 25k, 50k, 100k, 250k, 500k, 1M`을 순회한다.
+기본값은 GPU에서 `V=10k, 25k, 50k, 100k, 250k, 500k, 1M`, CPU에서
+`V=1k, 2.5k, 5k, 10k`를 순회한다. `--vocab-size`를 명시하면 모든 선택 장치에
+해당 범위를 적용한다.
 embedding 100, batch 100, context width 10, negative 5, conditional-CDF sampler,
 dense Adam 및 post-update loss 경로는 현재 구현과 동일하다. synthetic uniform
 vocabulary를 사용하며, 기본적으로 20 update를 warmup한 뒤 50 update의 개별 분포와

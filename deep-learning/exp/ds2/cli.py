@@ -201,16 +201,13 @@ def profile(
 
     if vsweap:
         from exp.ds2.profile.e02.vsweap import (
-            DEFAULT_VOCAB_SIZES,
             run as run_vsweap,
         )
 
         run_vsweap(
             devices=tuple(device or ("cuda:0",)),
             conditions=tuple(condition) if condition else None,
-            vocab_sizes=(
-                tuple(vocab_size) if vocab_size else DEFAULT_VOCAB_SIZES
-            ),
+            vocab_sizes=tuple(vocab_size) if vocab_size else None,
             batch_size=batch_size,
             warmup_updates=update_warmup,
             measured_updates=measured_updates,

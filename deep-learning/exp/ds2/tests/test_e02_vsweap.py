@@ -7,8 +7,11 @@ from typer.testing import CliRunner
 
 from exp.cli import app
 from exp.ds2.profile.e02.vsweap import (
+    DEFAULT_CPU_VOCAB_SIZES,
+    DEFAULT_VOCAB_SIZES,
     SweepWorkload,
     _crossovers,
+    _default_vocab_sizes,
     _synthetic_batches,
     run,
 )
@@ -16,6 +19,12 @@ from mlprosection.core.backend import BackendConfig, make_backend
 
 
 runner = CliRunner()
+
+
+def test_vocab_sweep_uses_device_specific_defaults() -> None:
+    assert _default_vocab_sizes("cpu") == (1_000, 2_500, 5_000, 10_000)
+    assert _default_vocab_sizes("cpu:0") == DEFAULT_CPU_VOCAB_SIZES
+    assert _default_vocab_sizes("cuda:0") == DEFAULT_VOCAB_SIZES
 
 
 def test_vocab_sweep_measures_implemented_conditions_and_crossovers(tmp_path) -> None:
@@ -96,6 +105,25 @@ def test_vsweap_cli_dispatches_only_when_explicit(
     assert captured["measured_updates"] == 7
     assert captured["repetitions"] == 3
     assert captured["output_dir"] == tmp_path
+
+
+def test_vsweap_cli_leaves_default_vocab_sizes_to_each_device(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured = {}
+    monkeypatch.setattr(
+        "exp.ds2.profile.e02.vsweap.run",
+        lambda **kwargs: captured.update(kwargs),
+    )
+
+    result = runner.invoke(
+        app,
+        ["profile", "ds2", "-e", "02", "--vsweap", "--device", "cpu"],
+    )
+
+    assert result.exit_code == 0
+    assert captured["devices"] == ("cpu",)
+    assert captured["vocab_sizes"] is None
 
 
 def test_crossover_requires_two_consecutive_confident_ns_wins() -> None:
