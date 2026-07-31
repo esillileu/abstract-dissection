@@ -32,7 +32,6 @@ def render(root: Path, image_dir: Path) -> list[Path]:
     plt.xlabel("epochs")
     plt.ylabel("accuracy")
     plt.ylim(0, 1.0)
-    plt.title("Original Addition Seq2seq")
     plt.legend()
     path = image_dir / "e06_addition_seq2seq.png"
     save(path)

@@ -22,7 +22,6 @@ def render(root: Path, image_dir: Path) -> list[Path]:
     )
     plt.xlabel("iterations (x20)")
     plt.ylabel("perplexity")
-    plt.title("Original PTB LSTM RNNLM")
     path = image_dir / "e04_lstm_rnnlm.png"
     save(path)
     return [path]

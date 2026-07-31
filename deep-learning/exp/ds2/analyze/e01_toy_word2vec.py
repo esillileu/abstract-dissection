@@ -34,7 +34,6 @@ def render(client, error_style, output):
     axis.set(
         xlabel="iterations (x20)",
         ylabel="book loss",
-        title="Toy Word2Vec full-softmax",
     )
     mark_empty(axis)
     if axis.has_data():

@@ -16,7 +16,6 @@ def render(client, error_style, output):
     figure._analysis_match_original_canvas = True
     plot_curve(axis, curve, label="train", error_style=error_style, error_every=5)
     axis.set(
-        title="PTB small-corpus SimpleRnnlm",
         xlabel="iterations (x20)",
         ylabel="perplexity",
     )

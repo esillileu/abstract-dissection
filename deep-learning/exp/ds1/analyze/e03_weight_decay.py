@@ -35,7 +35,7 @@ def render(client, error_style, output):
                 error_every=10,
                 color=colors[atomic][split],
             )
-    axis.set(xlabel="epochs", ylabel="accuracy", ylim=(0, 1), title="Weight decay")
+    axis.set(xlabel="epochs", ylabel="accuracy", ylim=(0, 1))
     mark_empty(axis)
     if axis.has_data():
         axis.legend()

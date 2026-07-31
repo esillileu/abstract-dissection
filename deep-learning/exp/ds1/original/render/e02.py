@@ -35,7 +35,6 @@ def render(root: Path, image_dir: Path) -> list[Path]:
     plt.xlabel("iterations")
     plt.ylabel("loss")
     plt.ylim(0, 2.5)
-    plt.title("Original Weight initialization comparison")
     plt.legend()
     path = image_dir / "e02_weight_init_compare.png"
     save(path)

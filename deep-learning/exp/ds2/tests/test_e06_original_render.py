@@ -34,7 +34,7 @@ def test_original_e06_combines_all_conditions_in_one_figure(
     assert axis.get_xlabel() == "epochs"
     assert axis.get_ylabel() == "accuracy"
     assert axis.get_ylim() == (0.0, 1.0)
-    assert axis.get_title() == "Original Addition Seq2seq"
+    assert axis.get_title() == ""
     assert axis.get_legend() is not None
 
     plt.close()

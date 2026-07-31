@@ -69,7 +69,6 @@ def render(client, error_style, output):
     lower.set_ylim(0.0, 0.23)
     upper.set_yticks((0.96, 0.98, 1.0))
     lower.set_yticks((0.0, 0.1, 0.2))
-    upper.set_title("SimpleConvNet vs DeepConvNet")
     figure.text(0.02, 0.5, "accuracy", va="center", rotation="vertical")
     lower.set_xlabel("epochs")
     add_wave_break(figure, upper, lower)

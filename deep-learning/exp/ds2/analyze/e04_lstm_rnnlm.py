@@ -15,7 +15,7 @@ def render(client, error_style, output):
     figure, axis = plt.subplots()
     figure._analysis_match_original_canvas = True
     plot_curve(axis, curve, label="train", error_style=error_style, error_every=5)
-    axis.set(xlabel="iterations (x20)", ylabel="perplexity", ylim=(0, 500), title="PTB LSTM RNNLM")
+    axis.set(xlabel="iterations (x20)", ylabel="perplexity", ylim=(0, 500))
     mark_empty(axis)
     if axis.has_data():
         axis.legend()

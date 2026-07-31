@@ -23,7 +23,7 @@ def render(client, error_style, output):
         curve = source_curve(client, grouped[atomic], "exact_match_accuracy")
         curves[atomic] = curve
         plot_curve(axis, curve, label=label, marker=marker, error_style=error_style, error_every=5)
-    axis.set(xlabel="epochs", ylabel="accuracy", ylim=(0, 1), title="Addition Seq2seq")
+    axis.set(xlabel="epochs", ylabel="accuracy", ylim=(0, 1))
     mark_empty(axis)
     if axis.has_data():
         axis.legend()

@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from exp.original.cache import load_csv, load_npz
-from exp.plot_theme import apply_plot_theme
+from exp.plot_theme import apply_plot_theme, remove_figure_title
 
 
 apply_plot_theme()
@@ -23,6 +23,7 @@ def trial(root: Path, experiment: str, trial_id: str) -> Path:
 
 def save(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+    remove_figure_title(plt.gcf())
     plt.savefig(path)
     plt.close()
 

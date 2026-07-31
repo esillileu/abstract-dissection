@@ -22,7 +22,7 @@ def render(client, error_style, output):
         curve = loss_curve(client, grouped[atomic])
         curves[atomic] = curve
         plot_curve(axis, curve, label=label, marker=marker, error_style=error_style, error_every=100)
-    axis.set(xlabel="iterations", ylabel="loss", ylim=(0, 1), title="MNIST optimizer comparison")
+    axis.set(xlabel="iterations", ylabel="loss", ylim=(0, 1))
     mark_empty(axis)
     if axis.has_data():
         axis.legend()

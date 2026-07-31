@@ -261,7 +261,6 @@ def render(client, error_style, output):
         _render_comparison(panels, output=output)
     else:
         figure, axis = plt.subplots(figsize=(8, 4))
-        axis.set_title("SimpleCNN final-checkpoint filters")
         mark_empty(axis, "No completed seed-index 0 runs with final checkpoints")
         save_figure(figure, output)
         plt.close(figure)

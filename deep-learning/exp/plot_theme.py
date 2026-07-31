@@ -37,6 +37,13 @@ FONT_FALLBACKS = (
 FIGURE_SIZE = (6.4, 4.8)
 
 
+def remove_figure_title(figure) -> None:
+    """Remove only the figure-level title, preserving subplot titles."""
+    if figure._suptitle is not None:
+        figure._suptitle.remove()
+        figure._suptitle = None
+
+
 def apply_plot_theme() -> None:
     """Apply the repository-wide graph theme to new Matplotlib figures."""
     rcParams.update(

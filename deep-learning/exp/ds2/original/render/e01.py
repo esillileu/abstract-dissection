@@ -13,7 +13,6 @@ def render(root: Path, image_dir: Path) -> list[Path]:
     plt.plot(np.arange(len(rows)), [float(row["loss"]) for row in rows], label="train")
     plt.xlabel("iterations (x20)")
     plt.ylabel("loss")
-    plt.title("Original Toy Word2Vec full-softmax")
     path = image_dir / "e01_toy_cbow.png"
     save(path)
     return [path]

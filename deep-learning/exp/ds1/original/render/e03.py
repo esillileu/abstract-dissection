@@ -22,7 +22,6 @@ def render(root: Path, image_dir: Path) -> list[Path]:
     plt.xlabel("epochs")
     plt.ylabel("accuracy")
     plt.ylim(0, 1.0)
-    plt.title("Original Weight decay")
     plt.legend(loc="lower right")
     path = image_dir / "e03_overfit_weight_decay.png"
     save(path)

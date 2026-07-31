@@ -34,7 +34,6 @@ def render(root: Path, image_dir: Path) -> list[Path]:
     plt.xlabel("iterations")
     plt.ylabel("loss")
     plt.ylim(0, 1)
-    plt.title("Original MNIST optimizer comparison")
     plt.legend()
     path = image_dir / "e01_optimizer_compare_mnist.png"
     save(path)

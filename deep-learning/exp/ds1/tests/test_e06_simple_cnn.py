@@ -41,7 +41,7 @@ def test_e06_reproduces_simple_convnet_plot_with_ten_seed_minmax(monkeypatch):
 
     assert figure.get_size_inches().tolist() == [6.4, 4.8]
     assert figure._analysis_match_original_canvas is True
-    assert axis.get_title() == "SimpleConvNet Training"
+    assert axis.get_title() == ""
     assert axis.get_xlabel() == "epochs"
     assert axis.get_ylabel() == "accuracy"
     np.testing.assert_allclose(axis.get_ylim(), (0.0, 1.0))

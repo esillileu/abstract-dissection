@@ -11,7 +11,7 @@ from typing import Callable, Iterable, Mapping, Sequence
 
 import numpy as np
 
-from exp.plot_theme import MUTED, apply_plot_theme
+from exp.plot_theme import MUTED, apply_plot_theme, remove_figure_title
 
 
 apply_plot_theme()
@@ -303,6 +303,7 @@ def mark_empty(axis, message: str = "No completed runs") -> None:
 
 def save_figure(figure, path: Path) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
+    remove_figure_title(figure)
     match_original = getattr(figure, "_analysis_match_original_canvas", False)
     if (
         not match_original

@@ -31,6 +31,7 @@ from exp.plot_theme import (
     MUTED,
     SECONDARY_DATA,
     SURFACE,
+    remove_figure_title,
 )
 
 
@@ -168,6 +169,22 @@ def test_plot_theme_uses_repository_palette():
     assert rcParams["mathtext.fontset"] == "stix"
 
 
+def test_remove_figure_title_preserves_subplot_titles():
+    figure, axis = plt.subplots()
+    figure.suptitle("figure title")
+    axis.set_title("left title", loc="left")
+    axis.set_title("center title")
+    axis.set_title("right title", loc="right")
+
+    remove_figure_title(figure)
+
+    assert figure._suptitle is None
+    assert axis.get_title(loc="left") == "left title"
+    assert axis.get_title() == "center title"
+    assert axis.get_title(loc="right") == "right title"
+    plt.close(figure)
+
+
 def test_missing_experiment_still_renders_empty_figure(tmp_path):
     client = FakeClient()
     client.get_experiment_by_name = lambda _name: None
@@ -185,7 +202,8 @@ def test_missing_experiment_still_renders_empty_figure(tmp_path):
         axis.get_position().bounds,
         (0.125, 0.11, 0.775, 0.77),
     )
-    assert axis.get_title() == "Toy Word2Vec full-softmax"
+    assert figure._suptitle is None
+    assert axis.get_title() == ""
     assert output.with_suffix(".csv").is_file()
 
 

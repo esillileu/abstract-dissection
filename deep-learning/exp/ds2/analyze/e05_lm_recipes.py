@@ -111,7 +111,6 @@ def render(client, error_style, output):
     upper.set_yscale("symlog", linthresh=UPPER_LOG_LINEAR_THRESHOLD)
     upper.set_ylim(*UPPER_Y_LIMITS)
 
-    upper.set_title("Validation perplexity")
     lower.set_xlabel("epochs")
     figure.text(0.025, 0.5, "perplexity", va="center", rotation="vertical")
     add_wave_break(figure, upper, lower)

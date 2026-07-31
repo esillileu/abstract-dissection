@@ -22,7 +22,6 @@ def render(root: Path, image_dir: Path) -> list[Path]:
         )
         plt.xlabel("iterations (x20)")
         plt.ylabel("loss")
-        plt.title("Original PTB Word2Vec")
         path = image_dir / f"e02_ptb_{suffix}.png"
         save(path)
         outputs.append(path)

@@ -72,7 +72,6 @@ def render(client, error_style, output):
         plt.close(figure)
     if not outputs:
         figure, axis = plt.subplots(figsize=(8, 4))
-        axis.set_title("Activation distributions")
         mark_empty(axis)
         save_figure(figure, output)
         plt.close(figure)

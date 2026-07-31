@@ -25,7 +25,6 @@ def render(root: Path, image_dir: Path) -> list[Path]:
         axis.invert_yaxis()
         axis.set_xticklabels(list(row["row_labels"]), minor=False)
         axis.set_yticklabels(list(row["column_labels"]), minor=False)
-        axis.set_title("Original Attention alignment")
         path = image_dir / f"e08_attention_{index + 1}.png"
         save(path)
         outputs.append(path)

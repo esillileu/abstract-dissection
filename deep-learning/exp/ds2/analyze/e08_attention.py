@@ -72,7 +72,6 @@ def render(client, error_style, output):
     outputs = []
     if not matrices:
         figure, axis = plt.subplots(figsize=(7, 4))
-        axis.set_title("Attention alignment")
         mark_empty(axis)
         save_figure(figure, output)
         plt.close(figure)
@@ -90,7 +89,6 @@ def render(client, error_style, output):
             axis.set_yticks(np.arange(len(target_labels)) + 0.5, target_labels)
         axis.invert_yaxis()
         axis.set(xlabel="encoder character position", ylabel="decoder character position")
-        axis.set_title(f"Attention alignment: {example} (n={count}, range≤{np.nanmax(maximum - minimum):.3g})")
         save_figure(figure, example_output)
         plt.close(figure)
         outputs.append(example_output)

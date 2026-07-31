@@ -39,7 +39,6 @@ def render(client, error_style, output):
         xlabel="epochs",
         ylabel="accuracy",
         ylim=(0, 1.0),
-        title="SimpleConvNet Training",
     )
     mark_empty(axis)
     if axis.has_data():
