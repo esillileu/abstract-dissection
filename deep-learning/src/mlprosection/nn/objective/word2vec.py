@@ -220,3 +220,51 @@ class NegativeSampling(Objective):
             candidates=Tensor(candidates, backend=target.backend),
             replay_context=negatives.copy(),
         )
+
+
+class FusedNegativeSampling(NegativeSampling):
+    """Negative-sampling objective for FusedNegativeSamplingCBOW only."""
+
+    fused = True
+
+    def forward_fused(
+        self,
+        model,
+        inputs: Tensor,
+        batch: Word2VecObjectiveBatch,
+        *,
+        cache: bool = True,
+        example_count: int | None = None,
+    ) -> ObjectiveResult:
+        if batch.candidates is None:
+            raise ValueError("negative sampling requires candidate indices")
+        candidate_count = batch.candidates.shape[-1]
+        prediction_count = batch.candidates.size // candidate_count
+        reporting_divisor = (
+            prediction_count * candidate_count
+            if self.reduction == "mean"
+            else prediction_count
+        )
+        optimized_divisor = (
+            example_count if example_count is not None else reporting_divisor
+        )
+        loss_sum = model.forward_negative_sampling(
+            inputs,
+            batch.candidates,
+            batch.target,
+            divisor=optimized_divisor,
+            cache=cache,
+        )
+        return ObjectiveResult(
+            loss_sum / optimized_divisor,
+            prediction_count,
+            batch.replay_context,
+            reporting_loss=(
+                loss_sum / reporting_divisor
+                if example_count is not None
+                else None
+            ),
+        )
+
+    def backward_fused(self, model) -> None:
+        model.backward_negative_sampling()

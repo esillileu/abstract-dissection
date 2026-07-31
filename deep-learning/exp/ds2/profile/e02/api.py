@@ -174,12 +174,13 @@ def _write_payload(
 
 
 SUMMARY_COLUMNS = (
-    ("Original NS", "original", "ns"),
-    ("Original Emb. FS", "original", "fs"),
     ("Original One-hot FS", "original", "onehot-fs"),
-    ("Implemented NS", "implemented", "ns"),
-    ("Implemented Emb. FS", "implemented", "fs"),
+    ("Original Emb. FS", "original", "fs"),
+    ("Original NS", "original", "ns"),
     ("Implemented One-hot FS", "implemented", "onehot-fs"),
+    ("Implemented Emb. FS", "implemented", "fs"),
+    ("Implemented NS", "implemented", "ns"),
+    ("Implemented Fused NS", "implemented", "fused-ns"),
 )
 SUMMARY_ROWS = (
     ("Cold update", "cold_update", "ms"),
@@ -194,6 +195,8 @@ SUMMARY_ROWS = (
     ("Objective forward", "objective_forward", "ms"),
     ("Objective backward", "objective_backward", "ms"),
     ("Model backward", "model_backward", "ms"),
+    ("Fused forward + loss", "fused_forward_loss", "ms"),
+    ("Fused backward", "fused_backward", "ms"),
     (
         "Deduplicate shared parameters",
         "deduplicate_shared_parameters",
@@ -207,6 +210,8 @@ BOLD_FASTEST_ROWS = {
     "total",
     "model_forward",
     "model_backward",
+    "fused_forward_loss",
+    "fused_backward",
     "optimizer",
 }
 

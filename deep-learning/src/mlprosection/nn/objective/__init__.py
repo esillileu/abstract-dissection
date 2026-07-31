@@ -4,10 +4,11 @@ from .classification import (
     SoftmaxCrossEntropy,
     TemporalSoftmaxCrossEntropy,
 )
-from .word2vec import NegativeSampling, SoftmaxWithLoss
+from .word2vec import FusedNegativeSampling, NegativeSampling, SoftmaxWithLoss
 
 __all__ = [
     "BinaryCrossEntropyWithLogits",
+    "FusedNegativeSampling",
     "NegativeSampling",
     "SoftmaxWithLoss",
     "Objective",

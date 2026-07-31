@@ -25,6 +25,8 @@ from mlprosection.core.backend import BackendConfig, make_backend
 from mlprosection.nn.model.architecture import (
     CBOW,
     CBOWBatchAdapter,
+    FusedNegativeSamplingCBOW,
+    FusedNegativeSamplingSkipGram,
     OneHotCBOW,
     OneHotCBOWBatchAdapter,
     OneHotSkipGram,
@@ -32,7 +34,11 @@ from mlprosection.nn.model.architecture import (
     SkipGram,
     SkipGramBatchAdapter,
 )
-from mlprosection.nn.objective import NegativeSampling, SoftmaxWithLoss
+from mlprosection.nn.objective import (
+    FusedNegativeSampling,
+    NegativeSampling,
+    SoftmaxWithLoss,
+)
 from mlprosection.nn.sampling import UnigramSampler
 from mlprosection.optim.SGD import Adam
 from mlprosection.profiling import (
@@ -51,18 +57,20 @@ DEFAULT_OUTPUT = ROOT / "exp/ds2/profile/e02/results/update.json"
 DEFAULT_EPOCHS = 10
 
 CONDITIONS = (
-    "original-cbow-ns",
-    "original-cbow-fs",
     "original-cbow-onehot-fs",
-    "original-skipgram-ns",
-    "original-skipgram-fs",
+    "original-cbow-fs",
+    "original-cbow-ns",
     "original-skipgram-onehot-fs",
-    "implemented-cbow-ns",
-    "implemented-cbow-fs",
+    "original-skipgram-fs",
+    "original-skipgram-ns",
     "implemented-cbow-onehot-fs",
-    "implemented-skipgram-ns",
-    "implemented-skipgram-fs",
+    "implemented-cbow-fs",
+    "implemented-cbow-ns",
+    "implemented-cbow-fused-ns",
     "implemented-skipgram-onehot-fs",
+    "implemented-skipgram-fs",
+    "implemented-skipgram-ns",
+    "implemented-skipgram-fused-ns",
 )
 
 STAGES = {
@@ -208,7 +216,8 @@ class ImplementedWord2Vec:
         )
         self.model = model_class(vocab_size, 100, backend=backend)
         self.adapter = adapter
-        if objective_name == "NegativeSampling":
+        self.fused = objective_name == "FusedNegativeSampling"
+        if objective_name in {"NegativeSampling", "FusedNegativeSampling"}:
             sampler = UnigramSampler.from_corpus(
                 corpus,
                 vocab_size=vocab_size,
@@ -216,7 +225,12 @@ class ImplementedWord2Vec:
                 power=0.75,
                 algorithm=UnigramSampler.CONDITIONAL_CDF,
             )
-            self.objective = NegativeSampling(
+            objective_type = (
+                FusedNegativeSampling
+                if self.fused
+                else NegativeSampling
+            )
+            self.objective = objective_type(
                 vocab_size,
                 negative_samples=5,
                 reduction="mean",
@@ -242,6 +256,16 @@ class ImplementedWord2Vec:
         self.optimizer = Adam(params, lr=0.001)
 
     def update(self, batch_x, batch_t, recorder: SectionRecorder | None = None):
+        if self.fused:
+            return run_fused_update(
+                model=self.model,
+                adapter=self.adapter,
+                objective=self.objective,
+                optimizer=self.optimizer,
+                batch_x=batch_x,
+                batch_t=batch_t,
+                recorder=recorder,
+            )
         return run_implemented_update(
             model=self.model,
             adapter=self.adapter,
@@ -302,6 +326,43 @@ def run_implemented_update(
     return post_result.loss
 
 
+def run_fused_update(
+    *,
+    model,
+    adapter,
+    objective,
+    optimizer,
+    batch_x,
+    batch_t,
+    recorder: SectionRecorder | None = None,
+):
+    """Run the executor-equivalent fused negative-sampling update."""
+    with _phase(recorder, "batch_adapter"):
+        model_x, objective_t = adapter.prepare(batch_x, batch_t)
+    with _phase(recorder, "objective_prepare"):
+        objective_batch = objective.prepare(objective_t)
+    with _phase(recorder, "fused_forward_loss"):
+        objective.forward_fused(
+            model,
+            model_x,
+            objective_batch,
+            example_count=len(batch_x),
+        )
+    with _phase(recorder, "fused_backward"):
+        objective.backward_fused(model)
+    with _phase(recorder, "optimizer"):
+        optimizer.update()
+    with _phase(recorder, "post_update_loss"):
+        post_result = objective.forward_fused(
+            model,
+            model_x,
+            objective_batch,
+            cache=False,
+            example_count=len(batch_x),
+        )
+    return post_result.loss
+
+
 def _implemented_components(
     model_name: str,
     objective_name: str,
@@ -310,12 +371,21 @@ def _implemented_components(
     one_hot: bool,
 ):
     """Mirror the current DS2 executor's Word2Vec execution path."""
-    model_class = {
-        ("CBOW", False): CBOW,
-        ("SkipGram", False): SkipGram,
-        ("CBOW", True): OneHotCBOW,
-        ("SkipGram", True): OneHotSkipGram,
-    }[(model_name, one_hot)]
+    if objective_name == "FusedNegativeSampling":
+        if one_hot:
+            raise ValueError("fused negative sampling requires embedding input")
+        model_class = (
+            FusedNegativeSamplingCBOW
+            if model_name == "CBOW"
+            else FusedNegativeSamplingSkipGram
+        )
+    else:
+        model_class = {
+            ("CBOW", False): CBOW,
+            ("SkipGram", False): SkipGram,
+            ("CBOW", True): OneHotCBOW,
+            ("SkipGram", True): OneHotSkipGram,
+        }[(model_name, one_hot)]
     adapter = {
         ("CBOW", False): CBOWBatchAdapter(),
         ("SkipGram", False): SkipGramBatchAdapter(),
@@ -393,10 +463,18 @@ def _build_condition(
         raise ValueError(f"unknown Word2Vec implementation: {implementation_token}")
     if model_token not in {"cbow", "skipgram"}:
         raise ValueError(f"unknown Word2Vec model: {model_token}")
-    if variant not in {"ns", "fs", "onehot-fs"}:
+    if variant not in {"ns", "fused-ns", "fs", "onehot-fs"}:
         raise ValueError(f"unknown Word2Vec profile variant: {variant}")
+    if variant == "fused-ns" and implementation_token != "implemented":
+        raise ValueError("fused negative sampling has no original condition")
     model_name = "CBOW" if model_token == "cbow" else "SkipGram"
-    objective_name = "NegativeSampling" if variant == "ns" else "FullSoftmax"
+    objective_name = (
+        "FusedNegativeSampling"
+        if variant == "fused-ns"
+        else "NegativeSampling"
+        if variant == "ns"
+        else "FullSoftmax"
+    )
     one_hot = variant == "onehot-fs"
     if implementation_token == "original":
         return (

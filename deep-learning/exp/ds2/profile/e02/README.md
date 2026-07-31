@@ -1,17 +1,18 @@
 # DS2 e02 Word2Vec profiling
 
-이 디렉터리는 다음 열두 조건을 같은 PTB workload로 비교하고 update 측정값에서
+이 디렉터리는 다음 열네 조건을 같은 PTB workload로 비교하고 update 측정값에서
 epoch 및 전체 10-epoch 실행 시간을 추정한다.
 
 - 교재 원본 및 adaptation: CBOW/SkipGram 각각 NS, embedding FS, one-hot FS
 - `mlprosection` 구현: CBOW/SkipGram 각각 NS, embedding FS, one-hot FS
+- `mlprosection` 전용: fused negative-sampling CBOW/SkipGram
 
 교재 e02에 native full-softmax PTB 모델은 없으므로, original FS는 ch04의 embedding
 입력부에 ch03의 `MatMul`과 `SoftmaxWithLoss` 출력부를 붙인 adaptation을 사용한다.
 original one-hot FS는 ch03처럼 minibatch 입력과 정답을 one-hot으로 변환하고
 `MatMul(W_in)`을 수행한다.
 CBOW와 SkipGram은 실행 shape가 크게 다르고, NS와 FS는 CPU/GPU에서 병목 특성이
-달라 여섯 구현 조건을 모두 측정한다.
+달라 여덟 구현 조건을 모두 측정한다.
 
 구현체 조건은 현재 `Word2VecExecutor`의 모델/objective 실행 경로를 따른다.
 SkipGram의 세 조건은 장치와 objective에 관계없이 center를 유지한 grouped tensor를
@@ -30,7 +31,8 @@ just exp profile ds2 -e 02
 ```
 
 옵션을 생략하면 CPU와 GPU에서 original adaptation 및 구현의 CBOW/SkipGram
-NS/embedding FS/one-hot FS를 모두 실행한다. 각 장치에서 cold update와
+조건을 모두 실행한다. original 조건을 먼저 실행하고 각 구현/모델 그룹은
+one-hot FS, embedding FS, NS, 지원되는 경우 fused NS 순서다. 각 장치에서 cold update와
 steady update 분포 및 연속 throughput window를 측정하고,
 epoch/전체 시간 평균과 반복 표준편차 외삽, 가능한 모든 구성요소 측정을 수행한다. 개별
 측정값을 순서대로 출력한 뒤 마지막에 장치×CBOW/SkipGram 비교 표를 출력한다.
@@ -68,7 +70,7 @@ just exp profile ds2 -e 02 \
   --update-repetitions 3
 ```
 
-그다음 열두 조건의 CPU 계획치를 구한다.
+그다음 열네 조건의 CPU 계획치를 구한다.
 
 ```bash
 just exp profile ds2 -e 02 \
@@ -104,7 +106,7 @@ JSON의 각 조건에는 다음 값이 기록된다.
   steady 속도 표준편차를 update 수에 비례해 외삽한 값
 - `phase_ms_per_update`, `phase_share`: `detail` 단계에서만 기록되는 세부 비용
 
-전체 비교 보고서는 열두 조건을 담은 결과를 입력으로 생성한다.
+전체 비교 보고서는 열네 조건을 담은 결과를 입력으로 생성한다.
 
 ```bash
 uv run python -m exp.ds2.profile.e02.analyze \
@@ -154,6 +156,7 @@ just exp profile ds2 -e 02 \
 
 측정 가능한 구성요소는 `batch_adapter`, `objective_prepare`, `model_forward`,
 `objective_forward`, `objective_backward`, `model_backward`, `optimizer`이다.
+fused NS는 결합 경계인 `fused_forward_loss`와 `fused_backward`를 대신 기록한다.
 Negative Sampling 조건의 `objective_prepare`에는 candidate sampling이 포함된다.
 `--component model_forward --component model_backward`처럼 일부만 선택할 수 있다.
 
@@ -202,7 +205,7 @@ nsys stats \
 
 ## Vocabulary size sweep
 
-구현체 네 조건만 대상으로 vocabulary 크기에 따른 NS/Full Softmax 교차점을
+구현체 다섯 조건을 대상으로 vocabulary 크기에 따른 NS/Full Softmax 교차점을
 측정하려면 반드시 `--vsweap`을 명시한다.
 
 ```bash
@@ -227,9 +230,13 @@ just exp profile ds2 -e 02 --vsweap \
   --vocab-size 100000
 ```
 
-결과는 장치별 `results/<device>/vsweap.json`에 저장되고, CBOW와 SkipGram 각각에
-대해 NS와 Full Softmax 평균의 95% 신뢰구간이 겹치지 않고 다음 vocabulary 지점에서도
-NS 우위가 유지되는 첫 vocabulary 크기를 확정 교차점으로 출력한다. 단일 지점의 평균만
+결과는 장치별 `results/<device>/vsweap.json`에 저장된다. 같은 디렉터리의
+`vsweap.png`는 공통 Matplotlib 테마로 CBOW/SkipGram subplot을 만들고, vocabulary
+size를 x축(log scale), update당 시간을 y축(ms)으로 표시하며 95% 신뢰구간 band를
+함께 그린다. 표준 CBOW/SkipGram NS와
+별도로 각 fused NS도 같은 모델의 Full Softmax와 비교한다. 평균의 95% 신뢰구간이
+겹치지 않고 다음 vocabulary 지점에서도 NS 우위가 유지되는 첫 vocabulary 크기를
+확정 교차점으로 출력한다. 단일 지점의 평균만
 앞선 경우는 `first_observed_negative_sampling_win_vocab_size`에 남기되 교차점으로
 확정하지 않는다. 현재 dense Adam 및 reporting loss까지 포함한 end-to-end update
 교차점이며, objective 연산만의 이론적 교차점은 아니다.

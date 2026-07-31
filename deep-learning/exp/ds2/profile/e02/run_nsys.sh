@@ -7,18 +7,20 @@ phase_updates="${PHASE_UPDATES:-5}"
 mkdir -p "${profile_root}"
 
 conditions=(
-  original-cbow-ns
-  original-cbow-fs
   original-cbow-onehot-fs
-  original-skipgram-ns
-  original-skipgram-fs
+  original-cbow-fs
+  original-cbow-ns
   original-skipgram-onehot-fs
-  implemented-cbow-ns
-  implemented-cbow-fs
+  original-skipgram-fs
+  original-skipgram-ns
   implemented-cbow-onehot-fs
-  implemented-skipgram-ns
-  implemented-skipgram-fs
+  implemented-cbow-fs
+  implemented-cbow-ns
+  implemented-cbow-fused-ns
   implemented-skipgram-onehot-fs
+  implemented-skipgram-fs
+  implemented-skipgram-ns
+  implemented-skipgram-fused-ns
 )
 if (( $# > 0 )); then
   conditions=("$@")

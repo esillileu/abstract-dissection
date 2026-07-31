@@ -7,6 +7,8 @@ from mlprosection.nn import UnigramSampler
 from mlprosection.nn.model.architecture import (
     CBOW,
     CBOWBatchAdapter,
+    FusedNegativeSamplingCBOW,
+    FusedNegativeSamplingSkipGram,
     OneHotCBOW,
     OneHotCBOWBatchAdapter,
     OneHotSkipGram,
@@ -14,7 +16,11 @@ from mlprosection.nn.model.architecture import (
     SkipGram,
     SkipGramBatchAdapter,
 )
-from mlprosection.nn.objective import NegativeSampling, SoftmaxWithLoss
+from mlprosection.nn.objective import (
+    FusedNegativeSampling,
+    NegativeSampling,
+    SoftmaxWithLoss,
+)
 
 
 def _word2vec_forward(
@@ -247,6 +253,115 @@ def test_negative_sampling_book_loss_sums_candidates_for_cbow() -> None:
     assert np.allclose(book.reporting_loss.data, standard.loss.data)
     assert np.allclose(book_input_gradient, standard_input_gradient * 3)
     assert np.allclose(model.W_out.grad, standard_output_gradient * 3)
+
+
+def test_fused_negative_sampling_matches_dense_loss_and_gradients() -> None:
+    contexts = Tensor(
+        np.array([[0, 2, 3], [1, 3, 4]], dtype=np.int64),
+        backend="cpu",
+    )
+    targets = Tensor(np.array([1, 2], dtype=np.int64), backend="cpu")
+    candidates = np.array([[4, 5], [5, 6]], dtype=np.int64)
+    dense_model = CBOW(8, 3, backend="cpu")
+    fused_model = FusedNegativeSamplingCBOW(8, 3, backend="cpu")
+    fused_model.W_in.data[...] = dense_model.W_in.data
+    fused_model.W_out.data[...] = dense_model.W_out.data
+    dense_objective = NegativeSampling(8, negative_samples=2, backend="cpu")
+    fused_objective = FusedNegativeSampling(
+        8,
+        negative_samples=2,
+        backend="cpu",
+    )
+    model_x, objective_t = CBOWBatchAdapter().prepare(contexts, targets)
+    dense_batch = dense_objective.prepare(
+        objective_t,
+        replay_context=candidates,
+    )
+    fused_batch = fused_objective.prepare(
+        objective_t,
+        replay_context=candidates,
+    )
+
+    dense_prediction = dense_model.forward(
+        model_x,
+        candidates=dense_batch.candidates,
+    )
+    dense_result = dense_objective.forward(
+        dense_prediction,
+        dense_batch.target,
+        example_count=len(contexts),
+    )
+    dense_model.backward(dense_objective.backward())
+    fused_result = fused_objective.forward_fused(
+        fused_model,
+        model_x,
+        fused_batch,
+        example_count=len(contexts),
+    )
+    fused_objective.backward_fused(fused_model)
+
+    np.testing.assert_allclose(fused_result.loss.data, dense_result.loss.data)
+    np.testing.assert_allclose(
+        fused_model.W_in.grad,
+        dense_model.W_in.grad,
+    )
+    np.testing.assert_allclose(
+        fused_model.W_out.grad,
+        dense_model.W_out.grad,
+    )
+
+
+def test_fused_skipgram_matches_dense_loss_and_gradients() -> None:
+    centers = Tensor(np.array([1, 2], dtype=np.int64), backend="cpu")
+    contexts = Tensor(
+        np.array([[0, 2, 3], [1, 3, 4]], dtype=np.int64),
+        backend="cpu",
+    )
+    candidates = np.array(
+        [[4, 5], [5, 6], [6, 7], [5, 6], [6, 7], [0, 7]],
+        dtype=np.int64,
+    )
+    dense_model = SkipGram(8, 3, backend="cpu")
+    fused_model = FusedNegativeSamplingSkipGram(8, 3, backend="cpu")
+    fused_model.W_in.data[...] = dense_model.W_in.data
+    fused_model.W_out.data[...] = dense_model.W_out.data
+    dense_objective = NegativeSampling(8, negative_samples=2, backend="cpu")
+    fused_objective = FusedNegativeSampling(
+        8,
+        negative_samples=2,
+        backend="cpu",
+    )
+    model_x, objective_t = SkipGramBatchAdapter().prepare(contexts, centers)
+    dense_batch = dense_objective.prepare(
+        objective_t,
+        replay_context=candidates,
+    )
+    fused_batch = fused_objective.prepare(
+        objective_t,
+        replay_context=candidates,
+    )
+
+    dense_prediction = dense_model.forward(
+        model_x,
+        candidates=dense_batch.candidates,
+    )
+    dense_result = dense_objective.forward(
+        dense_prediction,
+        dense_batch.target,
+        example_count=len(contexts),
+    )
+    dense_model.backward(dense_objective.backward())
+    fused_result = fused_objective.forward_fused(
+        fused_model,
+        model_x,
+        fused_batch,
+        example_count=len(contexts),
+    )
+    fused_objective.backward_fused(fused_model)
+
+    np.testing.assert_allclose(fused_result.loss.data, dense_result.loss.data)
+    np.testing.assert_allclose(fused_model.W_in.grad, dense_model.W_in.grad)
+    np.testing.assert_allclose(fused_model.W_out.grad, dense_model.W_out.grad)
 
 
 def test_negative_sampling_book_loss_sums_contexts_and_candidates_for_skipgram() -> None:

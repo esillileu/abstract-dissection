@@ -8,22 +8,36 @@ import json
 from math import sqrt
 from pathlib import Path
 
+import matplotlib.pyplot as plt
 import numpy as np
 
+from exp.analyze import save_figure
+from exp.plot_theme import ACCENT_COLORS, MUTED
 from mlprosection import Tensor
 from mlprosection.core.backend import BackendConfig, make_backend
 from mlprosection.nn.model.architecture import (
     CBOW,
     CBOWBatchAdapter,
+    FusedNegativeSamplingCBOW,
+    FusedNegativeSamplingSkipGram,
     SkipGram,
     SkipGramBatchAdapter,
 )
-from mlprosection.nn.objective import NegativeSampling, SoftmaxWithLoss
+from mlprosection.nn.objective import (
+    FusedNegativeSampling,
+    NegativeSampling,
+    SoftmaxWithLoss,
+)
 from mlprosection.nn.sampling import UnigramSampler
 from mlprosection.optim.SGD import Adam
 from mlprosection.profiling import BenchmarkRunner
 
-from .update import ROOT, _metadata, run_implemented_update
+from .update import (
+    ROOT,
+    _metadata,
+    run_fused_update,
+    run_implemented_update,
+)
 
 
 DEFAULT_RESULTS = ROOT / "exp/ds2/profile/e02/results"
@@ -45,10 +59,12 @@ DEFAULT_CPU_VOCAB_SIZES = (
     50_000,
 )
 CONDITIONS = (
-    "implemented-cbow-ns",
     "implemented-cbow-fs",
-    "implemented-skipgram-ns",
+    "implemented-cbow-ns",
+    "implemented-cbow-fused-ns",
     "implemented-skipgram-fs",
+    "implemented-skipgram-ns",
+    "implemented-skipgram-fused-ns",
 )
 EMBEDDING_SIZE = 100
 CONTEXT_WIDTH = 10
@@ -100,12 +116,28 @@ class SweepWorkload:
         targets: np.ndarray,
         backend,
     ) -> None:
-        _, model_token, objective_token = condition.split("-")
+        _, model_token, *variant_tokens = condition.split("-")
+        variant = "-".join(variant_tokens)
         model_name = "CBOW" if model_token == "cbow" else "SkipGram"
         objective_name = (
-            "NegativeSampling" if objective_token == "ns" else "FullSoftmax"
+            "FusedNegativeSampling"
+            if variant == "fused-ns"
+            else "NegativeSampling"
+            if variant == "ns"
+            else "FullSoftmax"
         )
-        model_class = CBOW if model_name == "CBOW" else SkipGram
+        model_class = (
+            (
+                FusedNegativeSamplingCBOW
+                if model_name == "CBOW"
+                else FusedNegativeSamplingSkipGram
+            )
+            if objective_name == "FusedNegativeSampling"
+            else CBOW
+            if model_name == "CBOW"
+            else SkipGram
+        )
+        self.fused = objective_name == "FusedNegativeSampling"
         self.backend = backend
         self.contexts = Tensor(
             backend.asarray(contexts, dtype=backend.xp.int64),
@@ -121,13 +153,18 @@ class SweepWorkload:
             if model_name == "CBOW"
             else SkipGramBatchAdapter()
         )
-        if objective_name == "NegativeSampling":
+        if objective_name in {"NegativeSampling", "FusedNegativeSampling"}:
             sampler = UnigramSampler.uniform(
                 vocab_size,
                 backend=backend,
                 algorithm=UnigramSampler.CONDITIONAL_CDF,
             )
-            self.objective = NegativeSampling(
+            objective_type = (
+                FusedNegativeSampling
+                if self.fused
+                else NegativeSampling
+            )
+            self.objective = objective_type(
                 vocab_size,
                 negative_samples=NEGATIVE_SAMPLES,
                 reduction="mean",
@@ -156,7 +193,8 @@ class SweepWorkload:
         start = batch_index * batch_size
         batch_x = self.contexts[start : start + batch_size]
         batch_t = self.targets[start : start + batch_size]
-        run_implemented_update(
+        update = run_fused_update if self.fused else run_implemented_update
+        update(
             model=self.model,
             adapter=self.adapter,
             objective=self.objective,
@@ -251,7 +289,7 @@ def run(
         device_dir.mkdir(parents=True, exist_ok=True)
         output = device_dir / "vsweap.json"
         payload = {
-            "schema_version": 2,
+            "schema_version": 3,
             "metadata": {
                 **_metadata(backend, stage="vsweap"),
                 "method": (
@@ -277,6 +315,10 @@ def run(
             encoding="utf-8",
         )
         print(f"saved: {output}", flush=True)
+        figure = render_sweep(payload)
+        figure_output = save_figure(figure, device_dir / "vsweap.png")
+        plt.close(figure)
+        print(f"saved: {figure_output}", flush=True)
         print(_render_crossovers(device, payload["crossovers"]), flush=True)
 
 
@@ -286,6 +328,126 @@ def _default_vocab_sizes(device: str) -> tuple[int, ...]:
         if not device.startswith("cuda:")
         else DEFAULT_VOCAB_SIZES
     )
+
+
+_PLOT_STYLES = {
+    "implemented-cbow-fs": ("Full softmax", ACCENT_COLORS[0], "o", "-"),
+    "implemented-cbow-ns": (
+        "Negative sampling",
+        ACCENT_COLORS[1],
+        "s",
+        "--",
+    ),
+    "implemented-cbow-fused-ns": (
+        "Fused negative sampling",
+        ACCENT_COLORS[3],
+        "^",
+        "-.",
+    ),
+    "implemented-skipgram-fs": (
+        "Full softmax",
+        ACCENT_COLORS[0],
+        "o",
+        "-",
+    ),
+    "implemented-skipgram-ns": (
+        "Negative sampling",
+        ACCENT_COLORS[1],
+        "s",
+        "--",
+    ),
+    "implemented-skipgram-fused-ns": (
+        "Fused negative sampling",
+        ACCENT_COLORS[3],
+        "^",
+        "-.",
+    ),
+}
+
+
+def render_sweep(payload: dict[str, object]):
+    """Render one repository-themed vocabulary/runtime figure per device."""
+    rows = payload.get("results")
+    metadata = payload.get("metadata")
+    if not isinstance(rows, list) or not isinstance(metadata, dict):
+        raise ValueError("invalid vocabulary sweep payload")
+    selected = [
+        row
+        for row in rows
+        if isinstance(row, dict)
+        and row.get("status") == "ok"
+        and row.get("condition") in _PLOT_STYLES
+    ]
+    models = [
+        model
+        for model in ("CBOW", "SkipGram")
+        if any(row.get("model") == model for row in selected)
+    ]
+    if not models:
+        raise ValueError("vocabulary sweep has no plottable results")
+
+    figure, axes = plt.subplots(
+        1,
+        len(models),
+        figsize=(6.4 if len(models) == 1 else 10.0, 4.8),
+        squeeze=False,
+    )
+    device = str(metadata.get("device", "unknown device"))
+    for axis, model in zip(axes[0], models, strict=True):
+        model_rows = [row for row in selected if row.get("model") == model]
+        conditions = [
+            condition
+            for condition in _PLOT_STYLES
+            if any(row.get("condition") == condition for row in model_rows)
+        ]
+        for condition in conditions:
+            label, color, marker, linestyle = _PLOT_STYLES[condition]
+            condition_rows = sorted(
+                (
+                    row
+                    for row in model_rows
+                    if row.get("condition") == condition
+                ),
+                key=lambda row: int(row["vocab_size"]),
+            )
+            vocabulary = np.asarray(
+                [int(row["vocab_size"]) for row in condition_rows],
+                dtype=float,
+            )
+            update_ms = np.asarray(
+                [float(row["update_ms"]) for row in condition_rows],
+                dtype=float,
+            )
+            axis.plot(
+                vocabulary,
+                update_ms,
+                label=label,
+                color=color,
+                marker=marker,
+                linestyle=linestyle,
+                linewidth=1.6,
+                markersize=5,
+            )
+            lower = [row.get("ci95_lower_ms") for row in condition_rows]
+            upper = [row.get("ci95_upper_ms") for row in condition_rows]
+            if all(value is not None for value in (*lower, *upper)):
+                axis.fill_between(
+                    vocabulary,
+                    np.asarray(lower, dtype=float),
+                    np.asarray(upper, dtype=float),
+                    color=color,
+                    alpha=0.2,
+                    linewidth=0,
+                )
+        axis.set(
+            title=f"{model} · {device}",
+            xlabel="vocabulary size",
+            ylabel="time per update (ms)",
+            xscale="log",
+        )
+        axis.grid(True, which="both", alpha=0.25, color=MUTED)
+        axis.legend()
+    return figure
 
 
 def _validate_vocab_sizes(vocab_sizes: tuple[int, ...]) -> None:
@@ -308,7 +470,13 @@ def _measure_condition(
     repetitions: int,
 ) -> dict[str, object]:
     model_name = "CBOW" if "-cbow-" in condition else "SkipGram"
-    objective_name = "NegativeSampling" if condition.endswith("-ns") else "FullSoftmax"
+    objective_name = (
+        "FusedNegativeSampling"
+        if condition.endswith("-fused-ns")
+        else "NegativeSampling"
+        if condition.endswith("-ns")
+        else "FullSoftmax"
+    )
     row: dict[str, object] = {
         "condition": condition,
         "implementation": "implemented",
@@ -439,78 +607,98 @@ def _mean_confidence_interval_95(timing) -> dict[str, float | None]:
 
 
 def _crossovers(rows: list[dict[str, object]]) -> dict[str, dict[str, object]]:
-    result: dict[str, dict[str, object]] = {}
-    for model in ("CBOW", "SkipGram"):
-        by_key = {
-            (int(row["vocab_size"]), str(row["objective"])): row
-            for row in rows
-            if row["model"] == model and row["status"] == "ok"
-        }
-        comparisons = []
-        for vocab_size in sorted({key[0] for key in by_key}):
-            ns = by_key.get((vocab_size, "NegativeSampling"))
-            fs = by_key.get((vocab_size, "FullSoftmax"))
-            if ns is None or fs is None:
-                continue
-            ns_ms = float(ns["update_ms"])
-            fs_ms = float(fs["update_ms"])
-            ns_lower = ns["ci95_lower_ms"]
-            ns_upper = ns["ci95_upper_ms"]
-            fs_lower = fs["ci95_lower_ms"]
-            fs_upper = fs["ci95_upper_ms"]
-            if (
-                ns_upper is not None
-                and fs_lower is not None
-                and float(ns_upper) < float(fs_lower)
-            ):
-                confidence_winner = "NegativeSampling"
-            elif (
-                fs_upper is not None
-                and ns_lower is not None
-                and float(fs_upper) < float(ns_lower)
-            ):
-                confidence_winner = "FullSoftmax"
-            else:
-                confidence_winner = "Inconclusive"
-            comparisons.append(
-                {
-                    "vocab_size": vocab_size,
-                    "negative_sampling_ms": ns_ms,
-                    "full_softmax_ms": fs_ms,
-                    "negative_sampling_speedup": fs_ms / ns_ms,
-                    "point_estimate_winner": (
-                        "NegativeSampling" if ns_ms < fs_ms else "FullSoftmax"
-                    ),
-                    "confidence_winner": confidence_winner,
-                }
-            )
-        first_observed = next(
-            (
-                comparison["vocab_size"]
-                for comparison in comparisons
-                if comparison["point_estimate_winner"] == "NegativeSampling"
-            ),
-            None,
+    result = {
+        "CBOW": _crossover(rows, "CBOW", "NegativeSampling"),
+        "CBOW-Fused": _crossover(rows, "CBOW", "FusedNegativeSampling"),
+        "SkipGram": _crossover(rows, "SkipGram", "NegativeSampling"),
+        "SkipGram-Fused": _crossover(
+            rows,
+            "SkipGram",
+            "FusedNegativeSampling",
+        ),
+    }
+    return {
+        key: value
+        for key, value in result.items()
+        if value["comparisons"]
+    }
+
+
+def _crossover(
+    rows: list[dict[str, object]],
+    model: str,
+    sampling_objective: str,
+) -> dict[str, object]:
+    by_key = {
+        (int(row["vocab_size"]), str(row["objective"])): row
+        for row in rows
+        if row["model"] == model and row["status"] == "ok"
+    }
+    comparisons = []
+    for vocab_size in sorted({key[0] for key in by_key}):
+        ns = by_key.get((vocab_size, sampling_objective))
+        fs = by_key.get((vocab_size, "FullSoftmax"))
+        if ns is None or fs is None:
+            continue
+        ns_ms = float(ns["update_ms"])
+        fs_ms = float(fs["update_ms"])
+        ns_lower = ns["ci95_lower_ms"]
+        ns_upper = ns["ci95_upper_ms"]
+        fs_lower = fs["ci95_lower_ms"]
+        fs_upper = fs["ci95_upper_ms"]
+        if (
+            ns_upper is not None
+            and fs_lower is not None
+            and float(ns_upper) < float(fs_lower)
+        ):
+            confidence_winner = sampling_objective
+        elif (
+            fs_upper is not None
+            and ns_lower is not None
+            and float(fs_upper) < float(ns_lower)
+        ):
+            confidence_winner = "FullSoftmax"
+        else:
+            confidence_winner = "Inconclusive"
+        comparisons.append(
+            {
+                "vocab_size": vocab_size,
+                "negative_sampling_ms": ns_ms,
+                "full_softmax_ms": fs_ms,
+                "negative_sampling_speedup": fs_ms / ns_ms,
+                "point_estimate_winner": (
+                    sampling_objective if ns_ms < fs_ms else "FullSoftmax"
+                ),
+                "confidence_winner": confidence_winner,
+            }
         )
-        first_confirmed = next(
-            (
-                comparison["vocab_size"]
-                for comparison, following in zip(comparisons, comparisons[1:])
-                if comparison["confidence_winner"] == "NegativeSampling"
-                and following["confidence_winner"] == "NegativeSampling"
-            ),
-            None,
-        )
-        result[model] = {
-            "first_observed_negative_sampling_win_vocab_size": first_observed,
-            "first_confirmed_negative_sampling_win_vocab_size": first_confirmed,
-            "confirmation_rule": (
-                "non-overlapping 95% mean confidence intervals favor "
-                "NegativeSampling at this and the next measured vocabulary size"
-            ),
-            "comparisons": comparisons,
-        }
-    return result
+    first_observed = next(
+        (
+            comparison["vocab_size"]
+            for comparison in comparisons
+            if comparison["point_estimate_winner"] == sampling_objective
+        ),
+        None,
+    )
+    first_confirmed = next(
+        (
+            comparison["vocab_size"]
+            for comparison, following in zip(comparisons, comparisons[1:])
+            if comparison["confidence_winner"] == sampling_objective
+            and following["confidence_winner"] == sampling_objective
+        ),
+        None,
+    )
+    return {
+        "sampling_objective": sampling_objective,
+        "first_observed_negative_sampling_win_vocab_size": first_observed,
+        "first_confirmed_negative_sampling_win_vocab_size": first_confirmed,
+        "confirmation_rule": (
+            "non-overlapping 95% mean confidence intervals favor "
+            f"{sampling_objective} at this and the next measured vocabulary size"
+        ),
+        "comparisons": comparisons,
+    }
 
 
 def _render_crossovers(
@@ -519,16 +707,19 @@ def _render_crossovers(
 ) -> str:
     assert isinstance(crossovers, dict)
     lines = [f"\n# {device} vocabulary sweep crossover"]
-    for model in ("CBOW", "SkipGram"):
-        summary = crossovers[model]
+    for model in ("CBOW", "CBOW-Fused", "SkipGram", "SkipGram-Fused"):
+        summary = crossovers.get(model)
+        if summary is None:
+            continue
         assert isinstance(summary, dict)
         first = summary["first_confirmed_negative_sampling_win_vocab_size"]
+        objective = str(summary["sampling_objective"])
         lines.append(
             f"- {model}: "
             + (
-                "no confirmed NS crossover"
+                f"no confirmed {objective} crossover"
                 if first is None
-                else f"confirmed NS crossover at V={int(first):,}"
+                else f"confirmed {objective} crossover at V={int(first):,}"
             )
         )
     return "\n".join(lines)

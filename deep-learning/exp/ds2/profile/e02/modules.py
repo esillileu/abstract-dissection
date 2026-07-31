@@ -34,13 +34,20 @@ IMPLEMENTED_COMPONENTS = (
     "model_backward",
     "optimizer",
 )
+FUSED_COMPONENTS = (
+    "batch_adapter",
+    "objective_prepare",
+    "fused_forward_loss",
+    "fused_backward",
+    "optimizer",
+)
 ORIGINAL_COMPONENTS = (
     "forward",
     "backward",
     "deduplicate_shared_parameters",
     "optimizer",
 )
-COMPONENTS = IMPLEMENTED_COMPONENTS + ORIGINAL_COMPONENTS
+COMPONENTS = IMPLEMENTED_COMPONENTS + FUSED_COMPONENTS + ORIGINAL_COMPONENTS
 DEFAULT_OUTPUT = ROOT / "exp/ds2/profile/e02/results/modules.json"
 
 
@@ -162,6 +169,61 @@ class OriginalComponentFixture:
         return getattr(self, f"prepare_{name}", None)
 
 
+class FusedComponentFixture:
+    """Expose the combined boundaries of the fused CBOW objective."""
+
+    def __init__(self, workload, *, batch_size: int) -> None:
+        self.workload = workload
+        self.batch_x, self.batch_t = _batch(workload, 0, batch_size)
+        self.model_x = None
+        self.objective_t = None
+        self.objective_batch = None
+
+    def batch_adapter(self) -> None:
+        self.model_x, self.objective_t = self.workload.adapter.prepare(
+            self.batch_x,
+            self.batch_t,
+        )
+
+    def prepare_objective_prepare(self) -> None:
+        self.batch_adapter()
+
+    def objective_prepare(self) -> None:
+        self.objective_batch = self.workload.objective.prepare(self.objective_t)
+
+    def prepare_fused_forward_loss(self) -> None:
+        self.prepare_objective_prepare()
+        self.objective_prepare()
+
+    def fused_forward_loss(self) -> None:
+        self.workload.objective.forward_fused(
+            self.workload.model,
+            self.model_x,
+            self.objective_batch,
+            example_count=len(self.batch_x),
+        )
+
+    def prepare_fused_backward(self) -> None:
+        self.prepare_fused_forward_loss()
+        self.fused_forward_loss()
+
+    def fused_backward(self) -> None:
+        self.workload.objective.backward_fused(self.workload.model)
+
+    def prepare_optimizer(self) -> None:
+        self.prepare_fused_backward()
+        self.fused_backward()
+
+    def optimizer(self) -> None:
+        self.workload.optimizer.update()
+
+    def operation(self, name: str):
+        return getattr(self, name)
+
+    def preparation(self, name: str):
+        return getattr(self, f"prepare_{name}", None)
+
+
 def profile_modules(
     condition: str,
     *,
@@ -181,7 +243,11 @@ def profile_modules(
         targets=targets,
         backend=backend,
     )
-    if implementation == "implemented":
+    if implementation == "implemented" and workload.fused:
+        fixture = FusedComponentFixture(workload, batch_size=batch_size)
+        available_components = FUSED_COMPONENTS
+        measurement_scope = "fused_negative_sampling"
+    elif implementation == "implemented":
         fixture = ComponentFixture(workload, batch_size=batch_size)
         available_components = IMPLEMENTED_COMPONENTS
         measurement_scope = "separate_model_objective"

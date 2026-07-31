@@ -17,6 +17,8 @@ from mlprosection.nn.model.architecture import (
     BetterRnnlm,
     CBOW,
     CBOWBatchAdapter,
+    FusedNegativeSamplingCBOW,
+    FusedNegativeSamplingSkipGram,
     OneHotCBOW,
     OneHotCBOWBatchAdapter,
     OneHotSkipGram,
@@ -29,6 +31,7 @@ from mlprosection.nn.model.architecture import (
     VanillaRnnlm,
 )
 from mlprosection.nn.objective import (
+    FusedNegativeSampling,
     NegativeSampling,
     SoftmaxWithLoss,
     TemporalSoftmaxCrossEntropy,
@@ -36,6 +39,7 @@ from mlprosection.nn.objective import (
 from mlprosection.optim.SGD import Adam, SGD
 from mlprosection.optim.transform import ClipGradNorm
 from mlprosection.trainer import (
+    FusedNegativeSamplingTrainer,
     LanguageModelTrainer,
     Seq2seqTrainer,
     Word2VecTrainer,
@@ -226,7 +230,7 @@ class Word2VecExecutor:
         }
         objective_name = str(objective_config.get("name", "NegativeSampling"))
         sampler = None
-        if objective_name == "NegativeSampling":
+        if objective_name in {"NegativeSampling", "FusedNegativeSampling"}:
             sampler_values = _mapping(objective_config, "sampler")
             sampler = UnigramSampler.from_corpus(
                 corpus,
@@ -247,6 +251,10 @@ class Word2VecExecutor:
         )
         model_type = {
             ("CBOW", "embedding"): CBOW,
+            ("FusedNegativeSamplingCBOW", "embedding"):
+                FusedNegativeSamplingCBOW,
+            ("FusedNegativeSamplingSkipGram", "embedding"):
+                FusedNegativeSamplingSkipGram,
             ("SkipGram", "embedding"): SkipGram,
             ("CBOW", "one_hot"): OneHotCBOW,
             ("SkipGram", "one_hot"): OneHotSkipGram,
@@ -265,6 +273,9 @@ class Word2VecExecutor:
             )
         adapter = {
             ("CBOW", "embedding"): CBOWBatchAdapter(),
+            ("FusedNegativeSamplingCBOW", "embedding"): CBOWBatchAdapter(),
+            ("FusedNegativeSamplingSkipGram", "embedding"):
+                SkipGramBatchAdapter(),
             ("SkipGram", "embedding"): SkipGramBatchAdapter(),
             ("CBOW", "one_hot"): OneHotCBOWBatchAdapter(len(word_to_id)),
             ("SkipGram", "one_hot"): OneHotSkipGramBatchAdapter(
@@ -281,8 +292,13 @@ class Word2VecExecutor:
                 grouped_targets=architecture == "SkipGram",
                 backend=backend,
             )
-        elif objective_name == "NegativeSampling":
-            objective = NegativeSampling(
+        elif objective_name in {"NegativeSampling", "FusedNegativeSampling"}:
+            objective_type = (
+                FusedNegativeSampling
+                if objective_name == "FusedNegativeSampling"
+                else NegativeSampling
+            )
+            objective = objective_type(
                 len(word_to_id),
                 negative_samples=int(objective_config.get("negative_samples", 5)),
                 reduction=str(objective_config.get("reduction", "mean")),
@@ -302,7 +318,12 @@ class Word2VecExecutor:
         records_sink = DS2Records()
         records_sink.bind_artifact_root(artifact_root)
         monitor = create_runtime_monitor(backend, _mapping(config, "profiling"))
-        trainer = Word2VecTrainer(
+        trainer_type = (
+            FusedNegativeSamplingTrainer
+            if objective_name == "FusedNegativeSampling"
+            else Word2VecTrainer
+        )
+        trainer = trainer_type(
             model, objective, optimizer, batch_adapter=adapter,
             max_epochs=epochs, batch_size=batch_size,
             max_updates=None if max_updates is None else int(max_updates),

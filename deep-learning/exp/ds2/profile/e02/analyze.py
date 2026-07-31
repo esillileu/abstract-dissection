@@ -114,6 +114,16 @@ def build_comparisons(
             "Implemented CBOW: NS → FS",
         ),
         (
+            "implemented-cbow-ns",
+            "implemented-cbow-fused-ns",
+            "Implemented CBOW NS: standard → fused",
+        ),
+        (
+            "implemented-skipgram-ns",
+            "implemented-skipgram-fused-ns",
+            "Implemented SkipGram NS: standard → fused",
+        ),
+        (
             "implemented-skipgram-ns",
             "implemented-skipgram-fs",
             "Implemented SkipGram: NS → FS",

@@ -147,6 +147,49 @@ def test_ds2_skipgram_full_softmax_runs_grouped_contexts(
     assert "final/train/book_loss" in result.metrics
 
 
+@pytest.mark.parametrize(
+    "atomic_run_id",
+    (
+        "W2V-PTB-CBOW-FUSED-NS",
+        "W2V-PTB-SKIPGRAM-FUSED-NS",
+    ),
+)
+def test_ds2_fused_negative_sampling_runs_one_update(
+    monkeypatch,
+    tmp_path: Path,
+    atomic_run_id: str,
+) -> None:
+    corpus = np.array([0, 1, 2, 3] * 6, dtype=np.int64)
+    monkeypatch.setattr(
+        "exp.ds2.executor.load_ptb",
+        lambda: {
+            "train": corpus,
+            "valid": corpus[:8],
+            "test": corpus[:8],
+            "word_to_id": {str(index): index for index in range(4)},
+            "id_to_word": {index: str(index) for index in range(4)},
+        },
+    )
+    spec = parse_run_spec(
+        "exp/ds2/config/e02_ptb_word2vec.yaml",
+        atomic_run_id=atomic_run_id,
+        overrides={
+            **_cpu_overrides(),
+            "loader": {"batch_size": 2},
+            "model": {"embedding_size": 3},
+            "budget": {"max_epochs": 1, "max_updates": 1},
+        },
+    )
+    config = spec.to_executor_config()
+    config["seed"] = 1
+
+    result = Word2VecExecutor().run(config, _context(tmp_path))
+
+    assert result.metrics["final/status/success"] == 1.0
+    assert result.metrics["final/system/total_updates"] == 1.0
+    assert "final/train/book_loss" in result.metrics
+
+
 def test_ds2_language_model_config_runs_one_epoch(
     monkeypatch,
     tmp_path: Path,

@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 
 from exp.ds2.profile.e02 import analyze, api, modules
 from exp.ds2.profile.e02 import update
@@ -18,6 +19,59 @@ def test_profile_registers_embedding_and_onehot_full_softmax_conditions() -> Non
     assert "original-skipgram-onehot-fs" in update.CONDITIONS
     assert "implemented-cbow-onehot-fs" in update.CONDITIONS
     assert "implemented-skipgram-onehot-fs" in update.CONDITIONS
+    assert "implemented-cbow-fused-ns" in update.CONDITIONS
+    assert "implemented-skipgram-fused-ns" in update.CONDITIONS
+    assert update.CONDITIONS == (
+        "original-cbow-onehot-fs",
+        "original-cbow-fs",
+        "original-cbow-ns",
+        "original-skipgram-onehot-fs",
+        "original-skipgram-fs",
+        "original-skipgram-ns",
+        "implemented-cbow-onehot-fs",
+        "implemented-cbow-fs",
+        "implemented-cbow-ns",
+        "implemented-cbow-fused-ns",
+        "implemented-skipgram-onehot-fs",
+        "implemented-skipgram-fs",
+        "implemented-skipgram-ns",
+        "implemented-skipgram-fused-ns",
+    )
+
+
+@pytest.mark.parametrize(
+    ("condition", "expected_model"),
+    (
+        ("implemented-cbow-fused-ns", "CBOW"),
+        ("implemented-skipgram-fused-ns", "SkipGram"),
+    ),
+)
+def test_profile_fused_condition_runs_one_cpu_update(
+    condition: str,
+    expected_model: str,
+) -> None:
+    backend = make_backend(
+        BackendConfig(device="cpu", dtype="float32", seed=1)
+    )
+    corpus = np.arange(11, dtype=np.int32)
+    contexts = np.tile(np.arange(10, dtype=np.int32), (4, 1))
+    targets = np.arange(4, dtype=np.int32)
+    workload, model_name, objective_name, implementation = (
+        update._build_condition(
+            condition,
+            corpus=corpus,
+            contexts=contexts,
+            targets=targets,
+            backend=backend,
+        )
+    )
+
+    loss = workload.update(workload.contexts, workload.targets)
+
+    assert np.isfinite(loss.data)
+    assert model_name == expected_model
+    assert objective_name == "FusedNegativeSampling"
+    assert implementation == "implemented"
 
 
 def test_profile_original_full_softmax_conditions_run_one_cpu_update() -> None:
@@ -198,3 +252,39 @@ def test_onehot_conditions_are_available_to_module_profiler() -> None:
     assert modules.CONDITIONS is update.CONDITIONS
     assert rows[0]["condition"] == "implemented-cbow-onehot-fs"
     assert rows[0]["component"] == "batch_adapter"
+
+
+@pytest.mark.parametrize(
+    "condition",
+    (
+        "implemented-cbow-fused-ns",
+        "implemented-skipgram-fused-ns",
+    ),
+)
+def test_fused_condition_is_available_to_module_profiler(
+    condition: str,
+) -> None:
+    backend = make_backend(
+        BackendConfig(device="cpu", dtype="float32", seed=1)
+    )
+    corpus = np.arange(11, dtype=np.int32)
+    contexts = np.tile(np.arange(10, dtype=np.int32), (4, 1))
+    targets = np.arange(4, dtype=np.int32)
+
+    rows = modules.profile_modules(
+        condition,
+        corpus=corpus,
+        contexts=contexts,
+        targets=targets,
+        backend=backend,
+        batch_size=2,
+        components=("fused_forward_loss", "fused_backward", "optimizer"),
+        warmup_iterations=0,
+        measured_iterations=1,
+    )
+
+    assert [row["component"] for row in rows] == [
+        "fused_forward_loss",
+        "fused_backward",
+        "optimizer",
+    ]

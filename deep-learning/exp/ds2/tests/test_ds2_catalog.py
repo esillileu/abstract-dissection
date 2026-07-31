@@ -19,6 +19,8 @@ from mlprosection.core.backend import BackendConfig, make_backend
 from mlprosection.nn.model.architecture import (
     CBOW,
     CBOWBatchAdapter,
+    FusedNegativeSamplingCBOW,
+    FusedNegativeSamplingSkipGram,
     OneHotCBOW,
     OneHotCBOWBatchAdapter,
     OneHotSkipGram,
@@ -27,12 +29,36 @@ from mlprosection.nn.model.architecture import (
     SkipGramBatchAdapter,
 )
 from mlprosection.nn.objective import (
+    FusedNegativeSampling,
     NegativeSampling,
     SoftmaxWithLoss,
     TemporalSoftmaxCrossEntropy,
 )
 
 CONFIG_ROOT = Path("exp/ds2/config")
+
+
+def test_e02_fused_variant_is_separate_and_uses_dense_adam() -> None:
+    path = CONFIG_ROOT / "e02_ptb_word2vec.yaml"
+    existing = parse_run_spec(path, atomic_run_id="W2V-PTB-CBOW-NS")
+    fused = parse_run_spec(
+        path,
+        atomic_run_id="W2V-PTB-CBOW-FUSED-NS",
+    )
+    fused_skipgram = parse_run_spec(
+        path,
+        atomic_run_id="W2V-PTB-SKIPGRAM-FUSED-NS",
+    )
+
+    assert existing.model["name"] == "CBOW"
+    assert existing.objective["name"] == "NegativeSampling"
+    assert existing.optimizer["name"] == "adam"
+    assert fused.model["name"] == "FusedNegativeSamplingCBOW"
+    assert fused.objective["name"] == "FusedNegativeSampling"
+    assert fused.optimizer["name"] == "adam"
+    assert fused_skipgram.model["name"] == "FusedNegativeSamplingSkipGram"
+    assert fused_skipgram.objective["name"] == "FusedNegativeSampling"
+    assert fused_skipgram.optimizer["name"] == "adam"
 
 
 def test_all_ds2_variants_resolve_and_build_the_declared_components() -> None:
@@ -61,6 +87,14 @@ def test_all_ds2_variants_resolve_and_build_the_declared_components() -> None:
                 )
                 model_type, _adapter = {
                     ("CBOW", "embedding"): (CBOW, CBOWBatchAdapter()),
+                    ("FusedNegativeSamplingCBOW", "embedding"): (
+                        FusedNegativeSamplingCBOW,
+                        CBOWBatchAdapter(),
+                    ),
+                    ("FusedNegativeSamplingSkipGram", "embedding"): (
+                        FusedNegativeSamplingSkipGram,
+                        SkipGramBatchAdapter(),
+                    ),
                     ("SkipGram", "embedding"): (
                         SkipGram,
                         SkipGramBatchAdapter(),
@@ -77,11 +111,15 @@ def test_all_ds2_variants_resolve_and_build_the_declared_components() -> None:
                 model = model_type(11, 3, backend=backend)
                 objective_type = {
                     "SoftmaxWithLoss": SoftmaxWithLoss,
+                    "FusedNegativeSampling": FusedNegativeSampling,
                     "NegativeSampling": NegativeSampling,
                 }[str(config["objective"]["name"])]
                 objective = (
                     objective_type(11, backend=backend)
-                    if objective_type is NegativeSampling
+                    if objective_type in {
+                        FusedNegativeSampling,
+                        NegativeSampling,
+                    }
                     else objective_type(backend=backend)
                 )
                 _optimizer(config, model, objective)
@@ -111,4 +149,4 @@ def test_all_ds2_variants_resolve_and_build_the_declared_components() -> None:
                 assert isinstance(executor, AttentionAlignmentObservationExecutor)
             assert callable(executor.run)
             count += 1
-    assert count == 21
+    assert count == 23
