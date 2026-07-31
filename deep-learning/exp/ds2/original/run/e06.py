@@ -4,7 +4,7 @@ from pathlib import Path
 
 from exp.original.measurement import OriginalMeasurements
 
-from .common import COMMON_SOURCES, Trial, checkpoint_arrays, evaluate_seq2seq, importlib, np, save_csv, save_npz, source_imports
+from .common import COMMON_SOURCES, Trial, checkpoint_arrays, evaluate_seq2seq, importlib, install_ch07_compatibility_aliases, np, save_csv, save_npz, source_imports
 
 
 CONDITIONS = {
@@ -24,6 +24,7 @@ def _run(name: str, worktree: Path, output: Path, _root: Path) -> None:
         util = importlib.import_module("common.util")
         optimizer_cls = importlib.import_module("common.optimizer").Adam
         trainer_cls = importlib.import_module("common.trainer").Trainer
+        install_ch07_compatibility_aliases()
         module = (
             importlib.import_module("ch07.seq2seq")
             if class_name == "Seq2seq"

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import csv
+import importlib
 import json
 import sys
+import types
 from pathlib import Path
 
 import numpy as np
@@ -318,6 +320,29 @@ def test_npz_is_host_numpy_and_never_requires_pickle(tmp_path: Path) -> None:
         assert np.array_equal(archive["values"], np.arange(4))
 
 
+def test_to_host_converts_a_sequence_of_cupy_scalars(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from exp.original.cache import to_host
+
+    class FakeCupyArray:
+        def __init__(self, value: int) -> None:
+            self.value = value
+
+    fake_cupy = types.ModuleType("cupy")
+    fake_cupy.ndarray = FakeCupyArray
+    fake_cupy.asnumpy = lambda value: np.asarray(value.value)
+    fake_cupy.cuda = types.SimpleNamespace(
+        get_current_stream=lambda: types.SimpleNamespace(synchronize=lambda: None)
+    )
+    monkeypatch.setitem(sys.modules, "cupy", fake_cupy)
+
+    assert np.array_equal(
+        to_host([FakeCupyArray(1), FakeCupyArray(2)]),
+        np.array([1, 2]),
+    )
+
+
 def test_manifest_records_schema_and_completed_status(tmp_path: Path) -> None:
     target = tmp_path / "trial"
     _publish(target)
@@ -351,3 +376,21 @@ def test_ds2_original_trials_all_use_cupy() -> None:
 
     assert set(by_experiment) == {"e01", "e02", "e03", "e04", "e06", "e07", "e08"}
     assert all(backends == {"cupy"} for backends in by_experiment.values())
+
+
+def test_ds2_ch07_compatibility_alias_supports_peeky_import() -> None:
+    from exp.ds2.original.run.api import UPSTREAM
+    from exp.ds2.original.run.common import (
+        install_ch07_compatibility_aliases,
+        source_imports,
+    )
+
+    previous_alias = sys.modules.get("seq2seq")
+    with source_imports(UPSTREAM):
+        install_ch07_compatibility_aliases()
+        seq2seq = importlib.import_module("ch07.seq2seq")
+        peeky_seq2seq = importlib.import_module("ch07.peeky_seq2seq")
+
+        assert peeky_seq2seq.Seq2seq is seq2seq.Seq2seq
+
+    assert sys.modules.get("seq2seq") is previous_alias

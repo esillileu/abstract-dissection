@@ -64,6 +64,8 @@ def save_npz(path: Path, **arrays: object) -> None:
 
 def to_host(value: object) -> np.ndarray:
     """Convert NumPy/CuPy-compatible values to a host ndarray."""
+    if isinstance(value, (list, tuple)):
+        return np.asarray([to_host(item) for item in value])
     try:
         import cupy as cp
 

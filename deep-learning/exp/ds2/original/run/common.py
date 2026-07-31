@@ -81,6 +81,7 @@ def _is_upstream_name(name: str) -> bool:
         "b2",
         "common",
         "dataset",
+        "seq2seq",
         "ch03",
         "ch04",
         "ch05",
@@ -100,6 +101,11 @@ def install_b2_compatibility_aliases() -> None:
     sys.modules["b2.common"] = b2_common
     for name in ("np", "time_layers"):
         sys.modules[f"b2.common.{name}"] = importlib.import_module(f"common.{name}")
+
+
+def install_ch07_compatibility_aliases() -> None:
+    """Support ch07's script-relative ``from seq2seq`` import."""
+    sys.modules["seq2seq"] = importlib.import_module("ch07.seq2seq")
 
 
 def checkpoint_arrays(params: list[object]) -> dict[str, np.ndarray]:
@@ -151,6 +157,7 @@ __all__ = [
     "evaluate_seq2seq",
     "importlib",
     "install_b2_compatibility_aliases",
+    "install_ch07_compatibility_aliases",
     "load_npz",
     "np",
     "restore_params",
