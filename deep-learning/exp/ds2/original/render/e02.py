@@ -8,11 +8,20 @@ from .common import load_csv, np, plt, save, trial
 TRIAL_IDS = (
     "dlfs2.ch04.ptb-cbow-negative-sampling",
     "ext.ds2.ptb-cbow-full-softmax",
+    "ext.ds2.ptb-cbow-onehot-full-softmax",
     "dlfs2.ch04.ptb-skipgram-negative-sampling",
     "ext.ds2.ptb-skipgram-full-softmax",
+    "ext.ds2.ptb-skipgram-onehot-full-softmax",
 )
 
-SUFFIXES = ("cbow", "cbow_fs", "skipgram", "skipgram_fs")
+SUFFIXES = (
+    "cbow",
+    "cbow_fs",
+    "cbow_onehot_fs",
+    "skipgram",
+    "skipgram_fs",
+    "skipgram_onehot_fs",
+)
 
 
 def render(root: Path, image_dir: Path) -> list[Path]:

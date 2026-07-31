@@ -21,3 +21,5 @@ variants:
   W2V-PTB-SKIPGRAM-NS: {run: {structure_signature: ptb-skipgram-negative-sampling-w5-e100}, model: {name: SkipGram}, objective: {name: NegativeSampling}}
   W2V-PTB-CBOW-FULL: {run: {structure_signature: ptb-cbow-full-softmax-w5-e100}, model: {name: CBOW}, objective: {name: SoftmaxWithLoss}}
   W2V-PTB-SKIPGRAM-FULL: {run: {structure_signature: ptb-skipgram-full-softmax-w5-e100}, model: {name: SkipGram}, objective: {name: SoftmaxWithLoss}}
+  W2V-PTB-CBOW-ONEHOT-FULL: {run: {structure_signature: ptb-cbow-onehot-full-softmax-w5-e100}, model: {name: CBOW, input_representation: one_hot}, objective: {name: SoftmaxWithLoss}}
+  W2V-PTB-SKIPGRAM-ONEHOT-FULL: {run: {structure_signature: ptb-skipgram-onehot-full-softmax-w5-e100}, model: {name: SkipGram, input_representation: one_hot}, objective: {name: SoftmaxWithLoss}}

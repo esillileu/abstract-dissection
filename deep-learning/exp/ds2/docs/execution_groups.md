@@ -17,7 +17,7 @@
 | 그룹 | protocol | 공통 조건 | 변동 축 | 원자 시행 수 |
 | --- | --- | --- | --- | ---: |
 | `GT01` | toy Word2Vec | toy corpus, full softmax, window 1, embedding 5, Adam .001, batch 3, 1,000 epochs | architecture | 2 |
-| `GT02` | PTB Word2Vec | PTB train, window 5, embedding 100, Adam .001, batch 100, 10 epochs | architecture × objective | 4 |
+| `GT02` | PTB Word2Vec | PTB train, window 5, hidden 100, Adam .001, batch 100, 10 epochs | architecture × objective/input projection | 6 |
 | `GT03` | small-corpus RNNLM | PTB first 1,000 tokens, SimpleRnnlm 100/100, SGD .1, batch 10, BPTT 5, 100 epochs | 없음 | 1 |
 | `GT04` | PTB LSTM RNNLM | PTB train/test, LSTM 100/100, SGD 20, batch 20, BPTT 35, clip .25, 4 epochs | 없음 | 1 |
 | `GT05` | PTB LM recipe comparison | PTB train/valid/test, embedding/hidden 650, SGD 20, batch 20, BPTT 35, clip .25, max 40 epochs | architecture | 3 |
@@ -29,7 +29,7 @@
 | 그룹 | atomic run ID |
 | --- | --- |
 | `GT01` | `W2V-TOY-CBOW-FULL`, `W2V-TOY-SKIPGRAM-FULL` |
-| `GT02` | `W2V-PTB-CBOW-NS`, `W2V-PTB-SKIPGRAM-NS`, `W2V-PTB-CBOW-FULL`, `W2V-PTB-SKIPGRAM-FULL` |
+| `GT02` | `W2V-PTB-CBOW-NS`, `W2V-PTB-SKIPGRAM-NS`, `W2V-PTB-CBOW-FULL`, `W2V-PTB-SKIPGRAM-FULL`, `W2V-PTB-CBOW-ONEHOT-FULL`, `W2V-PTB-SKIPGRAM-ONEHOT-FULL` |
 | `GT03` | `LM-SMALL-RNN` |
 | `GT04` | `LM-LSTM` |
 | `GT05` | `LM-RNN-RECIPE`, `LM-LSTM-RECIPE`, `LM-BETTER-RECIPE` |
@@ -48,14 +48,16 @@
 
 ### GT02 — PTB Word2Vec
 
-| atomic run ID | architecture | objective |
-| --- | --- | --- |
-| `W2V-PTB-CBOW-NS` | CBOW, window 5, embedding 100 | negative sampling, 5 negatives |
-| `W2V-PTB-SKIPGRAM-NS` | Skip-gram, window 5, embedding 100 | negative sampling, 5 negatives |
-| `W2V-PTB-CBOW-FULL` | CBOW, window 5, embedding 100 | full vocabulary softmax |
-| `W2V-PTB-SKIPGRAM-FULL` | Skip-gram, window 5, embedding 100 | full vocabulary softmax |
+| atomic run ID | architecture | input projection | objective |
+| --- | --- | --- | --- |
+| `W2V-PTB-CBOW-NS` | CBOW, window 5, hidden 100 | embedding lookup | negative sampling, 5 negatives |
+| `W2V-PTB-SKIPGRAM-NS` | Skip-gram, window 5, hidden 100 | embedding lookup | negative sampling, 5 negatives |
+| `W2V-PTB-CBOW-FULL` | CBOW, window 5, hidden 100 | embedding lookup | full vocabulary softmax |
+| `W2V-PTB-SKIPGRAM-FULL` | Skip-gram, window 5, hidden 100 | embedding lookup | full vocabulary softmax |
+| `W2V-PTB-CBOW-ONEHOT-FULL` | CBOW, window 5, hidden 100 | minibatch one-hot × `W_in` | full vocabulary softmax |
+| `W2V-PTB-SKIPGRAM-ONEHOT-FULL` | Skip-gram, window 5, hidden 100 | minibatch one-hot × `W_in` | full vocabulary softmax |
 
-negative sampling과 full softmax는 objective 정의가 다르므로 raw loss를 직접 비교하지 않는다. 동일 architecture 안에서 objective별 runtime과 고정 query artifact를 비교한다.
+negative sampling과 full softmax는 objective 정의가 다르므로 raw loss를 직접 비교하지 않는다. 동일 architecture 안에서 objective/input projection별 runtime과 고정 query artifact를 비교한다.
 `update/train/loss`는 모든 prediction term의 mean으로 표준 비교 스케일을 유지하고,
 `update/train/book_loss`는 candidate/context 항을 합한 책 objective를 별도로 기록한다.
 E02 분석은 loss graph를 만들지 않는다. final `W_in` checkpoint에 교재의

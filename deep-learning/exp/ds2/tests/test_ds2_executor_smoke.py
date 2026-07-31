@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 from exp.ds2.executor import (
     AttentionAlignmentObservationExecutor,
@@ -103,9 +104,17 @@ def test_ds2_word2vec_config_runs_one_epoch(tmp_path: Path) -> None:
     assert (tmp_path / "updates.csv").is_file()
 
 
+@pytest.mark.parametrize(
+    "atomic_run_id",
+    (
+        "W2V-PTB-SKIPGRAM-FULL",
+        "W2V-PTB-SKIPGRAM-ONEHOT-FULL",
+    ),
+)
 def test_ds2_skipgram_full_softmax_runs_grouped_contexts(
     monkeypatch,
     tmp_path: Path,
+    atomic_run_id: str,
 ) -> None:
     corpus = np.array([0, 1, 2, 3] * 6, dtype=np.int64)
     monkeypatch.setattr(
@@ -120,7 +129,7 @@ def test_ds2_skipgram_full_softmax_runs_grouped_contexts(
     )
     spec = parse_run_spec(
         "exp/ds2/config/e02_ptb_word2vec.yaml",
-        atomic_run_id="W2V-PTB-SKIPGRAM-FULL",
+        atomic_run_id=atomic_run_id,
         overrides={
             **_cpu_overrides(),
             "loader": {"batch_size": 2},

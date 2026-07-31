@@ -18,10 +18,14 @@ TRIAL_IDS = {
         (
             f"dlfs2.ch04.ptb-{name}-negative-sampling"
             if objective == "negative-sampling"
-            else f"ext.ds2.ptb-{name}-full-softmax"
+            else f"ext.ds2.ptb-{name}-{objective}"
         )
         for name in ("cbow", "skipgram")
-        for objective in ("negative-sampling", "full-softmax")
+        for objective in (
+            "negative-sampling",
+            "full-softmax",
+            "onehot-full-softmax",
+        )
     ),
     "e03": ("dlfs2.ch05.ptb-small-rnnlm",),
     "e04": ("dlfs2.ch06.ptb-lstm-rnnlm",),

@@ -19,6 +19,10 @@ from mlprosection.core.backend import BackendConfig, make_backend
 from mlprosection.nn.model.architecture import (
     CBOW,
     CBOWBatchAdapter,
+    OneHotCBOW,
+    OneHotCBOWBatchAdapter,
+    OneHotSkipGram,
+    OneHotSkipGramBatchAdapter,
     SkipGram,
     SkipGramBatchAdapter,
 )
@@ -52,10 +56,24 @@ def test_all_ds2_variants_resolve_and_build_the_declared_components() -> None:
             }
             kind = config["kind"]
             if kind == "word2vec":
+                representation = str(
+                    model_values.get("input_representation", "embedding")
+                )
                 model_type, _adapter = {
-                    "CBOW": (CBOW, CBOWBatchAdapter()),
-                    "SkipGram": (SkipGram, SkipGramBatchAdapter()),
-                }[str(model_values["name"])]
+                    ("CBOW", "embedding"): (CBOW, CBOWBatchAdapter()),
+                    ("SkipGram", "embedding"): (
+                        SkipGram,
+                        SkipGramBatchAdapter(),
+                    ),
+                    ("CBOW", "one_hot"): (
+                        OneHotCBOW,
+                        OneHotCBOWBatchAdapter(11),
+                    ),
+                    ("SkipGram", "one_hot"): (
+                        OneHotSkipGram,
+                        OneHotSkipGramBatchAdapter(11),
+                    ),
+                }[(str(model_values["name"]), representation)]
                 model = model_type(11, 3, backend=backend)
                 objective_type = {
                     "SoftmaxWithLoss": SoftmaxWithLoss,
@@ -93,4 +111,4 @@ def test_all_ds2_variants_resolve_and_build_the_declared_components() -> None:
                 assert isinstance(executor, AttentionAlignmentObservationExecutor)
             assert callable(executor.run)
             count += 1
-    assert count == 19
+    assert count == 21

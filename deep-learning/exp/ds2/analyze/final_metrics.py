@@ -100,6 +100,8 @@ ANALYSES = {
             "W2V-PTB-SKIPGRAM-NS",
             "W2V-PTB-CBOW-FULL",
             "W2V-PTB-SKIPGRAM-FULL",
+            "W2V-PTB-CBOW-ONEHOT-FULL",
+            "W2V-PTB-SKIPGRAM-ONEHOT-FULL",
         ),
         FINAL_LOSS,
     ),

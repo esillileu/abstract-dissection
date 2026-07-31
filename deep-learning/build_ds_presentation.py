@@ -476,6 +476,8 @@ def make_word2vec_graph(path: Path) -> Path:
         "W2V-PTB-SKIPGRAM-NS": "Skip-gram\nNeg. sampling",
         "W2V-PTB-CBOW-FULL": "CBOW\nFull softmax",
         "W2V-PTB-SKIPGRAM-FULL": "Skip-gram\nFull softmax",
+        "W2V-PTB-CBOW-ONEHOT-FULL": "CBOW\nOne-hot full",
+        "W2V-PTB-SKIPGRAM-ONEHOT-FULL": "Skip-gram\nOne-hot full",
     }
     figure, axis = plt.subplots(figsize=(10, 5.4))
     x = range(len(rows))
@@ -792,7 +794,7 @@ def book_settings(title: str) -> tuple[tuple[str, str], ...]:
             ("Embedding / batch", "100 / 100"),
             ("Budget", "10 epochs"),
             ("Book objective", "Negative sampling, 5 negatives"),
-            ("Extension in current run", "Full-softmax variants"),
+            ("Extension in current run", "Embedding and one-hot full-softmax variants"),
         ),
         "Small-Corpus RNN Language Model": (
             ("Model", "SimpleRnnlm, embedding/hidden 100"),
@@ -960,10 +962,10 @@ def reproduction_setup(title: str) -> tuple[tuple[tuple[str, str], ...], str]:
             (
                 ("Dataset", "Penn Treebank training corpus; context window 5; batch 100; drop-last batching"),
                 ("Model architecture", "CBOW and Skip-gram; embedding dimension 100"),
-                ("Optimizer & hyperparameters", "Adam 0.001; negative sampling with 5 negatives and unigram power 0.75, plus full-softmax variants"),
+                ("Optimizer & hyperparameters", "Adam 0.001; negative sampling with 5 negatives and unigram power 0.75, plus embedding/one-hot full-softmax variants"),
                 ("Updates / epochs", "10 epochs; interval-mean loss every 20 updates; 10 paired deterministic GPU seeds"),
             ),
-            "Difference from book: CBOW/Skip-gram negative-sampling conditions follow the book; both full-softmax conditions and multi-seed aggregation are extensions.",
+            "Difference from book: CBOW/Skip-gram negative-sampling conditions follow ch04; embedding and ch03-style one-hot full-softmax conditions plus multi-seed aggregation are extensions.",
         ),
         "Small-Corpus RNN Language Model": (
             (
@@ -1074,8 +1076,8 @@ def comparison_spec(title: str) -> tuple[str, str, str]:
             "Simple CBOW vs Simple Skip-gram → final full-softmax loss",
         ),
         "PTB Word2Vec Objectives": (
-            "Architecture × objective",
-            "CBOW/Skip-gram × negative sampling/full softmax (2×2) → final loss",
+            "Architecture × objective / input",
+            "CBOW/Skip-gram × negative sampling/embedding FS/one-hot FS (2×3) → final loss",
         ),
         "Small-Corpus RNN Language Model": (
             "Implementation / run protocol",
@@ -1426,6 +1428,8 @@ def comparison_results(experiment: Experiment) -> tuple[tuple[str, ...], tuple[t
                 ("Skip-gram / negative sampling", "Not cached", current["Skip-gram / negative sampling"][2], "Book condition"),
                 ("CBOW / full softmax", "No book run", current["CBOW / full softmax"][2], "Project extension"),
                 ("Skip-gram / full softmax", "No book run", current["Skip-gram / full softmax"][2], "Project extension"),
+                ("CBOW / one-hot full softmax", "No PTB book run", current["CBOW / one-hot full softmax"][2], "ch03-style extension"),
+                ("Skip-gram / one-hot full softmax", "No PTB book run", current["Skip-gram / one-hot full softmax"][2], "ch03-style extension"),
             ),
         )
     if title == "Small-Corpus RNN Language Model":
@@ -1792,6 +1796,8 @@ def experiments(asset_dir: Path) -> tuple[Experiment, ...]:
                     "W2V-PTB-SKIPGRAM-NS": "Skip-gram / negative sampling",
                     "W2V-PTB-CBOW-FULL": "CBOW / full softmax",
                     "W2V-PTB-SKIPGRAM-FULL": "Skip-gram / full softmax",
+                    "W2V-PTB-CBOW-ONEHOT-FULL": "CBOW / one-hot full softmax",
+                    "W2V-PTB-SKIPGRAM-ONEHOT-FULL": "Skip-gram / one-hot full softmax",
                 },
                 "final_loss",
             ),

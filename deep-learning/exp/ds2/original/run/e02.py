@@ -18,13 +18,26 @@ def build_full_softmax_model(
     vocab_size: int,
     hidden_size: int,
     window_size: int,
+    *,
+    one_hot: bool = False,
 ):
-    """Build a ch04 embedding model with the ch03 full-softmax output path."""
+    """Build a full-softmax model with embedding or ch03 one-hot input."""
     layers = importlib.import_module("common.layers")
     xp = importlib.import_module("common.np").np
     embedding_cls = layers.Embedding
     matmul_cls = layers.MatMul
     loss_cls = layers.SoftmaxWithLoss
+
+    def convert_one_hot(values):
+        indices = values.astype(xp.int64, copy=False)
+        one_hot_values = xp.zeros(
+            (*indices.shape, vocab_size),
+            dtype="f",
+        )
+        flat_values = one_hot_values.reshape(-1, vocab_size)
+        flat_indices = indices.reshape(-1)
+        flat_values[xp.arange(len(flat_indices)), flat_indices] = 1
+        return one_hot_values
 
     if kind == "cbow":
         class FullSoftmaxCBOW:
@@ -35,8 +48,9 @@ def build_full_softmax_model(
                 w_out = 0.01 * xp.random.randn(
                     hidden_size, vocab_size
                 ).astype("f")
+                input_layer_cls = matmul_cls if one_hot else embedding_cls
                 self.in_layers = [
-                    embedding_cls(w_in) for _ in range(2 * window_size)
+                    input_layer_cls(w_in) for _ in range(2 * window_size)
                 ]
                 self.out_layer = matmul_cls(w_out)
                 self.loss_layer = loss_cls()
@@ -56,9 +70,14 @@ def build_full_softmax_model(
             def forward(self, contexts, target):
                 hidden = 0
                 for index, layer in enumerate(self.in_layers):
-                    hidden += layer.forward(contexts[:, index])
+                    input_values = contexts[:, index]
+                    if one_hot:
+                        input_values = convert_one_hot(input_values)
+                    hidden += layer.forward(input_values)
                 hidden *= 1 / len(self.in_layers)
                 score = self.out_layer.forward(hidden)
+                if one_hot:
+                    target = convert_one_hot(target)
                 return self.loss_layer.forward(score, target)
 
             def backward(self, dout=1):
@@ -79,7 +98,8 @@ def build_full_softmax_model(
                 w_out = 0.01 * xp.random.randn(
                     hidden_size, vocab_size
                 ).astype("f")
-                self.in_layer = embedding_cls(w_in)
+                input_layer_cls = matmul_cls if one_hot else embedding_cls
+                self.in_layer = input_layer_cls(w_in)
                 self.out_layer = matmul_cls(w_out)
                 self.loss_layers = [
                     loss_cls() for _ in range(2 * window_size)
@@ -98,10 +118,19 @@ def build_full_softmax_model(
                 self.word_vecs = w_in
 
             def forward(self, contexts, target):
+                if one_hot:
+                    target = convert_one_hot(target)
                 hidden = self.in_layer.forward(target)
                 score = self.out_layer.forward(hidden)
                 return sum(
-                    layer.forward(score, contexts[:, index])
+                    layer.forward(
+                        score,
+                        (
+                            convert_one_hot(contexts[:, index])
+                            if one_hot
+                            else contexts[:, index]
+                        ),
+                    )
                     for index, layer in enumerate(self.loss_layers)
                 )
 
@@ -143,6 +172,14 @@ def _run(
             model = model_cls(len(word_to_id), 100, 5, corpus)
         elif objective == "full-softmax":
             model = build_full_softmax_model(kind, len(word_to_id), 100, 5)
+        elif objective == "onehot-full-softmax":
+            model = build_full_softmax_model(
+                kind,
+                len(word_to_id),
+                100,
+                5,
+                one_hot=True,
+            )
         else:
             raise ValueError(f"unknown Word2Vec objective: {objective}")
         trainer = trainer_cls(model, optimizer_cls())
@@ -173,6 +210,8 @@ TRIALS = tuple(
             f"dlfs2.ch04.ptb-{kind}-negative-sampling"
             if objective == "negative-sampling"
             else f"ext.ds2.ptb-{kind}-full-softmax"
+            if objective == "full-softmax"
+            else f"ext.ds2.ptb-{kind}-onehot-full-softmax"
         ),
         "cupy",
         (
@@ -185,7 +224,12 @@ TRIALS = tuple(
             if objective == "negative-sampling"
             else {
                 "model": {"cbow": "CBOW", "skipgram": "SkipGram"}[kind],
-                "objective": objective,
+                "objective": "full-softmax",
+                **(
+                    {"input_representation": "one_hot"}
+                    if objective == "onehot-full-softmax"
+                    else {}
+                ),
                 "epochs": 10,
                 "batch_size": 100,
                 "window": 5,
@@ -209,5 +253,9 @@ TRIALS = tuple(
         ),
     )
     for kind in ("cbow", "skipgram")
-    for objective in ("negative-sampling", "full-softmax")
+    for objective in (
+        "negative-sampling",
+        "full-softmax",
+        "onehot-full-softmax",
+    )
 )

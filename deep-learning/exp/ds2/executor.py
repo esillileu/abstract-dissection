@@ -17,6 +17,10 @@ from mlprosection.nn.model.architecture import (
     BetterRnnlm,
     CBOW,
     CBOWBatchAdapter,
+    OneHotCBOW,
+    OneHotCBOWBatchAdapter,
+    OneHotSkipGram,
+    OneHotSkipGramBatchAdapter,
     PeekySeq2seq,
     Rnnlm,
     Seq2seq,
@@ -238,17 +242,35 @@ class Word2VecExecutor:
             )
             context.metadata["negative_sampler"] = sampler.metadata
         architecture = str(model_config.get("name", "CBOW"))
-        model_type = {
-            "CBOW": CBOW,
-            "SkipGram": SkipGram,
-        }.get(architecture)
-        if model_type is None:
-            raise ValueError(f"unknown Word2Vec model name: {architecture}")
-        adapter = (
-            CBOWBatchAdapter()
-            if architecture == "CBOW"
-            else SkipGramBatchAdapter()
+        input_representation = str(
+            model_config.get("input_representation", "embedding")
         )
+        model_type = {
+            ("CBOW", "embedding"): CBOW,
+            ("SkipGram", "embedding"): SkipGram,
+            ("CBOW", "one_hot"): OneHotCBOW,
+            ("SkipGram", "one_hot"): OneHotSkipGram,
+        }.get((architecture, input_representation))
+        if model_type is None:
+            raise ValueError(
+                "unknown Word2Vec architecture/input representation: "
+                f"{architecture}/{input_representation}"
+            )
+        if (
+            input_representation == "one_hot"
+            and objective_name != "SoftmaxWithLoss"
+        ):
+            raise ValueError(
+                "one-hot Word2Vec input is only supported with SoftmaxWithLoss"
+            )
+        adapter = {
+            ("CBOW", "embedding"): CBOWBatchAdapter(),
+            ("SkipGram", "embedding"): SkipGramBatchAdapter(),
+            ("CBOW", "one_hot"): OneHotCBOWBatchAdapter(len(word_to_id)),
+            ("SkipGram", "one_hot"): OneHotSkipGramBatchAdapter(
+                len(word_to_id)
+            ),
+        }[(architecture, input_representation)]
         embedding_size = int(model_config.get("embedding_size", 100))
         model = model_type(
             len(word_to_id), embedding_size, backend=backend

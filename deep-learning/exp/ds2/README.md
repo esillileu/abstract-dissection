@@ -10,7 +10,7 @@ just exp run ds2 -e 02 --seed 1
 
 `-e`는 실행 그룹에 대응하는 catalog ID이고, `--seed`는
 `config/seeds.yaml`에 등록된 **실제 master seed 값**이다. 기본 `research_v1`에서는
-`1`부터 `10`까지를 사용한다. `e02=GT02`이고 네 개의 Word2Vec atomic trial을 모두
+`1`부터 `10`까지를 사용한다. `e02=GT02`이고 여섯 개의 Word2Vec atomic trial을 모두
 실행한다. 실제 실행 전에는 `just mlflow up`으로 MLflow를 시작한다.
 
 특정 atomic run만 실행하려면 `-a`/`--atomic-run`, 특정 atomic run을 빼려면
