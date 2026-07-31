@@ -1,20 +1,23 @@
 # DS2 e02 Word2Vec profiling
 
-이 디렉터리는 다음 여덟 조건을 같은 PTB workload로 비교하고 update 측정값에서
+이 디렉터리는 다음 열두 조건을 같은 PTB workload로 비교하고 update 측정값에서
 epoch 및 전체 10-epoch 실행 시간을 추정한다.
 
-- 교재 원본 및 adaptation: CBOW-NS/FS, SkipGram-NS/FS
-- `mlprosection` 구현: CBOW-NS, SkipGram-NS, CBOW-FS, SkipGram-FS
+- 교재 원본 및 adaptation: CBOW/SkipGram 각각 NS, embedding FS, one-hot FS
+- `mlprosection` 구현: CBOW/SkipGram 각각 NS, embedding FS, one-hot FS
 
 교재 e02에 native full-softmax PTB 모델은 없으므로, original FS는 ch04의 embedding
 입력부에 ch03의 `MatMul`과 `SoftmaxWithLoss` 출력부를 붙인 adaptation을 사용한다.
+original one-hot FS는 ch03처럼 minibatch 입력과 정답을 one-hot으로 변환하고
+`MatMul(W_in)`을 수행한다.
 CBOW와 SkipGram은 실행 shape가 크게 다르고, NS와 FS는 CPU/GPU에서 병목 특성이
-달라 네 구현 조건을 모두 측정한다.
+달라 여섯 구현 조건을 모두 측정한다.
 
 구현체 조건은 현재 `Word2VecExecutor`의 모델/objective 실행 경로를 따른다.
-SkipGram-NS와 SkipGram-FS는 장치와 objective에 관계없이 center를 유지한 동일한
-grouped tensor를 사용한다. NS는 grouped candidate score를, FS는 center별
-full-vocabulary logits와 grouped target loss를 계산한다.
+SkipGram의 세 조건은 장치와 objective에 관계없이 center를 유지한 grouped tensor를
+사용한다. NS는 grouped candidate score를, 두 FS는 center별 full-vocabulary logits와
+grouped target loss를 계산한다. one-hot FS는 입력과 grouped target을 minibatch
+단위 dense one-hot tensor로 만든다.
 프로파일러는 이 실행 경로를 phase별로 나누어 계측한다.
 
 ## 단계별 실행
@@ -26,8 +29,8 @@ full-vocabulary logits와 grouped target loss를 계산한다.
 just exp profile ds2 -e 02
 ```
 
-옵션을 생략하면 CPU와 GPU에서 original adaptation 및 구현의
-CBOW/SkipGram NS/Full Softmax를 모두 실행한다. 각 장치에서 cold update와
+옵션을 생략하면 CPU와 GPU에서 original adaptation 및 구현의 CBOW/SkipGram
+NS/embedding FS/one-hot FS를 모두 실행한다. 각 장치에서 cold update와
 steady update 분포 및 연속 throughput window를 측정하고,
 epoch/전체 시간 평균과 반복 표준편차 외삽, 가능한 모든 구성요소 측정을 수행한다. 개별
 측정값을 순서대로 출력한 뒤 마지막에 장치×CBOW/SkipGram 비교 표를 출력한다.
@@ -65,7 +68,7 @@ just exp profile ds2 -e 02 \
   --update-repetitions 3
 ```
 
-그다음 여덟 조건의 CPU 계획치를 구한다.
+그다음 열두 조건의 CPU 계획치를 구한다.
 
 ```bash
 just exp profile ds2 -e 02 \
@@ -101,7 +104,7 @@ JSON의 각 조건에는 다음 값이 기록된다.
   steady 속도 표준편차를 update 수에 비례해 외삽한 값
 - `phase_ms_per_update`, `phase_share`: `detail` 단계에서만 기록되는 세부 비용
 
-전체 비교 보고서는 여덟 조건을 담은 결과를 입력으로 생성한다.
+전체 비교 보고서는 열두 조건을 담은 결과를 입력으로 생성한다.
 
 ```bash
 uv run python -m exp.ds2.profile.e02.analyze \
@@ -112,8 +115,8 @@ uv run python -m exp.ds2.profile.e02.analyze \
 
 - `update*.json`: 조건별 synchronized throughput, 추정 시간, phase timing
 - `modules*.json`: model/objective/optimizer 구성요소별 timing
-- `e02_comparisons.csv`: original→implemented 및 NS→FS 비교
-- `e02_analysis.md`: 적용 최적화와 모델별/목적함수별 해석
+- `e02_comparisons.csv`: original→implemented, NS→FS 및 embedding→one-hot 비교
+- `e02_analysis.md`: 적용 최적화와 모델별/목적함수/input projection별 해석
 - `nsys/cuda_api_summary.csv`: 조건별 CUDA kernel launch API 호출 수
 
 전체 throughput 구간은 CPU에서는 no-op, GPU에서는 CUDA stream 동기화를 시작과

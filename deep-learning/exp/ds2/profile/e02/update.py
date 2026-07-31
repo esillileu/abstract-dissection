@@ -25,6 +25,10 @@ from mlprosection.core.backend import BackendConfig, make_backend
 from mlprosection.nn.model.architecture import (
     CBOW,
     CBOWBatchAdapter,
+    OneHotCBOW,
+    OneHotCBOWBatchAdapter,
+    OneHotSkipGram,
+    OneHotSkipGramBatchAdapter,
     SkipGram,
     SkipGramBatchAdapter,
 )
@@ -49,12 +53,16 @@ DEFAULT_EPOCHS = 10
 CONDITIONS = (
     "original-cbow-ns",
     "original-cbow-fs",
+    "original-cbow-onehot-fs",
     "original-skipgram-ns",
     "original-skipgram-fs",
+    "original-skipgram-onehot-fs",
     "implemented-cbow-ns",
-    "implemented-skipgram-ns",
     "implemented-cbow-fs",
+    "implemented-cbow-onehot-fs",
+    "implemented-skipgram-ns",
     "implemented-skipgram-fs",
+    "implemented-skipgram-onehot-fs",
 )
 
 STAGES = {
@@ -128,6 +136,8 @@ class OriginalWord2Vec:
         contexts,
         targets,
         backend,
+        *,
+        one_hot: bool = False,
     ) -> None:
         trainer_module = importlib.import_module("common.trainer")
         optimizer_class = importlib.import_module("common.optimizer").Adam
@@ -137,7 +147,13 @@ class OriginalWord2Vec:
         vocab_size = int(np.max(corpus)) + 1
         if objective_name == "FullSoftmax":
             kind = "cbow" if model_name == "CBOW" else "skipgram"
-            self.model = build_full_softmax_model(kind, vocab_size, 100, 5)
+            self.model = build_full_softmax_model(
+                kind,
+                vocab_size,
+                100,
+                5,
+                one_hot=one_hot,
+            )
         else:
             module_name = (
                 "ch04.cbow" if model_name == "CBOW" else "ch04.skip_gram"
@@ -171,10 +187,15 @@ class ImplementedWord2Vec:
         contexts,
         targets,
         backend,
+        *,
+        one_hot: bool = False,
     ) -> None:
+        vocab_size = int(np.max(corpus)) + 1
         model_class, adapter, grouped_targets = _implemented_components(
             model_name,
             objective_name,
+            vocab_size=vocab_size,
+            one_hot=one_hot,
         )
         self.backend = backend
         self.contexts = Tensor(
@@ -185,7 +206,6 @@ class ImplementedWord2Vec:
             backend.xp.asarray(targets, dtype=backend.xp.int64),
             backend=backend,
         )
-        vocab_size = int(np.max(corpus)) + 1
         self.model = model_class(vocab_size, 100, backend=backend)
         self.adapter = adapter
         if objective_name == "NegativeSampling":
@@ -282,17 +302,26 @@ def run_implemented_update(
     return post_result.loss
 
 
-def _implemented_components(model_name: str, objective_name: str):
+def _implemented_components(
+    model_name: str,
+    objective_name: str,
+    *,
+    vocab_size: int,
+    one_hot: bool,
+):
     """Mirror the current DS2 executor's Word2Vec execution path."""
     model_class = {
-        "CBOW": CBOW,
-        "SkipGram": SkipGram,
-    }[model_name]
-    adapter = (
-        CBOWBatchAdapter()
-        if model_name == "CBOW"
-        else SkipGramBatchAdapter()
-    )
+        ("CBOW", False): CBOW,
+        ("SkipGram", False): SkipGram,
+        ("CBOW", True): OneHotCBOW,
+        ("SkipGram", True): OneHotSkipGram,
+    }[(model_name, one_hot)]
+    adapter = {
+        ("CBOW", False): CBOWBatchAdapter(),
+        ("SkipGram", False): SkipGramBatchAdapter(),
+        ("CBOW", True): OneHotCBOWBatchAdapter(vocab_size),
+        ("SkipGram", True): OneHotSkipGramBatchAdapter(vocab_size),
+    }[(model_name, one_hot)]
     return (
         model_class,
         adapter,
@@ -358,10 +387,18 @@ def _build_condition(
     targets,
     backend,
 ):
-    _, model_token, objective_token = condition.split("-")
+    implementation_token, model_token, *variant_tokens = condition.split("-")
+    variant = "-".join(variant_tokens)
+    if implementation_token not in {"original", "implemented"}:
+        raise ValueError(f"unknown Word2Vec implementation: {implementation_token}")
+    if model_token not in {"cbow", "skipgram"}:
+        raise ValueError(f"unknown Word2Vec model: {model_token}")
+    if variant not in {"ns", "fs", "onehot-fs"}:
+        raise ValueError(f"unknown Word2Vec profile variant: {variant}")
     model_name = "CBOW" if model_token == "cbow" else "SkipGram"
-    objective_name = "NegativeSampling" if objective_token == "ns" else "FullSoftmax"
-    if condition.startswith("original-"):
+    objective_name = "NegativeSampling" if variant == "ns" else "FullSoftmax"
+    one_hot = variant == "onehot-fs"
+    if implementation_token == "original":
         return (
             OriginalWord2Vec(
                 model_name,
@@ -370,6 +407,7 @@ def _build_condition(
                 contexts,
                 targets,
                 backend,
+                one_hot=one_hot,
             ),
             model_name,
             objective_name,
@@ -383,6 +421,7 @@ def _build_condition(
             contexts,
             targets,
             backend,
+            one_hot=one_hot,
         ),
         model_name,
         objective_name,

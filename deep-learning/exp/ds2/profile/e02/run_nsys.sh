@@ -9,12 +9,16 @@ mkdir -p "${profile_root}"
 conditions=(
   original-cbow-ns
   original-cbow-fs
+  original-cbow-onehot-fs
   original-skipgram-ns
   original-skipgram-fs
+  original-skipgram-onehot-fs
   implemented-cbow-ns
-  implemented-skipgram-ns
   implemented-cbow-fs
+  implemented-cbow-onehot-fs
+  implemented-skipgram-ns
   implemented-skipgram-fs
+  implemented-skipgram-onehot-fs
 )
 if (( $# > 0 )); then
   conditions=("$@")

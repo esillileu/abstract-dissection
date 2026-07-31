@@ -175,9 +175,11 @@ def _write_payload(
 
 SUMMARY_COLUMNS = (
     ("Original NS", "original", "ns"),
-    ("Original FS", "original", "fs"),
+    ("Original Emb. FS", "original", "fs"),
+    ("Original One-hot FS", "original", "onehot-fs"),
     ("Implemented NS", "implemented", "ns"),
-    ("Implemented FS", "implemented", "fs"),
+    ("Implemented Emb. FS", "implemented", "fs"),
+    ("Implemented One-hot FS", "implemented", "onehot-fs"),
 )
 SUMMARY_ROWS = (
     ("Cold update", "cold_update", "ms"),

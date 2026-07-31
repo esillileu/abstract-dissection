@@ -69,6 +69,36 @@ def build_comparisons(
             "SkipGram FS: original adaptation → implemented",
         ),
         (
+            "original-cbow-onehot-fs",
+            "implemented-cbow-onehot-fs",
+            "CBOW One-hot FS: original adaptation → implemented",
+        ),
+        (
+            "original-skipgram-onehot-fs",
+            "implemented-skipgram-onehot-fs",
+            "SkipGram One-hot FS: original adaptation → implemented",
+        ),
+        (
+            "original-cbow-fs",
+            "original-cbow-onehot-fs",
+            "Original CBOW FS: embedding → one-hot",
+        ),
+        (
+            "original-skipgram-fs",
+            "original-skipgram-onehot-fs",
+            "Original SkipGram FS: embedding → one-hot",
+        ),
+        (
+            "implemented-cbow-fs",
+            "implemented-cbow-onehot-fs",
+            "Implemented CBOW FS: embedding → one-hot",
+        ),
+        (
+            "implemented-skipgram-fs",
+            "implemented-skipgram-onehot-fs",
+            "Implemented SkipGram FS: embedding → one-hot",
+        ),
+        (
             "original-cbow-ns",
             "original-cbow-fs",
             "Original adaptation CBOW: NS → FS",
@@ -245,6 +275,12 @@ def render_report(
     skipgram_gain = comparison_by_question["SkipGram NS: original → implemented"]
     cbow_fs = comparison_by_question["Implemented CBOW: NS → FS"]
     skipgram_fs = comparison_by_question["Implemented SkipGram: NS → FS"]
+    cbow_onehot_fs = comparison_by_question.get(
+        "Implemented CBOW FS: embedding → one-hot"
+    )
+    skipgram_onehot_fs = comparison_by_question.get(
+        "Implemented SkipGram FS: embedding → one-hot"
+    )
     recorded_training_times = recorded_training_times or {}
     nsys_launch_counts = nsys_launch_counts or {}
 
@@ -340,6 +376,47 @@ def render_report(
             "",
         ]
     )
+    if cbow_onehot_fs is not None and skipgram_onehot_fs is not None:
+        lines.extend(
+            [
+                "## One-hot input projection cost",
+                "",
+                "Embedding FS and one-hot FS share the same full-vocabulary "
+                "output logits, softmax objective, optimizer, batch, and "
+                "reporting pass. Their measured difference isolates the dense "
+                "one-hot construction and `one_hot @ W_in` projection path.",
+                "",
+                f"- Implemented CBOW one-hot FS versus embedding FS: "
+                f"{float(cbow_onehot_fs['speedup']):.2f}× candidate speedup, "
+                f"{float(cbow_onehot_fs['reduction_percent']):.1f}% time "
+                "reduction (negative means one-hot is slower).",
+                f"- Implemented SkipGram one-hot FS versus embedding FS: "
+                f"{float(skipgram_onehot_fs['speedup']):.2f}× candidate "
+                f"speedup, "
+                f"{float(skipgram_onehot_fs['reduction_percent']):.1f}% time "
+                "reduction (negative means one-hot is slower).",
+                "",
+            ]
+        )
+        onehot_trace_conditions = {
+            "original-cbow-onehot-fs",
+            "implemented-cbow-onehot-fs",
+            "original-skipgram-onehot-fs",
+            "implemented-skipgram-onehot-fs",
+        }
+        if onehot_trace_conditions <= nsys_launch_counts.keys():
+            lines.extend(
+                [
+                    "- One-hot FS trace launch calls, original → implemented:",
+                    f"  CBOW "
+                    f"{nsys_launch_counts['original-cbow-onehot-fs']:,} → "
+                    f"{nsys_launch_counts['implemented-cbow-onehot-fs']:,}; "
+                    f"SkipGram "
+                    f"{nsys_launch_counts['original-skipgram-onehot-fs']:,} → "
+                    f"{nsys_launch_counts['implemented-skipgram-onehot-fs']:,}.",
+                    "",
+                ]
+            )
     if nsys_launch_counts:
         cbow_ns_launches = nsys_launch_counts["implemented-cbow-ns"]
         cbow_fs_launches = nsys_launch_counts["implemented-cbow-fs"]
@@ -358,11 +435,11 @@ def render_report(
         )
     lines.extend(
         [
-            "Both SkipGram objectives keep 100 center rows and ten grouped "
-            "context labels per row. NS evaluates six sampled candidates per "
-            "context; FS evaluates one full-vocabulary logits row per center. "
-            "The model input shape is shared, while the objective determines "
-            "the score tensor shape and loss.",
+            "All SkipGram variants keep 100 center rows and ten grouped context "
+            "labels per row. NS evaluates six sampled candidates per context; "
+            "both FS variants evaluate one full-vocabulary logits row per "
+            "center. Embedding FS uses integer center IDs, while one-hot FS "
+            "materializes dense center and grouped-target tensors.",
             "",
             "## Why the existing result can show CBOW FS as faster",
             "",

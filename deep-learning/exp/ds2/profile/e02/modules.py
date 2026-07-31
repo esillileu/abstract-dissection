@@ -17,6 +17,7 @@ import numpy as np
 from mlprosection.profiling import BenchmarkRunner
 
 from .update import (
+    CONDITIONS,
     ROOT,
     _batch,
     _build_condition,
@@ -24,17 +25,6 @@ from .update import (
     _metadata,
 )
 
-
-CONDITIONS = (
-    "original-cbow-ns",
-    "original-cbow-fs",
-    "original-skipgram-ns",
-    "original-skipgram-fs",
-    "implemented-cbow-ns",
-    "implemented-skipgram-ns",
-    "implemented-cbow-fs",
-    "implemented-skipgram-fs",
-)
 IMPLEMENTED_COMPONENTS = (
     "batch_adapter",
     "objective_prepare",
