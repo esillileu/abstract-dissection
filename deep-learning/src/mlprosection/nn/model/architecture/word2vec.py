@@ -126,7 +126,6 @@ class _EmbeddingArchitecture(Model):
     def _backward_embedding(self, source, gradient) -> None:
         raise NotImplementedError
 
-
 class CBOW(_EmbeddingArchitecture):
     def _encode(self, contexts: Tensor):
         xp = self.backend.xp
@@ -142,7 +141,6 @@ class CBOW(_EmbeddingArchitecture):
             gradient[:, None, :] / width,
         )
 
-
 class SkipGram(_EmbeddingArchitecture):
     def _encode(self, centers: Tensor):
         xp = self.backend.xp
@@ -152,6 +150,38 @@ class SkipGram(_EmbeddingArchitecture):
     def _backward_embedding(self, source, gradient) -> None:
         self.W_in.grad[...] = 0
         self.backend.xp.add.at(self.W_in.grad, source, gradient)
+
+class OneHotCBOW(_EmbeddingArchitecture):
+    """CBOW whose input projection explicitly multiplies one-hot contexts."""
+
+    def _encode(self, contexts: Tensor):
+        one_hot_contexts = contexts.data
+        hidden = (one_hot_contexts @ self.W_in.data).mean(axis=1)
+        return hidden, one_hot_contexts
+
+    def _backward_embedding(self, source, gradient) -> None:
+        width = source.shape[1]
+        flattened_source = source.reshape(-1, source.shape[-1])
+        flattened_gradient = self.backend.xp.repeat(
+            (gradient / width)[:, None, :],
+            width,
+            axis=1,
+        ).reshape(
+            -1,
+            gradient.shape[-1],
+        )
+        self.W_in.grad[...] = flattened_source.T @ flattened_gradient
+
+class OneHotSkipGram(_EmbeddingArchitecture):
+    """Skip-gram whose input projection explicitly multiplies one-hot centers."""
+
+    def _encode(self, centers: Tensor):
+        one_hot_centers = centers.data
+        return one_hot_centers @ self.W_in.data, one_hot_centers
+
+    def _backward_embedding(self, source, gradient) -> None:
+        self.W_in.grad[...] = source.T @ gradient
+
 
 
 @dataclass(frozen=True)
@@ -165,6 +195,45 @@ class SkipGramBatchAdapter:
     def prepare(self, contexts: Tensor, targets: Tensor) -> tuple[Tensor, Tensor]:
         """Keep unique centers and group context labels for every objective."""
         return targets.reshape(-1), contexts
+
+
+@dataclass(frozen=True)
+class OneHotCBOWBatchAdapter:
+    vocab_size: int
+
+    def prepare(self, contexts: Tensor, targets: Tensor) -> tuple[Tensor, Tensor]:
+        return (
+            _one_hot_tensor(contexts, self.vocab_size),
+            _one_hot_tensor(targets.reshape(-1), self.vocab_size),
+        )
+
+
+@dataclass(frozen=True)
+class OneHotSkipGramBatchAdapter:
+    vocab_size: int
+
+    def prepare(self, contexts: Tensor, targets: Tensor) -> tuple[Tensor, Tensor]:
+        return (
+            _one_hot_tensor(targets.reshape(-1), self.vocab_size),
+            _one_hot_tensor(contexts, self.vocab_size),
+        )
+
+
+def _one_hot_tensor(values: Tensor, vocab_size: int) -> Tensor:
+    xp = values.backend.xp
+    indices = values.data.astype(xp.int64, copy=False)
+    return Tensor(
+        _one_hot(xp, indices, vocab_size, values.backend.float_dtype),
+        backend=values.backend,
+    )
+
+
+def _one_hot(xp, indices, vocab_size: int, dtype):
+    values = xp.zeros((*indices.shape, vocab_size), dtype=dtype)
+    flat_values = values.reshape(-1, vocab_size)
+    flat_indices = indices.reshape(-1)
+    flat_values[xp.arange(len(flat_indices)), flat_indices] = 1
+    return values
 
 
 def _accumulate_rows(backend, destination, indices, values) -> None:

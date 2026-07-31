@@ -46,7 +46,7 @@ class SoftmaxWithLoss(Objective):
             if self.grouped_targets
             else softmax_cross_entropy(
                 prediction,
-                target.reshape(-1),
+                target,
                 reduction="sum",
             )
         )
@@ -81,7 +81,11 @@ class SoftmaxWithLoss(Objective):
         *,
         replay_context=None,
     ) -> Word2VecObjectiveBatch:
-        prepared = target if self.grouped_targets else target.reshape(-1)
+        prepared = (
+            target
+            if self.grouped_targets or target.ndim > 1
+            else target.reshape(-1)
+        )
         return Word2VecObjectiveBatch(target=prepared)
 
 
@@ -92,8 +96,8 @@ def _grouped_softmax_cross_entropy(
     """Sum cross-entropy terms for multiple labels sharing each logits row."""
     if logits.ndim != 2:
         raise ValueError("grouped softmax expects rank-2 logits")
-    if target.ndim != 2:
-        raise ValueError("grouped softmax expects rank-2 targets")
+    if target.ndim not in {2, 3}:
+        raise ValueError("grouped softmax expects rank-2 labels or rank-3 one-hot targets")
     if len(logits) != len(target):
         raise ValueError("grouped targets must match the logits batch size")
     if target.shape[1] < 1:
@@ -101,7 +105,13 @@ def _grouped_softmax_cross_entropy(
 
     xp = logits.backend.xp
     scores = logits.data
-    labels = target.data.astype(xp.int64, copy=False)
+    if target.ndim == 3:
+        if target.shape[-1] != logits.shape[-1]:
+            raise ValueError("grouped one-hot target vocabulary does not match logits")
+        labels = target.data.argmax(axis=-1)
+    else:
+        labels = target.data
+    labels = labels.astype(xp.int64, copy=False)
     shifted = scores - scores.max(axis=1, keepdims=True)
     probabilities = xp.exp(shifted)
     probabilities /= probabilities.sum(axis=1, keepdims=True)
@@ -119,7 +129,7 @@ def _grouped_softmax_cross_entropy(
             backend=logits.backend,
         ),
         gradient=Tensor(gradient, backend=logits.backend),
-        unit_count=int(target.size),
+        unit_count=int(labels.size),
     )
 
 

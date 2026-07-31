@@ -7,6 +7,10 @@ from mlprosection.nn import UnigramSampler
 from mlprosection.nn.model.architecture import (
     CBOW,
     CBOWBatchAdapter,
+    OneHotCBOW,
+    OneHotCBOWBatchAdapter,
+    OneHotSkipGram,
+    OneHotSkipGramBatchAdapter,
     SkipGram,
     SkipGramBatchAdapter,
 )
@@ -384,3 +388,71 @@ def test_grouped_skipgram_softmax_matches_pair_expansion() -> None:
     )
     assert np.allclose(grouped_model.W_in.grad, expanded_model.W_in.grad)
     assert np.allclose(grouped_model.W_out.grad, expanded_model.W_out.grad)
+
+
+def test_one_hot_word2vec_matches_embedding_full_softmax() -> None:
+    contexts = Tensor(
+        np.array([[0, 2, 3], [1, 3, 4]], dtype=np.int64),
+        backend="cpu",
+    )
+    targets = Tensor(np.array([1, 2], dtype=np.int64), backend="cpu")
+
+    for (
+        embedding_type,
+        one_hot_type,
+        embedding_adapter,
+        one_hot_adapter,
+        grouped_targets,
+    ) in (
+        (
+            CBOW,
+            OneHotCBOW,
+            CBOWBatchAdapter(),
+            OneHotCBOWBatchAdapter(8),
+            False,
+        ),
+        (
+            SkipGram,
+            OneHotSkipGram,
+            SkipGramBatchAdapter(),
+            OneHotSkipGramBatchAdapter(8),
+            True,
+        ),
+    ):
+        embedding_model = embedding_type(8, 3, backend="cpu")
+        one_hot_model = one_hot_type(8, 3, backend="cpu")
+        one_hot_model.W_in.data[...] = embedding_model.W_in.data
+        one_hot_model.W_out.data[...] = embedding_model.W_out.data
+        embedding_objective = SoftmaxWithLoss(
+            grouped_targets=grouped_targets,
+            backend="cpu",
+        )
+        one_hot_objective = SoftmaxWithLoss(
+            grouped_targets=grouped_targets,
+            backend="cpu",
+        )
+        model_x, objective_t = embedding_adapter.prepare(contexts, targets)
+
+        embedding_result = _word2vec_forward(
+            embedding_model,
+            embedding_objective,
+            model_x,
+            objective_t,
+            example_count=len(contexts),
+        )
+        embedding_model.backward(embedding_objective.backward())
+        one_hot_x, one_hot_t = one_hot_adapter.prepare(contexts, targets)
+        one_hot_result = _word2vec_forward(
+            one_hot_model,
+            one_hot_objective,
+            one_hot_x,
+            one_hot_t,
+            example_count=len(contexts),
+        )
+        one_hot_model.backward(one_hot_objective.backward())
+
+        assert np.allclose(one_hot_result.loss.data, embedding_result.loss.data)
+        assert np.allclose(one_hot_model.W_in.grad, embedding_model.W_in.grad)
+        assert np.allclose(one_hot_model.W_out.grad, embedding_model.W_out.grad)
+        assert one_hot_x.shape[-1] == 8
+        assert one_hot_t.shape[-1] == 8

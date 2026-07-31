@@ -4,6 +4,11 @@ from .simple_cnn import SimpleCNN
 from .word2vec import (
     CBOW,
     CBOWBatchAdapter,
+    FusedNegativeSamplingCBOW,
+    OneHotCBOW,
+    OneHotCBOWBatchAdapter,
+    OneHotSkipGram,
+    OneHotSkipGramBatchAdapter,
     SkipGram,
     SkipGramBatchAdapter,
 )
@@ -17,7 +22,10 @@ from .recurrent import (
 )
 
 __all__ = [
-    "CBOW", "CBOWBatchAdapter", "DeepCNN", "MLP", "SimpleCNN",
+    "CBOW", "CBOWBatchAdapter", "DeepCNN", "FusedNegativeSamplingCBOW",
+    "MLP", "SimpleCNN",
+    "OneHotCBOW", "OneHotCBOWBatchAdapter",
+    "OneHotSkipGram", "OneHotSkipGramBatchAdapter",
     "SkipGram", "SkipGramBatchAdapter",
     "AttentionSeq2seq", "BetterRnnlm",
     "PeekySeq2seq", "Rnnlm", "Seq2seq", "VanillaRnnlm",
