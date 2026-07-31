@@ -13,15 +13,17 @@ from exp.ds2 import cli as ds2_cli
 
 app = typer.Typer(
     name="exp",
-    help="Plan, run, and analyze declared experiment domains.",
+    help="Plan, run, analyze, and profile declared experiment domains.",
     no_args_is_help=True,
 )
 plan_app = typer.Typer(help="Inspect expanded experiment run plans.")
 run_app = typer.Typer(help="Execute catalog or original-source experiments.")
 analyze_app = typer.Typer(help="Render or summarize experiment results.")
+profile_app = typer.Typer(help="Profile experiment update and module runtimes.")
 app.add_typer(plan_app, name="plan")
 app.add_typer(run_app, name="run")
 app.add_typer(analyze_app, name="analyze")
+app.add_typer(profile_app, name="profile")
 
 
 DOMAIN_REGISTRY: dict[str, DomainDefinition] = {}
@@ -39,6 +41,9 @@ def _register_domain(name: str, module: object) -> None:
     plan_app.command(name)(getattr(module, "plan"))
     run_app.command(name)(getattr(module, "run"))
     analyze_app.command(name)(getattr(module, "analyze"))
+    profile = getattr(module, "profile", None)
+    if profile is not None:
+        profile_app.command(name)(profile)
 
 
 _register_domain("ds1", ds1_cli)

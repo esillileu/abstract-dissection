@@ -125,3 +125,77 @@ def analyze(
         summary=summary,
         original=original,
     )
+
+
+@cli_errors
+def profile(
+    experiment: Experiments = None,
+    device: Annotated[
+        list[str] | None,
+        typer.Option("--device", help="Repeat to select CPU/CUDA devices."),
+    ] = None,
+    condition: Annotated[
+        list[str] | None,
+        typer.Option("--condition", help="Repeat to select e02 model conditions."),
+    ] = None,
+    mode: Annotated[
+        str,
+        typer.Option("--mode", help="all, update, or modules."),
+    ] = "all",
+    component: Annotated[
+        list[str] | None,
+        typer.Option("--component", help="Repeat to select module sections."),
+    ] = None,
+    batch_size: Annotated[int, typer.Option("--batch-size")] = 100,
+    epochs: Annotated[int, typer.Option("--epochs")] = 10,
+    update_warmup: Annotated[int, typer.Option("--update-warmup")] = 5,
+    update_repetitions: Annotated[
+        int,
+        typer.Option("--update-repetitions"),
+    ] = 20,
+    measured_updates: Annotated[int, typer.Option("--measured-updates")] = 1,
+    module_warmup: Annotated[int, typer.Option("--module-warmup")] = 5,
+    module_iterations: Annotated[
+        int,
+        typer.Option("--module-iterations"),
+    ] = 20,
+    output_dir: Annotated[Path | None, typer.Option("--output-dir")] = None,
+) -> None:
+    from exp.ds2.profile.e02.api import DEFAULT_RESULTS, run
+    from exp.parsing import parse_experiment_ids
+
+    selected = parse_experiment_ids(experiment or [])
+    if selected != ["e02"]:
+        raise ValueError("DS2 profiling currently requires exactly -e 02")
+    if (
+        min(
+            batch_size,
+            epochs,
+            update_repetitions,
+            measured_updates,
+            module_iterations,
+        )
+        < 1
+    ):
+        raise ValueError(
+            "batch size, epochs, repetitions, and measured iterations must be positive"
+        )
+    if min(update_warmup, module_warmup) < 0:
+        raise ValueError("warmup counts must be non-negative")
+
+    run(
+        devices=tuple(device or ("cpu", "cuda:0")),
+        conditions=tuple(condition) if condition else None,
+        mode=mode,
+        components=(
+            tuple(value.replace("-", "_") for value in component) if component else None
+        ),
+        batch_size=batch_size,
+        epochs=epochs,
+        update_warmup=update_warmup,
+        update_repetitions=update_repetitions,
+        measured_updates=measured_updates,
+        module_warmup=module_warmup,
+        module_iterations=module_iterations,
+        output_dir=output_dir or DEFAULT_RESULTS,
+    )
