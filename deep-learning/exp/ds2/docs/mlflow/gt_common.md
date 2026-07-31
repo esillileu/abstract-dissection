@@ -13,6 +13,8 @@
 - `final/test/exact_match`, `final/test/token` - Seq2seq final exact-match/token accuracy projection.
 - `runtime/run_wall_total_s` - YAML runner 기준 전체 run wall time.
 - `runtime/train_total_s` - executor가 trainer fit 구간에서 측정한 전체 train wall time.
+- `runtime.train_synchronized.mean_ms` - opt-in 실행에서 전체 trainer 호출 시작/종료만
+  synchronize해 측정한 completed-device training time.
 - `memory/cpu_rss_start_bytes`, `memory/cpu_rss_end_bytes`, `memory/cpu_rss_peak_sampled_bytes` - profiling summary에서 투영한 CPU RSS 시작/종료/peak sampled memory.
 - `update/train/loss`, `update/train/lr` - 각 optimizer update 직후 표준 mean loss와 learning rate.
 - `update/train/book_loss` - Word2Vec의 post-update sum-over-terms/mean-over-examples objective.

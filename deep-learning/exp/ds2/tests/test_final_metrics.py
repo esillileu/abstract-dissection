@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import numpy as np
 
 from exp.analyze import RunRef
@@ -83,6 +85,58 @@ def test_loss_summary_uses_last_source_value_without_percent_scaling(tmp_path):
         ],
         [3.5, np.sqrt(0.5), 3.0, 4.0],
     )
+
+
+def test_training_summary_prefers_synchronized_completed_device_time(
+    tmp_path,
+) -> None:
+    run_refs = _run_refs(tmp_path)
+    expected = (5.0, 7.0)
+    for run, seconds in zip(run_refs, expected, strict=True):
+        profiles = run.local_artifact_root / "profiles"
+        profiles.mkdir()
+        (profiles / "profiling_summary.json").write_text(
+            json.dumps(
+                {
+                    "metrics": {
+                        "runtime.train_synchronized.mean_ms": seconds * 1_000,
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    _performance, training_time = summarize_atomic_runs(
+        FakeClient(),
+        run_refs,
+        FINAL_LOSS,
+    )
+
+    assert training_time is not None
+    assert training_time.mean == 6.0
+    assert training_time.run_count == 2
+
+
+def test_synchronized_and_async_training_times_are_not_mixed(tmp_path) -> None:
+    run_refs = _run_refs(tmp_path)
+    profiles = run_refs[0].local_artifact_root / "profiles"
+    profiles.mkdir()
+    (profiles / "profiling_summary.json").write_text(
+        json.dumps(
+            {"metrics": {"runtime.train_synchronized.mean_ms": 5_000}}
+        ),
+        encoding="utf-8",
+    )
+
+    _performance, training_time = summarize_atomic_runs(
+        FakeClient(),
+        run_refs,
+        FINAL_LOSS,
+    )
+
+    assert training_time is not None
+    assert training_time.mean == 5.0
+    assert training_time.run_count == 1
 
 
 def test_accuracy_summary_is_rendered_as_fixed_two_digit_percent(tmp_path):

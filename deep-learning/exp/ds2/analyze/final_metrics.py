@@ -163,6 +163,46 @@ def _training_seconds(rows: list[dict[str, str]]) -> float | None:
     return sum(values) / 1_000_000_000 if values else None
 
 
+def _synchronized_training_seconds(client, run: RunRef) -> float | None:
+    path = artifact_file(client, run, "profiles/profiling_summary.json")
+    if path is None:
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        metrics = payload["metrics"]
+        value = float(metrics["runtime.train_synchronized.mean_ms"]) / 1_000
+    except (
+        OSError,
+        json.JSONDecodeError,
+        KeyError,
+        TypeError,
+        ValueError,
+    ):
+        return None
+    return value if np.isfinite(value) else None
+
+
+def _training_values(
+    client,
+    run_refs: Sequence[RunRef],
+) -> np.ndarray:
+    synchronized = [
+        value
+        for run in run_refs
+        if (value := _synchronized_training_seconds(client, run)) is not None
+    ]
+    if synchronized:
+        # Once corrected runs exist, never mix their completed-GPU time with
+        # historical asynchronous host-window measurements.
+        return np.asarray(synchronized, dtype=float)
+    return _values(
+        client,
+        run_refs,
+        artifact_path="timing_windows.csv",
+        value_from_rows=_training_seconds,
+    )
+
+
 def _values(
     client,
     run_refs: Sequence[RunRef],
@@ -241,14 +281,7 @@ def summarize_atomic_runs(
             value_from_rows,
         )
     )
-    training_time = _summarize(
-        _values(
-            client,
-            run_refs,
-            artifact_path="timing_windows.csv",
-            value_from_rows=_training_seconds,
-        )
-    )
+    training_time = _summarize(_training_values(client, run_refs))
     return performance, training_time
 
 

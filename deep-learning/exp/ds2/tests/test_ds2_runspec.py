@@ -100,6 +100,18 @@ def test_ds2_runspec_allows_device_timing_profiling_policy() -> None:
     assert spec.config["profiling"] == {"enabled": False, "device_timing": True}
 
 
+def test_e02_uses_run_boundary_synchronized_training_time() -> None:
+    spec = parse_run_spec(
+        "exp/ds2/config/e02_ptb_word2vec.yaml",
+        atomic_run_id="W2V-PTB-CBOW-NS",
+    )
+
+    assert spec.profiling == {
+        "enabled": False,
+        "synchronize_train": True,
+    }
+
+
 def test_gt03_catalog_excludes_the_custom_loop_variant() -> None:
     with pytest.raises(ValueError, match="unknown atomic_run_id"):
         parse_run_spec(

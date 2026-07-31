@@ -67,6 +67,10 @@ metric과 train wall time을 `평균 ± 표본표준편차, [최소, 최대]`로
 CSV에 출력한다. `-s`는 `--summary`의 단축 옵션이며 CSV 이름은
 `e01_summary.csv` 형식이다. 각 seed run의 `model/parameter_manifest.json`에서
 합산한 모델별 `parameter_count`도 함께 출력하며 seed 간 값이 같은지 검증한다.
+E02는 `profiles/profiling_summary.json`의
+`runtime.train_synchronized.mean_ms`를 우선 사용한다. corrected run이 하나라도
+있으면 과거 비동기 `timing_windows.csv` 값과 섞지 않고 corrected run만 집계한다.
+그 밖의 그룹은 synchronized metric이 없을 때 기존 train wall window 합계를 사용한다.
 
 - E01–E02: 마지막 source-curve `book_loss`, 원본 스케일 소수점 세 자리.
   E02의 값은 objective 간 품질 비교가 아니라 재현 조건 확인용이다.

@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from mlprosection import Tensor
 from mlprosection.core.backend import resolve_backend
 from mlprosection.nn.functional import (
+    LossComputation,
     binary_cross_entropy_with_logits,
     softmax_cross_entropy,
 )
@@ -22,23 +23,32 @@ class Word2VecObjectiveBatch:
 
 class SoftmaxWithLoss(Objective):
     def __init__(
-        self, *, reduction: str = "mean", backend=None,
+        self,
+        *,
+        reduction: str = "mean",
+        grouped_targets: bool = False,
+        backend=None,
     ) -> None:
         resolved = resolve_backend(backend)
         super().__init__(resolved)
         if reduction not in {"mean", "sum"}:
             raise ValueError("reduction must be 'mean' or 'sum'")
         self.reduction = reduction
+        self.grouped_targets = grouped_targets
         self._cache = None
 
     def forward_manual(
         self, prediction: Tensor, target: Tensor, *, cache: bool = True,
         replay_context=None, example_count: int | None = None,
     ) -> ObjectiveResult:
-        computation = softmax_cross_entropy(
-            prediction,
-            target.reshape(-1),
-            reduction="sum",
+        computation = (
+            _grouped_softmax_cross_entropy(prediction, target)
+            if self.grouped_targets
+            else softmax_cross_entropy(
+                prediction,
+                target.reshape(-1),
+                reduction="sum",
+            )
         )
         prediction_count = computation.unit_count
         reporting_divisor = prediction_count if self.reduction == "mean" else 1
@@ -71,7 +81,46 @@ class SoftmaxWithLoss(Objective):
         *,
         replay_context=None,
     ) -> Word2VecObjectiveBatch:
-        return Word2VecObjectiveBatch(target=target.reshape(-1))
+        prepared = target if self.grouped_targets else target.reshape(-1)
+        return Word2VecObjectiveBatch(target=prepared)
+
+
+def _grouped_softmax_cross_entropy(
+    logits: Tensor,
+    target: Tensor,
+) -> LossComputation:
+    """Sum cross-entropy terms for multiple labels sharing each logits row."""
+    if logits.ndim != 2:
+        raise ValueError("grouped softmax expects rank-2 logits")
+    if target.ndim != 2:
+        raise ValueError("grouped softmax expects rank-2 targets")
+    if len(logits) != len(target):
+        raise ValueError("grouped targets must match the logits batch size")
+    if target.shape[1] < 1:
+        raise ValueError("grouped softmax expects at least one target per example")
+
+    xp = logits.backend.xp
+    scores = logits.data
+    labels = target.data.astype(xp.int64, copy=False)
+    shifted = scores - scores.max(axis=1, keepdims=True)
+    probabilities = xp.exp(shifted)
+    probabilities /= probabilities.sum(axis=1, keepdims=True)
+
+    batch_rows = xp.arange(len(logits), dtype=xp.int64)
+    grouped_rows = xp.broadcast_to(batch_rows[:, None], labels.shape)
+    terms = -xp.log(probabilities[grouped_rows, labels] + 1e-7)
+    value = terms.sum()
+
+    gradient = probabilities * target.shape[1]
+    xp.add.at(gradient, (grouped_rows, labels), -1)
+    return LossComputation(
+        loss=Tensor(
+            xp.asarray(value, dtype=logits.backend.float_dtype),
+            backend=logits.backend,
+        ),
+        gradient=Tensor(gradient, backend=logits.backend),
+        unit_count=int(target.size),
+    )
 
 
 class NegativeSampling(Objective):

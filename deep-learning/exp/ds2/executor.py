@@ -22,6 +22,7 @@ from mlprosection.nn.model.architecture import (
     Seq2seq,
     SkipGram,
     SkipGramBatchAdapter,
+    SkipGramFullSoftmaxBatchAdapter,
     VanillaRnnlm,
 )
 from mlprosection.nn.objective import (
@@ -238,12 +239,21 @@ class Word2VecExecutor:
             )
             context.metadata["negative_sampler"] = sampler.metadata
         architecture = str(model_config.get("name", "CBOW"))
-        model_type, adapter = {
-            "CBOW": (CBOW, CBOWBatchAdapter()),
-            "SkipGram": (SkipGram, SkipGramBatchAdapter()),
-        }.get(architecture, (None, None))
+        model_type = {
+            "CBOW": CBOW,
+            "SkipGram": SkipGram,
+        }.get(architecture)
         if model_type is None:
             raise ValueError(f"unknown Word2Vec model name: {architecture}")
+        adapter = (
+            CBOWBatchAdapter()
+            if architecture == "CBOW"
+            else (
+                SkipGramFullSoftmaxBatchAdapter()
+                if objective_name == "SoftmaxWithLoss"
+                else SkipGramBatchAdapter()
+            )
+        )
         embedding_size = int(model_config.get("embedding_size", 100))
         model = model_type(
             len(word_to_id), embedding_size, backend=backend
@@ -251,6 +261,7 @@ class Word2VecExecutor:
         if objective_name == "SoftmaxWithLoss":
             objective = SoftmaxWithLoss(
                 reduction=str(objective_config.get("reduction", "mean")),
+                grouped_targets=architecture == "SkipGram",
                 backend=backend,
             )
         elif objective_name == "NegativeSampling":
@@ -298,7 +309,15 @@ class Word2VecExecutor:
                 trainer.planned_total_updates(len(x)),
                 completed=trainer.global_step,
             )
-        with training_summary(monitor):
+        with training_summary(
+            monitor,
+            synchronize=bool(
+                _mapping(config, "profiling").get(
+                    "synchronize_train",
+                    False,
+                )
+            ),
+        ):
             records = controller.run(
                 lambda: trainer.fit(Tensor(x, backend=backend), Tensor(t, backend=backend)),
                 start_update=trainer.global_step + 1,

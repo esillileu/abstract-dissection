@@ -130,3 +130,10 @@ class SkipGramBatchAdapter:
             Tensor(xp.repeat(centers, context_width), backend=targets.backend),
             Tensor(contexts.data.reshape(-1), backend=contexts.backend),
         )
+
+
+@dataclass(frozen=True)
+class SkipGramFullSoftmaxBatchAdapter:
+    def prepare(self, contexts: Tensor, targets: Tensor) -> tuple[Tensor, Tensor]:
+        """Keep unique centers and group their context labels for full softmax."""
+        return targets.reshape(-1), contexts

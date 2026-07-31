@@ -14,7 +14,7 @@ recording:
   evaluations: []
 numerics: {dtype: float32, backend: cupy, device: cuda:0, deterministic: true}
 checkpoint: {save_final: true, save_best: false, format: v2}
-profiling: {enabled: false}
+profiling: {enabled: false, synchronize_train: true}
 tracking: {enabled: true, experiment: ds2}
 variants:
   W2V-PTB-CBOW-NS: {run: {structure_signature: ptb-cbow-negative-sampling-w5-e100}, model: {name: CBOW}, objective: {name: NegativeSampling}}

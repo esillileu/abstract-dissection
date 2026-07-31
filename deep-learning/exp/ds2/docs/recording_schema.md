@@ -121,6 +121,12 @@ start_update,end_update,update_count,closed_by,train_wall_time_ns,train_device_t
 
 GPU 일반 기록 모드는 update마다 synchronize하지 않는다. device time은 backend event profile mode에서만 window 종료에 한 번 동기화해 확정한다. MLflow에는 ns 값을 ms로 바꿔 `runtime/window/{train,eval}_{wall,device}_time_ms`로 `end_update` step에 기록한다.
 
+`profiling.synchronize_train: true`인 실행은 probe window와 별도로 전체 trainer
+호출의 시작과 종료에서만 backend를 synchronize하고
+`profiles/profiling_summary.json`에 `runtime.train_synchronized.mean_ms`를 기록한다.
+GT02/e02의 공식 `training_time_s`는 이 값을 사용한다. 수정된 synchronized run이
+하나라도 있으면 과거의 비동기 `train_wall_time_ns`와 섞어 집계하지 않는다.
+
 ### `observations/source_objectives.csv`
 
 ```text

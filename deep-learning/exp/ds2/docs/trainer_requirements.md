@@ -48,6 +48,9 @@
 - `SourceObjectiveSample`을 source curve schedule에 따라 집계해 `observations/source_curves.csv`로 쓴다. `plot_index`는 원본 list의 0-based append 순서다.
 - executor만 evaluation schedule을 판정하고 `EvaluationResult`를 `evaluations.csv` long-form row로 만든다.
 - source-curve/evaluation probe 사이의 train 시간과 그 뒤 evaluation 시간을 분리해 `timing_windows.csv`에 기록한다.
+- GT02는 probe window timing과 별도로 전체 trainer 호출 경계에서만 GPU를
+  synchronize한 completed-device 시간을 기록한다. probe cadence에는 synchronize를
+  추가하지 않는다.
 - record는 256 rows, epoch 끝, checkpoint 직전, 정상/예외 종료에 durable flush한다. MLflow 실패로 CSV를 되돌리거나 trainer update를 재실행하지 않는다.
 - checkpoint 전에 sink를 flush하고 model·optimizer·trainer·executor/sampler state, config/dataset/split digest를 함께 검증한다.
 - 공용 checkpoint manager는 `latest`와 metric-selected `best`를 각각 항상 한 세대 보존한다. 추가 periodic 세대는 `checkpoint.retention.periodic_every_epochs`와 `periodic_keep`를 함께 명시한 실행에서만 별도로 보존한다.
@@ -60,7 +63,7 @@
 | `updates.csv.loss`는 post-update mean | 그대로 적용 | DS1과 같은 공용 raw update history를 유지한다. |
 | Trainer event를 공식 기록 경로로 사용 | 그대로 적용 | callback 내부 list/history 변환을 사용하지 않는다. |
 | evaluation은 executor 주도, RNG 비소비 | 그대로 적용 | fixed probe와 재현성을 보장한다. |
-| probe-to-probe timing, GPU 동기화 최소화 | 그대로 적용 | `timing_windows.csv`와 동일한 runtime 의미를 유지한다. |
+| probe-to-probe timing, GPU 동기화 최소화 | 보완 | 일반 window 의미는 유지하고 GT02 공식 학습 시간만 전체 호출 경계에서 두 번 synchronize한다. |
 | 지도 분류 `EvaluationResult(loss, accuracy)` | 확장 | LM은 token PPL, Seq2seq는 greedy sequence exact match가 필요하다. |
 | update event만으로 책 그래프 생성 | 보완 | 책의 Word2Vec/LM graph는 pre-update objective를 사용하므로 `SourceObjectiveSample`과 source-curve artifact를 추가한다. |
 

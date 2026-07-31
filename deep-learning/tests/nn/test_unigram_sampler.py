@@ -9,6 +9,7 @@ from mlprosection.nn.model.architecture import (
     CBOWBatchAdapter,
     SkipGram,
     SkipGramBatchAdapter,
+    SkipGramFullSoftmaxBatchAdapter,
 )
 from mlprosection.nn.objective import NegativeSampling, SoftmaxWithLoss
 
@@ -305,3 +306,61 @@ def test_softmax_with_loss_book_objective_sums_skipgram_contexts_only() -> None:
     assert np.allclose(book.reporting_loss.data, standard.loss.data)
     assert np.allclose(book_input_gradient, standard_input_gradient * 3)
     assert np.allclose(model.W_out.grad, standard_output_gradient * 3)
+
+
+def test_grouped_skipgram_softmax_matches_pair_expansion() -> None:
+    centers = Tensor(np.array([1, 2], dtype=np.int64), backend="cpu")
+    contexts = Tensor(
+        np.array([[0, 2, 2], [1, 3, 4]], dtype=np.int64),
+        backend="cpu",
+    )
+    expanded_model = SkipGram(8, 3, backend="cpu")
+    grouped_model = SkipGram(8, 3, backend="cpu")
+    grouped_model.W_in.data[...] = expanded_model.W_in.data
+    grouped_model.W_out.data[...] = expanded_model.W_out.data
+
+    expanded_x, expanded_t = SkipGramBatchAdapter().prepare(
+        contexts,
+        centers,
+    )
+    grouped_x, grouped_t = SkipGramFullSoftmaxBatchAdapter().prepare(
+        contexts,
+        centers,
+    )
+    expanded_objective = SoftmaxWithLoss(backend="cpu")
+    grouped_objective = SoftmaxWithLoss(
+        grouped_targets=True,
+        backend="cpu",
+    )
+
+    expanded = _word2vec_forward(
+        expanded_model,
+        expanded_objective,
+        expanded_x,
+        expanded_t,
+        example_count=len(contexts),
+    )
+    expanded_model.backward(expanded_objective.backward())
+    grouped = _word2vec_forward(
+        grouped_model,
+        grouped_objective,
+        grouped_x,
+        grouped_t,
+        example_count=len(contexts),
+    )
+    grouped_model.backward(grouped_objective.backward())
+
+    assert expanded_x.shape == (6,)
+    assert expanded_t.shape == (6,)
+    assert grouped_x.shape == (2,)
+    assert grouped_t.shape == (2, 3)
+    assert grouped.unit_count == expanded.unit_count == 6
+    assert grouped.reporting_loss is not None
+    assert expanded.reporting_loss is not None
+    assert np.allclose(grouped.loss.data, expanded.loss.data)
+    assert np.allclose(
+        grouped.reporting_loss.data,
+        expanded.reporting_loss.data,
+    )
+    assert np.allclose(grouped_model.W_in.grad, expanded_model.W_in.grad)
+    assert np.allclose(grouped_model.W_out.grad, expanded_model.W_out.grad)
