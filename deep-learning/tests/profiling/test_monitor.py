@@ -1,5 +1,6 @@
 import pytest
 
+from mlprosection.experiment.profiling import training_summary
 from mlprosection.profiling.monitor import RuntimeMonitor
 
 
@@ -60,3 +61,15 @@ def test_monitor_rejects_non_numeric_metric() -> None:
 
     with pytest.raises(TypeError):
         monitor.set_metric("bad", "value")
+
+
+def test_training_summary_can_measure_synchronized_total() -> None:
+    backend = MockBackendProfiler()
+    monitor = RuntimeMonitor(backend)
+
+    with training_summary(monitor, synchronize=True):
+        pass
+
+    assert backend.synchronize_count == 2
+    assert len(monitor.timings_ms["train_total"]) == 1
+    assert len(monitor.timings_ms["train_synchronized"]) == 1

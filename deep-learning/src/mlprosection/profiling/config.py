@@ -18,6 +18,8 @@ class ProfilingConfig:
     collect_epoch_metrics: bool = True
     collect_memory_metrics: bool = True
     collect_model_metrics: bool = True
+    # Synchronize only at whole-training boundaries for completed GPU time.
+    synchronize_train: bool = False
     # Zero disables per-update peak sampling while retaining run/epoch snapshots.
     sample_memory_every_n_steps: int = 1
 

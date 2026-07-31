@@ -17,14 +17,27 @@ def create_runtime_monitor(backend, profiling: Mapping[str, object]) -> RuntimeM
 
 
 @contextmanager
-def training_summary(monitor: RuntimeMonitor) -> Iterator[None]:
-    """Collect run boundary memory and total train wall time."""
+def training_summary(
+    monitor: RuntimeMonitor,
+    *,
+    synchronize: bool = False,
+) -> Iterator[None]:
+    """Collect run boundary memory and total train wall time.
+
+    ``synchronize`` adds a second, explicitly synchronized timer around the
+    complete training call.  It synchronizes only at the two run boundaries,
+    rather than perturbing execution at every probe window.
+    """
 
     monitor.snapshot_memory("run.start")
     monitor.update_memory_peaks()
     try:
         with monitor.timer("train_total"):
-            yield
+            if synchronize:
+                with monitor.timer("train_synchronized", synchronize=True):
+                    yield
+            else:
+                yield
     finally:
         monitor.snapshot_memory("run.end")
         monitor.update_memory_peaks()
