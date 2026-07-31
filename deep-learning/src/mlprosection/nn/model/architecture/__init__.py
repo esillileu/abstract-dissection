@@ -6,7 +6,6 @@ from .word2vec import (
     CBOWBatchAdapter,
     SkipGram,
     SkipGramBatchAdapter,
-    SkipGramFullSoftmaxBatchAdapter,
 )
 from .recurrent import (
     AttentionSeq2seq,
@@ -19,7 +18,7 @@ from .recurrent import (
 
 __all__ = [
     "CBOW", "CBOWBatchAdapter", "DeepCNN", "MLP", "SimpleCNN",
-    "SkipGram", "SkipGramBatchAdapter", "SkipGramFullSoftmaxBatchAdapter",
+    "SkipGram", "SkipGramBatchAdapter",
     "AttentionSeq2seq", "BetterRnnlm",
     "PeekySeq2seq", "Rnnlm", "Seq2seq", "VanillaRnnlm",
 ]

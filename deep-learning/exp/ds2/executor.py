@@ -22,7 +22,6 @@ from mlprosection.nn.model.architecture import (
     Seq2seq,
     SkipGram,
     SkipGramBatchAdapter,
-    SkipGramFullSoftmaxBatchAdapter,
     VanillaRnnlm,
 )
 from mlprosection.nn.objective import (
@@ -248,11 +247,7 @@ class Word2VecExecutor:
         adapter = (
             CBOWBatchAdapter()
             if architecture == "CBOW"
-            else (
-                SkipGramFullSoftmaxBatchAdapter()
-                if objective_name == "SoftmaxWithLoss"
-                else SkipGramBatchAdapter()
-            )
+            else SkipGramBatchAdapter()
         )
         embedding_size = int(model_config.get("embedding_size", 100))
         model = model_type(

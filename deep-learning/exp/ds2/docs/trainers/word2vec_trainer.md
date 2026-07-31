@@ -27,8 +27,9 @@ full softmax와 negative sampling은 objective 정의가 다르다. 공통 Train
 
 ## 실행 최적화 계약
 
-- Skip-gram negative sampling은 `(batch, context_width)` target을 `(batch * context_width)` prediction term으로 펼쳐 candidate를 한 번에 draw한다. post-update objective는 그 candidate block을 그대로 재사용한다.
-- Skip-gram full softmax는 center를 펼치지 않는다. `(batch, vocab)` logits와 softmax를 한 번 계산하고 grouped `(batch, context_width)` target의 loss와 gradient를 합산한다.
+- 두 Skip-gram objective 모두 center를 펼치지 않고 동일한 grouped `(batch, context_width)` target을 사용한다.
+- Negative sampling은 grouped target마다 candidate를 한 번에 draw하고, post-update objective에서 그 candidate block을 그대로 재사용한다.
+- Full softmax는 `(batch, vocab)` logits와 softmax를 한 번 계산하고 grouped target의 loss와 gradient를 합산한다.
 - 두 Skip-gram objective 모두 context별 Python loop를 사용하지 않는다.
 - 동일 candidate가 주어지면 벡터화 전 context별 구현과 같은 book loss 및 embedding gradient를 유지한다. 표준 loss는 모든 prediction term의 mean projection이다. 최적화는 update 수와 기록 시점을 바꾸지 않으며, post-update 재계산은 RNG를 추가 소비하지 않는다.
 - PTB context/target 전처리는 sliding window를 벡터화해 원본의 왼쪽 context 뒤 오른쪽 context가 오는 순서를 유지한다.

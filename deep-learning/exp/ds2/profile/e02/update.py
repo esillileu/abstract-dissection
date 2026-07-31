@@ -27,7 +27,6 @@ from mlprosection.nn.model.architecture import (
     CBOWBatchAdapter,
     SkipGram,
     SkipGramBatchAdapter,
-    SkipGramFullSoftmaxBatchAdapter,
 )
 from mlprosection.nn.objective import NegativeSampling, SoftmaxWithLoss
 from mlprosection.nn.sampling import UnigramSampler
@@ -292,11 +291,7 @@ def _implemented_components(model_name: str, objective_name: str):
     adapter = (
         CBOWBatchAdapter()
         if model_name == "CBOW"
-        else (
-            SkipGramFullSoftmaxBatchAdapter()
-            if objective_name == "FullSoftmax"
-            else SkipGramBatchAdapter()
-        )
+        else SkipGramBatchAdapter()
     )
     return (
         model_class,

@@ -12,10 +12,9 @@ CBOW와 SkipGram은 실행 shape가 크게 다르고, NS와 FS는 CPU/GPU에서 
 달라 네 구현 조건을 모두 측정한다.
 
 구현체 조건은 현재 `Word2VecExecutor`의 모델/objective 실행 경로를 따른다.
-특히 SkipGram-NS는 CPU에서 center를 유지한 grouped tensor를 사용하고 CUDA에서는
-center-context pair를 펼쳐 작은 dot product의 병렬성을 유지한다. SkipGram-FS는
-center별 logits를 한 번만 계산하는
-`SkipGramFullSoftmaxBatchAdapter`와 grouped target loss를 사용한다.
+SkipGram-NS와 SkipGram-FS는 장치와 objective에 관계없이 center를 유지한 동일한
+grouped tensor를 사용한다. NS는 grouped candidate score를, FS는 center별
+full-vocabulary logits와 grouped target loss를 계산한다.
 프로파일러는 이 실행 경로를 phase별로 나누어 계측한다.
 
 ## 단계별 실행
@@ -191,10 +190,10 @@ nsys stats \
 - 변경 전 e02 `training_time_s`는 `device_timing: false`인 비동기 host window였다.
   현재 e02 재실행은 `synchronize_train: true`로 전체 학습 경계에서 동기화하며,
   과거 run 분석에는 이 profiler의 synchronized throughput을 사용한다.
-- SkipGram-NS adapter는 CPU에서 100개 center와 context label 10개를 grouped
-  tensor로 처리하고, CUDA에서는 1,000개의 center-context pair로 펼친다.
-  SkipGram-FS는 100개 center logits에 context label 10개를 묶어 처리한다.
-  따라서 update 수가 같아도 objective별 실행 shape가 다르다.
+- SkipGram-NS와 SkipGram-FS adapter는 모두 100개 center와 context label 10개를
+  grouped tensor로 처리한다.
+- NS는 각 grouped label의 sampled candidate를 평가하고, FS는 100개 center
+  logits에 context label 10개를 묶어 처리한다.
 - 결과 공유 시 GPU, CuPy/CUDA 버전, batch size와 update 수를 함께 기록한다.
 - CPU와 GPU JSON은 서로 덮어쓰지 않도록 `--output` 이름을 구분한다.
 

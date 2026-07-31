@@ -9,7 +9,6 @@ from mlprosection.nn.model.architecture import (
     CBOWBatchAdapter,
     SkipGram,
     SkipGramBatchAdapter,
-    SkipGramFullSoftmaxBatchAdapter,
 )
 from mlprosection.nn.objective import NegativeSampling, SoftmaxWithLoss
 
@@ -344,7 +343,7 @@ def test_grouped_skipgram_softmax_matches_pair_expansion() -> None:
         backend="cpu",
     )
     expanded_t = contexts.reshape(-1)
-    grouped_x, grouped_t = SkipGramFullSoftmaxBatchAdapter().prepare(
+    grouped_x, grouped_t = SkipGramBatchAdapter().prepare(
         contexts,
         centers,
     )

@@ -267,12 +267,12 @@ def render_report(
             "### 2. Repeated Python layer loops were converted to batched arrays",
             "",
             "CBOW gathers all ten context positions in one indexed array and "
-            "reduces them together. SkipGram negative sampling repeats each "
-            "center ten times and evaluates all center→context terms in one "
-            "objective call. SkipGram full softmax instead keeps one logits row "
-            "per center and evaluates its ten context labels as grouped targets. "
-            "Negative candidates are represented as one `(predictions, 6)` "
-            "tensor rather than separate positive/negative layer objects.",
+            "reduces them together. Both SkipGram objectives keep one hidden "
+            "row per center and group its ten context labels. Negative sampling "
+            "evaluates grouped `(batch, contexts, 6)` candidates, while full "
+            "softmax evaluates one vocabulary-logit row per center. Negative "
+            "candidates are represented in one tensor rather than separate "
+            "positive/negative layer objects.",
             "",
             f"- End-to-end CBOW NS gain: {float(cbow_gain['speedup']):.2f}×, "
             f"{float(cbow_gain['reduction_percent']):.1f}% less time",
@@ -358,12 +358,11 @@ def render_report(
         )
     lines.extend(
         [
-            "For SkipGram NS, the adapter creates 1,000 prediction rows per "
-            "update (100 centers × 10 contexts). SkipGram FS follows the current "
-            "executor path: it keeps 100 center logits rows and accumulates ten "
-            "grouped context-label losses per row. This avoids repeating the "
-            "full vocabulary logits ten times. Interpret FS/NS separately for "
-            "each architecture because their execution shapes still differ.",
+            "Both SkipGram objectives keep 100 center rows and ten grouped "
+            "context labels per row. NS evaluates six sampled candidates per "
+            "context; FS evaluates one full-vocabulary logits row per center. "
+            "The model input shape is shared, while the objective determines "
+            "the score tensor shape and loss.",
             "",
             "## Why the existing result can show CBOW FS as faster",
             "",
@@ -412,9 +411,9 @@ def render_report(
             f"time by {float(cbow_gain['reduction_ms_per_update']):.3f} ms/update "
             f"({float(cbow_gain['reduction_percent']):.1f}%).",
             f"- SkipGram: the original invokes ten independent "
-            f"`NegativeSamplingLoss` objects; the adapter flattens all ten "
-            f"contexts into one 1,000-row call. Together with batched candidates "
-            f"and no alias scan this reduces time by "
+            f"`NegativeSamplingLoss` objects; the adapter groups all ten "
+            f"contexts under each center in one call. Together with batched "
+            f"candidates and no alias scan this reduces time by "
             f"{float(skipgram_gain['reduction_ms_per_update']):.3f} ms/update "
             f"({float(skipgram_gain['reduction_percent']):.1f}%).",
             f"- After vectorization, implemented SkipGram NS is only "

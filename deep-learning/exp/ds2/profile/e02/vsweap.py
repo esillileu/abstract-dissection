@@ -17,7 +17,6 @@ from mlprosection.nn.model.architecture import (
     CBOWBatchAdapter,
     SkipGram,
     SkipGramBatchAdapter,
-    SkipGramFullSoftmaxBatchAdapter,
 )
 from mlprosection.nn.objective import NegativeSampling, SoftmaxWithLoss
 from mlprosection.nn.sampling import UnigramSampler
@@ -112,11 +111,7 @@ class SweepWorkload:
         self.adapter = (
             CBOWBatchAdapter()
             if model_name == "CBOW"
-            else (
-                SkipGramBatchAdapter()
-                if objective_name == "NegativeSampling"
-                else SkipGramFullSoftmaxBatchAdapter()
-            )
+            else SkipGramBatchAdapter()
         )
         if objective_name == "NegativeSampling":
             sampler = UnigramSampler.uniform(
