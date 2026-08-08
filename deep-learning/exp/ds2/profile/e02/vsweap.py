@@ -42,13 +42,13 @@ from .update import (
 
 DEFAULT_RESULTS = ROOT / "exp/ds2/profile/e02/results"
 DEFAULT_VOCAB_SIZES = (
+    1_000,
+    2_000,
+    5_000,
     10_000,
     25_000,
     50_000,
     100_000,
-    250_000,
-    500_000,
-    1_000_000,
 )
 DEFAULT_CPU_VOCAB_SIZES = (
     1_000,
@@ -393,6 +393,13 @@ def render_sweep(payload: dict[str, object]):
         squeeze=False,
     )
     device = str(metadata.get("device", "unknown device"))
+    device_label = (
+        "GPU"
+        if device.startswith("cuda:")
+        else "CPU"
+        if device.startswith("cpu")
+        else device
+    )
     for axis, model in zip(axes[0], models, strict=True):
         model_rows = [row for row in selected if row.get("model") == model]
         conditions = [
@@ -439,10 +446,11 @@ def render_sweep(payload: dict[str, object]):
                     alpha=0.2,
                     linewidth=0,
                 )
+        model_label = "Skip-gram" if model == "SkipGram" else model
         axis.set(
-            title=f"{model} · {device}",
-            xlabel="vocabulary size",
-            ylabel="time per update (ms)",
+            title=f"{model_label} · {device_label}",
+            xlabel="Vocabulary size",
+            ylabel="Update time (ms)",
             xscale="log",
         )
         axis.grid(True, which="both", alpha=0.25, color=MUTED)

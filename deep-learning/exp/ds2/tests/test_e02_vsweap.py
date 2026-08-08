@@ -80,15 +80,23 @@ def test_vocab_sweep_measures_implemented_conditions_and_crossovers(tmp_path) ->
 
     figure = render_sweep(payload)
     assert [axis.get_title() for axis in figure.axes] == [
-        "CBOW · cpu",
-        "SkipGram · cpu",
+        "CBOW · CPU",
+        "Skip-gram · CPU",
     ]
     assert all(
-        axis.get_xlabel() == "vocabulary size" for axis in figure.axes
+        axis.get_xlabel() == "Vocabulary size" for axis in figure.axes
     )
     assert all(
-        axis.get_ylabel() == "time per update (ms)" for axis in figure.axes
+        axis.get_ylabel() == "Update time (ms)" for axis in figure.axes
     )
+    plt.close(figure)
+
+    payload["metadata"]["device"] = "cuda:0"
+    figure = render_sweep(payload)
+    assert [axis.get_title() for axis in figure.axes] == [
+        "CBOW · GPU",
+        "Skip-gram · GPU",
+    ]
     plt.close(figure)
 
 
