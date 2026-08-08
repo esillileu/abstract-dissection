@@ -127,6 +127,11 @@ ANALYSES = {
         ("SEQD-VAN-REV", "SEQD-PEEKY-REV", "SEQD-ATTN-REV"),
         FINAL_TEST_ACCURACY,
     ),
+    "e09": AnalysisSpec(
+        "GT09",
+        ("SEQA-VAN-FWD", "SEQA-VAN-REV", "SEQA-PEEKY-FWD", "SEQA-PEEKY-REV"),
+        FINAL_TEST_ACCURACY,
+    ),
 }
 
 

@@ -1,6 +1,6 @@
 # DS2 실행 catalog
 
-DS2는 실행 그룹 `GT01`–`GT07`을 `e01`–`e07` YAML로 선언한다. 기존
+DS2는 실행 그룹 `GT01`–`GT07`, `GT09`를 `e01`–`e09` YAML로 선언한다. 기존
 `.legacy/experiments/deepscratch2`는 보존용 legacy이며 이 catalog의 입력이 아니다.
 
 ```bash
@@ -42,5 +42,6 @@ just exp run ds2 -e 01-02 --seed 1-3 --order seed-first
 | `e06` | `GT06` | `config/e06_addition_seq2seq.yaml` |
 | `e07` | `GT07` | `config/e07_date_seq2seq.yaml` |
 | `e08` | `GO01` | `config/e08_attention_alignment.yaml` |
+| `e09` | `GT09` | `config/e09_addition_seq2seq_150.yaml` |
 
 `GO01`은 GT07의 완료 checkpoint를 입력으로 받는 관찰 실행이다.

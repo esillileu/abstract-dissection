@@ -149,4 +149,4 @@ def test_all_ds2_variants_resolve_and_build_the_declared_components() -> None:
                 assert isinstance(executor, AttentionAlignmentObservationExecutor)
             assert callable(executor.run)
             count += 1
-    assert count == 24
+    assert count == 28

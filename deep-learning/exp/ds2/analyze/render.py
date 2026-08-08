@@ -25,6 +25,7 @@ from . import (
     e06_addition_seq2seq,
     e07_date_seq2seq,
     e08_attention,
+    e09_addition_seq2seq_150,
 )
 from .final_metrics import FINAL_METRIC_RENDERERS
 
@@ -39,6 +40,7 @@ RENDERERS = {
     "e06": e06_addition_seq2seq.render,
     "e07": e07_date_seq2seq.render,
     "e08": e08_attention.render,
+    "e09": e09_addition_seq2seq_150.render,
 }
 SUMMARY_RENDERERS = FINAL_METRIC_RENDERERS
 

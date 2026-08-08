@@ -7,7 +7,7 @@ from exp.analyze import mark_empty, plot_curve
 from .common import runs, source_curve
 
 
-def render(client, error_style, output):
+def render(client, error_style, output=None, *, group_id="GT06"):
     del output
     definitions = [
         ("SEQA-VAN-FWD", "vanilla / forward", "o"),
@@ -15,7 +15,7 @@ def render(client, error_style, output):
         ("SEQA-PEEKY-FWD", "peeky / forward", "^"),
         ("SEQA-PEEKY-REV", "peeky / reverse", "D"),
     ]
-    grouped = runs(client, "GT06", [item[0] for item in definitions])
+    grouped = runs(client, group_id, [item[0] for item in definitions])
     figure, axis = plt.subplots()
     figure._analysis_match_original_canvas = True
     curves = {}
