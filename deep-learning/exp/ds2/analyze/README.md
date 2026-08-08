@@ -106,8 +106,8 @@ parameter count를 `timing.json`, `parameter_manifest.json`에서 읽는다.
   기대 정답 순위 및 hit@5를 터미널과 `e02_word_vectors.txt/.csv`에 출력한다.
 - `GT05`는 validation perplexity만 표시한다. 아래의 확대 축은 LSTM/BetterRNNLM
   최댓값 바로 위에서 끊고, 작은 위쪽 축에는 훨씬 큰 vanilla RNNLM 범위를 표시한다.
-- `e01`–`e08`을 지원한다.
+- `e01`–`e09`를 지원한다.
 
 각 실험의 reducer 결과 선택, 축과 원본 시각 형식은 `e01_toy_word2vec.py`부터
-`e08_attention.py`까지의 개별 모듈이 소유한다. `common.py`에는 완료 run 조회와
+`e09_addition_seq2seq_150.py`까지의 개별 모듈이 소유한다. `common.py`에는 완료 run 조회와
 source curve 로딩만 둔다.

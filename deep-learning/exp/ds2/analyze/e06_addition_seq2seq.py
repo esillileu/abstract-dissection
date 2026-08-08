@@ -7,7 +7,14 @@ from exp.analyze import mark_empty, plot_curve
 from .common import runs, source_curve
 
 
-def render(client, error_style, output=None, *, group_id="GT06"):
+def render(
+    client,
+    error_style,
+    output=None,
+    *,
+    group_id="GT06",
+    max_epoch_index=None,
+):
     del output
     definitions = [
         ("SEQA-VAN-FWD", "vanilla / forward", "o"),
@@ -24,6 +31,8 @@ def render(client, error_style, output=None, *, group_id="GT06"):
         curves[atomic] = curve
         plot_curve(axis, curve, label=label, marker=marker, error_style=error_style, error_every=5)
     axis.set(xlabel="epochs", ylabel="accuracy", ylim=(0, 1))
+    if max_epoch_index is not None:
+        axis.set_xlim(0, max_epoch_index)
     mark_empty(axis)
     if axis.has_data():
         axis.legend()

@@ -5,4 +5,9 @@ from .e06_addition_seq2seq import render as _render_e06_style
 
 def render(client, error_style, output):
     del output
-    return _render_e06_style(client, error_style, group_id="GT09")
+    return _render_e06_style(
+        client,
+        error_style,
+        group_id="GT09",
+        max_epoch_index=149,
+    )
