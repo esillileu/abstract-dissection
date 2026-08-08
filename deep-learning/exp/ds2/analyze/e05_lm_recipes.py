@@ -13,7 +13,7 @@ from .common import runs
 DEFINITIONS = [
     ("LM-RNN-RECIPE", "Vanilla RNNLM", "o", ACCENT_COLORS[0]),
     ("LM-LSTM-RECIPE", "LSTM RNNLM", "s", ACCENT_COLORS[1]),
-    ("LM-BETTER-RECIPE", "BetterRNNLM", "D", ACCENT_COLORS[2]),
+    ("LM-BETTER-RECIPE", "Better RNNLM", "D", ACCENT_COLORS[2]),
 ]
 
 # Manually choose the visible Vanilla RNNLM range here.
