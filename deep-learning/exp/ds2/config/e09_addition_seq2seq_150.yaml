@@ -4,7 +4,7 @@ run: {experiment_id: e09, group_id: GT09, protocol: addition Seq2seq 150 epochs,
 execution: {mode: seeded, default_device: cuda:0}
 seed_policy: {seed_set: research_v1, seed_count: 10, paired_execution: true, max_grad: 5.0}
 dataset: {id: DS-SEQ-ADD, source: sequence, file: addition.txt, split_seed: 1984, split_algorithm: legacy_numpy_randomstate}
-loader: {batch_size: 128}
+loader: {batch_size: 128, eval_batch_size: 128}
 optimizer: {name: adam, learning_rate: 0.001}
 objective: {name: TemporalSoftmaxCrossEntropy, reduction: mean}
 budget: {max_epochs: 150}

@@ -185,3 +185,43 @@ def test_seq2seq_evaluation_materializes_predictions_and_targets_once() -> None:
 
     assert copies == [8]
     assert trainer.last_predictions.shape == (2, 2)
+
+
+def test_seq2seq_evaluation_decodes_in_configured_batches() -> None:
+    model = Seq2seq(8, 3, 4)
+    objective = TemporalSoftmaxCrossEntropy()
+    trainer = Seq2seqTrainer(
+        model,
+        objective,
+        SGD(_params(model, objective), lr=0.1),
+        max_epochs=1,
+        batch_size=2,
+        eval_batch_size=3,
+        start_id=0,
+    )
+    xs = Tensor(np.asarray([
+        [1, 2, 3],
+        [2, 3, 4],
+        [3, 4, 5],
+        [4, 5, 6],
+        [5, 6, 7],
+    ]))
+    ts = Tensor(np.asarray([
+        [0, 4, 5],
+        [0, 5, 6],
+        [0, 6, 7],
+        [0, 7, 1],
+        [0, 1, 2],
+    ]))
+    batch_sizes = []
+
+    def generate_batch(question, _start_id, sample_size):
+        batch_sizes.append(len(question))
+        return question.backend.xp.zeros((len(question), sample_size), dtype=question.backend.xp.int64)
+
+    model.generate_device = generate_batch
+
+    trainer.evaluate(xs, ts, metrics=("exact_match_accuracy", "token_accuracy"))
+
+    assert batch_sizes == [3, 2]
+    assert trainer.last_predictions.shape == (5, 2)

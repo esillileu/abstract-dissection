@@ -21,6 +21,7 @@ class Seq2seqTrainer(EventTrainer):
         max_epochs: int,
         batch_size: int,
         start_id: int,
+        eval_batch_size: int | None = None,
         max_decode_steps: int | None = None,
         max_updates: int | None = None,
         drop_last: bool = False,
@@ -31,7 +32,10 @@ class Seq2seqTrainer(EventTrainer):
             raise TypeError("Seq2seqTrainer requires the GenerativeModel capability")
         if batch_size < 1:
             raise ValueError("batch_size must be positive")
+        if eval_batch_size is not None and eval_batch_size < 1:
+            raise ValueError("eval_batch_size must be positive")
         self.batch_size = batch_size
+        self.eval_batch_size = eval_batch_size or batch_size
         self.start_id = start_id
         self.max_decode_steps = max_decode_steps
         self.drop_last = drop_last
@@ -115,20 +119,23 @@ class Seq2seqTrainer(EventTrainer):
         device_predictions = []
         self.model.train(False)
         self.objective.train(False)
+        expected_size = ts.shape[1] - 1
+        sample_size = self.max_decode_steps if self.max_decode_steps is not None else expected_size
+        if sample_size != expected_size:
+            raise ValueError("max_decode_steps must match the fixed target length")
         try:
-            for index in range(len(xs)):
-                question = Tensor(xs.data[index:index + 1], backend=self.backend)
-                expected_size = ts.shape[1] - 1
-                sample_size = self.max_decode_steps if self.max_decode_steps is not None else expected_size
-                if sample_size != expected_size:
-                    raise ValueError("max_decode_steps must match the fixed target length")
+            for start in range(0, len(xs), self.eval_batch_size):
+                question = Tensor(
+                    xs.data[start:start + self.eval_batch_size],
+                    backend=self.backend,
+                )
                 device_predictions.append(
                     self.model.generate_device(question, self.start_id, sample_size)
                 )
         finally:
             self._restore_evaluation_state(saved_state)
         xp = self.backend.xp
-        predictions = xp.stack(device_predictions)
+        predictions = xp.concatenate(device_predictions, axis=0)
         paired = xp.stack((predictions, ts.data[:, 1:]))
         host_predictions, host_targets = self.backend.to_numpy(paired)
         self.last_predictions = host_predictions

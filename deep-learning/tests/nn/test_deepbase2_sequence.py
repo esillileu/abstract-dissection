@@ -114,6 +114,8 @@ def test_peeky_and_attention_seq2seq_support_training_and_decode() -> None:
         decoded = model.generate(xs[:1], start_id=0, sample_size=3)
         assert result.loss.shape == ()
         assert len(decoded) == 3
+        batched = model.generate_device(xs, start_id=0, sample_size=3)
+        assert batched.shape == (2, 3)
     attention_model = AttentionSeq2seq(
         vocab_size=6, wordvec_size=3, hidden_size=4, backend="cpu"
     )

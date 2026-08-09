@@ -61,7 +61,8 @@ class RunSpec:
             elif trigger.axis == "terminal":
                 evaluation["test_at_end"] = "test" in trigger.sources
         if self.kind == "seq2seq":
-            evaluation.update({"primary_metric": "final/test/exact_match", "decode": "greedy", "test_every_epochs": 1})
+            evaluation.update({"primary_metric": "final/test/exact_match", "decode": "greedy"})
+            evaluation.setdefault("test_every_epochs", 1)
         elif self.kind == "language_modeling":
             evaluation.setdefault("primary_metric", "final/test/perplexity")
             evaluation.setdefault("valid_every_epochs", 0)

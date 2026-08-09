@@ -94,6 +94,14 @@ def test_seq2seq_runspec_declares_predictions_and_attention_observation_inputs()
     assert spec.model["name"] == "AttentionSeq2seq"
 
 
+def test_addition_seq2seq_runspec_declares_batched_epoch_evaluation() -> None:
+    spec = parse_run_spec("exp/ds2/config/e09_addition_seq2seq_150.yaml", atomic_run_id="SEQA-VAN-FWD")
+
+    assert spec.loader["batch_size"] == 128
+    assert spec.loader["eval_batch_size"] == 128
+    assert spec.config["evaluation"]["test_every_epochs"] == 1
+
+
 def test_ds2_runspec_allows_device_timing_profiling_policy() -> None:
     spec = parse_run_spec(
         "exp/ds2/config/e01_toy_word2vec.yaml",

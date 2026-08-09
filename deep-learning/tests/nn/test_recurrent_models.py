@@ -79,6 +79,15 @@ def test_seq2seq_forward_backward_generate() -> None:
     assert all(isinstance(sample_id, int) for sample_id in sampled)
 
 
+def test_seq2seq_generate_device_supports_batched_inputs() -> None:
+    model = Seq2seq(vocab_size=10, wordvec_size=4, hidden_size=5, backend="cpu")
+    xs = Tensor(np.array([[1, 2, 3], [4, 5, 6]]), backend="cpu")
+
+    sampled = model.generate_device(xs, start_id=0, sample_size=4)
+
+    assert sampled.shape == (2, 4)
+
+
 def test_rnnlm_cache_free_forward_preserves_loss_without_backward_caches() -> None:
     model = Rnnlm(vocab_size=7, wordvec_size=4, hidden_size=5, backend="cpu")
     xs = Tensor(np.array([[0, 1, 2], [3, 4, 5]]), backend="cpu")

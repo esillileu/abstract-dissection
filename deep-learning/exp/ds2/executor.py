@@ -544,14 +544,18 @@ class Seq2SeqExecutor:
         optimizer = _optimizer(config, model, objective)
         seed_batch_order(backend, streams)
         batch_size, epochs = int(loader.get("batch_size", 128)), int(training.get("max_epochs", 10))
+        eval_batch_size = int(loader.get("eval_batch_size", batch_size))
         max_updates = training.get("max_updates")
         train_x = Tensor(backend.xp.asarray(x_train, dtype=backend.xp.int64), backend=backend)
         train_t = Tensor(backend.xp.asarray(t_train, dtype=backend.xp.int64), backend=backend)
         test_source = (Tensor(backend.xp.asarray(x_test, dtype=backend.xp.int64), backend=backend), Tensor(backend.xp.asarray(t_test, dtype=backend.xp.int64), backend=backend))
         request = EvaluationRequest("sequence-test-full", "test", test_source, ("exact_match_accuracy", "token_accuracy"))
+        evaluation_config = _mapping(config, "evaluation")
+        test_every_epochs = int(evaluation_config.get("test_every_epochs", 1))
         trainer = Seq2seqTrainer(
             model, objective, optimizer, max_epochs=epochs, batch_size=batch_size,
             start_id=data["char_to_id"]["_"],
+            eval_batch_size=eval_batch_size,
             max_updates=None if max_updates is None else int(max_updates),
             drop_last=bool(loader.get("drop_last", False)),
         )
@@ -601,7 +605,11 @@ class Seq2SeqExecutor:
         controller = EventExperimentExecutor(
             records=records,
             evaluate=lambda _request: trainer.evaluate(*test_source, metrics=("exact_match_accuracy", "token_accuracy")),
-            epoch_requests=lambda _event: (request,),
+            epoch_requests=lambda event: (
+                (request,)
+                if test_every_epochs > 0 and event.epoch % test_every_epochs == 0
+                else ()
+            ),
             after_evaluation=after_evaluation,
             after_epoch=lambda _event: _save_epoch_roles(checkpoint_manager),
             device_timer=_device_timer(config, backend),
