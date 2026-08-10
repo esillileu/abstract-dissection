@@ -427,6 +427,152 @@ def test_import_restores_reused_target_when_source_run_is_active(
     ).info.lifecycle_stage == "active"
 
 
+def test_import_keeps_collapsed_parent_active_when_source_has_deleted_duplicate(
+    tmp_path: Path,
+) -> None:
+    source_uri = _tracking_uri(tmp_path / "source")
+    source_client = MlflowClient(tracking_uri=source_uri)
+    source_experiment_id = source_client.create_experiment("source")
+    parent_tags = {
+        "run.type": "condition_parent",
+        "condition.group.key": "shared-group",
+    }
+    active_parent = source_client.create_run(
+        source_experiment_id,
+        run_name="parent",
+        tags=parent_tags,
+    )
+    deleted_parent = source_client.create_run(
+        source_experiment_id,
+        run_name="parent",
+        tags=parent_tags,
+    )
+    source_client.set_terminated(active_parent.info.run_id)
+    source_client.set_terminated(deleted_parent.info.run_id)
+    source_client.delete_run(deleted_parent.info.run_id)
+    archive = export_experiment(source_uri, "source", tmp_path / "source.zip")
+
+    target_uri = _tracking_uri(tmp_path / "target")
+    result = import_archive(
+        target_uri,
+        archive,
+        capture_environment=False,
+    )
+
+    active_target_id = result["run_id_map"][active_parent.info.run_id]
+    assert result["run_id_map"][deleted_parent.info.run_id] == active_target_id
+    target_client = MlflowClient(tracking_uri=target_uri)
+    imported_parent = target_client.get_run(active_target_id)
+    assert imported_parent.info.lifecycle_stage == "active"
+    assert imported_parent.data.tags["checkpoint.latest.status"] == "not_applicable"
+    assert imported_parent.data.tags["checkpoint.best.status"] == "not_applicable"
+
+
+def test_import_verifies_deleted_run_before_reapplying_deleted_lifecycle(
+    tmp_path: Path,
+) -> None:
+    source_uri = _tracking_uri(tmp_path / "source")
+    source_client = MlflowClient(tracking_uri=source_uri)
+    source_experiment_id = source_client.create_experiment("source")
+    deleted_parent = source_client.create_run(
+        source_experiment_id,
+        tags={
+            "run.type": "condition_parent",
+            "condition.group.key": "deleted-group",
+        },
+    )
+    source_client.set_terminated(deleted_parent.info.run_id)
+    source_client.delete_run(deleted_parent.info.run_id)
+    archive = export_run(
+        source_uri,
+        deleted_parent.info.run_id,
+        tmp_path / "deleted-parent.zip",
+    )
+
+    target_uri = _tracking_uri(tmp_path / "target")
+    result = import_archive(
+        target_uri,
+        archive,
+        capture_environment=False,
+    )
+
+    imported_parent = MlflowClient(tracking_uri=target_uri).get_run(
+        result["run_id_map"][deleted_parent.info.run_id]
+    )
+    assert imported_parent.info.lifecycle_stage == "deleted"
+    assert imported_parent.data.tags["checkpoint.latest.status"] == "not_applicable"
+    assert imported_parent.data.tags["checkpoint.best.status"] == "not_applicable"
+
+
+def test_import_reapplies_deleted_lifecycle_when_verification_fails(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    source_uri = _tracking_uri(tmp_path / "source")
+    source_client = MlflowClient(tracking_uri=source_uri)
+    source_experiment_id = source_client.create_experiment("source")
+    deleted_parent = source_client.create_run(
+        source_experiment_id,
+        tags={
+            "run.type": "condition_parent",
+            "condition.group.key": "deleted-group",
+        },
+    )
+    source_client.set_terminated(deleted_parent.info.run_id)
+    source_client.delete_run(deleted_parent.info.run_id)
+    archive = export_run(
+        source_uri,
+        deleted_parent.info.run_id,
+        tmp_path / "deleted-parent.zip",
+    )
+    monkeypatch.setattr(
+        transfer,
+        "_verify_checkpoint_inventory",
+        lambda *_: (_ for _ in ()).throw(ValueError("verification failed")),
+    )
+
+    target_uri = _tracking_uri(tmp_path / "target")
+    with pytest.raises(ValueError, match="verification failed"):
+        import_archive(
+            target_uri,
+            archive,
+            capture_environment=False,
+        )
+
+    target_client = MlflowClient(tracking_uri=target_uri)
+    target_experiment = target_client.get_experiment_by_name("source")
+    imported = target_client.search_runs(
+        [target_experiment.experiment_id],
+        run_view_type=transfer.ViewType.ALL,
+    )
+    assert len(imported) == 1
+    assert imported[0].info.lifecycle_stage == "deleted"
+
+
+def test_checkpoint_manifest_allows_equivalent_json_number_representations(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "target" / "checkpoint_manifest.json"
+    source = tmp_path / "source" / "checkpoint_manifest.json"
+    target.parent.mkdir()
+    source.parent.mkdir()
+    target.write_text('{"update": 3520}', encoding="utf-8")
+    source.write_text('{"update": 3520.0}', encoding="utf-8")
+
+    assert transfer._matching_artifact(
+        target,
+        source,
+        "checkpoints/checkpoint_manifest.json",
+    )
+
+    source.write_text('{"update": 3521}', encoding="utf-8")
+    assert not transfer._matching_artifact(
+        target,
+        source,
+        "checkpoints/checkpoint_manifest.json",
+    )
+
+
 def test_importing_same_archive_twice_reuses_run(tmp_path: Path) -> None:
     source_uri = _tracking_uri(tmp_path / "source")
     source_client = MlflowClient(tracking_uri=source_uri)

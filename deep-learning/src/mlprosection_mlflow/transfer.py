@@ -585,8 +585,6 @@ def _restore_run(
         )
     elif info["status"] != created.info.status:
         client.update_run(new_run_id, status=info["status"])
-    if info["lifecycle_stage"] == "deleted":
-        client.delete_run(new_run_id)
     return new_run_id
 
 
@@ -662,7 +660,7 @@ def _supplement_artifacts(
             relative = source.relative_to(artifact_dir).as_posix()
             if relative in existing:
                 target = Path(client.download_artifacts(run_id, relative, temp))
-                if _path_digest(target) != _path_digest(source):
+                if not _matching_artifact(target, source, relative):
                     raise ValueError(
                         f"artifact digest conflict for {run_id}/{relative}"
                     )
@@ -673,6 +671,20 @@ def _supplement_artifacts(
                 str(source),
                 artifact_path=None if parent == Path(".") else parent.as_posix(),
             )
+
+
+def _matching_artifact(target: Path, source: Path, relative: str) -> bool:
+    if _path_digest(target) == _path_digest(source):
+        return True
+    if Path(relative).name != "checkpoint_manifest.json":
+        return False
+    target_manifest = _read_json(target)
+    source_manifest = _read_json(source)
+    return (
+        target_manifest is not None
+        and source_manifest is not None
+        and target_manifest == source_manifest
+    )
 
 
 def _walk_artifacts(client: MlflowClient, run_id: str):
@@ -740,45 +752,67 @@ def import_archive(
                 tags={**source_experiment["tags"], **applied_destination_tags},
             )
         run_id_map: dict[str, str] = {}
+        lifecycle_stages_by_run: dict[str, set[str]] = {}
         relationship_entries: list[dict[str, Any]] = []
+        source_identity = str(source_experiment["original_experiment_id"])
+        for run in manifest["runs"]:
+            run["source_experiment_id"] = source_identity
+            run["source_experiment_name"] = str(source_experiment["name"])
+        lifecycle_stages_by_identity: dict[
+            frozenset[tuple[str, str]], set[str]
+        ] = {}
+        for run in manifest["runs"]:
+            identity = frozenset(_identity_tags(run).items())
+            lifecycle_stages_by_identity.setdefault(identity, set()).add(
+                str(run["info"]["lifecycle_stage"])
+            )
         try:
-            source_identity = str(source_experiment["original_experiment_id"])
-            for run in manifest["runs"]:
-                run["source_experiment_id"] = source_identity
-                run["source_experiment_name"] = str(source_experiment["name"])
             for run in _ordered_runs(manifest["runs"]):
-                target_run_id = _restore_run(
-                    client,
-                    experiment_id,
-                    run,
-                    run_id_map,
-                    root / "artifacts" / run["original_run_id"],
-                    applied_destination_tags,
-                )
+                identity = frozenset(_identity_tags(run).items())
+                try:
+                    target_run_id = _restore_run(
+                        client,
+                        experiment_id,
+                        run,
+                        run_id_map,
+                        root / "artifacts" / run["original_run_id"],
+                        applied_destination_tags,
+                    )
+                finally:
+                    mapped_run_id = run_id_map.get(run["original_run_id"])
+                    if mapped_run_id is not None:
+                        lifecycle_stages_by_run.setdefault(
+                            mapped_run_id, set()
+                        ).update(lifecycle_stages_by_identity[identity])
                 _verify_checkpoint_inventory(
                     client,
                     target_run_id,
                     run.get("checkpoint_inventory", []),
                 )
-            touched_group_keys = {
-                str(run["tags"]["condition.group.key"])
-                for run in manifest["runs"]
-                if run["tags"].get("condition.group.key")
-            }
-            relationship_entries = reconcile_parent_links(
-                client,
-                experiment_id,
-                group_keys=touched_group_keys,
-                apply=True,
-            )
-            if (
-                source_experiment["lifecycle_stage"] == "deleted"
-                and not reused_experiment
-            ):
-                client.delete_experiment(experiment_id)
-        except Exception:
-            # Keep the partially imported experiment for diagnosis and recovery.
-            raise
+        finally:
+            for target_run_id, lifecycle_stages in lifecycle_stages_by_run.items():
+                # Multiple source runs can intentionally collapse onto one logical
+                # target identity. Keep that target active when any source is active;
+                # otherwise apply the shared deleted lifecycle only after all writes
+                # and checkpoint verification have completed.
+                if lifecycle_stages == {"deleted"}:
+                    client.delete_run(target_run_id)
+        touched_group_keys = {
+            str(run["tags"]["condition.group.key"])
+            for run in manifest["runs"]
+            if run["tags"].get("condition.group.key")
+        }
+        relationship_entries = reconcile_parent_links(
+            client,
+            experiment_id,
+            group_keys=touched_group_keys,
+            apply=True,
+        )
+        if (
+            source_experiment["lifecycle_stage"] == "deleted"
+            and not reused_experiment
+        ):
+            client.delete_experiment(experiment_id)
     return {
         "experiment_id": experiment_id,
         "experiment_name": target_name,
