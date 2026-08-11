@@ -5,7 +5,14 @@ import numpy as np
 
 from mlprosection.datasets.mnist import load_mnist
 
-from exp.analyze import aggregate, mark_empty, metric_histories, plot_curve
+from exp.analyze import (
+    aggregate,
+    mark_empty,
+    metric_histories,
+    plot_curve,
+    save_figure,
+    write_summary,
+)
 from exp.plot_theme import ACCENT_COLORS, SURFACE
 
 from .broken_axis import add_wave_break
@@ -34,6 +41,10 @@ PANELS = [
         ],
     ),
 ]
+PANEL_OUTPUT_NAMES = {
+    "ParameterMatchedNN": "parameter_matched_nn",
+    "SimpleConvNet": "simple_conv_net",
+}
 
 
 def _permute_image(image: np.ndarray, *, seed: int) -> np.ndarray:
@@ -72,7 +83,6 @@ def _add_permutation_examples(
 
 
 def render(client, error_style, output):
-    del output
     atomic_ids = [definition[0] for _title, definitions in PANELS for definition in definitions]
     grouped = runs(client, "GT08", atomic_ids)
     curves = {
@@ -84,17 +94,16 @@ def render(client, error_style, output):
     normal = np.asarray(x_test[PERMUTATION_EXAMPLE_INDEX])
     permutated = _permute_image(normal, seed=PIXEL_PERMUTATION_SEED)
 
-    figure = plt.figure(figsize=(13, 6))
-    grid = figure.add_gridspec(2, 2, height_ratios=(3, 1), hspace=0.05, wspace=0.16)
-    figure.subplots_adjust(left=0.08, right=0.98, bottom=0.12, top=0.9)
-    figure._analysis_skip_tight_layout = True
-    panel_axes = []
-    for column, (title, definitions) in enumerate(PANELS):
-        upper = figure.add_subplot(grid[0, column])
-        lower = figure.add_subplot(grid[1, column], sharex=upper)
+    outputs = []
+    for panel_name, definitions in PANELS:
+        figure = plt.figure(figsize=(6.5, 6))
+        grid = figure.add_gridspec(2, 1, height_ratios=(3, 1), hspace=0.05)
+        figure.subplots_adjust(left=0.12, right=0.98, bottom=0.12, top=0.98)
+        figure._analysis_skip_tight_layout = True
+        upper = figure.add_subplot(grid[0, 0])
+        lower = figure.add_subplot(grid[1, 0], sharex=upper)
         lower.set_zorder(30)
         lower.patch.set_visible(False)
-        panel_axes.append((upper, lower))
         for axis in (upper, lower):
             for atomic, label, marker, color in definitions:
                 for split, linestyle in (("test", "-"), ("train", ":")):
@@ -114,7 +123,6 @@ def render(client, error_style, output):
 
         # upper.set_yticks((0.7, 0.8, 0.94, 0.96, 0.98, 1.0))
         # lower.set_yticks((0.0, 0.1, 0.2, 0.25))
-        upper.set_title(title)
         lower.set_xlabel("updates")
         add_wave_break(figure, upper, lower)
         _add_permutation_examples(lower, normal, permutated)
@@ -128,6 +136,15 @@ def render(client, error_style, output):
                 handlelength=3.0,
                 labelspacing=0.7,
             ).set_zorder(30)
-    panel_axes[0][0].set_ylabel("accuracy")
-    panel_axes[0][1].set_ylabel("accuracy")
-    return figure, curves
+        upper.set_ylabel("accuracy")
+        lower.set_ylabel("accuracy")
+        panel_output = output.with_name(
+            f"{output.stem}_{PANEL_OUTPUT_NAMES[panel_name]}{output.suffix}"
+        )
+        save_figure(figure, panel_output)
+        outputs.append(panel_output)
+        plt.close(figure)
+    summary_output = output.with_suffix(".csv")
+    write_summary(summary_output, curves)
+    outputs.append(summary_output)
+    return outputs
