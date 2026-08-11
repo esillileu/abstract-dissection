@@ -9,6 +9,8 @@ import typer
 from exp.domain import DomainDefinition
 from exp.ds1 import cli as ds1_cli
 from exp.ds2 import cli as ds2_cli
+from exp.ds1_original import cli as ds1_original_cli
+from exp.ds2_original import cli as ds2_original_cli
 
 
 app = typer.Typer(
@@ -48,6 +50,8 @@ def _register_domain(name: str, module: object) -> None:
 
 _register_domain("ds1", ds1_cli)
 _register_domain("ds2", ds2_cli)
+_register_domain("ds1_original", ds1_original_cli)
+_register_domain("ds2_original", ds2_original_cli)
 
 
 def main(argv: Sequence[str] | None = None) -> None:

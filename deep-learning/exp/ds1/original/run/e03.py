@@ -5,8 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 
 from exp.original.measurement import OriginalMeasurements
+from exp.original.runtime_context import budget, master_seed
 
-from .common import COMMON_SOURCES, Trial, importlib, np, save_csv, source_imports
+from .common import COMMON_SOURCES, Trial, importlib, patch_cupy_modules, save_csv, save_params, source_imports
 
 
 def run(worktree: Path, output: Path) -> None:
@@ -17,15 +18,18 @@ def run(worktree: Path, output: Path) -> None:
         optimizer = importlib.import_module("common.optimizer").SGD(lr=0.01)
         (x_train, t_train), (x_test, t_test) = load_mnist(normalize=True)
         x_train, t_train = x_train[:300], t_train[:300]
-        np.random.seed(1)
+        xp, _ = patch_cupy_modules(worktree, tuple(f"common.{name}" for name in ("functions", "gradient", "layers", "multi_layer_net", "optimizer")))
+        x_train, t_train = xp.asarray(x_train), xp.asarray(t_train)
+        x_test, t_test = xp.asarray(x_test), xp.asarray(t_test)
+        xp.random.seed(master_seed())
         network = network_cls(
             784, [100] * 6, 10, weight_decay_lambda=0.1
         )
         measurements = OriginalMeasurements(output)
         with measurements.training():
-            for epoch in range(201):
+            for epoch in range(budget("max_epochs", 201)):
                 for _ in range(1 if epoch == 0 else 3):
-                    mask = np.random.choice(300, 100)
+                    mask = xp.random.choice(300, 100)
                     x_batch, t_batch = x_train[mask], t_train[mask]
                     optimizer.update(
                         network.params, network.gradient(x_batch, t_batch)
@@ -45,6 +49,7 @@ def run(worktree: Path, output: Path) -> None:
                         }
                     )
         measurements.save(network.params, scope="source_training_and_evaluation")
+        save_params(output / "checkpoint.npz", network.params)
     save_csv(output / "metrics.csv", rows)
 
 

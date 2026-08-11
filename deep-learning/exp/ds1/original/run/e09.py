@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from exp.original.runtime_context import budget
+
 from .common import COMMON_SOURCES, Trial, importlib, save_csv, source_imports
 
 
@@ -23,7 +25,7 @@ def _run(name: str, worktree: Path, output: Path) -> None:
         params = {"x": -7.0, "y": 2.0}
         grads = {"x": 0.0, "y": 0.0}
         rows = []
-        for update in range(30):
+        for update in range(budget("max_updates", 30)):
             x, y = params["x"], params["y"]
             dx, dy = x / 10.0, 2.0 * y
             rows.append(

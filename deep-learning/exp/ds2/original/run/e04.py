@@ -3,13 +3,15 @@
 from pathlib import Path
 
 from exp.original.measurement import OriginalMeasurements
+from exp.original.runtime_context import array_module, budget, master_seed
 
 from .common import COMMON_SOURCES, Trial, checkpoint_arrays, importlib, np, save_csv, save_npz, source_imports
+from .common import to_device
 
 
 def run(worktree: Path, output: Path, _root: Path) -> None:
     with source_imports(worktree, gpu=True):
-        cp = importlib.import_module("cupy")
+        cp = array_module()
         ptb = importlib.import_module("dataset.ptb")
         util = importlib.import_module("common.util")
         model_cls = importlib.import_module("ch06.rnnlm").Rnnlm
@@ -17,10 +19,10 @@ def run(worktree: Path, output: Path, _root: Path) -> None:
         optimizer_cls = importlib.import_module("common.optimizer").SGD
         corpus, word_to_id, _ = ptb.load_data("train")
         corpus_test, _, _ = ptb.load_data("test")
-        np.random.seed(1)
-        cp.random.seed(1)
-        corpus = util.to_gpu(corpus)
-        corpus_test = util.to_gpu(corpus_test)
+        np.random.seed(master_seed())
+        cp.random.seed(master_seed())
+        corpus = to_device(util, corpus)
+        corpus_test = to_device(util, corpus_test)
         model = model_cls(len(word_to_id), 100, 100)
         trainer = trainer_cls(model, optimizer_cls(20.0))
         measurements = OriginalMeasurements(output)
@@ -28,7 +30,7 @@ def run(worktree: Path, output: Path, _root: Path) -> None:
             trainer.fit(
                 corpus[:-1],
                 corpus[1:],
-                4,
+                budget("max_epochs", 4),
                 20,
                 35,
                 0.25,

@@ -5,8 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 
 from exp.original.measurement import OriginalMeasurements
+from exp.original.runtime_context import budget, master_seed
 
-from .common import COMMON_SOURCES, Trial, importlib, np, save_csv, source_imports
+from .common import COMMON_SOURCES, Trial, importlib, np, patch_cupy_modules, save_csv, save_params, source_imports
 
 
 SCALES = np.logspace(0, -4, num=16)
@@ -21,7 +22,9 @@ def _run(scale_index: int, batchnorm: bool, worktree: Path, output: Path) -> Non
         optimizer = importlib.import_module("common.optimizer").SGD(lr=0.01)
         (x_train, t_train), _ = load_mnist(normalize=True)
         x_train, t_train = x_train[:1000], t_train[:1000]
-        np.random.seed(1)
+        xp, _ = patch_cupy_modules(worktree, tuple(f"common.{name}" for name in ("functions", "gradient", "layers", "multi_layer_net_extend", "optimizer")))
+        x_train, t_train = xp.asarray(x_train), xp.asarray(t_train)
+        xp.random.seed(master_seed())
         scale = float(SCALES[scale_index])
         # Preserve the source's initialization order (BN first, normal second).
         bn_network = network_cls(
@@ -32,9 +35,9 @@ def _run(scale_index: int, batchnorm: bool, worktree: Path, output: Path) -> Non
         rows = []
         measurements = OriginalMeasurements(output)
         with measurements.training():
-            for epoch in range(20):
+            for epoch in range(budget("max_epochs", 20)):
                 for _ in range(1 if epoch == 0 else 10):
-                    mask = np.random.choice(1000, 100)
+                    mask = xp.random.choice(1000, 100)
                     x_batch, t_batch = x_train[mask], t_train[mask]
                     optimizer.update(
                         network.params, network.gradient(x_batch, t_batch)
@@ -50,6 +53,7 @@ def _run(scale_index: int, batchnorm: bool, worktree: Path, output: Path) -> Non
                     }
                 )
         measurements.save(network.params, scope="source_training_and_evaluation")
+        save_params(output / "checkpoint.npz", network.params)
     save_csv(output / "metrics.csv", rows)
 
 

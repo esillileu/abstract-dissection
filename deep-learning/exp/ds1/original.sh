@@ -4,4 +4,4 @@ set -euo pipefail
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$repo_root"
 
-just exp run ds1 --original
+just exp run ds1_original --all

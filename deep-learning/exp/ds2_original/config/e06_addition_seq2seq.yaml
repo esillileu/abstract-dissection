@@ -1,0 +1,16 @@
+domain: ds2_original
+kind: ds2_original
+run: {experiment_id: e06, group_id: ORIGINAL-E06}
+source_experiment: e06
+trial_id: placeholder
+execution: {mode: seeded, default_device: cuda:0}
+seed_policy: {seed_set: research_v1, seed_count: 10}
+dataset: {id: addition, cache: canonical, split_seed: 1984}
+numerics: {backend: cupy, device: cuda:0}
+tracking: {enabled: true, experiment: ds2_original}
+checkpoint: {save_final: false}
+variants:
+  SEQ2SEQ-FORWARD: {trial_id: dlfs2.ch07.addition.seq2seq-forward}
+  SEQ2SEQ-REVERSE: {trial_id: dlfs2.ch07.addition.seq2seq-reverse}
+  PEEKY-FORWARD: {trial_id: dlfs2.ch07.addition.peeky-seq2seq-forward}
+  PEEKY-REVERSE: {trial_id: dlfs2.ch07.addition.peeky-seq2seq-reverse}

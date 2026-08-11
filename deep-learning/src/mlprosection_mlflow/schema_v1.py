@@ -72,6 +72,9 @@ class SchemaV1Run:
         self.config = normalize_config(config)
         self.seed = int(self.config["seed"])
         self.seeds = seed_config(self.seed)
+        policy = _section(self.config, "policy")
+        if policy.get("dataset_split_seed") is not None:
+            self.seeds["dataset_split"] = int(policy["dataset_split_seed"])
         self.git_info = current_git_info(
             str(_section(self.config, "training")["entrypoint"])
         )

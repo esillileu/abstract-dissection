@@ -128,3 +128,35 @@ def test_legacy_checkpoint_artifact_path_remains_supported(
         "checkpoints/generations/best-epoch-0001",
         "checkpoints/best-epoch-0001",
     ]
+
+
+def test_matching_seed_arbitrary_artifact_is_downloaded(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    config = _config()
+    config["checkpoint"]["source_artifact_path"] = "raw/checkpoint.npz"
+    client = _Client(tmp_path)
+
+    def download(run_id, artifact_path, destination=None):
+        assert run_id == "source-run"
+        assert artifact_path == "raw/checkpoint.npz"
+        target = Path(destination) / "checkpoint.npz"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(b"checkpoint")
+        return str(target)
+
+    client.download_artifacts = download
+    resolved = resolve_checkpoint_source(config, client=client)
+
+    assert resolved.is_file()
+    assert config["checkpoint"]["source_path"] == str(resolved)
+
+
+def test_arbitrary_artifact_rejects_parent_traversal(tmp_path: Path) -> None:
+    config = _config()
+    config["checkpoint"]["source_artifact_path"] = "../checkpoint.npz"
+
+    with pytest.raises(ValueError, match="invalid checkpoint source artifact"):
+        resolve_checkpoint_source(config, client=_Client(tmp_path))

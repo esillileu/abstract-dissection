@@ -4,16 +4,19 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .common import Trial, np, save_npz
+from exp.original.runtime_context import array_module, master_seed
+
+from .common import Trial, save_npz
 
 
 def run(_worktree: Path, output: Path) -> None:
-    np.random.seed(1)
-    x = np.random.randn(1000, 100)
+    xp = array_module()
+    xp.random.seed(master_seed())
+    x = xp.random.randn(1000, 100)
     activations = {}
     for index in range(5):
-        weights = np.random.randn(100, 100)
-        x = 1 / (1 + np.exp(-np.dot(x, weights)))
+        weights = xp.random.randn(100, 100)
+        x = 1 / (1 + xp.exp(-xp.dot(x, weights)))
         activations[f"layer_{index + 1}"] = x
     save_npz(output / "activations.npz", **activations)
 

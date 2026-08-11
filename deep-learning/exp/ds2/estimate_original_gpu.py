@@ -19,7 +19,7 @@ BOOK_ROOT = Path(
 ).resolve()
 B2_SOURCE_ROOT = Path("01_deep-learning-from-base/src").resolve()
 PTB_TRAIN = B2_SOURCE_ROOT / "datasets/ptb.train.npy"
-DEFAULT_OUTPUT = Path("exp/ds2/results/original/gpu_estimate.json")
+DEFAULT_OUTPUT = Path("exp/ds2_original/results/legacy_cache/fixed_seed/gpu_estimate.json")
 
 
 @dataclass(frozen=True)

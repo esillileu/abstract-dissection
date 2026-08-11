@@ -1,0 +1,15 @@
+domain: ds2_original
+kind: ds2_original
+run: {experiment_id: e07, group_id: ORIGINAL-E07}
+source_experiment: e07
+trial_id: placeholder
+execution: {mode: seeded, default_device: cuda:0}
+seed_policy: {seed_set: research_v1, seed_count: 10}
+dataset: {id: date, cache: canonical, split_seed: 1984}
+numerics: {backend: cupy, device: cuda:0}
+tracking: {enabled: true, experiment: ds2_original}
+checkpoint: {save_final: false}
+variants:
+  SEQ2SEQ-REVERSE: {trial_id: dlfs2.ch08.date.seq2seq-reverse}
+  PEEKY-REVERSE: {trial_id: dlfs2.ch08.date.peeky-seq2seq-reverse}
+  ATTENTION-REVERSE: {trial_id: dlfs2.ch08.date.attention-seq2seq-reverse}

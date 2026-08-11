@@ -1,0 +1,12 @@
+domain: ds2_original
+kind: ds2_original
+run: {experiment_id: e03, group_id: ORIGINAL-E03}
+source_experiment: e03
+trial_id: dlfs2.ch05.ptb-small-rnnlm
+execution: {mode: seeded, default_device: cuda:0}
+seed_policy: {seed_set: research_v1, seed_count: 10}
+dataset: {id: ptb-train-small, cache: canonical, split_seed: 1984}
+numerics: {backend: cupy, device: cuda:0}
+tracking: {enabled: true, experiment: ds2_original}
+checkpoint: {save_final: false}
+variants: {SMALL-RNNLM: {}}

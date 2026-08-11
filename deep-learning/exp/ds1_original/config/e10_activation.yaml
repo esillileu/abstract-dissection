@@ -1,0 +1,12 @@
+domain: ds1_original
+kind: ds1_original
+run: {experiment_id: e10, group_id: ORIGINAL-E10}
+source_experiment: e10
+trial_id: dlfs1.ch06.activation.sigmoid-std-1
+execution: {mode: seeded, default_device: cpu}
+seed_policy: {seed_set: research_v1, seed_count: 10}
+dataset: {id: synthetic-gaussian}
+numerics: {backend: numpy, device: cpu}
+tracking: {enabled: true, experiment: ds1_original}
+checkpoint: {save_final: false}
+variants: {ACTIVATION-SIGMOID: {}}

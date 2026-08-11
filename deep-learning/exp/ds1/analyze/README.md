@@ -98,10 +98,10 @@ manifest에서 확인한 모델 파라미터 수도 함께 기록한다. 여러 
 `-e 06 --summary`와 `-e 07 --summary`는 원본 실행의 마지막 train/test 정확도와
 10회 seed 실행의 마지막 정확도 `평균 ± 표본 표준편차`를 나란히 출력한다. 양쪽 모두
 학습 곡선과 같은 first-1000 평가를 사용한다. 원본은
-`results/original/data/e{06,07}/.../metrics.csv`, 10회 실행은 각각
+`../ds1_original/results/legacy_cache/fixed_seed/data/e{06,07}/.../metrics.csv`, 10회 실행은 각각
 `mnist-train-first-1000`, `mnist-test-first-1000` 평가를 기준으로 한다.
 정확도는 백분율로 항상 소수점 둘째 자리까지 표시한다. 학습 시간은 원본 캐시에
-실측값이 없으므로 `results/original/cupy_estimate.json`의
+실측값이 없으므로 `../ds1_original/results/legacy_cache/fixed_seed/cupy_estimate.json`의
 `projected_update_time_s`를 `original projected`로 명시하고, 재현 실행은
 `timing_windows.csv`의 평가 시간을 제외한 순수 학습 wall time 합계를
 10회 `평균 ± 표본 표준편차`로 표시한다.
@@ -118,14 +118,14 @@ manifest에서 확인한 모델 파라미터 수도 함께 기록한다. 여러 
 
 summary CSV 이름은 `e01_summary.csv`부터 `e11_summary.csv`까지 같은 형식이다.
 
-원본 코드의 고정 seed 실행 캐시만 요약하려면 `--original`을 함께 사용한다.
+원본 코드는 이제 `ds1_original` 정식 도메인에서 seed별로 분석한다.
 
 ```bash
-python -m exp analyze ds1 --original -e 01-07 -s
+python -m exp analyze ds1_original -e 01-07 -s
 ```
 
 이 경로는 MLflow 재현 run을 조회하지 않고
-`exp/ds1/results/original/data/`의 `metrics.csv`와 `manifest.json`만 읽는다.
+기존 고정-seed 캐시는 `exp/ds1_original/results/legacy_cache/fixed_seed/`에 보관되며 새 통계에서 제외된다.
 원본 최종 성능 metric이 있는 E01–E07을 지원하며 관찰 전용 E09–E10은 제외한다.
 단일 원본 시행은 `seed_runs=1`, 표준편차 `0`으로 기록한다. 기존 원본 캐시에
 학습 시간이나 parameter count가 없으면 해당 CSV 행은 빈 값으로 남긴다. 계측

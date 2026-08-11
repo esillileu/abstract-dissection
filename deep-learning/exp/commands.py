@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib
 import os
+import re
 from pathlib import Path
 
 from exp.domain import DomainDefinition, RunOptions, RunOrder, RunSelection
@@ -68,6 +69,10 @@ def run_command(
     if progress_every < 1:
         raise ValueError("--progress-every must be positive")
     if original:
+        if domain.name in {"ds1", "ds2"}:
+            raise ValueError(
+                f"--original was retired; use `exp run {domain.name}_original`"
+            )
         conflicts = [
             (atomic_runs or excluded_atomic_runs, "atomic-run selection"),
             (seed_set is not None, "--seed-set"),
@@ -147,6 +152,10 @@ def analyze_command(
     if all_experiments and experiments:
         raise ValueError("choose at most one of --all or --experiment/-e")
     if original:
+        if domain.name in {"ds1", "ds2"}:
+            raise ValueError(
+                f"--original was retired; use `exp analyze {domain.name}_original`"
+            )
         if seed is not None:
             raise ValueError("--seed is incompatible with --original")
         if tracking_uri is not None:
@@ -254,5 +263,5 @@ def summarize_original(
 
 
 def _validate_device(device: str | None) -> None:
-    if device is not None and device not in {"cpu", "cuda:0"}:
+    if device is not None and device != "cpu" and not re.fullmatch(r"cuda:\d+", device):
         raise ValueError(f"unsupported device: {device}")

@@ -82,14 +82,14 @@ E02는 `profiles/profiling_summary.json`의
 E08은 checkpoint를 읽어 attention alignment를 관찰하는 실행이며 자체 학습이나
 최종 성능 metric이 없으므로 이 요약 ID를 제공하지 않는다.
 
-원본 코드의 고정 seed 실행 캐시만 요약하려면 `--original`을 함께 사용한다.
+원본 코드는 이제 `ds2_original` 정식 도메인에서 seed별로 분석한다.
 
 ```bash
-python -m exp analyze ds2 --original -e 01-04,06-07 -s
+python -m exp analyze ds2_original -e 01,03-04,06-08 -s
 ```
 
 이 경로는 MLflow 재현 run을 조회하지 않고
-`exp/ds2/results/original/data/`의 `metrics.csv`와 `manifest.json`만 읽는다.
+기존 고정-seed 캐시는 `exp/ds2_original/results/legacy_cache/fixed_seed/`에 보관되며 새 통계에서 제외된다.
 원본 시행이 없는 확장 E05와 관찰 전용 E08은 제외한다. 단일 원본 시행은
 `seed_runs=1`, 표준편차 `0`으로 기록한다. 기존 원본 캐시에 학습 시간이나
 parameter count가 없으면 해당 CSV 행은 빈 값으로 남긴다. 계측 schema-v2

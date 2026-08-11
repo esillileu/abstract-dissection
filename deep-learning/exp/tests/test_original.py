@@ -77,81 +77,16 @@ def test_publish_replaces_an_incomplete_result(tmp_path: Path) -> None:
     assert (target / "raw.txt").read_text(encoding="utf-8") == "complete"
 
 
-def test_original_run_defaults_to_all_registered_experiments(
-    monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.parametrize("command", ("run", "analyze"))
+@pytest.mark.parametrize("domain", ("ds1", "ds2"))
+def test_legacy_original_flag_points_to_promoted_domain(
+    command: str,
+    domain: str,
 ) -> None:
-    captured = {}
+    result = runner.invoke(app, [command, domain, "--original"])
 
-    def fake_run(domain, experiments, *, force, output_dir):
-        captured.update(
-            domain=domain.name,
-            experiments=experiments,
-            force=force,
-            output_dir=output_dir,
-        )
-
-    monkeypatch.setattr("exp.commands.run_original", fake_run)
-    result = runner.invoke(app, ["run", "ds1", "-o"])
-
-    assert result.exit_code == 0
-    assert captured["domain"] == "ds1"
-    assert captured["experiments"] == [
-        "e01",
-        "e02",
-        "e03",
-        "e04",
-        "e05",
-        "e06",
-        "e07",
-        "e09",
-        "e10",
-    ]
-    assert captured["force"] is False
-
-
-def test_original_partial_selection_and_force(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    captured = {}
-
-    def fake_run(domain, experiments, *, force, output_dir):
-        captured.update(experiments=experiments, force=force)
-
-    monkeypatch.setattr("exp.commands.run_original", fake_run)
-    result = runner.invoke(
-        app, ["run", "ds2", "-o", "-e", "02,08", "--force"]
-    )
-
-    assert result.exit_code == 0
-    assert captured == {"experiments": ["e02", "e08"], "force": True}
-
-
-def test_original_summary_dispatches_to_fixed_seed_cache(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    captured = {}
-
-    def fake_summary(domain, experiments, *, output_dir):
-        captured.update(
-            domain=domain.name,
-            experiments=experiments,
-            output_dir=output_dir,
-        )
-
-    monkeypatch.setattr(
-        "exp.commands.summarize_original",
-        fake_summary,
-    )
-    result = runner.invoke(
-        app, ["analyze", "ds1", "--original", "-e", "01,07", "-s"]
-    )
-
-    assert result.exit_code == 0
-    assert captured == {
-        "domain": "ds1",
-        "experiments": ["e01", "e07"],
-        "output_dir": None,
-    }
+    assert result.exit_code != 0
+    assert f"{command} {domain}_original" in result.output
 
 
 def test_ds2_original_summary_reads_only_original_cache(
@@ -213,48 +148,6 @@ def test_ds2_original_summary_reads_only_original_cache(
     assert rows[1]["mean"] == "12.3"
     assert rows[2]["mean"] == "1234"
     assert "backend=cupy" in capsys.readouterr().out
-
-
-@pytest.mark.parametrize(
-    ("domain", "experiment"),
-    (("ds1", "08"), ("ds2", "05")),
-)
-def test_original_rejects_experiments_without_source_figures(
-    domain: str,
-    experiment: str,
-) -> None:
-    result = runner.invoke(
-        app, ["run", domain, "-o", "-e", experiment, "--dry-run"]
-    )
-    assert result.exit_code != 0
-    assert "no registered original trials" in result.output
-
-
-@pytest.mark.parametrize(
-    "arguments,message",
-    [
-        (["--seed-set", "research_v1"], "--seed-set"),
-        (["--seed", "2"], "--seed"),
-        (["--atomic-run", "ANY"], "atomic-run"),
-        (["--set", "budget.max_epochs=1"], "YAML overrides"),
-    ],
-)
-def test_original_rejects_conflicting_options(
-    arguments: list[str],
-    message: str,
-) -> None:
-    result = runner.invoke(app, ["run", "ds1", "-o", *arguments])
-    assert result.exit_code != 0
-    assert message in result.output
-
-
-def test_original_summary_rejects_observation_without_final_metric(
-) -> None:
-    result = runner.invoke(
-        app, ["analyze", "ds2", "--original", "-e", "08", "-s"]
-    )
-    assert result.exit_code != 0
-    assert "no original summary" in result.output
 
 
 def test_ds1_renderer_uses_only_persisted_fixture(

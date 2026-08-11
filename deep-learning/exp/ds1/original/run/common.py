@@ -12,6 +12,7 @@ from typing import Callable, Iterator
 import numpy as np
 
 from exp.original.cache import save_csv, save_npz, to_host
+from exp.original.runtime_context import array_module
 
 
 Runner = Callable[[Path, Path], None]
@@ -42,6 +43,8 @@ COMMON_SOURCES = (
 @contextmanager
 def source_imports(worktree: Path) -> Iterator[None]:
     value = str(worktree)
+    old_dont_write_bytecode = sys.dont_write_bytecode
+    sys.dont_write_bytecode = True
     sys.path.insert(0, value)
     old_modules = {
         name: module
@@ -53,6 +56,7 @@ def source_imports(worktree: Path) -> Iterator[None]:
     try:
         yield
     finally:
+        sys.dont_write_bytecode = old_dont_write_bytecode
         for name in tuple(sys.modules):
             if _is_upstream_name(name):
                 del sys.modules[name]
@@ -74,7 +78,7 @@ def load_mnist(worktree: Path, *, flatten: bool = True):
 
 def patch_cupy_modules(worktree: Path, names: tuple[str, ...]):
     """Import book modules and replace only their module-global ``np`` names."""
-    cp = importlib.import_module("cupy")
+    cp = array_module()
     modules = {name: importlib.import_module(name) for name in names}
     for module in modules.values():
         if hasattr(module, "np"):

@@ -82,6 +82,40 @@ def resolve_checkpoint_source(
             f"{source_group}/{source_atomic} seed={seed}"
         )
 
+    arbitrary_artifact = checkpoint.get("source_artifact_path")
+    if arbitrary_artifact:
+        artifact_path = str(arbitrary_artifact).strip("/")
+        if not artifact_path or ".." in Path(artifact_path).parts:
+            raise ValueError(
+                f"invalid checkpoint source artifact path: {arbitrary_artifact}"
+            )
+        storage_domain = _storage_domain(experiment_name)
+        cache_root = (
+            Path("exp")
+            / storage_domain
+            / "results"
+            / "source_checkpoints"
+            / source_run.info.run_id
+        )
+        cache_root.mkdir(parents=True, exist_ok=True)
+        try:
+            resolved = Path(
+                client.download_artifacts(
+                    source_run.info.run_id,
+                    artifact_path,
+                    str(cache_root),
+                )
+            )
+        except Exception as exc:
+            raise ValueError(
+                "checkpoint source artifact is missing for "
+                f"{source_group}/{source_atomic} seed={seed}: {artifact_path}"
+            ) from exc
+        if not resolved.exists():
+            raise ValueError(f"downloaded checkpoint artifact is missing: {resolved}")
+        checkpoint["source_path"] = str(resolved)
+        return resolved
+
     source_kind = str(checkpoint.get("source_kind", "latest"))
     role = {"selected": "best", "final": "latest", "latest": "latest"}.get(
         source_kind

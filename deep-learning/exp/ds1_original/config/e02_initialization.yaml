@@ -1,0 +1,15 @@
+domain: ds1_original
+kind: ds1_original
+run: {experiment_id: e02, group_id: ORIGINAL-E02}
+source_experiment: e02
+trial_id: placeholder
+execution: {mode: seeded, default_device: cpu}
+seed_policy: {seed_set: research_v1, seed_count: 10}
+dataset: {id: mnist, split_seed: 1984}
+numerics: {backend: numpy, device: cpu}
+tracking: {enabled: true, experiment: ds1_original}
+checkpoint: {save_final: false}
+variants:
+  INIT-STD001: {trial_id: dlfs1.ch06.init-compare.std-001}
+  INIT-XAVIER: {trial_id: dlfs1.ch06.init-compare.xavier}
+  INIT-HE: {trial_id: dlfs1.ch06.init-compare.he}

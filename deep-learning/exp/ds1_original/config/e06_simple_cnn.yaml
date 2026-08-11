@@ -1,0 +1,12 @@
+domain: ds1_original
+kind: ds1_original
+run: {experiment_id: e06, group_id: ORIGINAL-E06}
+source_experiment: e06
+trial_id: dlfs1.ch07.simple-convnet
+execution: {mode: seeded, default_device: cuda:0}
+seed_policy: {seed_set: research_v1, seed_count: 10}
+dataset: {id: mnist, split_seed: 1984}
+numerics: {backend: cupy, device: cuda:0}
+tracking: {enabled: true, experiment: ds1_original}
+checkpoint: {save_final: false}
+variants: {SIMPLE-CONVNET: {}}

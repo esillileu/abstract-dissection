@@ -3,8 +3,10 @@
 from pathlib import Path
 
 from exp.original.measurement import OriginalMeasurements
+from exp.original.runtime_context import array_module, budget, master_seed
 
 from .common import COMMON_SOURCES, Trial, checkpoint_arrays, evaluate_seq2seq, importlib, install_ch07_compatibility_aliases, np, save_csv, save_npz, source_imports
+from .common import to_device
 
 
 CONDITIONS = {
@@ -17,7 +19,7 @@ CONDITIONS = {
 def _run(name: str, worktree: Path, output: Path, _root: Path) -> None:
     class_name, module_name = CONDITIONS[name]
     with source_imports(worktree, gpu=True):
-        cp = importlib.import_module("cupy")
+        cp = array_module()
         sequence = importlib.import_module("dataset.sequence")
         sequence.numpy.int = int
         util = importlib.import_module("common.util")
@@ -27,23 +29,24 @@ def _run(name: str, worktree: Path, output: Path, _root: Path) -> None:
         model_cls = getattr(importlib.import_module(module_name), class_name)
         (x_train, t_train), (x_test, t_test) = sequence.load_data("date.txt")
         x_train, x_test = x_train[:, ::-1], x_test[:, ::-1]
-        np.random.seed(1)
-        cp.random.seed(1)
-        x_train, t_train = util.to_gpu(x_train), util.to_gpu(t_train)
-        x_test, t_test = util.to_gpu(x_test), util.to_gpu(t_test)
+        np.random.seed(master_seed())
+        cp.random.seed(master_seed())
+        x_train, t_train = to_device(util, x_train), to_device(util, t_train)
+        x_test, t_test = to_device(util, x_test), to_device(util, t_test)
         model = model_cls(len(sequence.get_vocab()[0]), 16, 256)
         trainer = trainer_cls(model, optimizer_cls())
         measurements = OriginalMeasurements(output)
         rows = []
         predictions = []
-        for epoch in range(10):
+        epochs = budget("max_epochs", 10)
+        for epoch in range(epochs):
             with measurements.training():
                 trainer.fit(x_train, t_train, 1, 128, max_grad=5.0)
             accuracy, examples = evaluate_seq2seq(
                 model, x_test, t_test, reverse=True
             )
             rows.append({"epoch": epoch, "accuracy": accuracy})
-            if epoch == 9:
+            if epoch == epochs - 1:
                 predictions = examples
         measurements.save(model.params)
         params = checkpoint_arrays(model.params)

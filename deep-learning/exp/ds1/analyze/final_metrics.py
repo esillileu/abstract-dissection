@@ -15,7 +15,10 @@ from exp.analyze import Curve, RunRef, aggregate, artifact_rows
 from .common import runs
 
 
-ORIGINAL_DATA_ROOT = Path(__file__).resolve().parents[1] / "results/original/data"
+ORIGINAL_DATA_ROOT = (
+    Path(__file__).resolve().parents[2]
+    / "ds1_original/results/legacy_cache/fixed_seed/data"
+)
 ORIGINAL_TRIAL_IDS = {
     "CNN-SIMPLE-BOOK": ("e06", "dlfs1.ch07.simple-convnet"),
     "CNN-DEEP-BOOK": ("e07", "dlfs1.ch08.deep-convnet"),

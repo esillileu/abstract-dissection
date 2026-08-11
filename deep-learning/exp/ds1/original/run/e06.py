@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from exp.original.measurement import OriginalMeasurements
+from exp.original.runtime_context import budget, master_seed
 
 from .common import COMMON_SOURCES, Trial, importlib, patch_cupy_modules, save_csv, save_params, source_imports, to_host
 
@@ -27,7 +28,7 @@ def run(worktree: Path, output: Path) -> None:
         (x_train, t_train), (x_test, t_test) = load_mnist(flatten=False)
         x_train, t_train = cp.asarray(x_train), cp.asarray(t_train)
         x_test, t_test = cp.asarray(x_test), cp.asarray(t_test)
-        cp.random.seed(1)
+        cp.random.seed(master_seed())
         network = modules["ch07.simple_convnet"].SimpleConvNet(
             input_dim=(1, 28, 28),
             conv_param={"filter_num": 30, "filter_size": 5, "pad": 0, "stride": 1},
@@ -42,7 +43,7 @@ def run(worktree: Path, output: Path) -> None:
             t_train,
             x_test,
             t_test,
-            epochs=20,
+            epochs=budget("max_epochs", 20),
             mini_batch_size=100,
             optimizer="Adam",
             optimizer_param={"lr": 0.001},

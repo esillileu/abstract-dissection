@@ -3,13 +3,15 @@
 from pathlib import Path
 
 from exp.original.measurement import OriginalMeasurements
+from exp.original.runtime_context import array_module, budget, master_seed
 
 from .common import COMMON_SOURCES, Trial, checkpoint_arrays, importlib, np, save_csv, save_npz, source_imports, to_host
+from .common import to_device
 
 
 def run(worktree: Path, output: Path, _root: Path) -> None:
     with source_imports(worktree, gpu=True):
-        cp = importlib.import_module("cupy")
+        cp = array_module()
         util = importlib.import_module("common.util")
         trainer_cls = importlib.import_module("common.trainer").Trainer
         optimizer_cls = importlib.import_module("common.optimizer").Adam
@@ -18,20 +20,20 @@ def run(worktree: Path, output: Path, _root: Path) -> None:
         # Redirect only its array namespace while leaving the source snapshot intact.
         model_module.np = cp
         model_cls = model_module.SimpleCBOW
-        np.random.seed(1)
-        cp.random.seed(1)
+        np.random.seed(master_seed())
+        cp.random.seed(master_seed())
         corpus, word_to_id, id_to_word = util.preprocess(
             "You say goodbye and I say hello."
         )
         contexts, target = util.create_contexts_target(corpus, 1)
         contexts = util.convert_one_hot(contexts, len(word_to_id))
         target = util.convert_one_hot(target, len(word_to_id))
-        contexts, target = util.to_gpu(contexts), util.to_gpu(target)
+        contexts, target = to_device(util, contexts), to_device(util, target)
         model = model_cls(len(word_to_id), 5)
         trainer = trainer_cls(model, optimizer_cls())
         measurements = OriginalMeasurements(output)
         with measurements.training():
-            trainer.fit(contexts, target, 1000, 3)
+            trainer.fit(contexts, target, budget("max_epochs", 1000), 3)
         measurements.save(model.params)
         rows = [
             {"plot_index": index, "loss": value, "eval_interval": 20}

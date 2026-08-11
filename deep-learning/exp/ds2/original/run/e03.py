@@ -3,13 +3,15 @@
 from pathlib import Path
 
 from exp.original.measurement import OriginalMeasurements
+from exp.original.runtime_context import array_module, budget, master_seed
 
 from .common import COMMON_SOURCES, Trial, checkpoint_arrays, importlib, install_b2_compatibility_aliases, np, save_csv, save_npz, source_imports
+from .common import to_device
 
 
 def run(worktree: Path, output: Path, _root: Path) -> None:
     with source_imports(worktree, gpu=True):
-        cp = importlib.import_module("cupy")
+        cp = array_module()
         ptb = importlib.import_module("dataset.ptb")
         util = importlib.import_module("common.util")
         install_b2_compatibility_aliases()
@@ -17,14 +19,14 @@ def run(worktree: Path, output: Path, _root: Path) -> None:
         trainer_cls = importlib.import_module("common.trainer").RnnlmTrainer
         optimizer_cls = importlib.import_module("common.optimizer").SGD
         corpus, _, _ = ptb.load_data("train")
-        corpus = util.to_gpu(corpus[:1000])
-        np.random.seed(1)
-        cp.random.seed(1)
+        corpus = to_device(util, corpus[:1000])
+        np.random.seed(master_seed())
+        cp.random.seed(master_seed())
         model = model_cls(int(cp.max(corpus).item()) + 1, 100, 100)
         trainer = trainer_cls(model, optimizer_cls(0.1))
         measurements = OriginalMeasurements(output)
         with measurements.training():
-            trainer.fit(corpus[:-1], corpus[1:], 100, 10, 5)
+            trainer.fit(corpus[:-1], corpus[1:], budget("max_epochs", 100), 10, 5)
         measurements.save(model.params)
         rows = [
             {"plot_index": index, "perplexity": value, "eval_interval": 20}

@@ -3,6 +3,7 @@
 from pathlib import Path
 
 from exp.original.measurement import OriginalMeasurements
+from exp.original.runtime_context import array_module, master_seed
 
 from .common import COMMON_SOURCES, Trial, checkpoint_arrays, importlib, np, save_csv, save_npz, source_imports, to_host
 
@@ -152,7 +153,7 @@ def _run(
     _root: Path,
 ) -> None:
     with source_imports(worktree, gpu=True):
-        cp = importlib.import_module("cupy")
+        cp = array_module()
         util = importlib.import_module("common.util")
         ptb = importlib.import_module("dataset.ptb")
         trainer_cls = importlib.import_module("common.trainer").Trainer
@@ -160,8 +161,8 @@ def _run(
         corpus, word_to_id, id_to_word = ptb.load_data("train")
         contexts, target = util.create_contexts_target(corpus, 5)
         contexts, target = util.to_gpu(contexts), util.to_gpu(target)
-        cp.random.seed(1)
-        np.random.seed(1)
+        cp.random.seed(master_seed())
+        np.random.seed(master_seed())
         if objective == "negative-sampling":
             class_name = {"cbow": "CBOW", "skipgram": "SkipGram"}[kind]
             module_name = {

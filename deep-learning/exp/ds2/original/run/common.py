@@ -13,6 +13,7 @@ from typing import Callable, Iterator
 import numpy as np
 
 from exp.original.cache import load_npz, save_csv, save_npz, to_host
+from exp.original.runtime_context import array_module, device
 
 
 Runner = Callable[[Path, Path, Path], None]
@@ -44,7 +45,10 @@ COMMON_SOURCES = (
 
 @contextmanager
 def source_imports(worktree: Path, *, gpu: bool = False) -> Iterator[None]:
+    gpu = gpu and device().startswith("cuda")
     value = str(worktree)
+    old_dont_write_bytecode = sys.dont_write_bytecode
+    sys.dont_write_bytecode = True
     sys.path.insert(0, value)
     old_modules = {
         name: module
@@ -61,13 +65,14 @@ def source_imports(worktree: Path, *, gpu: bool = False) -> Iterator[None]:
             # ``cp.scatter_add`` to it.  Exporting the same CuPy module through
             # the book's compatibility module preserves the scatter-add
             # semantics without editing the immutable source checkout.
-            cp = importlib.import_module("cupy")
+            cp = array_module()
             compatibility = types.ModuleType("common.np")
             compatibility.GPU = True
             compatibility.np = cp
             sys.modules["common.np"] = compatibility
         yield
     finally:
+        sys.dont_write_bytecode = old_dont_write_bytecode
         for name in tuple(sys.modules):
             if _is_upstream_name(name):
                 del sys.modules[name]
@@ -124,6 +129,13 @@ def restore_params(params: list[object], archive: dict[str, np.ndarray]) -> None
             param[...] = value
 
 
+def to_device(util, value):
+    """Use the selected backend without invoking upstream's hard-coded CuPy helper."""
+    if device().startswith("cuda"):
+        return util.to_gpu(value)
+    return np.asarray(value)
+
+
 def evaluate_seq2seq(model, x_test, t_test, *, reverse: bool):
     correct_count = 0
     predictions = []
@@ -164,5 +176,6 @@ __all__ = [
     "save_csv",
     "save_npz",
     "source_imports",
+    "to_device",
     "to_host",
 ]

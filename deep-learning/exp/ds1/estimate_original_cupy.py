@@ -12,7 +12,7 @@ from time import perf_counter
 from .train_original import BOOK_ROOT, _add_book_to_import_path
 
 
-DEFAULT_OUTPUT = Path("exp/ds1/results/original/cupy_estimate.json")
+DEFAULT_OUTPUT = Path("exp/ds1_original/results/legacy_cache/fixed_seed/cupy_estimate.json")
 UPDATES_PER_EPOCH = 600
 EPOCHS = 20
 TOTAL_UPDATES = UPDATES_PER_EPOCH * EPOCHS

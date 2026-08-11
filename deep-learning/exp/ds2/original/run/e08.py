@@ -3,8 +3,10 @@
 from pathlib import Path
 
 from exp.original.cache import cache_is_valid
+from exp.original.runtime_context import array_module, synchronize
 
 from .common import COMMON_SOURCES, Trial, importlib, load_npz, np, restore_params, save_csv, save_npz, source_imports, to_host
+from .common import to_device
 
 
 ATTENTION_TRIAL = "dlfs2.ch08.date.attention-seq2seq-reverse"
@@ -12,14 +14,19 @@ ATTENTION_TRIAL = "dlfs2.ch08.date.attention-seq2seq-reverse"
 
 def run(worktree: Path, output: Path, root: Path) -> None:
     checkpoint_dir = root / "data" / "e07" / ATTENTION_TRIAL
-    if not cache_is_valid(checkpoint_dir):
+    source_pointer = checkpoint_dir / "SOURCE_PATH"
+    if source_pointer.is_file():
+        checkpoint_path = Path(source_pointer.read_text(encoding="utf-8"))
+    elif cache_is_valid(checkpoint_dir):
+        checkpoint_path = checkpoint_dir / "checkpoint.npz"
+    else:
         raise ValueError(
             "e08 requires cached e07 attention checkpoint: "
             f"e07/{ATTENTION_TRIAL}"
         )
-    archive = load_npz(checkpoint_dir / "checkpoint.npz")
+    archive = load_npz(checkpoint_path)
     with source_imports(worktree, gpu=True):
-        cp = importlib.import_module("cupy")
+        cp = array_module()
         sequence = importlib.import_module("dataset.sequence")
         sequence.numpy.int = int
         util = importlib.import_module("common.util")
@@ -29,7 +36,7 @@ def run(worktree: Path, output: Path, root: Path) -> None:
         (_, _), (x_test, t_test) = sequence.load_data("date.txt")
         x_test = x_test[:, ::-1]
         char_to_id, id_to_char = sequence.get_vocab()
-        x_test, t_test = util.to_gpu(x_test), util.to_gpu(t_test)
+        x_test, t_test = to_device(util, x_test), to_device(util, t_test)
         model = model_cls(len(char_to_id), 16, 256)
         restore_params(model.params, archive)
         np.random.seed(1984)
@@ -56,7 +63,7 @@ def run(worktree: Path, output: Path, root: Path) -> None:
                     ),
                 }
             )
-        cp.cuda.get_current_stream().synchronize()
+        synchronize()
     save_npz(output / "attention.npz", **arrays)
     save_csv(output / "labels.csv", labels)
 
