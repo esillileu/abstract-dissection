@@ -113,16 +113,17 @@ def _metric_rows(root: Path) -> tuple[list[tuple[int, str, float]], dict[str, fl
                     number = float(value)
                 except (TypeError, ValueError):
                     continue
-                metric = _metric_name(key)
+                metric = _metric_name(key, split=str(row.get("split", "")))
                 output.append((step, metric, number))
                 final[f"final/{metric}"] = number
     return output, final
 
 
-def _metric_name(key: str) -> str:
+def _metric_name(key: str, *, split: str = "") -> str:
     lowered = key.lower()
     if "perplexity" in lowered:
-        return "train/perplexity"
+        prefix = split.lower() if split.lower() in {"train", "valid", "test"} else "train"
+        return f"{prefix}/perplexity"
     if "accuracy" in lowered:
         return "test/accuracy"
     if "loss" in lowered or "objective" in lowered:

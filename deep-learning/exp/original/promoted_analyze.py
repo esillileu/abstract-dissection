@@ -69,7 +69,23 @@ def _curves(client, path: Path, runs, error_style: str) -> None:
     grouped = defaultdict(list)
     for run in runs:
         atomic = run.data.tags.get("atomic_run.id", "")
-        metric_keys = sorted(key for key in run.data.metrics if key.startswith(("train/", "test/", "observation/")))
+        metric_keys = sorted(
+            (
+                key
+                for key in run.data.metrics
+                if key.startswith(("valid/", "train/", "test/", "observation/"))
+            ),
+            key=lambda key: (
+                next(
+                    index
+                    for index, prefix in enumerate(
+                        ("valid/", "train/", "test/", "observation/")
+                    )
+                    if key.startswith(prefix)
+                ),
+                key,
+            ),
+        )
         if not metric_keys:
             continue
         key = metric_keys[0]
