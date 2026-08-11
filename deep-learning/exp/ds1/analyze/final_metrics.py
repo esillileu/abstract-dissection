@@ -519,6 +519,40 @@ def render_summary(
     return [summary_path]
 
 
+def render_cross_group_summary(
+    client,
+    *,
+    analysis_id: str,
+    models: Sequence[tuple[str, str]],
+    output,
+):
+    """Summarize atomic runs that intentionally come from different groups."""
+
+    grouped_runs = {
+        atomic_run_id: runs(client, group_id, [atomic_run_id])[atomic_run_id]
+        for group_id, atomic_run_id in models
+    }
+    summaries = summaries_for_runs(client, grouped_runs)
+    print(f"{analysis_id} (mean ± sample standard deviation; min-max)")
+    for _group_id, atomic_run_id in models:
+        print(f"[{atomic_run_id}]")
+        print(
+            _format_metric(
+                "final_test_accuracy",
+                summaries[f"{atomic_run_id}/final_test_accuracy"],
+            )
+        )
+        print(
+            _format_metric(
+                "training_time_s",
+                summaries[f"{atomic_run_id}/training_time_s"],
+            )
+        )
+    summary_path = output.with_suffix(".csv")
+    _write_summaries(summary_path, summaries)
+    return [summary_path]
+
+
 def render_accuracy_comparison_summary(
     client,
     *,

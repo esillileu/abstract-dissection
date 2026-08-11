@@ -7,7 +7,7 @@ just exp plan ds1 -e 01 --seed 1,2,3,4
 just exp run ds1 -e 01 --seed 1,2,3,4
 ```
 
-`-e`는 `e01`–`e10` 형식의 catalog experiment ID를 선택한다. `--seed`는
+`-e`는 `e01`–`e10`과 확장 실험 `e12`의 catalog experiment ID를 선택한다. `--seed`는
 `config/seeds.yaml`에 등록된 **실제 master seed 값**이다. 기본 `research_v1`에서는
 `1`부터 `10`까지를 사용한다.
 
@@ -30,6 +30,7 @@ just exp plan ds1 -e 01-02 --seed 1-3 --order seed-first
 just exp run ds1 -e 01-02 --seed 1-3 --order seed-first
 ```
 
-Catalog mapping은 `e01=GT01`부터 `e08=GT08`까지다. 각 YAML의 `variants`가 실행할
+Catalog mapping은 `e01=GT01`부터 `e08=GT08`까지이며, `e12=GT09`가 교재 옵션을
+모두 적용한 MLP와 기존 GT07 DeepConvNet을 비교하는 확장 실험이다. 각 YAML의 `variants`가 실행할
 atomic trial을, `policy.seed_count`가 사용할 registry seed 수를 결정한다. 따라서
-`just exp plan ds1 --all --seed 1`은 master seed 1의 65개 atomic trial을 보인다.
+`just exp plan ds1 --all --seed 1`은 master seed 1의 66개 atomic trial을 보인다.

@@ -31,6 +31,7 @@
 | `GT06` | MNIST SimpleConvNet             | MNIST image full train/test, SimpleConvNet, Adam `.001`, batch 100, 20 epochs                  | 없음                                  |            1 |
 | `GT07` | MNIST DeepConvNet               | MNIST image full train/test, DeepConvNet, Adam `.001`, batch 100, 20 epochs                    | 없음                                  |            1 |
 | `GT08` | MNIST spatial-layout comparison | MNIST full train/test, Adam `.001`, batch 100, replacement sampling, 2 epochs, 10 paired seeds | architecture × input transform        |            4 |
+| `GT09` | MNIST extended MLP comparison   | MNIST full train/test, MLP `784-[100×6]-10`, Adam `.001`, batch 100, 20 epochs               | 없음                                  |            1 |
 
 ## 현재 executor 재현 상태
 
@@ -50,6 +51,7 @@
 | `GT06` | 완료 | SimpleCNN, 20 epochs, epoch-first train-first-1000/test-first-1000, terminal test-full 평가 | 없음. |
 | `GT07` | 완료 | DeepCNN, 20 epochs, epoch-first train-first-1000/test-first-1000, terminal test-full 평가 | 없음. |
 | `GT08` | 완료 | 4 spatial/input-transform 조건, paired seed, 20-update train/test first-1000 평가, epoch-end test-full 평가 | 없음. |
+| `GT09` | 구현 완료 | ReLU, He, BatchNorm, dropout `.2`, weight decay `.1`을 적용한 6-hidden-layer MLP; GT07과 같은 학습·평가 protocol | 실행 결과는 아직 생성하지 않았다. |
 
 ### 공통 구현 제한
 
@@ -145,6 +147,17 @@
 
 각 trial manifest에는 architecture signature, parameter count, master seed, `pixel_permutation_seed`, permutation checksum을 기록한다.
 
+## GT09 — extended MLP versus DeepConvNet
+
+| atomic run ID       | model                                                                 |
+| ------------------- | --------------------------------------------------------------------- |
+| `MLP-EXT-ALL-BOOK`  | MLP `784-[100×6]-10`, ReLU, He, BatchNorm, dropout `.2`, L2 decay `.1` |
+
+GT09는 GT07의 기존 `CNN-DEEP-BOOK` run을 다시 실행하지 않는다. 데이터 크기, batch
+sampling, Adam `.001`, 20-epoch budget, seed set과 evaluation cadence를 GT07과 동일하게
+두고, `e12` 분석에서 두 실행 그룹을 함께 읽어 비교한다. MLP 입력만 모델 요구사항에
+따라 `(N, 784)`로 flatten한다.
+
 ## 원본 시행 ID
 
 | 구현 그룹 ID | 원본 시행 ID |
@@ -159,4 +172,4 @@
 | `GO01` | `SRC-B1-CH06-OPTIMIZER-PATH` |
 | `GO02` | `SRC-B1-CH06-ACTIVATION-HISTOGRAM` |
 
-`GT08`은 원본 시행 ID를 갖지 않는 새 확장 시행이다.
+`GT08`과 `GT09`는 원본 시행 ID를 갖지 않는 새 확장 시행이다.

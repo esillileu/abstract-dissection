@@ -37,6 +37,8 @@ from . import (
     e09_optimizer_trajectory,
     e10_activation,
     e11_cnn_filters,
+    e12_extended_mlp,
+    e12_summary,
 )
 from .generic_summary import SUMMARY_RENDERERS as GENERIC_SUMMARY_RENDERERS
 
@@ -54,6 +56,7 @@ RENDERERS = {
     "e09": e09_optimizer_trajectory.render,
     "e10": e10_activation.render,
     "e11": e11_cnn_filters.render,
+    "e12": e12_extended_mlp.render,
 }
 SUMMARY_RENDERERS = {
     **GENERIC_SUMMARY_RENDERERS,
@@ -61,6 +64,7 @@ SUMMARY_RENDERERS = {
     "e07": e07_summary.render,
     "e08": e08_summary.render,
     "e11": e11_cnn_filters.render_summary,
+    "e12": e12_summary.render,
 }
 SUMMARY_MODELS = {
     "e01": (
@@ -81,6 +85,9 @@ SUMMARY_MODELS = {
     "e06": ("GT06", e06_summary.ATOMIC_RUN_IDS),
     "e07": ("GT07", [e07_summary.ATOMIC_RUN_ID]),
     "e08": ("GT08", e08_summary.ATOMIC_RUN_IDS),
+}
+SUMMARY_CROSS_GROUP_MODELS = {
+    "e12": e12_summary.MODELS,
 }
 
 
@@ -145,6 +152,22 @@ def analyze(
                 )
                 for atomic_run_id in atomic_run_ids
             }
+            for atomic_run_id, parameter_count in parameter_counts.items():
+                print(f"[{atomic_run_id}] {format_parameter_count(parameter_count)}")
+            append_parameter_counts(output.with_suffix(".csv"), parameter_counts)
+        if summary and experiment in SUMMARY_CROSS_GROUP_MODELS:
+            parameter_counts = {}
+            for group_id, atomic_run_id in SUMMARY_CROSS_GROUP_MODELS[experiment]:
+                grouped_runs = completed_seed_runs(
+                    client,
+                    experiment_name="ds1",
+                    group_id=group_id,
+                    atomic_run_ids=[atomic_run_id],
+                )
+                parameter_counts[atomic_run_id] = parameter_count_for_runs(
+                    client,
+                    grouped_runs[atomic_run_id],
+                )
             for atomic_run_id, parameter_count in parameter_counts.items():
                 print(f"[{atomic_run_id}] {format_parameter_count(parameter_count)}")
             append_parameter_counts(output.with_suffix(".csv"), parameter_counts)

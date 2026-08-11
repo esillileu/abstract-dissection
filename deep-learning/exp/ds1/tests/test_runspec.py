@@ -58,6 +58,44 @@ def test_gt08_runspec_declares_20_update_train_and_test_cadence() -> None:
     assert spec.triggers[1].sources == ("mnist-test-full",)
 
 
+def test_gt09_extended_mlp_reuses_deepcnn_training_protocol() -> None:
+    mlp = parse_run_spec(
+        "exp/ds1/config/e12_mnist_extended_mlp.yaml",
+        atomic_run_id="MLP-EXT-ALL-BOOK",
+    )
+    cnn = parse_run_spec(
+        "exp/ds1/config/e07_mnist_deep_cnn.yaml",
+        atomic_run_id="CNN-DEEP-BOOK",
+    )
+
+    assert mlp.identity.group_id == "GT09"
+    assert mlp.model == {
+        "name": "MLP",
+        "input_size": 784,
+        "hidden_sizes": [100, 100, 100, 100, 100, 100],
+        "output_size": 10,
+        "activation": "relu",
+        "initializer": "he",
+        "use_batchnorm": True,
+        "dropout_ratio": 0.2,
+    }
+    assert mlp.optimizer == {
+        "name": "adam",
+        "learning_rate": 0.001,
+        "weight_decay": 0.1,
+    }
+    assert mlp.dataset["flatten"] is True
+    assert cnn.dataset["flatten"] is False
+    for field in ("train_limit", "test_limit"):
+        assert mlp.dataset[field] == cnn.dataset[field]
+    assert mlp.loader == cnn.loader
+    assert mlp.budget == cnn.budget
+    assert mlp.seed_policy == cnn.seed_policy
+    assert mlp.evaluation_sources == cnn.evaluation_sources
+    assert mlp.triggers == cnn.triggers
+    assert mlp.numerics == cnn.numerics
+
+
 def test_go01_runspec_declares_optimizer_specific_learning_rates() -> None:
     expected = {
         "TOY-SGD": ("toy_sgd", 0.95),

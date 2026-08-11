@@ -31,6 +31,7 @@
 | `GO01` | 저장된 `0..29` trajectory update를 표시용 `1..30`으로 변환, optimizer별 경로·등고선 시각화 |
 | `GO02` | histogram count를 density/ratio로 변환, bin·layer 정렬, summary 검증과 activation 분포 시각화 |
 | `E11` | GT06 SimpleCNN과 GT08 CNN identity/permuted의 seed index 0 final checkpoint 첫 합성곱 필터를 공통 색상 범위의 3개 패널로 비교 |
+| `GT09` | 기존 GT07 DeepConvNet과 extended MLP의 epoch별 train/test accuracy, final full-test accuracy, runtime·parameter-count 비교 |
 
 ## 분석 입력 우선순위
 
@@ -65,10 +66,10 @@ python -m exp analyze ds1 -e 06 --seed 1
 - 완료 run이 없으면 `No completed runs` 빈 그래프와 값이 비어 있는 summary CSV를 만든다.
 - 출력 기본 경로는 `exp/ds1/results/image/`이다.
 - 명시적으로 포함한 spatial-layout 비교 `GT08`은 `e08` 분석으로 제공한다.
-- `e01`–`e11`을 지원한다.
+- `e01`–`e12`를 지원한다. `e11`은 checkpoint 필터 분석이며 실행 catalog는 아니다.
 
 각 실험의 artifact 선택, 축 변환, subplot 구성과 원본 시각 형식은
-`e01_optimizer.py`부터 `e11_cnn_filters.py`까지의 개별 모듈이 소유한다.
+`e01_optimizer.py`부터 `e12_extended_mlp.py`까지의 개별 모듈이 소유한다.
 `common.py`에는 DS1 CSV를 loss/accuracy curve로 읽는 공통 연산만 둔다.
 
 `e06`은 원본 `train_convnet.py`처럼 단일 축에 SimpleConvNet의 train·test 곡선을
@@ -79,7 +80,7 @@ canvas, epoch 축, `0–1` accuracy 범위, marker와 범례 위치를 사용하
 `e07`은 SimpleCNN/DeepCNN의 train·test 네 곡선을 비교하고 y축 `0.25–0.9`를
 생략한다. 출력은 `e07_{band,errorbar}.png`이다.
 
-`-s`/`--summary`는 `e01`–`e11`에서 그림을 만들지 않고 실험별 핵심 값을
+`-s`/`--summary`는 `e01`–`e12`에서 그림을 만들지 않고 실험별 핵심 값을
 터미널과 `eNN_summary.csv`에 출력한다.
 
 - `e01`–`e02`: seed별 마지막 학습 objective
@@ -90,6 +91,7 @@ canvas, epoch 축, `0–1` accuracy 범위, marker와 범례 위치를 사용하
 - `e09`: 마지막 `x`, `y`, objective
 - `e10`: 조건·layer별 activation mean/std/min/max/zero ratio
 - `e11`: seed-index 0 final checkpoint의 첫 convolution filter 통계
+- `e12`: 기존 DeepConvNet과 extended MLP의 terminal full-test accuracy와 학습 시간
 
 학습 실험 `e01`–`e08`은 평가 시간을 제외한 training wall time과 parameter
 manifest에서 확인한 모델 파라미터 수도 함께 기록한다. 여러 seed가 있는 값은
@@ -116,7 +118,7 @@ manifest에서 확인한 모델 파라미터 수도 함께 기록한다. 여러 
 항상 소수점 둘째 자리까지, 학습 시간은 초 단위로 항상 소수점 첫째 자리까지
 표시하며 CSV도 같은 단위와 자릿수를 사용한다.
 
-summary CSV 이름은 `e01_summary.csv`부터 `e11_summary.csv`까지 같은 형식이다.
+summary CSV 이름은 `e01_summary.csv`부터 `e12_summary.csv`까지 같은 형식이다.
 
 원본 코드는 이제 `ds1_original` 정식 도메인에서 seed별로 분석한다.
 
