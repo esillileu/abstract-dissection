@@ -240,4 +240,11 @@ size를 x축(log scale), update당 시간을 y축(ms)으로 표시하며 95% 신
 앞선 경우는 `first_observed_negative_sampling_win_vocab_size`에 남기되 교차점으로
 확정하지 않는다. 현재 dense Adam 및 reporting loss까지 포함한 end-to-end update
 교차점이며, objective 연산만의 이론적 교차점은 아니다.
+추가로 `vsweap-cbow.png`와 `vsweap-skipgram.png`에 제목 없는 모델별 개별 그래프를
+저장한다.
+그래프의 측정 기준은 기본적으로 `--vsweap-timing window`이며, GPU CUDA event 기반의
+steady update 평균을 사용하려면 `--vsweap-timing event`를 지정한다. event 모드에서는
+host window 기반 95% 신뢰구간 band를 표시하지 않는다.
+GPU 상태의 실행 순서 편향을 비교하려면 `--reverse-vocab-order`를 지정해 vocab size를
+큰 값부터 측정할 수 있다. 실제 실행 순서는 결과 JSON의 `metadata.vocab_order`에 기록된다.
 `--vocab-size`는 `--vsweap` 없이 사용할 수 없다.

@@ -213,9 +213,13 @@ def run(
     warmup_updates: int = 20,
     measured_updates: int = 50,
     repetitions: int = 5,
+    timing_source: str = "window",
+    reverse_vocab_order: bool = False,
     output_dir: Path = DEFAULT_RESULTS,
 ) -> None:
     """Measure synchronized update distributions and windows at every sweep point."""
+    if timing_source not in {"window", "event"}:
+        raise ValueError("timing source must be 'window' or 'event'")
     selected_conditions = CONDITIONS if conditions is None else conditions
     unknown = set(selected_conditions) - set(CONDITIONS)
     if unknown:
@@ -237,6 +241,8 @@ def run(
         device_vocab_sizes = (
             _default_vocab_sizes(device) if vocab_sizes is None else vocab_sizes
         )
+        if reverse_vocab_order:
+            device_vocab_sizes = tuple(reversed(device_vocab_sizes))
         backend = make_backend(
             BackendConfig(
                 device=device,
@@ -306,6 +312,8 @@ def run(
                 "measured_updates": measured_updates,
                 "repetitions": repetitions,
                 "vocab_sizes": list(device_vocab_sizes),
+                "vocab_order": "descending" if reverse_vocab_order else "ascending",
+                "timing_source": timing_source,
             },
             "results": rows,
             "crossovers": _crossovers(rows),
@@ -319,6 +327,13 @@ def run(
         figure_output = save_figure(figure, device_dir / "vsweap.png")
         plt.close(figure)
         print(f"saved: {figure_output}", flush=True)
+        for model, figure in render_individual_sweeps(payload):
+            individual_output = save_figure(
+                figure,
+                device_dir / f"vsweap-{model.lower()}.png",
+            )
+            plt.close(figure)
+            print(f"saved: {individual_output}", flush=True)
         print(_render_crossovers(device, payload["crossovers"]), flush=True)
 
 
@@ -401,61 +416,130 @@ def render_sweep(payload: dict[str, object]):
         else device
     )
     for axis, model in zip(axes[0], models, strict=True):
-        model_rows = [row for row in selected if row.get("model") == model]
-        conditions = [
-            condition
-            for condition in _PLOT_STYLES
-            if any(row.get("condition") == condition for row in model_rows)
-        ]
-        for condition in conditions:
-            label, color, marker, linestyle = _PLOT_STYLES[condition]
-            condition_rows = sorted(
-                (
-                    row
-                    for row in model_rows
-                    if row.get("condition") == condition
-                ),
-                key=lambda row: int(row["vocab_size"]),
-            )
-            vocabulary = np.asarray(
-                [int(row["vocab_size"]) for row in condition_rows],
-                dtype=float,
-            )
-            update_ms = np.asarray(
-                [float(row["update_ms"]) for row in condition_rows],
-                dtype=float,
-            )
-            axis.plot(
-                vocabulary,
-                update_ms,
-                label=label,
-                color=color,
-                marker=marker,
-                linestyle=linestyle,
-                linewidth=1.6,
-                markersize=5,
-            )
-            lower = [row.get("ci95_lower_ms") for row in condition_rows]
-            upper = [row.get("ci95_upper_ms") for row in condition_rows]
-            if all(value is not None for value in (*lower, *upper)):
-                axis.fill_between(
-                    vocabulary,
-                    np.asarray(lower, dtype=float),
-                    np.asarray(upper, dtype=float),
-                    color=color,
-                    alpha=0.2,
-                    linewidth=0,
-                )
-        model_label = "Skip-gram" if model == "SkipGram" else model
-        axis.set(
-            title=f"{model_label} · {device_label}",
-            xlabel="Vocabulary size",
-            ylabel="Update time (ms)",
-            xscale="log",
+        _plot_model(
+            axis,
+            selected,
+            model,
+            device_label,
+            timing_source=str(metadata.get("timing_source", "window")),
+            title=True,
         )
-        axis.grid(True, which="both", alpha=0.25, color=MUTED)
-        axis.legend()
     return figure
+
+
+def render_individual_sweeps(
+    payload: dict[str, object],
+) -> list[tuple[str, plt.Figure]]:
+    """Render one untitled figure for each model represented in the payload."""
+    rows = payload.get("results")
+    metadata = payload.get("metadata")
+    if not isinstance(rows, list) or not isinstance(metadata, dict):
+        raise ValueError("invalid vocabulary sweep payload")
+    selected = [
+        row
+        for row in rows
+        if isinstance(row, dict)
+        and row.get("status") == "ok"
+        and row.get("condition") in _PLOT_STYLES
+    ]
+    models = [
+        model
+        for model in ("CBOW", "SkipGram")
+        if any(row.get("model") == model for row in selected)
+    ]
+    if not models:
+        raise ValueError("vocabulary sweep has no plottable results")
+    device = str(metadata.get("device", "unknown device"))
+    device_label = (
+        "GPU"
+        if device.startswith("cuda:")
+        else "CPU"
+        if device.startswith("cpu")
+        else device
+    )
+    figures = []
+    for model in models:
+        figure, axis = plt.subplots(figsize=(6.4, 4.8))
+        _plot_model(
+            axis,
+            selected,
+            model,
+            device_label,
+            timing_source=str(metadata.get("timing_source", "window")),
+            title=False,
+        )
+        figures.append((model, figure))
+    return figures
+
+
+def _plot_model(
+    axis,
+    selected,
+    model: str,
+    device_label: str,
+    *,
+    timing_source: str,
+    title: bool,
+) -> None:
+    if timing_source not in {"window", "event"}:
+        raise ValueError("timing source must be 'window' or 'event'")
+    model_rows = [row for row in selected if row.get("model") == model]
+    conditions = [
+        condition
+        for condition in _PLOT_STYLES
+        if any(row.get("condition") == condition for row in model_rows)
+    ]
+    for condition in conditions:
+        label, color, marker, linestyle = _PLOT_STYLES[condition]
+        condition_rows = sorted(
+            (row for row in model_rows if row.get("condition") == condition),
+            key=lambda row: int(row["vocab_size"]),
+        )
+        vocabulary = np.asarray(
+            [int(row["vocab_size"]) for row in condition_rows], dtype=float
+        )
+        update_ms = np.asarray(
+            [
+                float(row["update_ms"])
+                if timing_source == "window"
+                else float(row["steady_event_timing"]["mean_ms"])
+                for row in condition_rows
+            ],
+            dtype=float,
+        )
+        axis.plot(
+            vocabulary,
+            update_ms,
+            label=label,
+            color=color,
+            marker=marker,
+            linestyle=linestyle,
+            linewidth=1.6,
+            markersize=5,
+        )
+        lower = [row.get("ci95_lower_ms") for row in condition_rows]
+        upper = [row.get("ci95_upper_ms") for row in condition_rows]
+        if timing_source == "window" and all(
+            value is not None for value in (*lower, *upper)
+        ):
+            axis.fill_between(
+                vocabulary,
+                np.asarray(lower, dtype=float),
+                np.asarray(upper, dtype=float),
+                color=color,
+                alpha=0.2,
+                linewidth=0,
+            )
+    model_label = "Skip-gram" if model == "SkipGram" else model
+    axis.set(
+        xlabel="Vocabulary size",
+        ylabel="Update time (ms)",
+        xscale="log",
+    )
+    if title:
+        axis.set_title(f"{model_label} · {device_label}")
+    axis.grid(True, which="both", alpha=0.25, color=MUTED)
+    axis.legend()
 
 
 def _validate_vocab_sizes(vocab_sizes: tuple[int, ...]) -> None:

@@ -14,6 +14,7 @@ from exp.ds2.profile.e02.vsweap import (
     _crossovers,
     _default_vocab_sizes,
     _synthetic_batches,
+    render_individual_sweeps,
     render_sweep,
     run,
 )
@@ -52,6 +53,8 @@ def test_vocab_sweep_measures_implemented_conditions_and_crossovers(tmp_path) ->
     assert payload["metadata"]["measured_updates"] == 1
     assert payload["metadata"]["repetitions"] == 2
     assert payload["metadata"]["embedding_size"] == 100
+    assert payload["metadata"]["timing_source"] == "window"
+    assert payload["metadata"]["vocab_order"] == "ascending"
     assert {
         row["condition"] for row in payload["results"]
     } == {
@@ -77,6 +80,8 @@ def test_vocab_sweep_measures_implemented_conditions_and_crossovers(tmp_path) ->
         == "FusedNegativeSampling"
     )
     assert (tmp_path / "cpu" / "vsweap.png").is_file()
+    assert (tmp_path / "cpu" / "vsweap-cbow.png").is_file()
+    assert (tmp_path / "cpu" / "vsweap-skipgram.png").is_file()
 
     figure = render_sweep(payload)
     assert [axis.get_title() for axis in figure.axes] == [
@@ -90,6 +95,24 @@ def test_vocab_sweep_measures_implemented_conditions_and_crossovers(tmp_path) ->
         axis.get_ylabel() == "Update time (ms)" for axis in figure.axes
     )
     plt.close(figure)
+
+    payload["metadata"]["timing_source"] = "event"
+    event_figure = render_sweep(payload)
+    assert all(axis.get_title() for axis in event_figure.axes)
+    plt.close(event_figure)
+
+    individual_figures = render_individual_sweeps(payload)
+    assert [model for model, _figure in individual_figures] == [
+        "CBOW",
+        "SkipGram",
+    ]
+    assert all(
+        axis.get_title() == ""
+        for _model, figure in individual_figures
+        for axis in figure.axes
+    )
+    for _model, figure in individual_figures:
+        plt.close(figure)
 
     payload["metadata"]["device"] = "cuda:0"
     figure = render_sweep(payload)
@@ -136,6 +159,9 @@ def test_vsweap_cli_dispatches_only_when_explicit(
             "7",
             "--update-repetitions",
             "3",
+            "--vsweap-timing",
+            "event",
+            "--reverse-vocab-order",
             "--output-dir",
             str(tmp_path),
         ],
@@ -146,6 +172,8 @@ def test_vsweap_cli_dispatches_only_when_explicit(
     assert captured["vocab_sizes"] == (16,)
     assert captured["measured_updates"] == 7
     assert captured["repetitions"] == 3
+    assert captured["timing_source"] == "event"
+    assert captured["reverse_vocab_order"] is True
     assert captured["output_dir"] == tmp_path
 
 

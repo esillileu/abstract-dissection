@@ -168,6 +168,20 @@ def profile(
         typer.Option("--update-repetitions"),
     ] = 5,
     measured_updates: Annotated[int, typer.Option("--measured-updates")] = 50,
+    vsweap_timing: Annotated[
+        str,
+        typer.Option(
+            "--vsweap-timing",
+            help="vsweap timing source: window or CUDA event.",
+        ),
+    ] = "window",
+    reverse_vocab_order: Annotated[
+        bool,
+        typer.Option(
+            "--reverse-vocab-order",
+            help="Run vsweap vocabulary sizes from largest to smallest.",
+        ),
+    ] = False,
     module_warmup: Annotated[int, typer.Option("--module-warmup")] = 5,
     module_iterations: Annotated[
         int,
@@ -212,6 +226,8 @@ def profile(
             warmup_updates=update_warmup,
             measured_updates=measured_updates,
             repetitions=update_repetitions,
+            timing_source=vsweap_timing,
+            reverse_vocab_order=reverse_vocab_order,
             output_dir=output_dir or DEFAULT_RESULTS,
         )
         return
