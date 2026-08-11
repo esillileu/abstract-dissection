@@ -188,13 +188,43 @@ def profile(
         typer.Option("--module-iterations"),
     ] = 20,
     output_dir: Annotated[Path | None, typer.Option("--output-dir")] = None,
+    stage: Annotated[
+        str,
+        typer.Option(
+            "--stage", help="e05 benchmark stage: baseline, phase1, phase2, or phase3."
+        ),
+    ] = "phase1",
+    timelstm_only: Annotated[
+        bool,
+        typer.Option("--timelstm-only", help="Skip the e05 full-update workload."),
+    ] = False,
+    trace: Annotated[
+        bool,
+        typer.Option("--trace", help="Enable e05 NVTX ranges for Nsight Systems."),
+    ] = False,
 ) -> None:
-    from exp.ds2.profile.e02.api import DEFAULT_RESULTS, run
     from exp.parsing import parse_experiment_ids
 
     selected = parse_experiment_ids(experiment or [])
+    if selected == ["e05"]:
+        from exp.ds2.profile.e05.benchmark import DEFAULT_RESULTS, run
+
+        if len(device or ("cuda:0",)) != 1:
+            raise ValueError("e05 profiling accepts exactly one --device")
+        run(
+            stage=stage,
+            device=(device or ["cuda:0"])[0],
+            warmup=update_warmup,
+            iterations=measured_updates,
+            repetitions=update_repetitions,
+            output_dir=output_dir or DEFAULT_RESULTS,
+            timelstm_only=timelstm_only,
+            profile=trace,
+        )
+        return
     if selected != ["e02"]:
-        raise ValueError("DS2 profiling currently requires exactly -e 02")
+        raise ValueError("DS2 profiling requires exactly -e 02 or -e 05")
+    from exp.ds2.profile.e02.api import DEFAULT_RESULTS, run
     if vocab_size and not vsweap:
         raise ValueError("--vocab-size requires --vsweap")
     if (
