@@ -13,12 +13,19 @@ class Dropout(Layer):
         self.mask = None
 
     def forward_manual(self, x: Tensor):
+        xp = x.backend.xp
         if self.training:
-            self.mask = x.backend.xp.random.rand(*x.shape) > self.dropout_ratio
-            scale = 1 / (1 - self.dropout_ratio) if self.inverted else 1
-            return x * self.mask * scale
+            self.mask = xp.random.rand(*x.shape) > self.dropout_ratio
+            scale = xp.asarray(
+                1 / (1 - self.dropout_ratio) if self.inverted else 1,
+                dtype=x.dtype,
+            )
+            return Tensor(x.data * self.mask * scale, backend=x.backend)
         else:
-            return x if self.inverted else x * (1.0 - self.dropout_ratio)
+            if self.inverted:
+                return x
+            scale = xp.asarray(1.0 - self.dropout_ratio, dtype=x.dtype)
+            return Tensor(x.data * scale, backend=x.backend)
 
     def backward_manual(self, dout: Tensor):
         return dout * self.mask

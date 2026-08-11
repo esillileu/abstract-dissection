@@ -5,6 +5,7 @@ from mlprosection.nn.functional import (
     binary_cross_entropy_with_logits,
     softmax_cross_entropy,
 )
+from mlprosection.nn.kernels.temporal_softmax import temporal_softmax_loss_gradient
 
 from .base import Objective, ObjectiveResult
 
@@ -50,6 +51,8 @@ class SoftmaxCrossEntropy(Objective):
 class TemporalSoftmaxCrossEntropy(SoftmaxCrossEntropy):
     """Softmax cross entropy for ``(batch, time, classes)`` predictions."""
 
+    _fused_cuda = True
+
     def __init__(
         self,
         reduction: str = "mean",
@@ -70,6 +73,26 @@ class TemporalSoftmaxCrossEntropy(SoftmaxCrossEntropy):
         if prediction.ndim != 3:
             raise ValueError(
                 "TemporalSoftmaxCrossEntropy expects (batch, time, classes)"
+            )
+        xp = prediction.backend.xp
+        if (
+            self._fused_cuda
+            and prediction.backend.is_gpu
+            and prediction.dtype == xp.float32
+            and target.shape != prediction.shape
+        ):
+            loss, gradient, unit_count = temporal_softmax_loss_gradient(
+                prediction.data,
+                target.data,
+                reduction=self.reduction,
+                ignore_label=self.ignore_label,
+                backend=prediction.backend,
+            )
+            if cache:
+                self._gradient = Tensor(gradient, backend=prediction.backend)
+            return ObjectiveResult(
+                loss=Tensor(loss, backend=prediction.backend),
+                unit_count=unit_count,
             )
         return super().forward_manual(
             prediction,

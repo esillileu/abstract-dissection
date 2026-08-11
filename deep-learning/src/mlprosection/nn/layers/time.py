@@ -9,6 +9,8 @@ from .base import Layer
 from .embeding import Embedding
 from .linear import Affine
 from .regulizer import BatchNormalization, Dropout
+from ..kernels.time_lstm import launch_backward as _launch_lstm_backward
+from ..kernels.time_lstm import launch_forward as _launch_lstm_forward
 from ..types import Parameter
 
 
@@ -347,6 +349,8 @@ class LSTM(Layer):
 
 
 class TimeLSTM(RecurrentTimeLayer):
+    _fused_cuda = True
+
     def __init__(
         self,
         input_size: int,
@@ -381,8 +385,10 @@ class TimeLSTM(RecurrentTimeLayer):
         self.dh = None
 
     def forward_manual(self, xs: Tensor, *, cache: bool = True) -> Tensor:
+        if self._fused_cuda and self.backend.is_gpu and xs.dtype == xs.backend.xp.float32:
+            return self._forward_cuda_float32(xs, cache=cache)
         xp = xs.backend.xp
-        n, time_size, _ = xs.shape
+        n, time_size, input_size = xs.shape
         hidden_size = self.Wh.shape[0]
 
         if not self.stateful or self.h is None or self.h.shape[0] != n:
@@ -390,71 +396,194 @@ class TimeLSTM(RecurrentTimeLayer):
         if not self.stateful or self.c is None or self.c.shape[0] != n:
             self.c = xp.zeros((n, hidden_size), dtype=xs.dtype)
 
+        # The input projection is independent across timesteps.  Flattening it
+        # into one GEMM avoids T small launches while preserving the recurrent
+        # h @ Wh dependency in the loop.
+        x_flat = xp.ascontiguousarray(xs.data.reshape(n * time_size, input_size))
+        with self.backend.range("TimeLSTM/forward_input_gemm"):
+            input_projection = (x_flat @ self.Wx.data).reshape(
+                n, time_size, 4 * hidden_size
+            )
         hs = xp.empty((n, time_size, hidden_size), dtype=xs.dtype)
         self.layers = []
         h = self.h
         c = self.c
 
-        for index in range(time_size):
-            x = xs.data[:, index, :]
-            h_prev = h
-            c_prev = c
-            a = x @ self.Wx.data + h_prev @ self.Wh.data + self.b.data
+        if cache:
+            h_prev_sequence = xp.empty_like(hs)
+            c_prev_sequence = xp.empty_like(hs)
+            gates = xp.empty((n, time_size, 4 * hidden_size), dtype=xs.dtype)
+            cells = xp.empty_like(hs)
 
-            f = _sigmoid_array(a[:, :hidden_size], xp)
-            g = xp.tanh(a[:, hidden_size : 2 * hidden_size])
-            i = _sigmoid_array(a[:, 2 * hidden_size : 3 * hidden_size], xp)
-            o = _sigmoid_array(a[:, 3 * hidden_size :], xp)
+        with self.backend.range("TimeLSTM/forward_recurrent_loop"):
+            for index in range(time_size):
+                h_prev = h
+                c_prev = c
+                recurrent_projection = h_prev @ self.Wh.data
+                a = (
+                    input_projection[:, index, :]
+                    + recurrent_projection
+                    + self.b.data
+                )
 
-            c = f * c_prev + g * i
-            h = o * xp.tanh(c)
-            hs[:, index, :] = h
-            if cache:
-                self.layers.append((x, h_prev, c_prev, i, f, g, o, c))
+                f = _sigmoid_array(a[:, :hidden_size], xp)
+                g = xp.tanh(a[:, hidden_size : 2 * hidden_size])
+                i = _sigmoid_array(a[:, 2 * hidden_size : 3 * hidden_size], xp)
+                o = _sigmoid_array(a[:, 3 * hidden_size :], xp)
+
+                c = f * c_prev + g * i
+                h = o * xp.tanh(c)
+                hs[:, index, :] = h
+                if cache:
+                    h_prev_sequence[:, index, :] = h_prev
+                    c_prev_sequence[:, index, :] = c_prev
+                    gates[:, index, :hidden_size] = f
+                    gates[:, index, hidden_size : 2 * hidden_size] = g
+                    gates[:, index, 2 * hidden_size : 3 * hidden_size] = i
+                    gates[:, index, 3 * hidden_size :] = o
+                    cells[:, index, :] = c
+
+        if cache:
+            self.layers.append(
+                (
+                    x_flat,
+                    h_prev_sequence,
+                    c_prev_sequence,
+                    gates,
+                    cells,
+                )
+            )
 
         self.h = h
         self.c = c
         return Tensor(hs, backend=xs.backend)
 
     def backward_manual(self, dhs: Tensor) -> Tensor:
+        if self._fused_cuda and self.backend.is_gpu and dhs.dtype == dhs.backend.xp.float32:
+            return self._backward_cuda_float32(dhs)
         if not self.layers:
             raise RuntimeError("forward must be called before backward")
 
         xp = dhs.backend.xp
         n, time_size, hidden_size = dhs.shape
         input_size = self.Wx.shape[0]
-        dxs = xp.empty((n, time_size, input_size), dtype=dhs.dtype)
-        d_wx = xp.zeros_like(self.Wx.data)
-        d_wh = xp.zeros_like(self.Wh.data)
-        db = xp.zeros_like(self.b.data)
+        x_flat, h_prev_sequence, c_prev_sequence, gates, cells = self.layers[0]
+        da_sequence = xp.empty(
+            (n, time_size, 4 * hidden_size), dtype=dhs.dtype
+        )
         dh = xp.zeros((n, hidden_size), dtype=dhs.dtype)
         dc = xp.zeros((n, hidden_size), dtype=dhs.dtype)
 
-        for index in reversed(range(time_size)):
-            x, h_prev, c_prev, i, f, g, o, c_next = self.layers[index]
-            tanh_c_next = xp.tanh(c_next)
-            ds = dc + (dhs.data[:, index, :] + dh) * o * (1 - tanh_c_next**2)
-            dc = ds * f
-            di = ds * g
-            df = ds * c_prev
-            do = (dhs.data[:, index, :] + dh) * tanh_c_next
-            dg = ds * i
+        with self.backend.range("TimeLSTM/backward_recurrent_loop"):
+            for index in reversed(range(time_size)):
+                c_prev = c_prev_sequence[:, index, :]
+                c_next = cells[:, index, :]
+                f = gates[:, index, :hidden_size]
+                g = gates[:, index, hidden_size : 2 * hidden_size]
+                i = gates[:, index, 2 * hidden_size : 3 * hidden_size]
+                o = gates[:, index, 3 * hidden_size :]
+                tanh_c_next = xp.tanh(c_next)
+                upstream = dhs.data[:, index, :] + dh
+                ds = dc + upstream * o * (1 - tanh_c_next**2)
+                dc = ds * f
+                di = ds * g
+                df = ds * c_prev
+                do = upstream * tanh_c_next
+                dg = ds * i
 
-            di *= i * (1 - i)
-            df *= f * (1 - f)
-            do *= o * (1 - o)
-            dg *= 1 - g**2
+                di *= i * (1 - i)
+                df *= f * (1 - f)
+                do *= o * (1 - o)
+                dg *= 1 - g**2
 
-            da = xp.hstack((df, dg, di, do))
-            d_wh += h_prev.T @ da
-            d_wx += x.T @ da
-            db += da.sum(axis=0)
-            dxs[:, index, :] = da @ self.Wx.data.T
-            dh = da @ self.Wh.data.T
+                da = da_sequence[:, index, :]
+                da[:, :hidden_size] = df
+                da[:, hidden_size : 2 * hidden_size] = dg
+                da[:, 2 * hidden_size : 3 * hidden_size] = di
+                da[:, 3 * hidden_size :] = do
+                dh = da @ self.Wh.data.T
 
-        self.Wx.grad[...] = d_wx
-        self.Wh.grad[...] = d_wh
-        self.b.grad[...] = db
+        da_flat = da_sequence.reshape(n * time_size, 4 * hidden_size)
+        h_prev_flat = h_prev_sequence.reshape(n * time_size, hidden_size)
+        with self.backend.range("TimeLSTM/backward_dWx_gemm"):
+            self.Wx.grad[...] = x_flat.T @ da_flat
+        with self.backend.range("TimeLSTM/backward_dWh_gemm"):
+            self.Wh.grad[...] = h_prev_flat.T @ da_flat
+        self.b.grad[...] = da_flat.sum(axis=0)
+        with self.backend.range("TimeLSTM/backward_dX_gemm"):
+            dxs = (da_flat @ self.Wx.data.T).reshape(n, time_size, input_size)
+        self.dh = Tensor(dh, backend=dhs.backend)
+        return Tensor(dxs, backend=dhs.backend)
+
+    def _forward_cuda_float32(self, xs: Tensor, *, cache: bool) -> Tensor:
+        xp = xs.backend.xp
+        n, time_size, input_size = xs.shape
+        hidden_size = self.Wh.shape[0]
+        if not self.stateful or self.h is None or self.h.shape[0] != n:
+            self.h = xp.zeros((n, hidden_size), dtype=xs.dtype)
+        if not self.stateful or self.c is None or self.c.shape[0] != n:
+            self.c = xp.zeros((n, hidden_size), dtype=xs.dtype)
+
+        x_flat = xp.ascontiguousarray(xs.data.reshape(n * time_size, input_size))
+        with self.backend.range("TimeLSTM/forward_input_gemm"):
+            xproj = (x_flat @ self.Wx.data).reshape(n, time_size, 4 * hidden_size)
+        hs = xp.empty((n, time_size, hidden_size), dtype=xs.dtype)
+        self.layers = []
+        if cache:
+            hpseq = xp.empty_like(hs)
+            cpseq = xp.empty_like(hs)
+            gates = xp.empty((n, time_size, 4 * hidden_size), dtype=xs.dtype)
+            cells = xp.empty_like(hs)
+        else:
+            hpseq = cpseq = gates = cells = hs
+
+        h_work = xp.empty((2, n, hidden_size), dtype=xs.dtype)
+        c_work = xp.empty_like(h_work)
+        h, c = self.h, self.c
+        with self.backend.range("TimeLSTM/forward_recurrent_loop"):
+            for index in range(time_size):
+                h_prev, c_prev = h, c
+                hproj = h_prev @ self.Wh.data
+                h, c = h_work[index & 1], c_work[index & 1]
+                _launch_lstm_forward(
+                    xproj, hproj, self.b.data, h_prev, c_prev, h, c, hs,
+                    hpseq, cpseq, gates, cells, timestep=index, cache=cache,
+                )
+        if cache:
+            self.layers.append((x_flat, hpseq, cpseq, gates, cells))
+        self.h, self.c = h, c
+        return Tensor(hs, backend=xs.backend)
+
+    def _backward_cuda_float32(self, dhs: Tensor) -> Tensor:
+        if not self.layers:
+            raise RuntimeError("forward must be called before backward")
+        xp = dhs.backend.xp
+        n, time_size, hidden_size = dhs.shape
+        input_size = self.Wx.shape[0]
+        x_flat, hpseq, cpseq, gates, cells = self.layers[0]
+        daseq = xp.empty((n, time_size, 4 * hidden_size), dtype=dhs.dtype)
+        dh = xp.zeros((n, hidden_size), dtype=dhs.dtype)
+        dc = xp.zeros_like(dh)
+        dc_work = xp.empty((2, n, hidden_size), dtype=dhs.dtype)
+        with self.backend.range("TimeLSTM/backward_recurrent_loop"):
+            for index in reversed(range(time_size)):
+                dc_prev = dc_work[index & 1]
+                _launch_lstm_backward(
+                    dhs.data, dh, dc, cpseq, gates, cells, daseq, dc_prev,
+                    timestep=index,
+                )
+                dc = dc_prev
+                dh = daseq[:, index, :] @ self.Wh.data.T
+
+        da_flat = daseq.reshape(n * time_size, 4 * hidden_size)
+        hp_flat = hpseq.reshape(n * time_size, hidden_size)
+        with self.backend.range("TimeLSTM/backward_dWx_gemm"):
+            self.Wx.grad[...] = x_flat.T @ da_flat
+        with self.backend.range("TimeLSTM/backward_dWh_gemm"):
+            self.Wh.grad[...] = hp_flat.T @ da_flat
+        self.b.grad[...] = da_flat.sum(axis=0)
+        with self.backend.range("TimeLSTM/backward_dX_gemm"):
+            dxs = (da_flat @ self.Wx.data.T).reshape(n, time_size, input_size)
         self.dh = Tensor(dh, backend=dhs.backend)
         return Tensor(dxs, backend=dhs.backend)
 
