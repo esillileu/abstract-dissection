@@ -30,6 +30,8 @@ class CheckpointRetentionPolicy:
 
     periodic_every_epochs: int | None = None
     periodic_keep: int = 0
+    save_latest: bool = True
+    best_payload: str = "full"
 
     def __post_init__(self) -> None:
         if self.periodic_every_epochs is not None and self.periodic_every_epochs < 1:
@@ -40,6 +42,8 @@ class CheckpointRetentionPolicy:
             raise ValueError(
                 "periodic checkpoints require both periodic_every_epochs and periodic_keep"
             )
+        if self.best_payload not in {"full", "model_only"}:
+            raise ValueError("best_payload must be full or model_only")
 
     @classmethod
     def from_mapping(cls, values: dict[str, object] | None) -> CheckpointRetentionPolicy:
@@ -52,6 +56,8 @@ class CheckpointRetentionPolicy:
         return cls(
             periodic_every_epochs=None if every is None else int(every),
             periodic_keep=int(keep),
+            save_latest=bool(values.get("save_latest", True)),
+            best_payload=str(values.get("best_payload", "full")),
         )
 
 
@@ -91,7 +97,11 @@ class CheckpointManager:
         return self._save_role("latest", keep=1)
 
     def save_best(self) -> CheckpointRef:
-        return self._save_role("best", keep=1)
+        return self._save_role("best", keep=1, payload=self.policy.best_payload)
+
+    def save_final(self) -> CheckpointRef:
+        """Save the terminal state as the only full resumable checkpoint."""
+        return self._save_role("final", keep=1, payload="full")
 
     def save_periodic_if_due(self) -> CheckpointRef | None:
         every = self.policy.periodic_every_epochs
@@ -126,7 +136,7 @@ class CheckpointManager:
             ))
         return tuple(refs)
 
-    def _save_role(self, role: str, *, keep: int) -> CheckpointRef:
+    def _save_role(self, role: str, *, keep: int, payload: str = "full") -> CheckpointRef:
         self.root.mkdir(parents=True, exist_ok=True)
         generations = self.root / "generations"
         generations.mkdir(exist_ok=True)
@@ -145,6 +155,7 @@ class CheckpointManager:
                 optimizer=self.optimizer,
                 trainer=self.trainer,
                 config_digest=self.config_digest,
+                payload=payload,
             )
             staging.replace(target)
             ref = CheckpointRef(
@@ -203,9 +214,12 @@ def save_epoch_checkpoint(*, root: Path, model: Layer, objective: Layer, optimiz
     return path
 
 
-def _write_epoch_checkpoint(*, path: Path, model: Layer, objective: Layer, optimizer: Any, trainer: Any, config_digest: str) -> None:
+def _write_epoch_checkpoint(*, path: Path, model: Layer, objective: Layer, optimizer: Any, trainer: Any, config_digest: str, payload: str = "full") -> None:
     path.mkdir(parents=True, exist_ok=True)
     model.save_params_npz(path / "model_parameters.npz")
+    if payload == "model_only":
+        (path / "manifest.json").write_text(json.dumps({"schema_version": 2, "payload": payload, "epoch": trainer.epoch, "global_step": trainer.global_step, "config_digest": config_digest}, indent=2, sort_keys=True), encoding="utf-8")
+        return
     _save_buffers(model, path / "model_buffers.npz")
     objective.save_params_npz(path / "objective_parameters.npz")
     _save_buffers(objective, path / "objective_buffers.npz")
@@ -220,7 +234,7 @@ def _write_epoch_checkpoint(*, path: Path, model: Layer, objective: Layer, optim
             "backend": backend_state,
         },
     )
-    (path / "manifest.json").write_text(json.dumps({"schema_version": 2, "epoch": trainer.epoch, "global_step": trainer.global_step, "config_digest": config_digest}, indent=2, sort_keys=True), encoding="utf-8")
+    (path / "manifest.json").write_text(json.dumps({"schema_version": 2, "payload": payload, "epoch": trainer.epoch, "global_step": trainer.global_step, "config_digest": config_digest}, indent=2, sort_keys=True), encoding="utf-8")
 
 
 def load_epoch_checkpoint(*, path: str | Path, model: Layer, objective: Layer, optimizer: Any, trainer: Any, config_digest: str) -> None:

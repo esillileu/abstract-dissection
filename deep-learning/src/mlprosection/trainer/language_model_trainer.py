@@ -21,6 +21,11 @@ class LanguageModelTrainer(EventTrainer):
         batch_size: int,
         time_size: int,
         max_updates: int | None = None,
+        epoch_cursor: str = "continuous",
+        epoch_recurrent_state: str = "continuous",
+        evaluator_batch_size: int = 10,
+        evaluator_time_size: int = 35,
+        evaluator_drop_remainder: bool = True,
         event_receivers=None,
     ) -> None:
         super().__init__(model, objective, optimizer, max_epochs=max_epochs, max_updates=max_updates, event_receivers=event_receivers)
@@ -33,6 +38,15 @@ class LanguageModelTrainer(EventTrainer):
         self._batch_offsets = None
         self._time_offsets = None
         self._batch_data_size: int | None = None
+        if epoch_cursor not in {"continuous", "reset"}:
+            raise ValueError("epoch_cursor must be continuous or reset")
+        if epoch_recurrent_state not in {"continuous", "reset"}:
+            raise ValueError("epoch_recurrent_state must be continuous or reset")
+        self.epoch_cursor = epoch_cursor
+        self.epoch_recurrent_state = epoch_recurrent_state
+        self.evaluator_batch_size = evaluator_batch_size
+        self.evaluator_time_size = evaluator_time_size
+        self.evaluator_drop_remainder = evaluator_drop_remainder
 
     def fit(self, xs: Tensor, ts: Tensor) -> None:
         if len(xs) != len(ts):
@@ -47,31 +61,25 @@ class LanguageModelTrainer(EventTrainer):
                     reason = "max_updates"
                     break
                 self.epoch = epoch_index + 1
+                if self.epoch_cursor == "reset":
+                    self.time_index = 0
+                    self.iteration_in_epoch = 0
+                if self.epoch_recurrent_state == "reset":
+                    self.model.reset_runtime_state()
                 start_update = self.global_step + 1
                 for iteration in range(self.iteration_in_epoch, max_iterations):
                     batch_x, batch_t = self._batch(xs, ts)
-                    state_before = self.model.snapshot_runtime_state()
                     self.model.train(True)
                     prediction = self.model.forward(batch_x)
                     result = self.objective.forward(prediction, batch_t)
                     self.model.backward(self.objective.backward())
                     self.optimizer.update()
-                    probe_state = self._snapshot_evaluation_state()
-                    self.model.restore_runtime_state(state_before)
-                    try:
-                        post_prediction = self.model.forward(batch_x, cache=False)
-                        post_result = self.objective.forward(
-                            post_prediction, batch_t, cache=False,
-                            replay_context=result.replay_context,
-                        )
-                    finally:
-                        self._restore_evaluation_state(probe_state)
                     self.model.detach_runtime_state()
                     self.global_step += 1
                     self.iteration_in_epoch = iteration + 1
                     self._emit_update(UpdateEvent(
                         update=self.global_step, epoch=self.epoch, batch_size=self.batch_size,
-                        loss=post_result.loss, learning_rate=self._learning_rate(),
+                        loss=result.loss, learning_rate=self._learning_rate(),
                     ))
                     self._emit_source_objective(SourceObjectiveSample(
                         update=self.global_step, epoch=self.epoch, local_iteration=iteration,
@@ -119,13 +127,37 @@ class LanguageModelTrainer(EventTrainer):
         self.objective.train(False)
         self.model.reset_runtime_state()
         try:
-            for start in range(0, len(xs), self.time_size):
-                end = min(start + self.time_size, len(xs))
-                batch_x = Tensor(xs.data[start:end][None, :], backend=self.backend)
-                batch_t = Tensor(ts.data[start:end][None, :], backend=self.backend)
+            # Keep the requested ten parallel streams for PTB, while allowing
+            # tiny test corpora to retain at least one full time window.
+            batch_size = min(self.evaluator_batch_size, len(xs))
+            eval_time_size = min(
+                self.evaluator_time_size,
+                max(1, len(xs) // batch_size),
+            )
+            if batch_size < 1:
+                raise ValueError("evaluator_batch_size must be positive")
+            stream_length = len(xs) // batch_size
+            if not self.evaluator_drop_remainder and len(xs) % batch_size:
+                stream_length += 1
+            if stream_length < 1:
+                raise ValueError("evaluation corpus is too short for evaluator_batch_size")
+            usable = stream_length * batch_size
+            if usable > len(xs):
+                positions = self.backend.xp.arange(usable) % len(xs)
+                flat_x, flat_t = xs.data[positions], ts.data[positions]
+            else:
+                flat_x, flat_t = xs.data[:usable], ts.data[:usable]
+            stream_x = flat_x.reshape(batch_size, stream_length)
+            stream_t = flat_t.reshape(batch_size, stream_length)
+            for start in range(0, stream_length, eval_time_size):
+                end = min(start + eval_time_size, stream_length)
+                if self.evaluator_drop_remainder and end - start < eval_time_size:
+                    break
+                batch_x = Tensor(stream_x[:, start:end], backend=self.backend)
+                batch_t = Tensor(stream_t[:, start:end], backend=self.backend)
                 prediction = self.model.forward(batch_x, cache=False)
                 result = self.objective.forward(prediction, batch_t, cache=False)
-                count = end - start
+                count = (end - start) * batch_size
                 total_nll = total_nll + result.loss.data.astype(xp.float64) * count
                 token_count += count
         finally:

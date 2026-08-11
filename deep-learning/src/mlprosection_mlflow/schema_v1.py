@@ -266,6 +266,7 @@ def build_condition_config(
         "atomic_run_id": config["atomic_run_id"],
         "execution_group_id": config["execution_group_id"],
         "recipe_id": config["recipe_id"],
+        "protocol_version": config.get("protocol_version", "legacy"),
         "structure_signature": config["structure_signature"],
         "code": {
             "git_commit": git_info["commit"],
@@ -341,6 +342,7 @@ def build_tags(
         "experiment.ids": ",".join(identity.experiment_ids),
         "execution_group.id": identity.execution_group_id,
         "recipe.id": identity.recipe_id,
+        "protocol.version": str(config.get("protocol_version", "legacy")),
         "structure.signature": identity.structure_signature,
         "condition.key": identity.condition_key,
         "condition.group.key": make_parent_group_key(group_identity),

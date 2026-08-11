@@ -46,6 +46,7 @@ class RunSpec:
     scheduler: dict[str, object]
     objective: dict[str, object]
     path: Path
+    protocol_version: str = "legacy"
 
     @property
     def config(self) -> dict[str, object]:
@@ -66,6 +67,11 @@ class RunSpec:
             evaluation.setdefault("valid_every_epochs", 0)
             evaluation.setdefault("test_every_epochs", 0)
             evaluation.setdefault("test_at_end", False)
+            evaluation.setdefault("protocol", "book_parallel")
+            evaluation.setdefault("batch_size", 10)
+            evaluation.setdefault("time_size", 35)
+            evaluation.setdefault("drop_remainder", True)
+            evaluation.setdefault("terminal_checkpoint_role", "final")
         recording = dict(self.recording)
         if self.source_curve is not None:
             recording["source_curve"] = {
@@ -81,6 +87,7 @@ class RunSpec:
             "experiment_ids": [self.identity.experiment_id],
             "execution_group_id": self.identity.group_id,
             "recipe_id": self.identity.recipe_id,
+            "protocol_version": self.protocol_version,
             "structure_signature": self.identity.structure_signature,
             "dataset": dict(self.dataset),
             "loader": dict(self.loader),
@@ -104,6 +111,14 @@ class RunSpec:
                 "seed_count": self.seed_policy.get("seed_count", 10),
                 "paired_execution": self.seed_policy.get("paired_execution", True),
                 **({"max_grad": self.seed_policy["max_grad"]} if "max_grad" in self.seed_policy else {}),
+                **{
+                    key: self.seed_policy[key]
+                    for key in (
+                        "loss_timing", "epoch_cursor", "epoch_recurrent_state",
+                        "source_curve_reset_each_epoch",
+                    )
+                    if key in self.seed_policy
+                },
             },
             "tracking": dict(self.tracking),
         }
@@ -150,6 +165,7 @@ def parse_run_spec(
         scheduler=mapping(raw, "scheduler"),
         objective=mapping(raw, "objective"),
         path=path,
+        protocol_version=str(run.get("protocol_version", "legacy")),
     )
     _validate(spec)
     return spec

@@ -9,6 +9,7 @@ def runs(client, group: str, atomic_ids: list[str]):
         experiment_name="ds2",
         group_id=group,
         atomic_run_ids=atomic_ids,
+        protocol_version="book-source-v1",
     )
 
 

@@ -50,7 +50,6 @@ from mlprosection.experiment.contracts import ExperimentResult
 from mlprosection.experiment.checkpoint import (
     CheckpointManager,
     CheckpointRetentionPolicy,
-    load_epoch_checkpoint,
     resolve_checkpoint_path,
 )
 from mlprosection.experiment.event_executor import EvaluationRequest, EventExperimentExecutor
@@ -163,9 +162,15 @@ def _source_curve_from_objective(config: dict[str, object]):
     update_start = None
     epoch_start = None
     plot_index = 0
+    reset_each_epoch = bool(_mapping(config, "policy").get("source_curve_reset_each_epoch", False))
+    active_epoch = None
 
     def reduce(event):
-        nonlocal total, book_total, count, unit_count, update_start, epoch_start, plot_index
+        nonlocal total, book_total, count, unit_count, update_start, epoch_start, plot_index, active_epoch
+        if reset_each_epoch and active_epoch is not None and event.epoch != active_epoch:
+            total, book_total, count, unit_count = None, None, 0, 0
+            update_start, epoch_start = None, None
+        active_epoch = event.epoch
         if update_start is None:
             update_start = event.update
             epoch_start = event.epoch
@@ -409,8 +414,6 @@ class LanguageModelExecutor:
         test_ppl = float("inf")
         best_valid = float("inf")
         best_valid_epoch = 0
-        selected_checkpoint_path: Path | None = None
-        config_digest = _config_digest(config)
         valid_every_epochs = int(evaluation.get("valid_every_epochs", 1))
         test_every_epochs = int(evaluation.get("test_every_epochs", 1))
         test_at_end = bool(evaluation.get("test_at_end", False))
@@ -422,6 +425,11 @@ class LanguageModelExecutor:
             model, objective, optimizer, max_epochs=max_epochs,
             batch_size=int(loader.get("batch_size", 20)), time_size=int(loader.get("time_size", 35)),
             max_updates=None if max_updates is None else int(max_updates),
+            epoch_cursor=str(_mapping(config, "policy").get("epoch_cursor", "continuous")),
+            epoch_recurrent_state=str(_mapping(config, "policy").get("epoch_recurrent_state", "continuous")),
+            evaluator_batch_size=int(_mapping(config, "evaluation").get("batch_size", 10)),
+            evaluator_time_size=int(_mapping(config, "evaluation").get("time_size", 35)),
+            evaluator_drop_remainder=bool(_mapping(config, "evaluation").get("drop_remainder", True)),
         )
         checkpoint_manager = _checkpoint_manager(
             config, context, model=model, objective=objective, optimizer=optimizer, trainer=trainer,
@@ -440,14 +448,14 @@ class LanguageModelExecutor:
         records_sink.bind_artifact_root(artifact_root)
         monitor = create_runtime_monitor(backend, _mapping(config, "profiling"))
         def after_evaluation(request, result, _axis, step):
-            nonlocal valid_ppl, test_ppl, best_valid, best_valid_epoch, selected_checkpoint_path
+            nonlocal valid_ppl, test_ppl, best_valid, best_valid_epoch
             if request.split == "valid":
                 valid_ppl = float(result.perplexity)
                 if valid_ppl < best_valid:
                     best_valid, best_valid_epoch = valid_ppl, step
                     if bool(_mapping(config, "checkpoint").get("save_best", False)):
                         records_sink.flush()
-                        selected_checkpoint_path = checkpoint_manager.save_best().path
+                        checkpoint_manager.save_best()
                 else:
                     _apply_validation_decay(config, optimizer)
             else:
@@ -470,11 +478,8 @@ class LanguageModelExecutor:
         with training_summary(monitor):
             records = controller.run(lambda: trainer.fit(train, train_targets))
         if test_at_end:
-            if bool(_mapping(config, "checkpoint").get("save_best", False)):
-                if selected_checkpoint_path is None:
-                    raise RuntimeError("selected checkpoint is required before terminal test evaluation")
-                load_epoch_checkpoint(path=selected_checkpoint_path, model=model, objective=objective, optimizer=optimizer, trainer=trainer, config_digest=config_digest)
             test_ppl = float(trainer.evaluate(test, test_targets).perplexity)
+        checkpoint_manager.save_final()
         _record_retained_checkpoints(
             records, checkpoint_manager,
             best_metric="valid/perplexity",
@@ -744,7 +749,8 @@ def _checkpoint_manager(config, context, *, model, objective, optimizer, trainer
 
 
 def _save_epoch_roles(manager: CheckpointManager) -> None:
-    manager.save_latest()
+    if manager.policy.save_latest:
+        manager.save_latest()
     manager.save_periodic_if_due()
 
 
@@ -755,6 +761,13 @@ def _record_retained_checkpoints(
     best_metric: str = "",
     best_value: float | None = None,
 ) -> None:
+    final = manager.current("final")
+    if final is not None:
+        records.add_checkpoint(
+            update=final.update, epoch=final.epoch, kind="final",
+            path=final.path, sha256=final.sha256,
+            checkpoint_id="final",
+        )
     latest = manager.current("latest")
     if latest is not None:
         records.add_checkpoint(

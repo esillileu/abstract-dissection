@@ -71,6 +71,7 @@ def completed_seed_runs(
     experiment_name: str,
     group_id: str,
     atomic_run_ids: Iterable[str],
+    protocol_version: str | None = None,
 ) -> dict[str, list[RunRef]]:
     """Return the newest completed attempt for every (condition, seed)."""
     wanted = tuple(atomic_run_ids)
@@ -93,6 +94,8 @@ def completed_seed_runs(
         if tags.get("run.type") != "seed_trial":
             continue
         if tags.get("execution_group.id") != group_id:
+            continue
+        if protocol_version is not None and tags.get("protocol.version", "legacy") != protocol_version:
             continue
         atomic = tags.get("atomic_run.id", "")
         if atomic not in grouped:
