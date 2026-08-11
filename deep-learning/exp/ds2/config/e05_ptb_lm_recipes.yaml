@@ -21,4 +21,5 @@ tracking: {enabled: true, experiment: ds2}
 variants:
   LM-RNN-RECIPE: {run: {structure_signature: ptb-rnn-650}, model: {name: VanillaRnnlm, wordvec_size: 650, hidden_size: 650}}
   LM-LSTM-RECIPE: {run: {structure_signature: ptb-lstm-650}, model: {name: Rnnlm, wordvec_size: 650, hidden_size: 650}}
+  LM-LSTM-TIED-RECIPE: {run: {structure_signature: ptb-lstm-tied-650}, model: {name: TiedRnnlm, wordvec_size: 650, hidden_size: 650}}
   LM-BETTER-RECIPE: {run: {structure_signature: ptb-better-rnnlm-650}, model: {name: BetterRnnlm, wordvec_size: 650, hidden_size: 650, dropout_ratio: 0.5}}

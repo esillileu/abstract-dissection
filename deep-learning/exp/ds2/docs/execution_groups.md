@@ -20,7 +20,7 @@
 | `GT02` | PTB Word2Vec | PTB train, window 5, hidden 100, Adam .001, batch 100, 10 epochs | architecture × objective/input projection | 6 |
 | `GT03` | small-corpus RNNLM | PTB first 1,000 tokens, SimpleRnnlm 100/100, SGD .1, batch 10, BPTT 5, 100 epochs | 없음 | 1 |
 | `GT04` | PTB LSTM RNNLM | PTB train/test, LSTM 100/100, SGD 20, batch 20, BPTT 35, clip .25, 4 epochs | 없음 | 1 |
-| `GT05` | PTB LM recipe comparison | PTB train/valid/test, embedding/hidden 650, SGD 20, batch 20, BPTT 35, clip .25, max 40 epochs | architecture | 3 |
+| `GT05` | PTB LM recipe comparison | PTB train/valid/test, embedding/hidden 650, SGD 20, batch 20, BPTT 35, clip .25, max 40 epochs | architecture | 4 |
 | `GT06` | addition Seq2seq | addition split, embedding 16, hidden 128, Adam .001, batch 128, clip 5, 25 epochs | architecture × reverse input | 4 |
 | `GT07` | date Seq2seq | date split, reverse input, embedding 16, hidden 256, Adam .001, batch 128, clip 5, 10 epochs | architecture | 3 |
 
@@ -32,7 +32,7 @@
 | `GT02` | `W2V-PTB-CBOW-NS`, `W2V-PTB-SKIPGRAM-NS`, `W2V-PTB-CBOW-FULL`, `W2V-PTB-SKIPGRAM-FULL`, `W2V-PTB-CBOW-ONEHOT-FULL`, `W2V-PTB-SKIPGRAM-ONEHOT-FULL` |
 | `GT03` | `LM-SMALL-RNN` |
 | `GT04` | `LM-LSTM` |
-| `GT05` | `LM-RNN-RECIPE`, `LM-LSTM-RECIPE`, `LM-BETTER-RECIPE` |
+| `GT05` | `LM-RNN-RECIPE`, `LM-LSTM-RECIPE`, `LM-LSTM-TIED-RECIPE`, `LM-BETTER-RECIPE` |
 | `GT06` | `SEQA-VAN-FWD`, `SEQA-VAN-REV`, `SEQA-PEEKY-FWD`, `SEQA-PEEKY-REV` |
 | `GT07` | `SEQD-VAN-REV`, `SEQD-PEEKY-REV`, `SEQD-ATTN-REV` |
 | `GO01` | `ATTENTION-ALIGNMENT` |
@@ -82,6 +82,7 @@ hit@5를 출력한다.
 | --- | --- | --- |
 | `LM-RNN-RECIPE` | Rnnlm, embedding/hidden 650 | best valid PPL; non-improvement → lr / 4 |
 | `LM-LSTM-RECIPE` | LSTM Rnnlm, embedding/hidden 650 | best valid PPL; non-improvement → lr / 4 |
+| `LM-LSTM-TIED-RECIPE` | LSTM Rnnlm, embedding/output weight tying, 650/650 | best valid PPL; non-improvement → lr / 4 |
 | `LM-BETTER-RECIPE` | BetterRnnlm, two-layer LSTM 650/650, dropout .5 | best valid PPL; non-improvement → lr / 4 |
 
 ### GT06 — addition Seq2seq

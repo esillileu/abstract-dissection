@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 
 from mlprosection import Tensor
-from mlprosection.nn.model.architecture import BetterRnnlm, Rnnlm, Seq2seq
+from mlprosection.nn.model.architecture import BetterRnnlm, Rnnlm, Seq2seq, TiedRnnlm
 from mlprosection.nn.objective import TemporalSoftmaxCrossEntropy
 
 
@@ -42,6 +42,25 @@ def test_better_rnnlm_ties_embedding_and_affine_weight() -> None:
     assert result.loss.shape == ()
     assert model.layers[-1].W is model.embed.W
     assert len([param for _, param in params if param is model.embed.W]) == 1
+
+
+def test_tied_rnnlm_ties_single_lstm_embedding_and_affine_weight() -> None:
+    model = TiedRnnlm(
+        vocab_size=7,
+        wordvec_size=5,
+        hidden_size=5,
+        backend="cpu",
+    )
+    xs = Tensor(np.array([[0, 1, 2], [3, 4, 5]]), backend="cpu")
+    ts = Tensor(np.array([[1, 2, 3], [4, 5, 6]]), backend="cpu")
+
+    objective = TemporalSoftmaxCrossEntropy()
+    objective.forward(model.forward(xs), ts)
+    model.backward(objective.backward())
+
+    assert model.layers[-1].W is model.embed.W
+    assert len([param for _, param in model.named_parameters() if param is model.embed.W]) == 1
+    assert np.any(model.embed.W.grad != 0)
 
 
 def test_seq2seq_forward_backward_generate() -> None:

@@ -28,6 +28,7 @@ from mlprosection.nn.model.architecture import (
     Seq2seq,
     SkipGram,
     SkipGramBatchAdapter,
+    TiedRnnlm,
     VanillaRnnlm,
 )
 from mlprosection.nn.objective import (
@@ -959,6 +960,8 @@ def _language_model(name: str, vocab_size: int, values: dict[str, object], backe
         return VanillaRnnlm(**kwargs)
     if name == "Rnnlm":
         return Rnnlm(**kwargs)
+    if name == "TiedRnnlm":
+        return TiedRnnlm(**kwargs)
     if name == "BetterRnnlm":
         return BetterRnnlm(**kwargs, dropout_ratio=float(values.get("dropout_ratio", 0.5)))
     raise ValueError(f"unknown language-model name: {name}")

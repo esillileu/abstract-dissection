@@ -62,7 +62,12 @@ def test_lm_recipe_runspec_declares_valid_selected_checkpoint_inputs() -> None:
 
 @pytest.mark.parametrize(
     "atomic_run_id",
-    ["LM-RNN-RECIPE", "LM-LSTM-RECIPE", "LM-BETTER-RECIPE"],
+    [
+        "LM-RNN-RECIPE",
+        "LM-LSTM-RECIPE",
+        "LM-LSTM-TIED-RECIPE",
+        "LM-BETTER-RECIPE",
+    ],
 )
 def test_lm_recipe_validation_decay_applies_to_every_model(
     atomic_run_id: str,

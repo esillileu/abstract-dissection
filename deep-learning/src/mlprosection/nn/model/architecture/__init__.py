@@ -19,6 +19,7 @@ from .recurrent import (
     PeekySeq2seq,
     Rnnlm,
     Seq2seq,
+    TiedRnnlm,
     VanillaRnnlm,
 )
 
@@ -29,5 +30,5 @@ __all__ = [
     "OneHotSkipGram", "OneHotSkipGramBatchAdapter",
     "SkipGram", "SkipGramBatchAdapter",
     "AttentionSeq2seq", "BetterRnnlm",
-    "PeekySeq2seq", "Rnnlm", "Seq2seq", "VanillaRnnlm",
+    "PeekySeq2seq", "Rnnlm", "Seq2seq", "TiedRnnlm", "VanillaRnnlm",
 ]

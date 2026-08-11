@@ -50,6 +50,48 @@ class Rnnlm(Model):
         return dout
 
 
+class TiedRnnlm(Rnnlm):
+    """One-layer LSTM RNNLM with input/output embedding weight tying."""
+
+    def __init__(
+        self,
+        vocab_size: int = 10000,
+        wordvec_size: int = 100,
+        hidden_size: int = 100,
+        *,
+        backend: Backend | str | None = None,
+    ) -> None:
+        Model.__init__(self, backend)
+        self.embed = TimeEmbedding(vocab_size, wordvec_size, backend=self._backend)
+        self.layers = [
+            self.embed,
+            TimeLSTM(
+                wordvec_size,
+                hidden_size,
+                stateful=True,
+                backend=self._backend,
+            ),
+            TimeAffine(
+                hidden_size,
+                vocab_size,
+                backend=self._backend,
+                weight=self.embed.W,
+                transpose_weight=True,
+            ),
+        ]
+        self.lstm_layer = self.layers[1]
+
+    def backward_manual(self, dout: Tensor) -> Tensor:
+        tied_grad = None
+        for layer in reversed(self.layers):
+            dout = layer.backward(dout)
+            if layer is self.layers[-1]:
+                tied_grad = self.embed.W.grad.copy()
+        if tied_grad is not None:
+            self.embed.W.grad[...] += tied_grad
+        return dout
+
+
 class VanillaRnnlm(Model):
     """Embedding → vanilla RNN → vocabulary projection language model."""
 

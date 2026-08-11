@@ -1,6 +1,6 @@
 # LanguageModelTrainer 요구사항
 
-대상은 `GT03`–`GT05`의 PTB RNNLM/LSTM/BetterRnnlm 학습이다. 공통 계약은 [DS2 Trainer 공통 요구사항](../trainer_requirements.md)을 따른다.
+대상은 `GT03`–`GT05`의 PTB RNNLM/LSTM/weight-tied LSTM/BetterRnnlm 학습이다. 공통 계약은 [DS2 Trainer 공통 요구사항](../trainer_requirements.md)을 따른다.
 
 ## 지원 범위
 

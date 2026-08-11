@@ -109,7 +109,12 @@ ANALYSES = {
     "e04": AnalysisSpec("GT04", ("LM-LSTM",), FINAL_TEST_PERPLEXITY),
     "e05": AnalysisSpec(
         "GT05",
-        ("LM-RNN-RECIPE", "LM-LSTM-RECIPE", "LM-BETTER-RECIPE"),
+        (
+            "LM-RNN-RECIPE",
+            "LM-LSTM-RECIPE",
+            "LM-LSTM-TIED-RECIPE",
+            "LM-BETTER-RECIPE",
+        ),
         FINAL_TEST_PERPLEXITY,
     ),
     "e06": AnalysisSpec(
