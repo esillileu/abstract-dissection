@@ -16,8 +16,28 @@ def test_default_catalog_sizes_and_ds2_word2vec_exclusion() -> None:
     ds2 = Planner(DS2_ORIGINAL).build(RunSelection(all_experiments=True), RunOptions(device="cpu"))
 
     assert len(ds1) == 480
-    assert len(ds2) == 110
-    assert {plan.experiment_id for plan in ds2} == {"e01", "e03", "e04", "e06", "e07", "e08"}
+    assert len(ds2) == 120
+    assert {plan.experiment_id for plan in ds2} == {
+        "e01",
+        "e03",
+        "e04",
+        "e05",
+        "e06",
+        "e07",
+        "e08",
+    }
+
+
+def test_ds2_e05_uses_upstream_better_rnnlm_recipe() -> None:
+    spec = DS2_ORIGINAL.load_run_spec(
+        Path("exp/ds2_original/config/e05_better_rnnlm.yaml"),
+        atomic_run_id="BETTER-RNNLM",
+        overrides={},
+    ).to_executor_config()
+
+    assert spec["source_experiment"] == "e05"
+    assert spec["trial_id"] == "dlfs2.ch06.ptb-better-rnnlm"
+    assert spec["training"]["max_epochs"] == 40
 
 
 def test_atomic_seed_override_and_seed_first_order() -> None:

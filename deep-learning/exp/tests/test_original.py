@@ -261,13 +261,22 @@ def test_ds2_original_trials_all_use_cupy() -> None:
     from exp.ds2.original.run.api import trials_for
 
     trials = trials_for(
-        ["e01", "e02", "e03", "e04", "e06", "e07", "e08"]
+        ["e01", "e02", "e03", "e04", "e05", "e06", "e07", "e08"]
     )
     by_experiment = {}
     for experiment, trial in trials:
         by_experiment.setdefault(experiment, set()).add(trial.backend)
 
-    assert set(by_experiment) == {"e01", "e02", "e03", "e04", "e06", "e07", "e08"}
+    assert set(by_experiment) == {
+        "e01",
+        "e02",
+        "e03",
+        "e04",
+        "e05",
+        "e06",
+        "e07",
+        "e08",
+    }
     assert all(backends == {"cupy"} for backends in by_experiment.values())
 
 
