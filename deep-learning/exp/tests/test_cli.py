@@ -67,7 +67,7 @@ def test_catalog_plan_counts_and_default_devices() -> None:
     ds2 = _plans("ds2", all_experiments=True)
 
     assert len(ds1) == 66
-    assert len(ds2) == 24
+    assert len(ds2) == 28
     assert {
         plan.device
         for plan in ds1
