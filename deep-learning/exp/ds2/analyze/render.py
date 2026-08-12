@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from contextlib import redirect_stdout
+from io import StringIO
 import sys
 from pathlib import Path
 
@@ -9,6 +11,7 @@ import matplotlib.pyplot as plt
 
 from exp.analyze import (
     AnalysisClient,
+    cached_analysis_console_output,
     cached_analysis_outputs,
     mlflow_client,
     parse_experiment_selection,
@@ -96,13 +99,23 @@ def analyze(
         cached_outputs = cached_analysis_outputs(client, output)
         if cached_outputs is not None:
             print(f"{experiment}: analysis cache hit", file=sys.stderr)
+            print(cached_analysis_console_output(output), end="")
             outputs.extend(cached_outputs)
             continue
         client.analysis_selections = []
-        experiment_outputs = _save_result(
-            renderers[experiment](client, error_style, output), output
+        console = StringIO()
+        with redirect_stdout(console):
+            experiment_outputs = _save_result(
+                renderers[experiment](client, error_style, output), output
+            )
+        console_output = console.getvalue()
+        print(console_output, end="")
+        write_analysis_cache(
+            client,
+            output,
+            experiment_outputs,
+            console_output=console_output,
         )
-        write_analysis_cache(client, output, experiment_outputs)
         outputs.extend(experiment_outputs)
     for path in outputs:
         print(path)

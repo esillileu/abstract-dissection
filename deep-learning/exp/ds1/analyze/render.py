@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from contextlib import redirect_stdout
+from io import StringIO
 import sys
 from pathlib import Path
 
@@ -9,6 +11,7 @@ import matplotlib.pyplot as plt
 
 from exp.analyze import (
     AnalysisClient,
+    cached_analysis_console_output,
     cached_analysis_outputs,
     completed_seed_runs,
     mlflow_client,
@@ -139,47 +142,67 @@ def analyze(
         cached_outputs = cached_analysis_outputs(client, output)
         if cached_outputs is not None:
             print(f"{experiment}: analysis cache hit", file=sys.stderr)
+            print(cached_analysis_console_output(output), end="")
             outputs.extend(cached_outputs)
             continue
         client.analysis_selections = []
-        experiment_outputs = _save_result(
-            renderers[experiment](client, error_style, output), output
-        )
-        if summary and experiment in SUMMARY_MODELS:
-            group_id, atomic_run_ids = SUMMARY_MODELS[experiment]
-            grouped_runs = completed_seed_runs(
-                client,
-                experiment_name="ds1",
-                group_id=group_id,
-                atomic_run_ids=atomic_run_ids,
+        console = StringIO()
+        with redirect_stdout(console):
+            experiment_outputs = _save_result(
+                renderers[experiment](client, error_style, output), output
             )
-            parameter_counts = {
-                atomic_run_id: parameter_count_for_runs(
-                    client,
-                    grouped_runs[atomic_run_id],
-                )
-                for atomic_run_id in atomic_run_ids
-            }
-            for atomic_run_id, parameter_count in parameter_counts.items():
-                print(f"[{atomic_run_id}] {format_parameter_count(parameter_count)}")
-            append_parameter_counts(output.with_suffix(".csv"), parameter_counts)
-        if summary and experiment in SUMMARY_CROSS_GROUP_MODELS:
-            parameter_counts = {}
-            for group_id, atomic_run_id in SUMMARY_CROSS_GROUP_MODELS[experiment]:
+            if summary and experiment in SUMMARY_MODELS:
+                group_id, atomic_run_ids = SUMMARY_MODELS[experiment]
                 grouped_runs = completed_seed_runs(
                     client,
                     experiment_name="ds1",
                     group_id=group_id,
-                    atomic_run_ids=[atomic_run_id],
+                    atomic_run_ids=atomic_run_ids,
                 )
-                parameter_counts[atomic_run_id] = parameter_count_for_runs(
-                    client,
-                    grouped_runs[atomic_run_id],
+                parameter_counts = {
+                    atomic_run_id: parameter_count_for_runs(
+                        client,
+                        grouped_runs[atomic_run_id],
+                    )
+                    for atomic_run_id in atomic_run_ids
+                }
+                for atomic_run_id, parameter_count in parameter_counts.items():
+                    print(
+                        f"[{atomic_run_id}] "
+                        f"{format_parameter_count(parameter_count)}"
+                    )
+                append_parameter_counts(
+                    output.with_suffix(".csv"), parameter_counts
                 )
-            for atomic_run_id, parameter_count in parameter_counts.items():
-                print(f"[{atomic_run_id}] {format_parameter_count(parameter_count)}")
-            append_parameter_counts(output.with_suffix(".csv"), parameter_counts)
-        write_analysis_cache(client, output, experiment_outputs)
+            if summary and experiment in SUMMARY_CROSS_GROUP_MODELS:
+                parameter_counts = {}
+                for group_id, atomic_run_id in SUMMARY_CROSS_GROUP_MODELS[experiment]:
+                    grouped_runs = completed_seed_runs(
+                        client,
+                        experiment_name="ds1",
+                        group_id=group_id,
+                        atomic_run_ids=[atomic_run_id],
+                    )
+                    parameter_counts[atomic_run_id] = parameter_count_for_runs(
+                        client,
+                        grouped_runs[atomic_run_id],
+                    )
+                for atomic_run_id, parameter_count in parameter_counts.items():
+                    print(
+                        f"[{atomic_run_id}] "
+                        f"{format_parameter_count(parameter_count)}"
+                    )
+                append_parameter_counts(
+                    output.with_suffix(".csv"), parameter_counts
+                )
+        console_output = console.getvalue()
+        print(console_output, end="")
+        write_analysis_cache(
+            client,
+            output,
+            experiment_outputs,
+            console_output=console_output,
+        )
         outputs.extend(experiment_outputs)
     for path in outputs:
         print(path)

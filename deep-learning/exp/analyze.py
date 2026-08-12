@@ -149,7 +149,7 @@ def completed_seed_runs(
     return grouped
 
 
-ANALYSIS_CACHE_SCHEMA_VERSION = 1
+ANALYSIS_CACHE_SCHEMA_VERSION = 6
 
 
 def analysis_cache_path(output: Path) -> Path:
@@ -215,10 +215,22 @@ def cached_analysis_outputs(
     return outputs
 
 
+def cached_analysis_console_output(output: Path) -> str:
+    """Return console output saved with a validated analysis cache hit."""
+    try:
+        manifest = json.loads(analysis_cache_path(output).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return ""
+    value = manifest.get("console_output", "")
+    return value if isinstance(value, str) else ""
+
+
 def write_analysis_cache(
     client: AnalysisClient,
     output: Path,
     outputs: Sequence[Path],
+    *,
+    console_output: str = "",
 ) -> None:
     """Persist selected run IDs and the files produced from them."""
     if not client.analysis_selections or not outputs:
@@ -237,6 +249,7 @@ def write_analysis_cache(
         "schema_version": ANALYSIS_CACHE_SCHEMA_VERSION,
         "selections": client.analysis_selections,
         "outputs": encoded_outputs,
+        "console_output": console_output,
     }
     temporary = path.with_suffix(f"{path.suffix}.tmp")
     temporary.write_text(

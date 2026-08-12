@@ -11,6 +11,7 @@ from exp.analyze import (
     AnalysisClient,
     RunRef,
     aggregate,
+    cached_analysis_console_output,
     cached_analysis_outputs,
     completed_seed_runs,
     parse_experiment_selection,
@@ -131,6 +132,31 @@ def test_analysis_cache_reuses_outputs_for_identical_run_ids(tmp_path):
     assert cached_analysis_outputs(client, output) == [output, summary]
 
 
+def test_analysis_cache_replays_saved_console_output(tmp_path):
+    client = AnalysisClient(
+        FakeClient([_run("run-1", atomic="A", seed=1, start_time=20)])
+    )
+    completed_seed_runs(
+        client,
+        experiment_name="ds1",
+        group_id="GT01",
+        atomic_run_ids=["A"],
+    )
+    output = tmp_path / "e01_summary.csv"
+    output.write_text("summary\n", encoding="utf-8")
+    write_analysis_cache(
+        client,
+        output,
+        [output],
+        console_output="accuracy (%): 99.00 ± 0.10 (n=10)\n",
+    )
+
+    assert cached_analysis_outputs(client, output) == [output]
+    assert cached_analysis_console_output(output) == (
+        "accuracy (%): 99.00 ± 0.10 (n=10)\n"
+    )
+
+
 def test_analysis_cache_misses_when_selected_run_id_changes(tmp_path):
     source = FakeClient([_run("run-1", atomic="A", seed=1, start_time=20)])
     client = AnalysisClient(source)
@@ -166,7 +192,12 @@ def test_ds2_render_skips_renderer_on_analysis_cache_hit(
     summary = output.with_suffix(".csv")
     output.write_bytes(b"figure")
     summary.write_text("summary\n", encoding="utf-8")
-    write_analysis_cache(client, output, [output, summary])
+    write_analysis_cache(
+        client,
+        output,
+        [output, summary],
+        console_output="cached summary body\n",
+    )
     monkeypatch.setattr(ds2_render, "mlflow_client", lambda _uri: source)
     monkeypatch.setitem(
         ds2_render.RENDERERS,
@@ -185,6 +216,7 @@ def test_ds2_render_skips_renderer_on_analysis_cache_hit(
 
     captured = capsys.readouterr()
     assert "e01: analysis cache hit" in captured.err
+    assert "cached summary body" in captured.out
     assert str(output) in captured.out
     assert str(summary) in captured.out
 
@@ -194,7 +226,7 @@ def test_ds2_analysis_selects_protocol_by_execution_group(monkeypatch):
 
     def fake_completed_seed_runs(*_args, **kwargs):
         captured.append(kwargs["protocol_version"])
-        return {}
+        return {atomic_id: [object()] for atomic_id in kwargs["atomic_run_ids"]}
 
     monkeypatch.setattr(
         ds2_analysis_common,
@@ -206,6 +238,78 @@ def test_ds2_analysis_selects_protocol_by_execution_group(monkeypatch):
     ds2_analysis_common.runs(FakeClient(), "GT06", ["SEQA-VAN-FWD"])
 
     assert captured == ["book-source-v1", "book-source-v1"]
+
+
+def test_ds2_analysis_falls_back_when_book_protocol_has_no_match(monkeypatch):
+    captured = []
+
+    def fake_completed_seed_runs(*_args, **kwargs):
+        captured.append((kwargs["protocol_version"], kwargs["atomic_run_ids"]))
+        return {
+            atomic_id: ([] if kwargs["protocol_version"] else [object()])
+            for atomic_id in kwargs["atomic_run_ids"]
+        }
+
+    monkeypatch.setattr(
+        ds2_analysis_common,
+        "completed_seed_runs",
+        fake_completed_seed_runs,
+    )
+
+    grouped = ds2_analysis_common.runs(
+        FakeClient(),
+        "GT04",
+        ["LM-LSTM"],
+    )
+
+    assert grouped["LM-LSTM"]
+    assert captured == [
+        ("book-source-v1", ["LM-LSTM"]),
+        (None, ["LM-LSTM"]),
+    ]
+
+
+def test_ds2_analysis_falls_back_for_non_book_group_too(monkeypatch):
+    captured = []
+
+    def fake_completed_seed_runs(*_args, **kwargs):
+        captured.append(kwargs["protocol_version"])
+        return {
+            atomic_id: ([] if kwargs["protocol_version"] else [object()])
+            for atomic_id in kwargs["atomic_run_ids"]
+        }
+
+    monkeypatch.setattr(
+        ds2_analysis_common,
+        "completed_seed_runs",
+        fake_completed_seed_runs,
+    )
+
+    grouped = ds2_analysis_common.runs(FakeClient(), "GT01", ["CBOW-TOY"])
+
+    assert grouped["CBOW-TOY"]
+    assert captured == ["legacy", None]
+
+
+def test_ds2_analysis_only_falls_back_for_unmatched_series(monkeypatch):
+    preferred = object()
+    existing = object()
+
+    def fake_completed_seed_runs(*_args, **kwargs):
+        if kwargs["protocol_version"] == "book-source-v1":
+            return {"NEW": [preferred], "OLD": []}
+        assert kwargs["atomic_run_ids"] == ["OLD"]
+        return {"OLD": [existing]}
+
+    monkeypatch.setattr(
+        ds2_analysis_common,
+        "completed_seed_runs",
+        fake_completed_seed_runs,
+    )
+
+    grouped = ds2_analysis_common.runs(FakeClient(), "GT05", ["NEW", "OLD"])
+
+    assert grouped == {"NEW": [preferred], "OLD": [existing]}
 
 
 def test_ds2_analysis_can_select_legacy_protocol(monkeypatch):
