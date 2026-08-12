@@ -558,6 +558,10 @@ class TimeLSTM(RecurrentTimeLayer):
         if not self.layers:
             raise RuntimeError("forward must be called before backward")
         xp = dhs.backend.xp
+        # Raw kernels index ``dhs`` as a packed (N, T, H) array.  Callers such
+        # as PeekyDecoder can pass a sliced view whose last dimension is
+        # contiguous but whose batch/time strides still belong to (N, T, 2H).
+        dhs_data = xp.ascontiguousarray(dhs.data)
         n, time_size, hidden_size = dhs.shape
         input_size = self.Wx.shape[0]
         x_flat, hpseq, cpseq, gates, cells = self.layers[0]
@@ -569,7 +573,7 @@ class TimeLSTM(RecurrentTimeLayer):
             for index in reversed(range(time_size)):
                 dc_prev = dc_work[index & 1]
                 _launch_lstm_backward(
-                    dhs.data, dh, dc, cpseq, gates, cells, daseq, dc_prev,
+                    dhs_data, dh, dc, cpseq, gates, cells, daseq, dc_prev,
                     timestep=index,
                 )
                 dc = dc_prev
