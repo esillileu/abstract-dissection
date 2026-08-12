@@ -18,3 +18,14 @@ and are excluded from seed statistics. e08 resolves the matching-seed e07
 AttentionSeq2seq `raw/checkpoint.npz` artifact through MLflow.
 
 The long-running conditions are e04, e05, e06, and e07.
+
+To evaluate the book's pretrained BetterRnnlm pickle on the complete PTB test
+split without training e05, run:
+
+```bash
+python -m exp.ds2_original.eval_e05
+```
+
+The temporary evaluator defaults to `BetterRnnlm (1).pkl` in the repository
+root. Pass a different pickle as the positional argument or use
+`--device cpu` when CUDA is unavailable.

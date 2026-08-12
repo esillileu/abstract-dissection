@@ -3,7 +3,13 @@
 from pathlib import Path
 
 from exp.original.measurement import OriginalMeasurements
-from exp.original.runtime_context import array_module, budget, master_seed
+from exp.original.runtime_context import (
+    array_module,
+    budget,
+    master_seed,
+    reset_runtime,
+    set_runtime,
+)
 
 from .common import (
     COMMON_SOURCES,
@@ -16,6 +22,45 @@ from .common import (
     source_imports,
     to_device,
 )
+
+
+def evaluate_pretrained(
+    worktree: Path,
+    checkpoint: Path,
+    *,
+    selected_device: str = "cuda:0",
+    batch_size: int = 10,
+    time_size: int = 35,
+) -> float:
+    """Evaluate an upstream BetterRnnlm pickle on the complete PTB test split."""
+    checkpoint = checkpoint.expanduser().resolve()
+    if not checkpoint.is_file():
+        raise FileNotFoundError(f"BetterRnnlm checkpoint not found: {checkpoint}")
+    if batch_size <= 0 or time_size <= 0:
+        raise ValueError("batch_size and time_size must be positive")
+
+    tokens = set_runtime(seed=1, selected_device=selected_device, config={})
+    try:
+        with source_imports(worktree, gpu=True):
+            ptb = importlib.import_module("dataset.ptb")
+            util = importlib.import_module("common.util")
+            model_cls = importlib.import_module("ch06.better_rnnlm").BetterRnnlm
+
+            corpus_test, word_to_id, _ = ptb.load_data("test")
+            corpus_test = to_device(util, corpus_test)
+            model = model_cls(len(word_to_id), 650, 650, 0.5)
+            model.load_params(str(checkpoint))
+            model.reset_state()
+            return float(
+                util.eval_perplexity(
+                    model,
+                    corpus_test,
+                    batch_size=batch_size,
+                    time_size=time_size,
+                )
+            )
+    finally:
+        reset_runtime(tokens)
 
 
 def run(worktree: Path, output: Path, _root: Path) -> None:
