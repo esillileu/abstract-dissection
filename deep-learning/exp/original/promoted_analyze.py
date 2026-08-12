@@ -24,10 +24,10 @@ def analyze(*, domain: str, experiments: list[str], tracking_uri: str | None, er
         runs = client.search_runs(
             experiment_ids=[experiment.experiment_id],
             filter_string=f"attributes.status = 'FINISHED' and tags.`run.type` = 'seed_trial' and tags.`experiment.ids` = '{experiment_id}'",
+            order_by=["attributes.start_time DESC"],
             max_results=5000,
         )
-        if seed is not None:
-            runs = [run for run in runs if str(run.data.params.get("seed/master", run.data.tags.get("master_seed", ""))) == str(seed)]
+        runs = _latest_seed_runs(runs, seed=seed)
         if not runs:
             raise ValueError(f"no completed runs for {domain}/{experiment_id}")
         suffix = "" if seed is None else f"_seed-{seed}"
@@ -40,6 +40,28 @@ def analyze(*, domain: str, experiments: list[str], tracking_uri: str | None, er
             if domain == "ds1_original" and experiment_id == "e06":
                 _filters(client, output.with_name(f"{experiment_id}_filters{suffix}.png"), runs)
         print(output)
+
+
+def _latest_seed_runs(runs, *, seed: int | None = None):
+    """Keep the newest completed attempt for every atomic ID and seed."""
+
+    selected = {}
+    for run in sorted(
+        runs,
+        key=lambda item: int(item.info.start_time or 0),
+        reverse=True,
+    ):
+        atomic_run_id = run.data.tags.get("atomic_run.id", "")
+        master_seed = str(
+            run.data.params.get(
+                "seed/master",
+                run.data.tags.get("master_seed", run.info.run_id),
+            )
+        )
+        if seed is not None and master_seed != str(seed):
+            continue
+        selected.setdefault((atomic_run_id, master_seed), run)
+    return list(selected.values())
 
 
 def _experiments(domain: str, requested: list[str]) -> list[str]:

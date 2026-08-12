@@ -24,8 +24,8 @@ ORIGINAL_TRIAL_IDS = {
     "CNN-DEEP-BOOK": ("e07", "dlfs1.ch08.deep-convnet"),
 }
 FINAL_ACCURACY_SOURCES = {
-    "train_accuracy": ("train", "mnist-train-first-1000"),
-    "test_accuracy": ("test", "mnist-test-first-1000"),
+    "train_accuracy": ("train", "mnist-train-first-1000", "train"),
+    "test_accuracy": ("test", "mnist-test-full", "test-full"),
 }
 
 
@@ -270,7 +270,11 @@ def accuracy_summaries_for_runs(
 
     summaries = {}
     for atomic_run_id, run_refs in grouped_runs.items():
-        for metric_name, (split, evaluation_set_id) in FINAL_ACCURACY_SOURCES.items():
+        for metric_name, (
+            split,
+            evaluation_set_id,
+            _original_split,
+        ) in FINAL_ACCURACY_SOURCES.items():
             summaries[f"{atomic_run_id}/{metric_name}"] = _metric_summary(
                 client,
                 run_refs,
@@ -359,11 +363,15 @@ def _write_accuracy_comparisons(
         )
         writer.writeheader()
         for atomic_run_id in atomic_run_ids:
-            for metric_name, (split, evaluation_set_id) in FINAL_ACCURACY_SOURCES.items():
+            for metric_name, (
+                _split,
+                evaluation_set_id,
+                original_split,
+            ) in FINAL_ACCURACY_SOURCES.items():
                 summary = summaries[f"{atomic_run_id}/{metric_name}"]
                 original = _original_final_accuracy(
                     atomic_run_id,
-                    split,
+                    original_split,
                     original_data_root=original_data_root,
                 )
                 display = None if summary is None else _display_values(
@@ -567,13 +575,17 @@ def render_accuracy_comparison_summary(
     print(f"{analysis_id} (original | seed-run mean ± sample standard deviation)")
     for atomic_run_id in atomic_run_ids:
         print(f"[{atomic_run_id}]")
-        for metric_name, (split, _evaluation_set_id) in FINAL_ACCURACY_SOURCES.items():
+        for metric_name, (
+            _split,
+            _evaluation_set_id,
+            original_split,
+        ) in FINAL_ACCURACY_SOURCES.items():
             print(
                 _format_accuracy_comparison(
                     metric_name,
                     _original_final_accuracy(
                         atomic_run_id,
-                        split,
+                        original_split,
                         original_data_root=original_data_root,
                     ),
                     summaries[f"{atomic_run_id}/{metric_name}"],

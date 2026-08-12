@@ -52,7 +52,7 @@ def _run_refs(tmp_path):
     return run_refs
 
 
-def test_accuracy_summary_uses_last_first_1000_train_and_test_values(tmp_path):
+def test_accuracy_summary_uses_sampled_train_and_full_test_values(tmp_path):
     summaries = final_metrics.accuracy_summaries_for_runs(
         FakeClient(),
         {"CNN-SIMPLE-BOOK": _run_refs(tmp_path)},
@@ -70,7 +70,7 @@ def test_accuracy_summary_uses_last_first_1000_train_and_test_values(tmp_path):
     )
     np.testing.assert_allclose(
         [test.mean, test.standard_deviation],
-        [0.965, np.sqrt(0.00005)],
+        [0.999, 0.0],
     )
     np.testing.assert_allclose(
         [training_time.mean, training_time.standard_deviation],
@@ -123,7 +123,8 @@ def test_accuracy_comparison_prints_original_and_writes_both_metrics(
     printed = capsys.readouterr().out
     assert "train_accuracy (%): original 99.80" in printed
     assert "2-run mean ± sample standard deviation 98.50 ± 0.71 (n=2)" in printed
-    assert "test_accuracy (%): original 97.90" in printed
+    assert "test_accuracy (%): original 98.82" in printed
+    assert "2-run mean ± sample standard deviation 99.90 ± 0.00 (n=2)" in printed
     assert (
         "training_time (s): original projected 12.3 | "
         "2-run mean ± sample standard deviation 3.5 ± 0.7 (n=2)"
@@ -138,18 +139,18 @@ def test_accuracy_comparison_prints_original_and_writes_both_metrics(
     ]
     assert [row["evaluation_set"] for row in rows] == [
         "mnist-train-first-1000",
-        "mnist-test-first-1000",
+        "mnist-test-full",
         "",
     ]
-    assert [row["original"] for row in rows] == ["99.80", "97.90", "12.3"]
+    assert [row["original"] for row in rows] == ["99.80", "98.82", "12.3"]
     assert [row["original_kind"] for row in rows] == [
         "measured",
         "measured",
         "projected",
     ]
-    assert [row["mean"] for row in rows] == ["98.50", "96.50", "3.5"]
+    assert [row["mean"] for row in rows] == ["98.50", "99.90", "3.5"]
     assert [row["standard_deviation"] for row in rows] == [
         "0.71",
-        "0.71",
+        "0.00",
         "0.7",
     ]
