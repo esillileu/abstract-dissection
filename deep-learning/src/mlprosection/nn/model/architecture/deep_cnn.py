@@ -9,7 +9,7 @@ from ..sequential import Sequential
 
 
 class DeepCNN(Sequential):
-    def __init__(self, *, input_channels: int = 1, image_size: int = 28, num_classes: int = 10, channels: Sequence[int] = (16, 32, 64), hidden_size: int = 50, dropout_ratio: float = 0.5, initializer: str = "he") -> None:
+    def __init__(self, *, input_channels: int = 1, image_size: int = 28, num_classes: int = 10, channels: Sequence[int] = (16, 32, 64), hidden_size: int = 50, dropout_ratio: float = 0.5, initializer: str = "he", dropout_rng=None) -> None:
         if len(channels) != 3:
             raise ValueError("DeepCNN requires three channel stages")
         layers: list[Layer] = []
@@ -28,5 +28,5 @@ class DeepCNN(Sequential):
         output = Affine(hidden_size, num_classes)
         initialize_affine(hidden, initializer)
         initialize_affine(output, initializer)
-        layers.extend((Flatten(), hidden, Relu(), Dropout(dropout_ratio), output, Dropout(dropout_ratio)))
+        layers.extend((Flatten(), hidden, Relu(), Dropout(dropout_ratio, rng=dropout_rng), output, Dropout(dropout_ratio, rng=dropout_rng)))
         super().__init__(*layers)

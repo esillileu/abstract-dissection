@@ -15,15 +15,16 @@ class _EmbeddingArchitecture(Model):
     def __init__(self, vocab_size: int, embedding_size: int, *, backend=None) -> None:
         resolved = resolve_backend(backend)
         super().__init__(resolved)
+        rng = resolved.random_stream("model_init")
         self.W_in = Parameter(
-            (0.01 * resolved.xp.random.randn(vocab_size, embedding_size)).astype(
+            (0.01 * rng.randn(vocab_size, embedding_size)).astype(
                 resolved.float_dtype
             ),
             backend=resolved,
             name="W_in",
         )
         self.W_out = Parameter(
-            (0.01 * resolved.xp.random.randn(vocab_size, embedding_size)).astype(
+            (0.01 * rng.randn(vocab_size, embedding_size)).astype(
                 resolved.float_dtype
             ),
             backend=resolved,

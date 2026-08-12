@@ -249,6 +249,7 @@ class Word2VecExecutor:
                         "algorithm", UnigramSampler.ALIAS_REJECTION
                     )
                 ),
+                rng=backend.random_stream("negative_sampling"),
             )
             context.metadata["negative_sampler"] = sampler.metadata
         architecture = str(model_config.get("name", "CBOW"))
@@ -335,6 +336,7 @@ class Word2VecExecutor:
             max_updates=None if max_updates is None else int(max_updates),
             drop_last=bool(loader.get("drop_last", True)),
             event_receivers=[],
+            batch_rng=backend.random_stream("batch_order"),
         )
         checkpoint_manager = _checkpoint_manager(
             config, context, model=model, objective=objective, optimizer=optimizer, trainer=trainer,
@@ -391,7 +393,13 @@ class LanguageModelExecutor:
         model_config, loader, training = (_mapping(config, key) for key in ("model", "loader", "training"))
         dataset, evaluation = _mapping(config, "dataset"), _mapping(config, "evaluation")
         train_corpus, vocab_size = _language_model_training_corpus(ptb["train"], dataset)
-        model = _language_model(str(model_config.get("name")), vocab_size, model_config, backend)
+        model = _language_model(
+            str(model_config.get("name")),
+            vocab_size,
+            model_config,
+            backend,
+            dropout_rng=backend.random_stream("dropout"),
+        )
         objective = TemporalSoftmaxCrossEntropy(
             reduction=str(_mapping(config, "objective").get("reduction", "mean")),
             backend=backend,
@@ -559,6 +567,7 @@ class Seq2SeqExecutor:
             max_updates=None if max_updates is None else int(max_updates),
             drop_last=bool(loader.get("drop_last", False)),
             loss_timing=str(_mapping(config, "policy").get("loss_timing", "post_update")),
+            batch_rng=backend.random_stream("batch_order"),
         )
         artifact_root = _artifact_root(config, context)
         records = DS2Records()
@@ -1015,7 +1024,7 @@ def _file_digest(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _language_model(name: str, vocab_size: int, values: dict[str, object], backend):
+def _language_model(name: str, vocab_size: int, values: dict[str, object], backend, *, dropout_rng=None):
     kwargs = {"vocab_size": vocab_size, "wordvec_size": int(values.get("wordvec_size", 100)), "hidden_size": int(values.get("hidden_size", 100)), "backend": backend}
     if name == "VanillaRnnlm":
         return VanillaRnnlm(**kwargs)
@@ -1024,7 +1033,11 @@ def _language_model(name: str, vocab_size: int, values: dict[str, object], backe
     if name == "TiedRnnlm":
         return TiedRnnlm(**kwargs)
     if name == "BetterRnnlm":
-        return BetterRnnlm(**kwargs, dropout_ratio=float(values.get("dropout_ratio", 0.5)))
+        return BetterRnnlm(
+            **kwargs,
+            dropout_ratio=float(values.get("dropout_ratio", 0.5)),
+            dropout_rng=dropout_rng,
+        )
     raise ValueError(f"unknown language-model name: {name}")
 
 

@@ -137,6 +137,7 @@ class BetterRnnlm(Model):
         wordvec_size: int = 650,
         hidden_size: int = 650,
         dropout_ratio: float = 0.5,
+        dropout_rng=None,
         *,
         backend: Backend | str | None = None,
     ) -> None:
@@ -144,21 +145,21 @@ class BetterRnnlm(Model):
         self.embed = TimeEmbedding(vocab_size, wordvec_size, backend=self._backend)
         self.layers = [
             self.embed,
-            TimeDropout(dropout_ratio),
+            TimeDropout(dropout_ratio, rng=dropout_rng),
             TimeLSTM(
                 wordvec_size,
                 hidden_size,
                 stateful=True,
                 backend=self._backend,
             ),
-            TimeDropout(dropout_ratio),
+            TimeDropout(dropout_ratio, rng=dropout_rng),
             TimeLSTM(
                 hidden_size,
                 hidden_size,
                 stateful=True,
                 backend=self._backend,
             ),
-            TimeDropout(dropout_ratio),
+            TimeDropout(dropout_ratio, rng=dropout_rng),
             TimeAffine(
                 hidden_size,
                 vocab_size,

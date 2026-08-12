@@ -21,7 +21,7 @@ def initialize_affine(layer: Affine, initializer: str) -> None:
         xavier_normal_(layer.W)
     elif initializer.startswith("std:"):
         std = float(initializer.split(":", 1)[1])
-        values = layer.backend.xp.random.randn(*layer.W.shape) * std
+        values = layer.backend.random_stream("model_init").randn(*layer.W.shape) * std
         layer.W.data[...] = values.astype(layer.W.dtype, copy=False)
     else:
         raise ValueError(f"unknown initializer: {initializer}")

@@ -27,8 +27,9 @@ class Seq2seqTrainer(EventTrainer):
         drop_last: bool = False,
         loss_timing: Literal["pre_update", "post_update"] = "post_update",
         event_receivers=None,
+        batch_rng=None,
     ) -> None:
-        super().__init__(model, objective, optimizer, max_epochs=max_epochs, max_updates=max_updates, event_receivers=event_receivers)
+        super().__init__(model, objective, optimizer, max_epochs=max_epochs, max_updates=max_updates, event_receivers=event_receivers, batch_rng=batch_rng)
         if not isinstance(model, GenerativeModel):
             raise TypeError("Seq2seqTrainer requires the GenerativeModel capability")
         if batch_size < 1:
@@ -60,7 +61,7 @@ class Seq2seqTrainer(EventTrainer):
                     break
                 self.epoch = epoch_index + 1
                 start_update, sample_count = self.global_step + 1, 0
-                order = self.backend.xp.random.permutation(len(xs))
+                order = self.batch_rng.permutation(len(xs))
                 shuffled_x, shuffled_t = xs[order], ts[order]
                 for iteration, (batch_x, batch_t) in enumerate(self._iter_batches(shuffled_x, shuffled_t)):
                     self.model.train(True)

@@ -312,9 +312,19 @@ def _load_buffers(model: Layer, path: Path) -> None:
 
 def _backend_rng_state(model: Layer):
     rng = model.backend.xp.random
-    return rng.get_state() if hasattr(rng, "get_state") else None
+    return {
+        "global": rng.get_state() if hasattr(rng, "get_state") else None,
+        "streams": model.backend.random_stream_states(),
+    }
 
 
 def _restore_backend_rng_state(model: Layer, state: Any) -> None:
     rng = model.backend.xp.random
-    if state is not None and hasattr(rng, "set_state"): rng.set_state(state)
+    if isinstance(state, dict) and "streams" in state:
+        global_state = state.get("global")
+        if global_state is not None and hasattr(rng, "set_state"):
+            rng.set_state(global_state)
+        model.backend.restore_random_stream_states(state["streams"])
+    elif state is not None and hasattr(rng, "set_state"):
+        # Schema-v2 checkpoints written before component streams stored a tuple.
+        rng.set_state(state)

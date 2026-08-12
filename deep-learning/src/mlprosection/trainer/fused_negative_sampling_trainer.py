@@ -26,8 +26,7 @@ class FusedNegativeSamplingTrainer(Word2VecTrainer):
                     break
                 self.epoch = epoch_index + 1
                 start_update, sample_count = self.global_step + 1, 0
-                xp = self.backend.xp
-                order = xp.random.permutation(len(contexts))
+                order = self.batch_rng.permutation(len(contexts))
                 shuffled_contexts = contexts[order]
                 shuffled_targets = targets[order]
                 batches = self._iter_batches(

@@ -22,10 +22,11 @@ class Word2VecTrainer(EventTrainer):
         max_updates: int | None = None,
         drop_last: bool = True,
         event_receivers=None,
+        batch_rng=None,
     ) -> None:
         super().__init__(
             model, objective, optimizer, max_epochs=max_epochs, max_updates=max_updates,
-            event_receivers=event_receivers,
+            event_receivers=event_receivers, batch_rng=batch_rng,
         )
         if batch_size < 1:
             raise ValueError("batch_size must be positive")
@@ -47,8 +48,7 @@ class Word2VecTrainer(EventTrainer):
                     break
                 self.epoch = epoch_index + 1
                 start_update, sample_count = self.global_step + 1, 0
-                xp = self.backend.xp
-                order = xp.random.permutation(len(contexts))
+                order = self.batch_rng.permutation(len(contexts))
                 shuffled_contexts, shuffled_targets = contexts[order], targets[order]
                 for local_iteration, (batch_x, batch_t) in enumerate(self._iter_batches(shuffled_contexts, shuffled_targets)):
                     model_x, objective_t = self.batch_adapter.prepare(batch_x, batch_t)

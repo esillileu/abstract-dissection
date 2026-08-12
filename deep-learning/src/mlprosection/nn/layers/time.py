@@ -44,7 +44,7 @@ def _make_parameter(
     if zeros:
         data = xp.zeros(shape, dtype=resolved.float_dtype)
     else:
-        data = (scale * xp.random.randn(*shape)).astype(resolved.float_dtype)
+        data = (scale * resolved.random_stream("model_init").randn(*shape)).astype(resolved.float_dtype)
     return Parameter(data, backend=resolved, name=name)
 
 
@@ -644,8 +644,8 @@ class TimeAffine(TimeDistributed):
 
 
 class TimeDropout(TimeDistributed):
-    def __init__(self, dropout_ratio: float = 0.5) -> None:
-        super().__init__(Dropout(dropout_ratio, inverted=True))
+    def __init__(self, dropout_ratio: float = 0.5, *, rng=None) -> None:
+        super().__init__(Dropout(dropout_ratio, inverted=True, rng=rng))
         self.dropout_ratio = dropout_ratio
 
 

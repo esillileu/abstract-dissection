@@ -2,7 +2,7 @@ import numpy as np
 
 
 def load_data(seed=1984):
-    np.random.seed(seed)
+    rng = np.random.RandomState(seed)
     N = 100
     DIM = 2
     CLS_NUM = 3
@@ -14,7 +14,7 @@ def load_data(seed=1984):
         for i in range(N):  # N*j, N*(j+1)):
             rate = i / N
             radius = 1.0 * rate
-            theta = j * 4.0 + 4.0 * rate + np.random.randn() * 0.2
+            theta = j * 4.0 + 4.0 * rate + rng.randn() * 0.2
 
             ix = N * j + i
             x[ix] = np.array([radius * np.sin(theta), radius * np.cos(theta)]).flatten()

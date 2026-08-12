@@ -9,7 +9,7 @@ from ..sequential import Sequential
 
 
 class MLP(Sequential):
-    def __init__(self, *, input_size: int, hidden_sizes: Sequence[int], output_size: int, initializer: str = "he", activation_name: str = "relu", batchnorm: bool = False, dropout_ratio: float = 0.0) -> None:
+    def __init__(self, *, input_size: int, hidden_sizes: Sequence[int], output_size: int, initializer: str = "he", activation_name: str = "relu", batchnorm: bool = False, dropout_ratio: float = 0.0, dropout_rng=None) -> None:
         layers: list[Layer] = []
         in_features = input_size
         for hidden_size in hidden_sizes:
@@ -20,7 +20,7 @@ class MLP(Sequential):
                 layers.append(BatchNormalization())
             layers.append(activation(activation_name))
             if dropout_ratio > 0:
-                layers.append(Dropout(dropout_ratio))
+                layers.append(Dropout(dropout_ratio, rng=dropout_rng))
             in_features = hidden_size
         output = Affine(in_features, output_size)
         initialize_affine(output, initializer)

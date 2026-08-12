@@ -42,7 +42,7 @@ class Conv2D(Layer):
         else:
             raise ValueError(f"unknown convolution initializer: {initializer}")
 
-        weight = self.backend.xp.random.randn(
+        weight = self.backend.random_stream("model_init").randn(
             out_channels,
             in_channels,
             kernel_h,

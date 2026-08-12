@@ -15,7 +15,8 @@ class Embedding(Layer):
     def __init__(self, vocab_length: int, dim: int, *, backend: Backend | None = None, weight: Parameter | None = None) -> None:
         target = backend or (weight.backend if weight is not None else None)
         super().__init__(resolve_backend(target) if target is not None else None)
-        self.W = weight or Parameter(0.01 * self._backend.xp.random.randn(vocab_length, dim).astype(self._backend.float_dtype), backend=self._backend, name="W")
+        rng = self._backend.random_stream("model_init")
+        self.W = weight or Parameter(0.01 * rng.randn(vocab_length, dim).astype(self._backend.float_dtype), backend=self._backend, name="W")
         self.idx = None
 
     def forward_manual(self, idx: Tensor | Any) -> Tensor:

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from contextlib import nullcontext
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import ContextManager, Any
 from .types import (
     ArrayModule,
@@ -22,6 +22,7 @@ class Backend:
     int_dtype: DType
     bool_dtype: DType
     profile: bool = False
+    _random_streams: dict[str, Any] = field(default_factory=dict, repr=False)
 
     @property
     def is_cpu(self) -> bool:
@@ -73,6 +74,30 @@ class Backend:
     def seed(self, seed: int) -> None:
         self.xp.random.seed(seed)
 
+    def configure_random_streams(self, seeds: dict[str, int]) -> None:
+        """Create independent, persistent backend RNGs for experiment policy."""
+        random_state = self.xp.random.RandomState
+        self._random_streams = {
+            name: random_state(int(seed)) for name, seed in seeds.items()
+        }
+
+    def random_stream(self, name: str):
+        """Return a configured component RNG, falling back for legacy callers."""
+        return self._random_streams.get(name, self.xp.random)
+
+    def random_stream_states(self) -> dict[str, Any]:
+        return {
+            name: rng.get_state()
+            for name, rng in self._random_streams.items()
+            if hasattr(rng, "get_state")
+        }
+
+    def restore_random_stream_states(self, states: dict[str, Any]) -> None:
+        for name, state in states.items():
+            rng = self._random_streams.get(name)
+            if rng is not None and hasattr(rng, "set_state"):
+                rng.set_state(state)
+
     def synchronize(self) -> None:
         if self.is_gpu:
             self.xp.cuda.Stream.null.synchronize()
@@ -104,4 +129,3 @@ class Backend:
 
         self.xp.get_default_memory_pool().free_all_blocks()
         self.xp.get_default_pinned_memory_pool().free_all_blocks()
-

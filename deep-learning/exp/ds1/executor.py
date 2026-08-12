@@ -77,7 +77,10 @@ class SupervisedClassificationExecutor:
             "input_transform": transform_metadata, "validation": validation_metadata,
             "evaluation_sources": _mapping(config, "evaluation").get("sources", ()),
         }
-        model = _model(model_config)
+        model = _model(
+            model_config,
+            dropout_rng=backend.random_stream("dropout"),
+        )
         objective = _objective(objective_config, model.backend)
         if any(isinstance(layer, BatchNormalization) for layer in model.children()):
             model.forward(x_train[:1])
@@ -164,6 +167,7 @@ class SupervisedClassificationExecutor:
             drop_last=bool(loader_config.get("drop_last", False)),
             sampling_method=str(loader_config.get("sampling_method", "permutation_per_epoch")),
             event_receivers=[events],
+            batch_rng=backend.random_stream("batch_order"),
         )
         trainer_holder["trainer"] = trainer
         checkpoint_manager = CheckpointManager(
@@ -317,7 +321,7 @@ def _device_timer(config: dict[str, object], backend):
     return create_device_timer(backend, enabled=bool(profiling.get("device_timing", False)))
 
 
-def _model(config: dict[str, object]):
+def _model(config: dict[str, object], *, dropout_rng=None):
     name = str(config.get("name", "MLP"))
     values = {key: value for key, value in config.items() if key not in {"name", "family", "task_type", "input_shape", "output_shape", "structure_signature", "use_batchnorm", "use_dropout", "num_hidden_layers", "num_conv_layers", "normalization", "model/flops", "model/macs"}}
     if name == "MLP":
@@ -327,9 +331,9 @@ def _model(config: dict[str, object]):
             values["batchnorm"] = bool(config["use_batchnorm"])
     else:
         values.pop("activation", None)
-    if name == "MLP": return MLP(**values)
+    if name == "MLP": return MLP(**values, dropout_rng=dropout_rng)
     if name == "SimpleCNN": return SimpleCNN(**values)
-    if name == "DeepCNN": return DeepCNN(**values)
+    if name == "DeepCNN": return DeepCNN(**values, dropout_rng=dropout_rng)
     raise ValueError(f"unknown model name: {name}")
 
 

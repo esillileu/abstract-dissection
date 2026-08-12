@@ -40,6 +40,7 @@ class UnigramSampler:
         power: float = 0.75,
         rejection_rounds: int = 4,
         algorithm: str = ALIAS_REJECTION,
+        rng=None,
     ) -> None:
         if power <= 0:
             raise ValueError("power must be positive")
@@ -65,6 +66,7 @@ class UnigramSampler:
         self.power = power
         self.algorithm = algorithm
         self.rejection_rounds = rejection_rounds
+        self.rng = rng if rng is not None else resolved.xp.random
         if algorithm == self.ALIAS_REJECTION:
             probability, alias = _build_alias_table(probabilities)
             self.probability = resolved.asarray(
@@ -95,6 +97,7 @@ class UnigramSampler:
         power: float = 0.75,
         rejection_rounds: int = 4,
         algorithm: str = ALIAS_REJECTION,
+        rng=None,
     ) -> UnigramSampler:
         """Build counts in one linear CPU pass, rather than scanning per token."""
         tokens = np.asarray(corpus, dtype=np.int64).reshape(-1)
@@ -107,6 +110,7 @@ class UnigramSampler:
             power=power,
             rejection_rounds=rejection_rounds,
             algorithm=algorithm,
+            rng=rng,
         )
 
     @classmethod
@@ -116,12 +120,14 @@ class UnigramSampler:
         *,
         backend: Backend | str | None = None,
         algorithm: str = ALIAS_REJECTION,
+        rng=None,
     ) -> UnigramSampler:
         return cls(
             np.ones(vocab_size),
             backend=backend,
             power=1.0,
             algorithm=algorithm,
+            rng=rng,
         )
 
     @property
@@ -168,7 +174,7 @@ class UnigramSampler:
         interval_start = (
             cumulative[labels] - distribution[labels]
         )[:, None]
-        draws = xp.random.random((len(labels), sample_size))
+        draws = self.rng.random_sample((len(labels), sample_size))
         draws = draws.astype(xp.float64, copy=False) * (1.0 - target_probability)
         adjusted = draws + (draws >= interval_start) * target_probability
         return xp.searchsorted(cumulative, adjusted, side="right")
@@ -177,8 +183,8 @@ class UnigramSampler:
         xp = self.backend.xp
         if self.probability is None or self.alias is None:
             raise RuntimeError("alias tables are unavailable")
-        columns = xp.random.randint(self.vocab_size, size=shape)
-        coin = xp.random.random(shape)
+        columns = self.rng.randint(self.vocab_size, size=shape)
+        coin = self.rng.random_sample(shape)
         return xp.where(coin < self.probability[columns], columns, self.alias[columns])
 
 

@@ -36,8 +36,9 @@ class ForwardTrainer(Trainer):
         drop_last: bool = False,
         sampling_method: Literal["permutation_per_epoch", "with_replacement"] = "permutation_per_epoch",
         event_receivers: Iterable[TrainerEventReceiver] | None = None,
+        batch_rng=None,
     ) -> None:
-        super().__init__(model=model, objective=objective, optimizer=optimizer)
+        super().__init__(model=model, objective=objective, optimizer=optimizer, batch_rng=batch_rng)
         if max_epochs < 1:
             raise ValueError("max_epochs must be positive")
         if batch_size < 1:
@@ -165,14 +166,13 @@ class ForwardTrainer(Trainer):
             self._restore_evaluation_state(probe_state)
 
     def _sample_epoch(self, x: Tensor, t: Tensor) -> tuple[Tensor, Tensor]:
-        xp = self.backend.xp
         if self.sampling_method == "permutation_per_epoch":
-            indices = xp.random.permutation(len(x))
+            indices = self.batch_rng.permutation(len(x))
         elif self.sampling_method == "with_replacement":
             updates = len(x) // self.batch_size
             if updates == 0:
                 raise ValueError("dataset is smaller than one training batch")
-            indices = xp.random.randint(0, len(x), size=updates * self.batch_size)
+            indices = self.batch_rng.randint(0, len(x), size=updates * self.batch_size)
         else:
             raise ValueError(f"unsupported sampling_method: {self.sampling_method}")
         return x[indices], t[indices]

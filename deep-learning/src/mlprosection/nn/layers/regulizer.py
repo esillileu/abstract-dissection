@@ -6,16 +6,18 @@ from mlprosection import Tensor
 
 
 class Dropout(Layer):
-    def __init__(self, dropout_ratio=0.5, *, inverted: bool = False):
+    def __init__(self, dropout_ratio=0.5, *, inverted: bool = False, rng=None):
         super().__init__()
         self.dropout_ratio = dropout_ratio
         self.inverted = inverted
         self.mask = None
+        self.rng = rng
 
     def forward_manual(self, x: Tensor):
         xp = x.backend.xp
         if self.training:
-            self.mask = xp.random.rand(*x.shape) > self.dropout_ratio
+            rng = self.rng if self.rng is not None else xp.random
+            self.mask = rng.rand(*x.shape) > self.dropout_ratio
             scale = xp.asarray(
                 1 / (1 - self.dropout_ratio) if self.inverted else 1,
                 dtype=x.dtype,

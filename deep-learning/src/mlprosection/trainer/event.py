@@ -19,8 +19,9 @@ class EventTrainer(Trainer):
         self, model, objective, optimizer, *, max_epochs: int,
         max_updates: int | None = None,
         event_receivers: Iterable[TrainerEventReceiver] | None = None,
+        batch_rng=None,
     ) -> None:
-        super().__init__(model=model, objective=objective, optimizer=optimizer)
+        super().__init__(model=model, objective=objective, optimizer=optimizer, batch_rng=batch_rng)
         if max_epochs < 1:
             raise ValueError("max_epochs must be positive")
         if max_updates is not None and max_updates < 1:

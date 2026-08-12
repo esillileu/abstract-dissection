@@ -13,7 +13,8 @@ from ..types import Parameter
 class MatMul(Layer):
     def __init__(self, in_features: int, out_features: int, weight_init: Initializer | None = None, backend: Backend | None = None) -> None:
         super().__init__(resolve_backend(backend) if backend is not None else None)
-        self.W = Parameter(0.01 * self._backend.xp.random.randn(in_features, out_features).astype(self._backend.float_dtype), backend=self._backend, name="W")
+        rng = self._backend.random_stream("model_init")
+        self.W = Parameter(0.01 * rng.randn(in_features, out_features).astype(self._backend.float_dtype), backend=self._backend, name="W")
         if weight_init:
             self.W = weight_init(self.W)
         self.x: Tensor | None = None

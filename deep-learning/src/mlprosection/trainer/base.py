@@ -14,12 +14,13 @@ if TYPE_CHECKING:
 class Trainer(ABC):
     """Own model/update counters only; executors own experiment policy and I/O."""
 
-    def __init__(self, *, model: Model, objective: Objective, optimizer: Optimizer) -> None:
+    def __init__(self, *, model: Model, objective: Objective, optimizer: Optimizer, batch_rng=None) -> None:
         self.model = model
         self.objective = objective
         self.optimizer = optimizer
         self.global_step = 0
         self.epoch = 0
+        self.batch_rng = batch_rng or model.backend.random_stream("batch_order")
 
     @property
     def backend(self):
@@ -37,8 +38,7 @@ class Trainer(ABC):
         self.epoch = int(state.get("epoch", 0))
 
     def _snapshot_evaluation_state(self):
-        rng = self.backend.xp.random
-        rng_state = rng.get_state() if hasattr(rng, "get_state") else None
+        rng_state = self.backend.random_stream_states()
         return (
             self.model.training,
             self.objective.training,
@@ -51,6 +51,4 @@ class Trainer(ABC):
         self.model.restore_runtime_state(runtime_state)
         self.model.train(model_mode)
         self.objective.train(objective_mode)
-        rng = self.backend.xp.random
-        if rng_state is not None and hasattr(rng, "set_state"):
-            rng.set_state(rng_state)
+        self.backend.restore_random_stream_states(rng_state)
