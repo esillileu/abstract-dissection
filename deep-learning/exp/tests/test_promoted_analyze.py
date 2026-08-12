@@ -3,6 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from exp.original import promoted_analyze
 from exp.original.promoted_analyze import _curves, _latest_seed_runs, _summary
 
 
@@ -120,6 +121,7 @@ def _cnn_run(run_id, *, train, test, test_full, root):
 
 def test_ds1_original_cnn_summary_recovers_splits_from_raw_metrics(
     tmp_path,
+    capsys,
 ):
     run_1, path_1 = _cnn_run(
         "run-1", train=0.98, test=0.96, test_full=0.95, root=tmp_path
@@ -140,13 +142,16 @@ def test_ds1_original_cnn_summary_recovers_splits_from_raw_metrics(
 
     rows = list(csv.DictReader(output.open(encoding="utf-8")))
     assert [row["metric"] for row in rows] == [
-        "final/test-full/accuracy",
-        "final/test/accuracy",
         "final/train/accuracy",
+        "final/test-full/accuracy",
         "runtime/train_total_s",
     ]
     train = next(row for row in rows if row["metric"] == "final/train/accuracy")
     assert float(train["mean"]) == pytest.approx(0.99)
+    printed = capsys.readouterr().out
+    assert "train_accuracy (%): 99.00 ± 1.41 (n=2)" in printed
+    assert "test_accuracy (%): 96.00 ± 1.41 (n=2)" in printed
+    assert "training_time (s): 10.0 ± 0.0 (n=2)" in printed
 
 
 def test_ds1_original_cnn_curve_contains_train_and_test_series(tmp_path):
@@ -170,3 +175,41 @@ def test_ds1_original_cnn_curve_contains_train_and_test_series(tmp_path):
         "SIMPLE-CONVNET/train",
         "SIMPLE-CONVNET/test",
     ]
+
+
+def test_ds2_original_e04_curve_fixes_perplexity_axis_to_500(
+    tmp_path,
+    monkeypatch,
+):
+    run = SimpleNamespace(
+        info=SimpleNamespace(run_id="run-1"),
+        data=SimpleNamespace(
+            tags={"atomic_run.id": "LSTM-RNNLM"},
+            metrics={"train/perplexity": 100.0},
+        ),
+    )
+
+    class HistoryClient:
+        def get_metric_history(self, run_id, key):
+            assert (run_id, key) == ("run-1", "train/perplexity")
+            return [SimpleNamespace(step=1, value=100.0)]
+
+    captured = {}
+    monkeypatch.setattr(
+        promoted_analyze,
+        "save_figure",
+        lambda figure, _path: captured.setdefault(
+            "ylim", figure.axes[0].get_ylim()
+        ),
+    )
+
+    _curves(
+        HistoryClient(),
+        tmp_path / "e04_band.png",
+        [run],
+        "band",
+        domain="ds2_original",
+        experiment_id="e04",
+    )
+
+    assert captured["ylim"] == (0.0, 500.0)

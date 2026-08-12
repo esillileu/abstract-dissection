@@ -141,7 +141,13 @@ def _summary(
                 float(array.max()),
             )
         )
-    print(f"{domain}/{experiment_id} summary (mean ± sample standard deviation; min-max)")
+    order = {key: index for index, (key, *_rest) in enumerate(specs)}
+    rows.sort(key=lambda row: (row[0], order[row[1]]))
+    compact = domain == "ds1_original" and experiment_id in {"e06", "e07"}
+    heading = "mean ± sample standard deviation"
+    if not compact:
+        heading += "; min-max"
+    print(f"{domain}/{experiment_id} summary ({heading})")
     current_atomic = None
     for atomic, key, count, mean, standard_deviation, minimum, maximum in rows:
         if atomic != current_atomic:
@@ -152,12 +158,18 @@ def _summary(
             for spec_key, label, scale, decimals, unit in specs
             if spec_key == key
         )
-        print(
-            f"{label}{unit}: {mean * scale:.{decimals}f} ± "
-            f"{standard_deviation * scale:.{decimals}f}, "
-            f"[{minimum * scale:.{decimals}f}, {maximum * scale:.{decimals}f}], "
-            f"n={count}"
-        )
+        if compact:
+            print(
+                f"{label}{unit}: {mean * scale:.{decimals}f} ± "
+                f"{standard_deviation * scale:.{decimals}f} (n={count})"
+            )
+        else:
+            print(
+                f"{label}{unit}: {mean * scale:.{decimals}f} ± "
+                f"{standard_deviation * scale:.{decimals}f}, "
+                f"[{minimum * scale:.{decimals}f}, "
+                f"{maximum * scale:.{decimals}f}], n={count}"
+            )
     with path.open("w", encoding="utf-8", newline="") as stream:
         writer = csv.writer(stream)
         writer.writerow(
@@ -188,9 +200,15 @@ def _summary_specs(domain: str, experiment_id: str, keys: list[str]):
         elif experiment_id == "e05":
             wanted = (("final/test/accuracy", "final_train_accuracy", 100.0, 2, " (%)"),)
         elif experiment_id in {"e06", "e07"}:
-            wanted = tuple(
-                (f"final/{split}/accuracy", f"final_{split.replace('-', '_')}_accuracy", 100.0, 2, " (%)")
-                for split in ("train", "test", "test-full")
+            wanted = (
+                ("final/train/accuracy", "train_accuracy", 100.0, 2, " (%)"),
+                (
+                    "final/test-full/accuracy",
+                    "test_accuracy",
+                    100.0,
+                    2,
+                    " (%)",
+                ),
             )
         else:
             wanted = ()
@@ -292,6 +310,8 @@ def _curves(
         axis.set(xlabel="iterations", ylabel="loss", ylim=(0, 1))
     elif any("perplexity" in key for key in metric_names):
         axis.set(xlabel="iterations (x20)", ylabel="perplexity")
+        if domain == "ds2_original" and experiment_id == "e04":
+            axis.set_ylim(0, 500)
     else:
         axis.set(xlabel="epochs", ylabel="accuracy", ylim=(0, 1))
     mark_empty(axis)
