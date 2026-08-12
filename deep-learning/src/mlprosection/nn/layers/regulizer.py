@@ -28,7 +28,14 @@ class Dropout(Layer):
             return Tensor(x.data * scale, backend=x.backend)
 
     def backward_manual(self, dout: Tensor):
-        return dout * self.mask
+        if self.mask is None:
+            raise RuntimeError("training forward must be called before backward")
+        xp = dout.backend.xp
+        scale = xp.asarray(
+            1 / (1 - self.dropout_ratio) if self.inverted else 1,
+            dtype=dout.dtype,
+        )
+        return dout * self.mask * scale
 
 
 class BatchNormalization(Layer):
