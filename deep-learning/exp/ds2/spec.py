@@ -96,6 +96,7 @@ class RunSpec:
             "optimizer": dict(self.optimizer),
             "scheduler": dict(self.scheduler),
             "objective": dict(self.objective),
+            "loss": {"phase": self.seed_policy.get("loss_timing", "post_update")},
             "training": {
                 "entrypoint": str(self.path),
                 "max_epochs": self.budget.get("max_epochs"),

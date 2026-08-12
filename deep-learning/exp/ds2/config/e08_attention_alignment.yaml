@@ -1,6 +1,6 @@
 domain: ds2
 kind: observation
-run: {experiment_id: e08, group_id: GO01, protocol: attention alignment observation, recipe_id: ds2-go01-attention-alignment, structure_signature: date-attention-alignment}
+run: {experiment_id: e08, group_id: GO01, protocol: attention alignment observation, protocol_version: book-source-v1, recipe_id: ds2-go01-attention-alignment-book-v1, structure_signature: date-attention-alignment}
 execution: {mode: seeded, default_device: cpu}
 seed_policy: {seed_set: research_v1, seed_count: 1, paired_execution: true}
 dataset: {id: DS-SEQ-DATE, source: sequence, file: date.txt, reverse: true, split_seed: 1984, split_algorithm: legacy_numpy_randomstate}
@@ -14,10 +14,15 @@ recording:
   source_curve: null
   evaluations: []
   predictions: {split: test, count: 5, decode: greedy}
-  attention: {selection_seed: 1984, count: 5, decode: greedy}
+  attention: {selection_seed: 1984, count: 5, conditioning: teacher_forcing, decode: teacher_forcing}
 numerics: {dtype: float32, backend: numpy, device: cpu, deterministic: true}
-checkpoint: {save_final: false, save_best: false, format: v2, source_group_id: GT07, source_atomic_run_id: SEQD-ATTN-REV, source_kind: selected, source_path: null}
+checkpoint: {save_final: false, save_best: false, format: v2, source_group_id: GT07, source_atomic_run_id: SEQD-ATTN-REV, source_kind: final, source_protocol_version: book-source-v1, source_path: null}
 profiling: {enabled: false}
 tracking: {enabled: true, experiment: ds2, upload_checkpoint: false}
 variants:
   ATTENTION-ALIGNMENT: {}
+  ATTENTION-ALIGNMENT-GREEDY:
+    checkpoint: {source_kind: selected}
+    recording:
+      predictions: {split: test, count: 5, decode: greedy}
+      attention: {selection_seed: 1984, count: 5, conditioning: greedy, decode: greedy}

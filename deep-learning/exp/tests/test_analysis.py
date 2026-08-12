@@ -124,7 +124,7 @@ def test_ds2_analysis_selects_protocol_by_execution_group(monkeypatch):
     ds2_analysis_common.runs(FakeClient(), "GT05", ["LM-BETTER-RECIPE"])
     ds2_analysis_common.runs(FakeClient(), "GT06", ["SEQA-VAN-FWD"])
 
-    assert captured == ["book-source-v1", "legacy"]
+    assert captured == ["book-source-v1", "book-source-v1"]
 
 
 def test_band_uses_one_sample_standard_deviation(monkeypatch):

@@ -6,7 +6,7 @@ from collections import defaultdict
 import matplotlib.pyplot as plt
 import numpy as np
 
-from exp.analyze import Curve, artifact_file, artifact_rows, mark_empty, save_figure, write_summary
+from exp.analyze import Curve, artifact_file, artifact_rows, save_figure, write_summary
 
 from .common import runs
 
@@ -65,40 +65,36 @@ def _labels(client, run_refs):
 
 def render(client, error_style, output):
     del error_style  # The source output is a heatmap, not a scalar error-axis graph.
-    grouped = runs(client, "GO01", ["ATTENTION-ALIGNMENT"])
-    run_refs = grouped["ATTENTION-ALIGNMENT"]
-    matrices = _matrices(client, run_refs)
-    labels = _labels(client, run_refs)
+    conditions = ["ATTENTION-ALIGNMENT", "ATTENTION-ALIGNMENT-GREEDY"]
+    grouped = runs(client, "GO01", conditions)
     outputs = []
-    if not matrices:
-        figure, axis = plt.subplots(figsize=(7, 4))
-        mark_empty(axis)
-        save_figure(figure, output)
-        plt.close(figure)
-        outputs.append(output)
-    for example, (mean, minimum, maximum, count) in sorted(matrices.items()):
-        example_output = output.with_name(f"{output.stem}_{example}{output.suffix}")
-        figure, axis = plt.subplots(figsize=(7, 4))
-        axis.pcolor(mean, cmap=plt.cm.Greys_r, vmin=0.0, vmax=1.0)
-        metadata = labels.get(example, {}) if isinstance(labels, dict) else {}
-        source_labels = metadata.get("source_labels") if isinstance(metadata, dict) else None
-        target_labels = metadata.get("target_labels") if isinstance(metadata, dict) else None
-        if source_labels:
-            axis.set_xticks(np.arange(len(source_labels)) + 0.5, source_labels)
-        if target_labels:
-            axis.set_yticks(np.arange(len(target_labels)) + 0.5, target_labels)
-        axis.invert_yaxis()
-        axis.set(xlabel="encoder character position", ylabel="decoder character position")
-        save_figure(figure, example_output)
-        plt.close(figure)
-        outputs.append(example_output)
-    summary = output.with_suffix(".csv")
-    write_summary(
-        summary,
-        {
-            example: Curve(np.arange(mean.size), mean.ravel(), minimum.ravel(), maximum.ravel(), count)
-            for example, (mean, minimum, maximum, count) in matrices.items()
-        },
-    )
-    outputs.append(summary)
+    for condition in conditions:
+        run_refs = grouped[condition]
+        matrices = _matrices(client, run_refs)
+        labels = _labels(client, run_refs)
+        for example, (mean, minimum, maximum, count) in sorted(matrices.items()):
+            example_output = output.with_name(f"{condition}_{example}{output.suffix}")
+            figure, axis = plt.subplots(figsize=(7, 4))
+            axis.pcolor(mean, cmap=plt.cm.Greys_r, vmin=0.0, vmax=1.0)
+            metadata = labels.get(example, {}) if isinstance(labels, dict) else {}
+            source_labels = metadata.get("source_labels") if isinstance(metadata, dict) else None
+            target_labels = metadata.get("target_labels") if isinstance(metadata, dict) else None
+            if source_labels:
+                axis.set_xticks(np.arange(len(source_labels)) + 0.5, source_labels)
+            if target_labels:
+                axis.set_yticks(np.arange(len(target_labels)) + 0.5, target_labels)
+            axis.invert_yaxis()
+            axis.set(xlabel="encoder character position", ylabel="decoder character position")
+            save_figure(figure, example_output)
+            plt.close(figure)
+            outputs.append(example_output)
+        summary = output.with_name(f"{condition}_{output.stem}.csv")
+        write_summary(
+            summary,
+            {
+                example: Curve(np.arange(mean.size), mean.ravel(), minimum.ravel(), maximum.ravel(), count)
+                for example, (mean, minimum, maximum, count) in matrices.items()
+            },
+        )
+        outputs.append(summary)
     return outputs

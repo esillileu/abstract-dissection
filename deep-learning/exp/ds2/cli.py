@@ -206,6 +206,20 @@ def profile(
     from exp.parsing import parse_experiment_ids
 
     selected = parse_experiment_ids(experiment or [])
+    if selected == ["e06"]:
+        from exp.ds2.profile.e06.benchmark import DEFAULT_RESULTS, run
+
+        if len(device or ("cuda:0",)) != 1:
+            raise ValueError("e06 profiling accepts exactly one --device")
+        run(
+            device=(device or ["cuda:0"])[0],
+            conditions=tuple(condition) if condition else tuple(),
+            warmup=update_warmup,
+            iterations=measured_updates,
+            repetitions=update_repetitions,
+            output_dir=output_dir or DEFAULT_RESULTS,
+        )
+        return
     if selected == ["e05"]:
         from exp.ds2.profile.e05.benchmark import DEFAULT_RESULTS, run
 
@@ -223,7 +237,7 @@ def profile(
         )
         return
     if selected != ["e02"]:
-        raise ValueError("DS2 profiling requires exactly -e 02 or -e 05")
+        raise ValueError("DS2 profiling requires exactly -e 02, -e 05, or -e 06")
     from exp.ds2.profile.e02.api import DEFAULT_RESULTS, run
     if vocab_size and not vsweap:
         raise ValueError("--vocab-size requires --vsweap")

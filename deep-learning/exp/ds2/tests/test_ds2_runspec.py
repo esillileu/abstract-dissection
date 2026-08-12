@@ -102,6 +102,16 @@ def test_addition_seq2seq_runspec_declares_batched_epoch_evaluation() -> None:
     assert spec.config["evaluation"]["test_every_epochs"] == 1
 
 
+def test_e06_addition_seq2seq_drops_the_source_remainder_batch() -> None:
+    spec = parse_run_spec(
+        "exp/ds2/config/e06_addition_seq2seq.yaml",
+        atomic_run_id="SEQA-VAN-FWD",
+    )
+
+    assert spec.loader["drop_last"] is True
+    assert spec.config["loader"]["drop_last"] is True
+
+
 def test_ds2_runspec_allows_device_timing_profiling_policy() -> None:
     spec = parse_run_spec(
         "exp/ds2/config/e01_toy_word2vec.yaml",

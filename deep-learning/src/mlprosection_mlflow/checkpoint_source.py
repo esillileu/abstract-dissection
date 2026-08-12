@@ -62,11 +62,14 @@ def resolve_checkpoint_source(
         order_by=["attributes.start_time DESC"],
         max_results=5_000,
     )
+    source_protocol = checkpoint.get("source_protocol_version")
     seed = str(config.get("seed", ""))
     source_run = next(
         (
             run
             for run in candidates
+            if source_protocol is None
+            or run.data.tags.get("protocol.version", "legacy") == str(source_protocol)
             if str(
                 run.data.params.get(
                     "seed/master", run.data.params.get("seed", "")

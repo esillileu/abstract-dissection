@@ -245,7 +245,10 @@ class Decoder(Layer):
             stateful=True,
             backend=self._backend,
         )
-        self.affine = TimeAffine(hidden_size, vocab_size, backend=self._backend)
+        self.affine = TimeAffine(
+            hidden_size, vocab_size, backend=self._backend,
+            weight_scale=1 / hidden_size**0.5,
+        )
 
     def forward_manual(self, xs: Tensor, h: Tensor, *, cache: bool = True) -> Tensor:
         self.lstm.set_state(h)
@@ -329,7 +332,10 @@ class PeekyDecoder(Decoder):
         self.hidden_size = hidden_size
         self.embed = TimeEmbedding(vocab_size, wordvec_size, backend=self._backend)
         self.lstm = TimeLSTM(wordvec_size + hidden_size, hidden_size, stateful=True, backend=self._backend)
-        self.affine = TimeAffine(hidden_size * 2, vocab_size, backend=self._backend)
+        self.affine = TimeAffine(
+            hidden_size * 2, vocab_size, backend=self._backend,
+            weight_scale=1 / (hidden_size * 2) ** 0.5,
+        )
         self.peeky_h = None
 
     def forward_manual(self, xs: Tensor, h: Tensor, *, cache: bool = True) -> Tensor:
@@ -399,7 +405,10 @@ class AttentionDecoder(Layer):
         self.embed = TimeEmbedding(vocab_size, wordvec_size, backend=self._backend)
         self.lstm = TimeLSTM(wordvec_size, hidden_size, stateful=True, backend=self._backend)
         self.attention = TimeAttention(backend=self._backend)
-        self.affine = TimeAffine(hidden_size * 2, vocab_size, backend=self._backend)
+        self.affine = TimeAffine(
+            hidden_size * 2, vocab_size, backend=self._backend,
+            weight_scale=1 / (hidden_size * 2) ** 0.5,
+        )
 
     def forward_manual(
         self,

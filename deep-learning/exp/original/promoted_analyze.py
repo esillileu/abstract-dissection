@@ -9,7 +9,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 
-from exp.analyze import mlflow_client, tracking_uri_default
+from exp.analyze import aggregate, mark_empty, mlflow_client, plot_curve, save_figure, tracking_uri_default, write_summary
 
 
 def analyze(*, domain: str, experiments: list[str], tracking_uri: str | None, error_style: str, output_dir: Path | None, seed: int | None, summary: bool) -> None:
@@ -36,7 +36,13 @@ def analyze(*, domain: str, experiments: list[str], tracking_uri: str | None, er
             _summary(output, runs, domain=domain, experiment_id=experiment_id)
         else:
             output = root / f"{experiment_id}_{error_style}{suffix}.png"
-            _curves(client, output, runs, error_style)
+            _curves(
+                client,
+                output,
+                runs,
+                error_style,
+                labels=_curve_labels(domain, experiment_id),
+            )
             if domain == "ds1_original" and experiment_id == "e06":
                 _filters(client, output.with_name(f"{experiment_id}_filters{suffix}.png"), runs)
         print(output)
@@ -171,8 +177,22 @@ def _summary_specs(domain: str, experiment_id: str, keys: list[str]):
     )
 
 
-def _curves(client, path: Path, runs, error_style: str) -> None:
+def _curve_labels(domain: str, experiment_id: str) -> dict[str, str] | None:
+    """Return legacy visualization labels for analyses with a fixed vocabulary."""
+
+    if domain == "ds2_original" and experiment_id == "e06":
+        return {
+            "SEQ2SEQ-FORWARD": "vanilla / forward",
+            "SEQ2SEQ-REVERSE": "vanilla / reverse",
+            "PEEKY-FORWARD": "peeky / forward",
+            "PEEKY-REVERSE": "peeky / reverse",
+        }
+    return None
+
+
+def _curves(client, path: Path, runs, error_style: str, *, labels=None) -> None:
     grouped = defaultdict(list)
+    metric_names = set()
     for run in runs:
         atomic = run.data.tags.get("atomic_run.id", "")
         metric_keys = sorted(
@@ -195,35 +215,45 @@ def _curves(client, path: Path, runs, error_style: str) -> None:
         if not metric_keys:
             continue
         key = metric_keys[0]
-        history = client.get_metric_history(run.info.run_id, key)
+        metric_names.add(key)
+        history = {
+            float(item.step): float(item.value)
+            for item in client.get_metric_history(run.info.run_id, key)
+            if np.isfinite(item.value)
+        }
         if history:
-            grouped[atomic].append([(item.step, item.value) for item in history])
+            grouped[atomic].append(history)
     if not grouped:
         raise ValueError("selected runs expose no curve metric history")
-    figure, axis = plt.subplots(figsize=(8, 5))
-    summary_rows = []
-    for atomic, histories in sorted(grouped.items()):
-        common = sorted(set.intersection(*(set(step for step, _ in history) for history in histories)))
-        values = np.asarray([[dict(history)[step] for step in common] for history in histories], dtype=float)
-        mean = values.mean(axis=0)
-        std = values.std(axis=0)
-        axis.plot(common, mean, label=atomic)
-        if len(histories) > 1:
-            if error_style == "band":
-                axis.fill_between(common, mean - std, mean + std, alpha=0.2)
-            else:
-                axis.errorbar(common, mean, yerr=std, fmt="none", alpha=0.4)
-        summary_rows.extend((atomic, step, avg, spread, len(histories)) for step, avg, spread in zip(common, mean, std, strict=True))
-    axis.set_xlabel("step")
-    axis.set_ylabel("metric")
-    axis.legend()
-    figure.tight_layout()
-    figure.savefig(path, dpi=160)
+    figure, axis = plt.subplots()
+    figure._analysis_match_original_canvas = True
+    order = {atomic: index for index, atomic in enumerate(labels or {})}
+    items = sorted(grouped.items(), key=lambda item: (order.get(item[0], len(order)), item[0]))
+    for atomic, histories in items:
+        curve = aggregate(histories)
+        plot_curve(
+            axis,
+            curve,
+            label=(labels or {}).get(atomic, atomic),
+            marker="o",
+            error_style=error_style,
+            error_every=5,
+        )
+    if any("/loss" in key or key.endswith("loss") for key in metric_names):
+        axis.set(xlabel="iterations", ylabel="loss", ylim=(0, 1))
+    elif any("perplexity" in key for key in metric_names):
+        axis.set(xlabel="iterations (x20)", ylabel="perplexity")
+    else:
+        axis.set(xlabel="epochs", ylabel="accuracy", ylim=(0, 1))
+    mark_empty(axis)
+    if axis.has_data():
+        axis.legend()
+    save_figure(figure, path)
     plt.close(figure)
-    with path.with_suffix(".csv").open("w", encoding="utf-8", newline="") as stream:
-        writer = csv.writer(stream)
-        writer.writerow(["atomic_run_id", "step", "mean", "std", "seed_count"])
-        writer.writerows(summary_rows)
+    write_summary(path.with_suffix(".csv"), {
+        atomic: aggregate(histories)
+        for atomic, histories in items
+    })
 
 
 def _filters(client, path: Path, runs) -> None:

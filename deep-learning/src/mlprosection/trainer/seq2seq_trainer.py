@@ -25,6 +25,7 @@ class Seq2seqTrainer(EventTrainer):
         max_decode_steps: int | None = None,
         max_updates: int | None = None,
         drop_last: bool = False,
+        loss_timing: Literal["pre_update", "post_update"] = "post_update",
         event_receivers=None,
     ) -> None:
         super().__init__(model, objective, optimizer, max_epochs=max_epochs, max_updates=max_updates, event_receivers=event_receivers)
@@ -39,7 +40,11 @@ class Seq2seqTrainer(EventTrainer):
         self.start_id = start_id
         self.max_decode_steps = max_decode_steps
         self.drop_last = drop_last
+        if loss_timing not in {"pre_update", "post_update"}:
+            raise ValueError("loss_timing must be pre_update or post_update")
+        self.loss_timing = loss_timing
         self.batch_cursor = 0
+        self.samples_seen = 0
         self.last_predictions = None
 
     def fit(self, xs: Tensor, ts: Tensor) -> None:
@@ -64,25 +69,31 @@ class Seq2seqTrainer(EventTrainer):
                     result = self.objective.forward(prediction, objective_t)
                     self.model.backward(self.objective.backward())
                     self.optimizer.update()
-                    probe_state = self._snapshot_evaluation_state()
-                    try:
-                        post_prediction = self.model.forward(
-                            batch_x, decoder_x, cache=False
-                        )
-                        post_result = self.objective.forward(
-                            post_prediction,
-                            objective_t,
-                            cache=False,
-                            replay_context=result.replay_context,
-                        )
-                    finally:
-                        self._restore_evaluation_state(probe_state)
+                    if self.loss_timing == "post_update":
+                        probe_state = self._snapshot_evaluation_state()
+                        try:
+                            post_prediction = self.model.forward(
+                                batch_x, decoder_x, cache=False
+                            )
+                            post_result = self.objective.forward(
+                                post_prediction,
+                                objective_t,
+                                cache=False,
+                                replay_context=result.replay_context,
+                            )
+                        finally:
+                            self._restore_evaluation_state(probe_state)
+                        update_loss = post_result.loss
+                    else:
+                        update_loss = result.loss
                     self.global_step += 1
-                    sample_count += len(batch_x)
+                    batch_samples = len(batch_x)
+                    sample_count += batch_samples
+                    self.samples_seen += batch_samples
                     self.batch_cursor = iteration + 1
                     self._emit_update(UpdateEvent(
                         update=self.global_step, epoch=self.epoch, batch_size=len(batch_x),
-                        loss=post_result.loss, learning_rate=self._learning_rate(),
+                        loss=update_loss, learning_rate=self._learning_rate(),
                     ))
                     if self._at_update_limit():
                         reason = "max_updates"
@@ -170,8 +181,10 @@ class Seq2seqTrainer(EventTrainer):
     def state_dict(self) -> dict[str, object]:
         state = super().state_dict()
         state["batch_cursor"] = self.batch_cursor
+        state["samples_seen"] = self.samples_seen
         return state
 
     def load_state_dict(self, state: dict[str, object]) -> None:
         super().load_state_dict(state)
         self.batch_cursor = int(state.get("batch_cursor", 0))
+        self.samples_seen = int(state.get("samples_seen", 0))

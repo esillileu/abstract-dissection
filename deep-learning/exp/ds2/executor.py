@@ -558,6 +558,7 @@ class Seq2SeqExecutor:
             eval_batch_size=eval_batch_size,
             max_updates=None if max_updates is None else int(max_updates),
             drop_last=bool(loader.get("drop_last", False)),
+            loss_timing=str(_mapping(config, "policy").get("loss_timing", "post_update")),
         )
         artifact_root = _artifact_root(config, context)
         records = DS2Records()
@@ -639,7 +640,7 @@ class Seq2SeqExecutor:
         for row in last_evaluation:
             final_values[f"final/test/{row['metric'].replace('_accuracy', '')}"] = float(row["value"])
         return ExperimentResult(
-            metrics=_final(updates=trainer.global_step, epochs=trainer.epoch, samples=len(x_train) * trainer.epoch, **final_values),
+            metrics=_final(updates=trainer.global_step, epochs=trainer.epoch, samples=trainer.samples_seen, **final_values),
             artifact_root=artifact_root,
             model=model,
             metric_rows=records.mlflow_metric_rows(),
@@ -693,7 +694,16 @@ class AttentionAlignmentObservationExecutor:
         for example_id in example_ids:
             question = Tensor(backend.xp.asarray(x_test[example_id:example_id + 1], dtype=backend.xp.int64), backend=backend)
             expected = [int(value) for value in t_test[example_id][1:]]
-            predicted, weights = _generate_attention_with_weights(model, question, start_id, len(expected), backend)
+            conditioning = str(attention_config.get("conditioning", attention_config.get("decode", "greedy")))
+            if conditioning == "teacher_forcing":
+                predicted, weights = _teacher_forced_attention_with_weights(
+                    model, question, t_test[example_id], backend,
+                )
+            elif conditioning == "greedy":
+                predicted, weights = _generate_attention_with_weights(model, question, start_id, len(expected), backend)
+            else:
+                raise ValueError("attention.conditioning must be teacher_forcing or greedy")
+            weights = weights[:, ::-1]
             source_text = _decode_ids(x_test[example_id], id_to_char)
             target_text = _decode_ids(expected, id_to_char)
             prediction_text = _decode_ids(predicted, id_to_char)
@@ -707,7 +717,14 @@ class AttentionAlignmentObservationExecutor:
                 "token_correct": sum(left == right for left, right in zip(predicted, expected, strict=True)),
                 "token_count": len(expected),
             })
-            render_examples.append({"example_id": example_id, "source": source_text, "target": target_text, "prediction": prediction_text})
+            render_examples.append({
+                "example_id": example_id,
+                "source": source_text,
+                "target": target_text,
+                "prediction": prediction_text,
+                "source_labels": list(source_text),
+                "target_labels": list(target_text),
+            })
             for decode_step in range(weights.shape[0]):
                 for encoder_position in range(weights.shape[1]):
                     records.add_attention({
@@ -721,6 +738,8 @@ class AttentionAlignmentObservationExecutor:
             "source_checkpoint_sha256": _path_digest(Path(str(checkpoint_path))),
             "example_selection_seed": int(attention_config.get("selection_seed", 1984)),
             "decode_policy": str(attention_config.get("decode", "greedy")),
+            "conditioning": str(attention_config.get("conditioning", attention_config.get("decode", "greedy"))),
+            "condition": str(config.get("atomic_run_id", "")),
             "input_reversal": bool(dataset.get("reverse", True)),
             "x_axis": "encoder_position",
             "y_axis": "decode_step",
@@ -903,6 +922,27 @@ def _generate_attention_with_weights(model: AttentionSeq2seq, question: Tensor, 
         host_ids = backend.to_numpy(xp.stack(sampled)) if sampled else np.asarray([], dtype=np.int64)
         host_weights = backend.to_numpy(xp.stack(weights)) if weights else np.empty((0, 0))
         return [int(value) for value in host_ids], np.asarray(host_weights)
+    finally:
+        model.train(was_training)
+
+
+def _teacher_forced_attention_with_weights(
+    model: AttentionSeq2seq, question: Tensor, target: np.ndarray, backend,
+) -> tuple[list[int], np.ndarray]:
+    """Run the book's teacher-forced decoder once and retain every score/weight."""
+    was_training = bool(getattr(model, "training", True))
+    model.train(False)
+    try:
+        decoder_x = Tensor(
+            backend.xp.asarray(target[:-1][None, :], dtype=backend.xp.int64),
+            backend=backend,
+        )
+        # Attention weights are an observation buffer and are only retained
+        # when the decoder forward uses its normal cached path.
+        scores = model.forward(question, decoder_x, cache=True)
+        weights = backend.to_numpy(model.decoder.attention.weights[0])
+        predicted = backend.to_numpy(scores.data[0].argmax(axis=1))
+        return [int(value) for value in predicted], np.asarray(weights)
     finally:
         model.train(was_training)
 

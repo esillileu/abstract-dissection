@@ -3,7 +3,7 @@
 from exp.analyze import aggregate, completed_seed_runs, histories_from_artifact
 
 
-BOOK_SOURCE_GROUPS = {"GT03", "GT04", "GT05"}
+BOOK_SOURCE_GROUPS = {"GT03", "GT04", "GT05", "GT06", "GT07", "GT09", "GO01"}
 
 
 def runs(client, group: str, atomic_ids: list[str]):

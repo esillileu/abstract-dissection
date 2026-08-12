@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 
 from mlprosection import Tensor
-from mlprosection.nn.model.architecture import BetterRnnlm, Rnnlm, Seq2seq, TiedRnnlm
+from mlprosection.nn.model.architecture import BetterRnnlm, PeekySeq2seq, Rnnlm, Seq2seq, TiedRnnlm
 from mlprosection.nn.objective import TemporalSoftmaxCrossEntropy
 
 
@@ -77,6 +77,22 @@ def test_seq2seq_forward_backward_generate() -> None:
     assert result.loss.shape == ()
     assert len(sampled) == 4
     assert all(isinstance(sample_id, int) for sample_id in sampled)
+
+
+def test_seq2seq_output_projections_use_source_initialization_scale() -> None:
+    hidden_size = 64
+    vocab_size = 1000
+    vanilla = Seq2seq(vocab_size, 4, hidden_size, backend="cpu")
+    peeky = PeekySeq2seq(vocab_size, 4, hidden_size, backend="cpu")
+
+    assert np.isclose(
+        np.std(vanilla.decoder.affine.W.data), 1 / hidden_size**0.5, rtol=0.02,
+    )
+    assert np.isclose(
+        np.std(peeky.decoder.affine.W.data),
+        1 / (2 * hidden_size) ** 0.5,
+        rtol=0.02,
+    )
 
 
 def test_seq2seq_generate_device_supports_batched_inputs() -> None:
