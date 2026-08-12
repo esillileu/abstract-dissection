@@ -20,6 +20,7 @@ from exp.ds1.analyze.final_metrics import (
     training_time_curve,
 )
 from exp.ds2.analyze.e01_toy_word2vec import render
+from exp.ds2.analyze import common as ds2_analysis_common
 from exp.ds2.analyze.render import _save_result
 from exp.plot_theme import (
     ACCENT_COLORS,
@@ -105,6 +106,25 @@ def test_completed_seed_runs_can_select_one_master_seed():
     )
 
     assert [run.run_id for run in grouped["A"]] == ["seed-2"]
+
+
+def test_ds2_analysis_selects_protocol_by_execution_group(monkeypatch):
+    captured = []
+
+    def fake_completed_seed_runs(*_args, **kwargs):
+        captured.append(kwargs["protocol_version"])
+        return {}
+
+    monkeypatch.setattr(
+        ds2_analysis_common,
+        "completed_seed_runs",
+        fake_completed_seed_runs,
+    )
+
+    ds2_analysis_common.runs(FakeClient(), "GT05", ["LM-BETTER-RECIPE"])
+    ds2_analysis_common.runs(FakeClient(), "GT06", ["SEQA-VAN-FWD"])
+
+    assert captured == ["book-source-v1", "legacy"]
 
 
 def test_band_uses_one_sample_standard_deviation(monkeypatch):
