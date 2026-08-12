@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 from exp.ds1.executor import (
     SupervisedClassificationExecutor,
@@ -124,6 +125,12 @@ def test_extended_mlp_with_batchnorm_dropout_and_weight_decay_runs_one_update(
 
     assert result.metrics["final/status/success"] == 1.0
     assert result.metrics["final/system/total_updates"] == 1.0
+    assert "final/train-full/accuracy" in result.metrics
+    assert "final/train-test/accuracy-gap" in result.metrics
+    assert result.metrics["final/train-test/accuracy-gap"] == pytest.approx(
+        result.metrics["final/train-full/accuracy"]
+        - result.metrics["final/test/accuracy"]
+    )
     assert (tmp_path / "updates.csv").is_file()
 
 

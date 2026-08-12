@@ -91,22 +91,19 @@ canvas, epoch 축, `0–1` accuracy 범위, marker와 범례 위치를 사용하
 - `e09`: 마지막 `x`, `y`, objective
 - `e10`: 조건·layer별 activation mean/std/min/max/zero ratio
 - `e11`: seed-index 0 final checkpoint의 첫 convolution filter 통계
-- `e12`: 기존 DeepConvNet과 extended MLP의 terminal full-test accuracy와 학습 시간
+- `e12`: extended MLP, SimpleConvNet, DeepConvNet 순서로 final-checkpoint
+  full-train accuracy, terminal full-test accuracy, 학습 시간, train-test accuracy gap
 
 학습 실험 `e01`–`e08`은 평가 시간을 제외한 training wall time과 parameter
 manifest에서 확인한 모델 파라미터 수도 함께 기록한다. 여러 seed가 있는 값은
 평균, 표본 표준편차, 최솟값, 최댓값과 실행 수를 출력한다.
 
-`-e 06 --summary`와 `-e 07 --summary`는 원본 실행의 마지막 train/test 정확도와
-10회 seed 실행의 마지막 정확도 `평균 ± 표본 표준편차`를 나란히 출력한다. 양쪽 모두
-학습 곡선과 같은 first-1000 평가를 사용한다. 원본은
-`../ds1_original/results/legacy_cache/fixed_seed/data/e{06,07}/.../metrics.csv`, 10회 실행은 각각
-`mnist-train-first-1000`, `mnist-test-first-1000` 평가를 기준으로 한다.
-정확도는 백분율로 항상 소수점 둘째 자리까지 표시한다. 학습 시간은 원본 캐시에
-실측값이 없으므로 `../ds1_original/results/legacy_cache/fixed_seed/cupy_estimate.json`의
-`projected_update_time_s`를 `original projected`로 명시하고, 재현 실행은
-`timing_windows.csv`의 평가 시간을 제외한 순수 학습 wall time 합계를
-10회 `평균 ± 표본 표준편차`로 표시한다.
+`-e 06 --summary`, `-e 07 --summary`는 마지막 `mnist-train-first-1000` 정확도와
+terminal `mnist-test-full` 정확도를 출력한다. `-e 12 --summary`는 MLflow에 기록된
+final-checkpoint full-train 정확도와 train-test accuracy gap도 함께 출력한다. 모두 평가
+시간을 제외한 순수 학습 wall time을 `평균 ± 표본 표준편차 (n=실행 수)`로 출력한다.
+정확도는 백분율로 소수점 둘째 자리까지, 학습 시간은 초 단위 소수점 첫째 자리까지
+표시한다.
 
 `-e 08 --summary`는 각 조건의 seed별 마지막 `mnist-test-full` 정확도와
 `timing_windows.csv`의 train wall time 합계를 집계한다. E08은
@@ -119,6 +116,25 @@ manifest에서 확인한 모델 파라미터 수도 함께 기록한다. 여러 
 표시하며 CSV도 같은 단위와 자릿수를 사용한다.
 
 summary CSV 이름은 `e01_summary.csv`부터 `e12_summary.csv`까지 같은 형식이다.
+
+## Final-checkpoint full-train gap
+
+GT06 `CNN-SIMPLE-BOOK`, GT07 `CNN-DEEP-BOOK`, GT09
+`MLP-EXT-ALL-BOOK`은 학습 종료 후 최신 checkpoint를 다시 불러와 전체 MNIST train과
+full test를 평가한다. 학습 시간 밖에서 계산하며 다음 final metric을 MLflow에 기록한다.
+
+- `final/train-full/accuracy`: 전체 train set 정확도
+- `final/train-test/accuracy-gap`: 전체 train 정확도에서 full-test 정확도를 뺀 값
+
+기존 완료 run은 아래 maintenance 도구로 backfill할 수 있다. 기본 실행은 조회만 하는
+dry-run이고 checkpoint 평가나 MLflow 변경을 하지 않는다. 실제 반영에는 `--apply`가
+필요하다.
+
+```bash
+python -m exp.ds1.backfill_full_train_gap
+python -m exp.ds1.backfill_full_train_gap --target e06 --seed 1
+python -m exp.ds1.backfill_full_train_gap --apply --device cuda:0
+```
 
 원본 코드는 이제 `ds1_original` 정식 도메인에서 seed별로 분석한다.
 

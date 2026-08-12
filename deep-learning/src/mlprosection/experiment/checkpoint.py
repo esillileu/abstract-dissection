@@ -8,6 +8,7 @@ import json
 import os
 import pickle
 import random
+import re
 import shutil
 import uuid
 from dataclasses import dataclass
@@ -254,6 +255,41 @@ def load_epoch_checkpoint(*, path: str | Path, model: Layer, objective: Layer, o
     random.setstate(rng_state["python"])
     np.random.set_state(rng_state["numpy"])
     _restore_backend_rng_state(model, rng_state.get("backend"))
+
+
+def load_model_checkpoint(path: str | Path, model: Layer) -> Path:
+    """Load only model state from a v2 checkpoint or legacy parameter archive."""
+    resolved = resolve_checkpoint_path(path)
+    if resolved.is_file() and resolved.suffix == ".npz":
+        _load_model_parameters_compatible(model, resolved)
+        return resolved
+    if not resolved.is_dir():
+        raise ValueError(f"model checkpoint does not exist: {resolved}")
+    parameters = resolved / "model_parameters.npz"
+    if not parameters.is_file():
+        raise ValueError(f"model checkpoint parameters are missing: {parameters}")
+    _load_model_parameters_compatible(model, parameters)
+    _load_buffers(model, resolved / "model_buffers.npz")
+    return resolved
+
+
+def _load_model_parameters_compatible(model: Layer, path: Path) -> None:
+    """Strictly load parameters while ignoring legacy forward-cache entries."""
+    current = {name for name, _parameter in model.named_parameters()}
+    with np.load(path, allow_pickle=False) as archive:
+        saved = set(archive.files)
+    missing = current - saved
+    unexpected = saved - current
+    unsupported = {
+        name
+        for name in unexpected
+        if re.fullmatch(r"layers\.\d+\.x", name) is None
+    }
+    if missing:
+        raise KeyError(f"missing parameters: {sorted(missing)}")
+    if unsupported:
+        raise KeyError(f"unexpected parameters: {sorted(unsupported)}")
+    model.load_params_npz(path, strict=False)
 
 
 def resolve_checkpoint_path(path: str | Path) -> Path:

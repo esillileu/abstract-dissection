@@ -11,6 +11,7 @@ from pathlib import Path
 import numpy as np
 
 from exp.analyze import Curve, RunRef, aggregate, artifact_rows
+from exp.ds1.final_gap import TRAIN_FULL_ACCURACY, TRAIN_TEST_ACCURACY_GAP
 
 from .common import runs
 
@@ -129,6 +130,33 @@ def _metric_summary(
         minimum=float(values.min()),
         maximum=float(values.max()),
         run_count=len(values),
+    )
+
+
+def _logged_metric_summary(
+    client,
+    run_refs: Sequence[RunRef],
+    metric_key: str,
+) -> MetricSummary | None:
+    values = []
+    for run_ref in run_refs:
+        try:
+            value = float(client.get_run(run_ref.run_id).data.metrics[metric_key])
+        except (AttributeError, KeyError, TypeError, ValueError):
+            continue
+        if np.isfinite(value):
+            values.append(value)
+    if not values:
+        return None
+    array = np.asarray(values, dtype=float)
+    return MetricSummary(
+        mean=float(array.mean()),
+        standard_deviation=(
+            float(array.std(ddof=1)) if len(array) > 1 else 0.0
+        ),
+        minimum=float(array.min()),
+        maximum=float(array.max()),
+        run_count=len(array),
     )
 
 
@@ -296,43 +324,55 @@ def accuracy_summaries_for_runs(
     return summaries
 
 
-def _format_accuracy_comparison(
+def full_accuracy_summaries_for_runs(
+    client,
+    grouped_runs: Mapping[str, Sequence[RunRef]],
+) -> dict[str, MetricSummary | None]:
+    """Summarize final full-train/full-test accuracy, gap, and train time."""
+
+    summaries = {}
+    for atomic_run_id, run_refs in grouped_runs.items():
+        summaries[f"{atomic_run_id}/train_accuracy"] = _logged_metric_summary(
+            client,
+            run_refs,
+            TRAIN_FULL_ACCURACY,
+        )
+        summaries[f"{atomic_run_id}/test_accuracy"] = _metric_summary(
+            client,
+            run_refs,
+            _final_accuracy,
+            artifact_path="evaluations.csv",
+        )
+        summaries[f"{atomic_run_id}/training_time_s"] = _metric_summary(
+            client,
+            run_refs,
+            _training_seconds,
+            artifact_path="timing_windows.csv",
+        )
+        summaries[f"{atomic_run_id}/train_test_gap"] = _logged_metric_summary(
+            client,
+            run_refs,
+            TRAIN_TEST_ACCURACY_GAP,
+        )
+    return summaries
+
+
+def _format_compact_metric(
     name: str,
-    original: float | None,
     summary: MetricSummary | None,
 ) -> str:
-    original_text = "unavailable" if original is None else f"{original * 100:.2f}"
     if summary is None:
-        reproduced_text = "no completed runs"
+        return f"{name}: no completed runs"
+    if name in {"train_accuracy", "test_accuracy", "train_test_gap"}:
+        label, scale, decimals = f"{name} (%)", 100, 2
+    elif name == "training_time":
+        label, scale, decimals = "training_time (s)", 1, 1
     else:
-        reproduced_text = (
-            f"{summary.run_count}-run mean ± sample standard deviation "
-            f"{summary.mean * 100:.2f} ± "
-            f"{summary.standard_deviation * 100:.2f} (n={summary.run_count})"
-        )
-    return f"{name} (%): original {original_text} | {reproduced_text}"
-
-
-def _format_training_time_comparison(
-    original_estimate: float | None,
-    summary: MetricSummary | None,
-) -> str:
-    original_text = (
-        "unavailable"
-        if original_estimate is None
-        else f"{original_estimate:.1f}"
-    )
-    if summary is None:
-        reproduced_text = "no completed runs"
-    else:
-        reproduced_text = (
-            f"{summary.run_count}-run mean ± sample standard deviation "
-            f"{summary.mean:.1f} ± {summary.standard_deviation:.1f} "
-            f"(n={summary.run_count})"
-        )
+        raise ValueError(f"unknown compact summary metric: {name}")
     return (
-        f"training_time (s): original projected {original_text} | "
-        f"{reproduced_text}"
+        f"{label}: {summary.mean * scale:.{decimals}f} ± "
+        f"{summary.standard_deviation * scale:.{decimals}f} "
+        f"(n={summary.run_count})"
     )
 
 
@@ -342,6 +382,7 @@ def _write_accuracy_comparisons(
     summaries: Mapping[str, MetricSummary | None],
     *,
     original_data_root: Path,
+    full_train_and_gap: bool = False,
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8", newline="") as file:
@@ -363,11 +404,18 @@ def _write_accuracy_comparisons(
         )
         writer.writeheader()
         for atomic_run_id in atomic_run_ids:
+            accuracy_sources = dict(FINAL_ACCURACY_SOURCES)
+            if full_train_and_gap:
+                accuracy_sources["train_accuracy"] = (
+                    "train",
+                    "mnist-train-full",
+                    "train",
+                )
             for metric_name, (
                 _split,
                 evaluation_set_id,
                 original_split,
-            ) in FINAL_ACCURACY_SOURCES.items():
+            ) in accuracy_sources.items():
                 summary = summaries[f"{atomic_run_id}/{metric_name}"]
                 original = _original_final_accuracy(
                     atomic_run_id,
@@ -425,6 +473,31 @@ def _write_accuracy_comparisons(
                     "maximum": "" if time_display is None else time_display[4],
                 }
             )
+            if full_train_and_gap:
+                gap_summary = summaries[f"{atomic_run_id}/train_test_gap"]
+                gap_display = None if gap_summary is None else _display_values(
+                    f"{atomic_run_id}/final_test_accuracy",
+                    gap_summary,
+                )
+                writer.writerow(
+                    {
+                        "series": atomic_run_id,
+                        "metric": "train_test_gap",
+                        "evaluation_set": "mnist-train-full - mnist-test-full",
+                        "original": "",
+                        "original_kind": "",
+                        "seed_runs": (
+                            "" if gap_summary is None else gap_summary.run_count
+                        ),
+                        "unit": "percent",
+                        "mean": "" if gap_display is None else gap_display[1],
+                        "standard_deviation": (
+                            "" if gap_display is None else gap_display[2]
+                        ),
+                        "minimum": "" if gap_display is None else gap_display[3],
+                        "maximum": "" if gap_display is None else gap_display[4],
+                    }
+                )
 
 
 def _format_metric(name: str, summary: MetricSummary | None) -> str:
@@ -540,24 +613,31 @@ def render_cross_group_summary(
         atomic_run_id: runs(client, group_id, [atomic_run_id])[atomic_run_id]
         for group_id, atomic_run_id in models
     }
-    summaries = summaries_for_runs(client, grouped_runs)
-    print(f"{analysis_id} (mean ± sample standard deviation; min-max)")
+    summaries = full_accuracy_summaries_for_runs(client, grouped_runs)
+    print(f"{analysis_id} (mean ± sample standard deviation)")
     for _group_id, atomic_run_id in models:
         print(f"[{atomic_run_id}]")
-        print(
-            _format_metric(
-                "final_test_accuracy",
-                summaries[f"{atomic_run_id}/final_test_accuracy"],
-            )
-        )
-        print(
-            _format_metric(
-                "training_time_s",
-                summaries[f"{atomic_run_id}/training_time_s"],
-            )
-        )
+        for metric_name in ("train_accuracy", "test_accuracy"):
+            print(_format_compact_metric(
+                metric_name,
+                summaries[f"{atomic_run_id}/{metric_name}"],
+            ))
+        print(_format_compact_metric(
+            "training_time",
+            summaries[f"{atomic_run_id}/training_time_s"],
+        ))
+        print(_format_compact_metric(
+            "train_test_gap",
+            summaries[f"{atomic_run_id}/train_test_gap"],
+        ))
     summary_path = output.with_suffix(".csv")
-    _write_summaries(summary_path, summaries)
+    _write_accuracy_comparisons(
+        summary_path,
+        [atomic_run_id for _group_id, atomic_run_id in models],
+        summaries,
+        original_data_root=ORIGINAL_DATA_ROOT,
+        full_train_and_gap=True,
+    )
     return [summary_path]
 
 
@@ -572,34 +652,18 @@ def render_accuracy_comparison_summary(
 ):
     grouped_runs = runs(client, group_id, list(atomic_run_ids))
     summaries = accuracy_summaries_for_runs(client, grouped_runs)
-    print(f"{analysis_id} (original | seed-run mean ± sample standard deviation)")
+    print(f"{analysis_id} (mean ± sample standard deviation)")
     for atomic_run_id in atomic_run_ids:
         print(f"[{atomic_run_id}]")
-        for metric_name, (
-            _split,
-            _evaluation_set_id,
-            original_split,
-        ) in FINAL_ACCURACY_SOURCES.items():
-            print(
-                _format_accuracy_comparison(
-                    metric_name,
-                    _original_final_accuracy(
-                        atomic_run_id,
-                        original_split,
-                        original_data_root=original_data_root,
-                    ),
-                    summaries[f"{atomic_run_id}/{metric_name}"],
-                )
-            )
-        print(
-            _format_training_time_comparison(
-                _original_projected_training_seconds(
-                    atomic_run_id,
-                    original_data_root=original_data_root,
-                ),
-                summaries[f"{atomic_run_id}/training_time_s"],
-            )
-        )
+        for metric_name in FINAL_ACCURACY_SOURCES:
+            print(_format_compact_metric(
+                metric_name,
+                summaries[f"{atomic_run_id}/{metric_name}"],
+            ))
+        print(_format_compact_metric(
+            "training_time",
+            summaries[f"{atomic_run_id}/training_time_s"],
+        ))
     summary_path = output.with_suffix(".csv")
     _write_accuracy_comparisons(
         summary_path,

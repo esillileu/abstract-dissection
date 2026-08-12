@@ -34,6 +34,7 @@ from mlprosection.experiment.reproducibility import configure_runtime, seed_batc
 from mlprosection.profiling.backend import create_device_timer
 
 from .records import DS1Records
+from .final_gap import evaluate_checkpoint_gap, is_target_run
 
 
 def get_observation_executor(config: dict[str, object]):
@@ -209,8 +210,24 @@ class SupervisedClassificationExecutor:
                 path=periodic.path, sha256=periodic.sha256,
             )
         records.flush()
-        final_train = trainer.evaluate(x_train, t_train)
-        final_test = trainer.evaluate(x_test, t_test)
+        gap_metrics = {}
+        if is_target_run(config):
+            if latest is None:
+                raise ValueError(
+                    "full-train gap evaluation requires a latest checkpoint"
+                )
+            final_train, final_test, gap_metrics = evaluate_checkpoint_gap(
+                trainer=trainer,
+                model=model,
+                checkpoint=latest.path,
+                x_train=x_train,
+                t_train=t_train,
+                x_test=x_test,
+                t_test=t_test,
+            )
+        else:
+            final_train = trainer.evaluate(x_train, t_train)
+            final_test = trainer.evaluate(x_test, t_test)
         profiling = monitor.metrics()
         metrics = build_final_metrics(
             train_loss=final_train.loss, test_loss=final_test.loss,
@@ -218,6 +235,7 @@ class SupervisedClassificationExecutor:
             profiling_metrics=profiling, total_updates=trainer.global_step,
             completed_epochs=trainer.epoch, samples_seen=sum(int(row["batch_size"]) for row in records.updates),
         )
+        metrics.update(gap_metrics)
         return ExperimentResult(
             metrics=metrics,
             artifact_root=_artifact_root(config),

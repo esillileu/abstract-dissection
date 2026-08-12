@@ -1,16 +1,37 @@
 from __future__ import annotations
 
 import csv
+from types import SimpleNamespace
 
 import numpy as np
 
 from exp.analyze import RunRef
-from exp.ds1.analyze import final_metrics
+from exp.ds1.analyze import e12_summary, final_metrics
 
 
 class FakeClient:
     def download_artifacts(self, run_id, artifact_path):
         raise FileNotFoundError((run_id, artifact_path))
+
+    def get_run(self, run_id):
+        index = int(run_id.rsplit("-", 1)[1])
+        train_accuracy = (0.98, 0.99)[index]
+        return SimpleNamespace(
+            data=SimpleNamespace(
+                metrics={
+                    "final/train-full/accuracy": train_accuracy,
+                    "final/train-test/accuracy-gap": train_accuracy - 0.999,
+                }
+            )
+        )
+
+
+def test_e12_model_order_includes_simple_convnet():
+    assert e12_summary.MODELS == (
+        ("GT09", "MLP-EXT-ALL-BOOK"),
+        ("GT06", "CNN-SIMPLE-BOOK"),
+        ("GT07", "CNN-DEEP-BOOK"),
+    )
 
 
 def _run_refs(tmp_path):
@@ -78,7 +99,7 @@ def test_accuracy_summary_uses_sampled_train_and_full_test_values(tmp_path):
     )
 
 
-def test_accuracy_comparison_prints_original_and_writes_both_metrics(
+def test_accuracy_summary_prints_compact_format_and_writes_original_columns(
     tmp_path,
     monkeypatch,
     capsys,
@@ -121,14 +142,10 @@ def test_accuracy_comparison_prints_original_and_writes_both_metrics(
     )
 
     printed = capsys.readouterr().out
-    assert "train_accuracy (%): original 99.80" in printed
-    assert "2-run mean ± sample standard deviation 98.50 ± 0.71 (n=2)" in printed
-    assert "test_accuracy (%): original 98.82" in printed
-    assert "2-run mean ± sample standard deviation 99.90 ± 0.00 (n=2)" in printed
-    assert (
-        "training_time (s): original projected 12.3 | "
-        "2-run mean ± sample standard deviation 3.5 ± 0.7 (n=2)"
-    ) in printed
+    assert "train_accuracy (%): 98.50 ± 0.71 (n=2)" in printed
+    assert "test_accuracy (%): 99.90 ± 0.00 (n=2)" in printed
+    assert "training_time (s): 3.5 ± 0.7 (n=2)" in printed
+    assert "original" not in printed
     assert paths == [output]
     with output.open(encoding="utf-8", newline="") as file:
         rows = list(csv.DictReader(file))
@@ -154,3 +171,44 @@ def test_accuracy_comparison_prints_original_and_writes_both_metrics(
         "0.00",
         "0.7",
     ]
+
+
+def test_cross_group_summary_prints_full_accuracies_time_and_gap(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    run_refs = _run_refs(tmp_path)
+    monkeypatch.setattr(
+        final_metrics,
+        "runs",
+        lambda _client, group_id, atomic_run_ids: {
+            atomic_run_ids[0]: run_refs
+        },
+    )
+    output = tmp_path / "e12_summary.csv"
+
+    final_metrics.render_cross_group_summary(
+        FakeClient(),
+        analysis_id="e12 summary",
+        models=(("GT07", "CNN-DEEP-BOOK"),),
+        output=output,
+    )
+
+    printed = capsys.readouterr().out
+    assert "train_accuracy (%): 98.50 ± 0.71 (n=2)" in printed
+    assert "test_accuracy (%): 99.90 ± 0.00 (n=2)" in printed
+    assert "training_time (s): 3.5 ± 0.7 (n=2)" in printed
+    assert "train_test_gap (%): -1.40 ± 0.71 (n=2)" in printed
+    with output.open(encoding="utf-8", newline="") as file:
+        rows = list(csv.DictReader(file))
+    assert [row["metric"] for row in rows] == [
+        "train_accuracy",
+        "test_accuracy",
+        "training_time_s",
+        "train_test_gap",
+    ]
+    assert rows[0]["evaluation_set"] == "mnist-train-full"
+    assert rows[3]["evaluation_set"] == (
+        "mnist-train-full - mnist-test-full"
+    )

@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import numpy as np
+import pytest
+
 from mlprosection.nn.model.architecture import MLP
 from mlprosection.nn.objective import SoftmaxCrossEntropy
 from mlprosection.optim.SGD import SGD
@@ -9,6 +12,7 @@ from mlprosection.experiment.checkpoint import (
     CheckpointManager,
     CheckpointRetentionPolicy,
     load_epoch_checkpoint,
+    load_model_checkpoint,
 )
 
 
@@ -102,3 +106,22 @@ def test_checkpoint_pointer_can_be_loaded(tmp_path) -> None:
 
     assert trainer.epoch == 2
     assert trainer.global_step == 20
+
+
+def test_model_checkpoint_ignores_only_legacy_affine_input_cache(
+    tmp_path,
+) -> None:
+    model = MLP(input_size=2, hidden_sizes=[3], output_size=2)
+    parameters = {
+        name: parameter.backend.to_numpy(parameter.data).copy()
+        for name, parameter in model.named_parameters()
+    }
+    path = tmp_path / "legacy.npz"
+    np.savez(path, **parameters, **{"layers.4.x": np.zeros((2, 3))})
+
+    load_model_checkpoint(path, model)
+
+    bad_path = tmp_path / "bad.npz"
+    np.savez(bad_path, **parameters, unexpected=np.zeros(1))
+    with pytest.raises(KeyError, match="unexpected parameters"):
+        load_model_checkpoint(bad_path, model)

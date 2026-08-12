@@ -1,11 +1,12 @@
-"""Final metrics for the cross-group DeepConvNet/extended-MLP comparison."""
+"""Final metrics for the extended-MLP/SimpleConvNet/DeepConvNet comparison."""
 
 from .final_metrics import render_cross_group_summary
 
 
 MODELS = (
-    ("GT07", "CNN-DEEP-BOOK"),
     ("GT09", "MLP-EXT-ALL-BOOK"),
+    ("GT06", "CNN-SIMPLE-BOOK"),
+    ("GT07", "CNN-DEEP-BOOK"),
 )
 
 
