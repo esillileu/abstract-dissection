@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import json
 import os
 import re
 from dataclasses import dataclass
@@ -23,12 +24,23 @@ DEFAULT_TRACKING_URI = "http://127.0.0.1:5000"
 class AnalysisClient:
     """Delegate MLflow calls while carrying analysis-only selection state."""
 
-    def __init__(self, client, *, seed: int | None = None) -> None:
+    def __init__(
+        self,
+        client,
+        *,
+        seed: int | None = None,
+        legacy: bool = False,
+    ) -> None:
         self._client = client
         self.analysis_seed = None if seed is None else str(seed)
+        self.analysis_legacy = legacy
+        self.analysis_selections: list[dict[str, object]] = []
 
     def __getattr__(self, name):
         return getattr(self._client, name)
+
+    def record_analysis_selection(self, selection: dict[str, object]) -> None:
+        self.analysis_selections.append(selection)
 
 
 @dataclass(frozen=True)
@@ -119,7 +131,119 @@ def completed_seed_runs(
         grouped[atomic].append(run)
     for runs_for_condition in grouped.values():
         runs_for_condition.sort(key=lambda run: run.seed)
+    record_selection = getattr(client, "record_analysis_selection", None)
+    if record_selection is not None:
+        record_selection(
+            {
+                "experiment_name": experiment_name,
+                "group_id": group_id,
+                "atomic_run_ids": list(wanted),
+                "protocol_version": protocol_version,
+                "run_ids": sorted(
+                    run.run_id
+                    for runs_for_condition in grouped.values()
+                    for run in runs_for_condition
+                ),
+            }
+        )
     return grouped
+
+
+ANALYSIS_CACHE_SCHEMA_VERSION = 1
+
+
+def analysis_cache_path(output: Path) -> Path:
+    """Return the sidecar manifest path for one analysis invocation."""
+    return output.with_name(f".{output.name}.analysis-cache.json")
+
+
+def cached_analysis_outputs(
+    client: AnalysisClient,
+    output: Path,
+) -> list[Path] | None:
+    """Return existing outputs when every recorded selection has the same runs."""
+    path = analysis_cache_path(output)
+    try:
+        manifest = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if manifest.get("schema_version") != ANALYSIS_CACHE_SCHEMA_VERSION:
+        return None
+    selections = manifest.get("selections")
+    encoded_outputs = manifest.get("outputs")
+    if not isinstance(selections, list) or not selections:
+        return None
+    if not isinstance(encoded_outputs, list) or not encoded_outputs:
+        return None
+    outputs = [
+        candidate if candidate.is_absolute() else path.parent / candidate
+        for item in encoded_outputs
+        if isinstance(item, str)
+        for candidate in (Path(item),)
+    ]
+    if len(outputs) != len(encoded_outputs) or not all(item.is_file() for item in outputs):
+        return None
+    previous_selections = client.analysis_selections
+    client.analysis_selections = []
+    try:
+        for selection in selections:
+            if not isinstance(selection, dict):
+                return None
+            try:
+                grouped = completed_seed_runs(
+                    client,
+                    experiment_name=str(selection["experiment_name"]),
+                    group_id=str(selection["group_id"]),
+                    atomic_run_ids=[str(item) for item in selection["atomic_run_ids"]],
+                    protocol_version=(
+                        None
+                        if selection.get("protocol_version") is None
+                        else str(selection["protocol_version"])
+                    ),
+                )
+            except (KeyError, TypeError):
+                return None
+            current_run_ids = sorted(
+                run.run_id
+                for runs_for_condition in grouped.values()
+                for run in runs_for_condition
+            )
+            if current_run_ids != selection.get("run_ids"):
+                return None
+    finally:
+        client.analysis_selections = previous_selections
+    return outputs
+
+
+def write_analysis_cache(
+    client: AnalysisClient,
+    output: Path,
+    outputs: Sequence[Path],
+) -> None:
+    """Persist selected run IDs and the files produced from them."""
+    if not client.analysis_selections or not outputs:
+        return
+    path = analysis_cache_path(output)
+    if not all(item.is_file() for item in outputs):
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    encoded_outputs = []
+    for item in outputs:
+        try:
+            encoded_outputs.append(str(item.relative_to(path.parent)))
+        except ValueError:
+            encoded_outputs.append(str(item.resolve()))
+    manifest = {
+        "schema_version": ANALYSIS_CACHE_SCHEMA_VERSION,
+        "selections": client.analysis_selections,
+        "outputs": encoded_outputs,
+    }
+    temporary = path.with_suffix(f"{path.suffix}.tmp")
+    temporary.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    temporary.replace(path)
 
 
 def _local_artifact_root(experiment_name: str, run_key: str | None) -> Path | None:

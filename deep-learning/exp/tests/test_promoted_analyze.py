@@ -1,8 +1,9 @@
+import csv
 from types import SimpleNamespace
 
 import pytest
 
-from exp.original.promoted_analyze import _latest_seed_runs, _summary
+from exp.original.promoted_analyze import _curves, _latest_seed_runs, _summary
 
 
 def _run(run_id, *, atomic, seed, start_time):
@@ -84,4 +85,88 @@ def test_promoted_original_summary_handles_empty_runs(tmp_path, capsys, domain):
     assert f"{domain}/e01 summary" in capsys.readouterr().out
     assert output.read_text(encoding="utf-8").splitlines() == [
         "atomic_run_id,metric,count,mean,standard_deviation,minimum,maximum"
+    ]
+
+
+class _ArtifactClient:
+    def __init__(self, paths):
+        self.paths = paths
+
+    def download_artifacts(self, run_id, artifact_path):
+        assert artifact_path == "raw/metrics.csv"
+        return self.paths[run_id]
+
+
+def _cnn_run(run_id, *, train, test, test_full, root):
+    path = root / f"{run_id}.csv"
+    path.write_text(
+        "epoch,split,accuracy\n"
+        f"0,train,0.1\n0,test,0.2\n"
+        f"19,train,{train}\n19,test,{test}\n20,test-full,{test_full}\n",
+        encoding="utf-8",
+    )
+    run = SimpleNamespace(
+        info=SimpleNamespace(run_id=run_id),
+        data=SimpleNamespace(
+            tags={"atomic_run.id": "SIMPLE-CONVNET"},
+            metrics={
+                "final/test/accuracy": test_full,
+                "runtime/train_total_s": 10.0,
+            },
+        ),
+    )
+    return run, path
+
+
+def test_ds1_original_cnn_summary_recovers_splits_from_raw_metrics(
+    tmp_path,
+):
+    run_1, path_1 = _cnn_run(
+        "run-1", train=0.98, test=0.96, test_full=0.95, root=tmp_path
+    )
+    run_2, path_2 = _cnn_run(
+        "run-2", train=1.0, test=0.98, test_full=0.97, root=tmp_path
+    )
+    client = _ArtifactClient({"run-1": path_1, "run-2": path_2})
+    output = tmp_path / "e06_summary.csv"
+
+    _summary(
+        output,
+        [run_1, run_2],
+        domain="ds1_original",
+        experiment_id="e06",
+        client=client,
+    )
+
+    rows = list(csv.DictReader(output.open(encoding="utf-8")))
+    assert [row["metric"] for row in rows] == [
+        "final/test-full/accuracy",
+        "final/test/accuracy",
+        "final/train/accuracy",
+        "runtime/train_total_s",
+    ]
+    train = next(row for row in rows if row["metric"] == "final/train/accuracy")
+    assert float(train["mean"]) == pytest.approx(0.99)
+
+
+def test_ds1_original_cnn_curve_contains_train_and_test_series(tmp_path):
+    run, raw_path = _cnn_run(
+        "run-1", train=0.98, test=0.96, test_full=0.95, root=tmp_path
+    )
+    client = _ArtifactClient({"run-1": raw_path})
+    output = tmp_path / "e06_band.png"
+
+    _curves(
+        client,
+        output,
+        [run],
+        "band",
+        domain="ds1_original",
+        experiment_id="e06",
+    )
+
+    rows = list(csv.DictReader(output.with_suffix(".csv").open(encoding="utf-8")))
+    assert [row["series"] for row in rows] == [
+        "SIMPLE-CONVNET/train",
+        "SIMPLE-CONVNET/test",
     ]

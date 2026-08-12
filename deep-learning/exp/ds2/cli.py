@@ -111,6 +111,14 @@ def analyze(
     seed: Annotated[int | None, typer.Option("--seed")] = None,
     summary: Annotated[bool, typer.Option("-s", "--summary")] = False,
     original: Annotated[bool, typer.Option("-o", "--original")] = False,
+    legacy: Annotated[
+        bool,
+        typer.Option(
+            "--legacy",
+            "--lagacy",
+            help="Analyze legacy-protocol MLflow runs.",
+        ),
+    ] = False,
 ) -> None:
     from exp.commands import analyze_command
 
@@ -124,6 +132,7 @@ def analyze(
         seed=seed,
         summary=summary,
         original=original,
+        legacy=legacy,
     )
 
 

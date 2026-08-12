@@ -9,10 +9,12 @@ import matplotlib.pyplot as plt
 
 from exp.analyze import (
     AnalysisClient,
+    cached_analysis_outputs,
     mlflow_client,
     parse_experiment_selection,
     save_figure,
     tracking_uri_default,
+    write_analysis_cache,
     write_summary,
 )
 
@@ -63,6 +65,7 @@ def analyze(
     output_dir: Path | None,
     seed: int | None,
     summary: bool,
+    legacy: bool = False,
 ) -> None:
     if error_style not in {"band", "errorbar"}:
         raise ValueError(f"unsupported error style: {error_style}")
@@ -73,20 +76,33 @@ def analyze(
     if not selected:
         raise ValueError("selection contains no supported analyses")
     client = AnalysisClient(
-        mlflow_client(tracking_uri or tracking_uri_default()), seed=seed
+        mlflow_client(tracking_uri or tracking_uri_default()),
+        seed=seed,
+        legacy=legacy,
     )
     root = output_dir or IMAGE_ROOT
     outputs = []
     for experiment in selected:
         seed_suffix = "" if seed is None else f"_seed-{seed}"
+        legacy_suffix = "_legacy" if legacy else ""
         if summary:
-            output = root / f"{experiment}_summary{seed_suffix}.csv"
-        else:
-            output = root / f"{experiment}_{error_style}{seed_suffix}.png"
-        outputs.extend(
-            _save_result(
-                renderers[experiment](client, error_style, output), output
+            output = root / (
+                f"{experiment}_summary{legacy_suffix}{seed_suffix}.csv"
             )
+        else:
+            output = root / (
+                f"{experiment}_{error_style}{legacy_suffix}{seed_suffix}.png"
+            )
+        cached_outputs = cached_analysis_outputs(client, output)
+        if cached_outputs is not None:
+            print(f"{experiment}: analysis cache hit", file=sys.stderr)
+            outputs.extend(cached_outputs)
+            continue
+        client.analysis_selections = []
+        experiment_outputs = _save_result(
+            renderers[experiment](client, error_style, output), output
         )
+        write_analysis_cache(client, output, experiment_outputs)
+        outputs.extend(experiment_outputs)
     for path in outputs:
         print(path)

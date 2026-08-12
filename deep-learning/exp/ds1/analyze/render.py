@@ -9,11 +9,13 @@ import matplotlib.pyplot as plt
 
 from exp.analyze import (
     AnalysisClient,
+    cached_analysis_outputs,
     completed_seed_runs,
     mlflow_client,
     parse_experiment_selection,
     save_figure,
     tracking_uri_default,
+    write_analysis_cache,
     write_summary,
 )
 from exp.model_parameters import (
@@ -134,8 +136,14 @@ def analyze(
             output = root / f"{output_id}_summary{seed_suffix}.csv"
         else:
             output = root / f"{output_id}_{error_style}{seed_suffix}.png"
-        outputs.extend(
-            _save_result(renderers[experiment](client, error_style, output), output)
+        cached_outputs = cached_analysis_outputs(client, output)
+        if cached_outputs is not None:
+            print(f"{experiment}: analysis cache hit", file=sys.stderr)
+            outputs.extend(cached_outputs)
+            continue
+        client.analysis_selections = []
+        experiment_outputs = _save_result(
+            renderers[experiment](client, error_style, output), output
         )
         if summary and experiment in SUMMARY_MODELS:
             group_id, atomic_run_ids = SUMMARY_MODELS[experiment]
@@ -171,5 +179,7 @@ def analyze(
             for atomic_run_id, parameter_count in parameter_counts.items():
                 print(f"[{atomic_run_id}] {format_parameter_count(parameter_count)}")
             append_parameter_counts(output.with_suffix(".csv"), parameter_counts)
+        write_analysis_cache(client, output, experiment_outputs)
+        outputs.extend(experiment_outputs)
     for path in outputs:
         print(path)

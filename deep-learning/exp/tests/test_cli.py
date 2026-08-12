@@ -166,6 +166,22 @@ def test_analyze_uses_typed_dispatch(monkeypatch: pytest.MonkeyPatch) -> None:
     }
 
 
+@pytest.mark.parametrize("flag", ("--legacy", "--lagacy"))
+def test_ds2_analyze_dispatches_legacy_selection(
+    monkeypatch: pytest.MonkeyPatch,
+    flag: str,
+) -> None:
+    captured = {}
+    module = SimpleNamespace(analyze=lambda **kwargs: captured.update(kwargs))
+    monkeypatch.setattr("exp.commands.importlib.import_module", lambda _name: module)
+
+    result = runner.invoke(app, ["analyze", "ds2", "-e", "03", flag])
+
+    assert result.exit_code == 0
+    assert captured["experiments"] == ["03"]
+    assert captured["legacy"] is True
+
+
 def test_registered_domain_contracts_are_complete_and_unique() -> None:
     assert len(DOMAIN_REGISTRY) == len(set(DOMAIN_REGISTRY))
     for name, definition in DOMAIN_REGISTRY.items():

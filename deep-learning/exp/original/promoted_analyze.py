@@ -33,7 +33,13 @@ def analyze(*, domain: str, experiments: list[str], tracking_uri: str | None, er
         suffix = "" if seed is None else f"_seed-{seed}"
         if summary:
             output = root / f"{experiment_id}_summary{suffix}.csv"
-            _summary(output, runs, domain=domain, experiment_id=experiment_id)
+            _summary(
+                output,
+                runs,
+                domain=domain,
+                experiment_id=experiment_id,
+                client=client,
+            )
         else:
             output = root / f"{experiment_id}_{error_style}{suffix}.png"
             _curves(
@@ -42,6 +48,8 @@ def analyze(*, domain: str, experiments: list[str], tracking_uri: str | None, er
                 runs,
                 error_style,
                 labels=_curve_labels(domain, experiment_id),
+                domain=domain,
+                experiment_id=experiment_id,
             )
             if domain == "ds1_original" and experiment_id == "e06":
                 _filters(client, output.with_name(f"{experiment_id}_filters{suffix}.png"), runs)
@@ -78,17 +86,47 @@ def _experiments(domain: str, requested: list[str]) -> list[str]:
     return parse_experiment_ids(requested)
 
 
-def _summary(path: Path, runs, *, domain: str, experiment_id: str) -> None:
+def _summary(
+    path: Path,
+    runs,
+    *,
+    domain: str,
+    experiment_id: str,
+    client=None,
+) -> None:
+    raw_metrics = {
+        run.info.run_id: _ds1_cnn_final_metrics(client, run, domain)
+        for run in runs
+    } if domain == "ds1_original" and experiment_id in {"e06", "e07"} else {}
     keys = sorted(
-        {key for run in runs for key in run.data.metrics if key.startswith("final/") or key.startswith("runtime/")}
+        {
+            key
+            for run in runs
+            for key in (
+                set(run.data.metrics).union(
+                    raw_metrics.get(
+                        getattr(getattr(run, "info", None), "run_id", ""),
+                        {},
+                    )
+                )
+            )
+            if key.startswith("final/") or key.startswith("runtime/")
+        }
     )
     specs = _summary_specs(domain, experiment_id, keys)
     grouped = defaultdict(list)
     for run in runs:
         atomic = run.data.tags.get("atomic_run.id", "")
+        run_metrics = {
+            **run.data.metrics,
+            **raw_metrics.get(
+                getattr(getattr(run, "info", None), "run_id", ""),
+                {},
+            ),
+        }
         for key, _label, _scale, _decimals, _unit in specs:
-            if key in run.data.metrics:
-                grouped[(atomic, key)].append(float(run.data.metrics[key]))
+            if key in run_metrics:
+                grouped[(atomic, key)].append(float(run_metrics[key]))
     rows = []
     for (atomic, key), values in sorted(grouped.items()):
         array = np.asarray(values, dtype=float)
@@ -190,7 +228,18 @@ def _curve_labels(domain: str, experiment_id: str) -> dict[str, str] | None:
     return None
 
 
-def _curves(client, path: Path, runs, error_style: str, *, labels=None) -> None:
+def _curves(
+    client,
+    path: Path,
+    runs,
+    error_style: str,
+    *,
+    labels=None,
+    domain: str | None = None,
+    experiment_id: str | None = None,
+) -> None:
+    if domain == "ds1_original" and experiment_id in {"e06", "e07"}:
+        return _ds1_cnn_curves(client, path, runs, error_style)
     grouped = defaultdict(list)
     metric_names = set()
     for run in runs:
@@ -254,6 +303,97 @@ def _curves(client, path: Path, runs, error_style: str, *, labels=None) -> None:
         atomic: aggregate(histories)
         for atomic, histories in items
     })
+
+
+def _ds1_cnn_curves(client, path: Path, runs, error_style: str) -> None:
+    grouped = defaultdict(list)
+    for run in runs:
+        atomic = run.data.tags.get("atomic_run.id", "")
+        rows = _raw_metric_rows(client, run, "ds1_original")
+        for split in ("train", "test"):
+            history = {}
+            for row in rows:
+                if row.get("split") != split:
+                    continue
+                try:
+                    epoch = float(row["epoch"])
+                    accuracy = float(row["accuracy"])
+                except (KeyError, TypeError, ValueError):
+                    continue
+                if np.isfinite(epoch) and np.isfinite(accuracy):
+                    history[epoch] = accuracy
+            if history:
+                grouped[f"{atomic}/{split}"].append(history)
+    if not grouped:
+        raise ValueError("selected DS1 original runs expose no raw accuracy curves")
+    figure, axis = plt.subplots()
+    figure._analysis_match_original_canvas = True
+    items = sorted(
+        grouped.items(),
+        key=lambda item: (item[0].rsplit("/", 1)[0], item[0].endswith("/test")),
+    )
+    for series, histories in items:
+        plot_curve(
+            axis,
+            aggregate(histories),
+            label=series,
+            marker="o" if series.endswith("/train") else "s",
+            error_style=error_style,
+            error_every=2,
+        )
+    axis.set(xlabel="epochs", ylabel="accuracy", ylim=(0, 1))
+    axis.legend(loc="lower right")
+    save_figure(figure, path)
+    plt.close(figure)
+    write_summary(
+        path.with_suffix(".csv"),
+        {series: aggregate(histories) for series, histories in items},
+    )
+
+
+def _ds1_cnn_final_metrics(client, run, domain: str) -> dict[str, float]:
+    values = {}
+    positions = {}
+    for position, row in enumerate(_raw_metric_rows(client, run, domain)):
+        split = row.get("split", "")
+        if split not in {"train", "test", "test-full"}:
+            continue
+        try:
+            epoch = float(row["epoch"])
+            accuracy = float(row["accuracy"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if not np.isfinite(epoch) or not np.isfinite(accuracy):
+            continue
+        key = f"final/{split}/accuracy"
+        if (epoch, position) >= positions.get(key, (-np.inf, -1)):
+            positions[key] = (epoch, position)
+            values[key] = accuracy
+    return values
+
+
+def _raw_metric_rows(client, run, domain: str) -> list[dict[str, str]]:
+    path = _local_raw_metric_path(run, domain)
+    if path is None and client is not None:
+        try:
+            path = Path(client.download_artifacts(run.info.run_id, "raw/metrics.csv"))
+        except Exception:
+            return []
+    if path is None or not path.is_file():
+        return []
+    try:
+        with path.open(encoding="utf-8", newline="") as stream:
+            return list(csv.DictReader(stream))
+    except OSError:
+        return []
+
+
+def _local_raw_metric_path(run, domain: str) -> Path | None:
+    run_key = run.data.tags.get("run.key")
+    if not run_key:
+        return None
+    path = Path("exp") / domain / "results/mlflow_artifacts" / run_key / "raw/metrics.csv"
+    return path if path.is_file() else None
 
 
 def _filters(client, path: Path, runs) -> None:

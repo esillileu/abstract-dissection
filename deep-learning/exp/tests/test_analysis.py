@@ -5,14 +5,17 @@ from types import SimpleNamespace
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib import rcParams
+import pytest
 
 from exp.analyze import (
     AnalysisClient,
     RunRef,
     aggregate,
+    cached_analysis_outputs,
     completed_seed_runs,
     parse_experiment_selection,
     plot_curve,
+    write_analysis_cache,
 )
 from exp.ds1.analyze.final_metrics import (
     final_test_accuracy_curve,
@@ -22,6 +25,7 @@ from exp.ds1.analyze.final_metrics import (
 from exp.ds2.analyze.e01_toy_word2vec import render
 from exp.ds2.analyze import common as ds2_analysis_common
 from exp.ds2.analyze.render import _save_result
+from exp.ds2.analyze import render as ds2_render
 from exp.plot_theme import (
     ACCENT_COLORS,
     BACKGROUND,
@@ -108,6 +112,83 @@ def test_completed_seed_runs_can_select_one_master_seed():
     assert [run.run_id for run in grouped["A"]] == ["seed-2"]
 
 
+def test_analysis_cache_reuses_outputs_for_identical_run_ids(tmp_path):
+    client = AnalysisClient(
+        FakeClient([_run("run-1", atomic="A", seed=1, start_time=20)])
+    )
+    completed_seed_runs(
+        client,
+        experiment_name="ds1",
+        group_id="GT01",
+        atomic_run_ids=["A"],
+    )
+    output = tmp_path / "e01_band.png"
+    summary = output.with_suffix(".csv")
+    output.write_bytes(b"figure")
+    summary.write_text("summary\n", encoding="utf-8")
+    write_analysis_cache(client, output, [output, summary])
+
+    assert cached_analysis_outputs(client, output) == [output, summary]
+
+
+def test_analysis_cache_misses_when_selected_run_id_changes(tmp_path):
+    source = FakeClient([_run("run-1", atomic="A", seed=1, start_time=20)])
+    client = AnalysisClient(source)
+    completed_seed_runs(
+        client,
+        experiment_name="ds1",
+        group_id="GT01",
+        atomic_run_ids=["A"],
+    )
+    output = tmp_path / "e01_summary.csv"
+    output.write_text("summary\n", encoding="utf-8")
+    write_analysis_cache(client, output, [output])
+    source.runs = [_run("run-2", atomic="A", seed=1, start_time=30)]
+
+    assert cached_analysis_outputs(client, output) is None
+
+
+def test_ds2_render_skips_renderer_on_analysis_cache_hit(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+):
+    source = FakeClient([_run("run-1", atomic="A", seed=1, start_time=20)])
+    client = AnalysisClient(source)
+    completed_seed_runs(
+        client,
+        experiment_name="ds2",
+        group_id="GT01",
+        atomic_run_ids=["A"],
+        protocol_version="legacy",
+    )
+    output = tmp_path / "e01_band.png"
+    summary = output.with_suffix(".csv")
+    output.write_bytes(b"figure")
+    summary.write_text("summary\n", encoding="utf-8")
+    write_analysis_cache(client, output, [output, summary])
+    monkeypatch.setattr(ds2_render, "mlflow_client", lambda _uri: source)
+    monkeypatch.setitem(
+        ds2_render.RENDERERS,
+        "e01",
+        lambda *_args: pytest.fail("renderer should not run on a cache hit"),
+    )
+
+    ds2_render.analyze(
+        experiments=["e01"],
+        tracking_uri="test",
+        error_style="band",
+        output_dir=tmp_path,
+        seed=None,
+        summary=False,
+    )
+
+    captured = capsys.readouterr()
+    assert "e01: analysis cache hit" in captured.err
+    assert str(output) in captured.out
+    assert str(summary) in captured.out
+
+
 def test_ds2_analysis_selects_protocol_by_execution_group(monkeypatch):
     captured = []
 
@@ -125,6 +206,26 @@ def test_ds2_analysis_selects_protocol_by_execution_group(monkeypatch):
     ds2_analysis_common.runs(FakeClient(), "GT06", ["SEQA-VAN-FWD"])
 
     assert captured == ["book-source-v1", "book-source-v1"]
+
+
+def test_ds2_analysis_can_select_legacy_protocol(monkeypatch):
+    captured = []
+
+    def fake_completed_seed_runs(*_args, **kwargs):
+        captured.append(kwargs["protocol_version"])
+        return {}
+
+    monkeypatch.setattr(
+        ds2_analysis_common,
+        "completed_seed_runs",
+        fake_completed_seed_runs,
+    )
+    client = AnalysisClient(FakeClient(), legacy=True)
+
+    ds2_analysis_common.runs(client, "GT05", ["LM-BETTER-RECIPE"])
+    ds2_analysis_common.runs(client, "GT06", ["SEQA-VAN-FWD"])
+
+    assert captured == ["legacy", "legacy"]
 
 
 def test_band_uses_one_sample_standard_deviation(monkeypatch):

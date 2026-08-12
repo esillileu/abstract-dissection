@@ -7,13 +7,16 @@ BOOK_SOURCE_GROUPS = {"GT03", "GT04", "GT05", "GT06", "GT07", "GT09", "GO01"}
 
 
 def runs(client, group: str, atomic_ids: list[str]):
+    legacy = getattr(client, "analysis_legacy", False)
     return completed_seed_runs(
         client,
         experiment_name="ds2",
         group_id=group,
         atomic_run_ids=atomic_ids,
         protocol_version=(
-            "book-source-v1" if group in BOOK_SOURCE_GROUPS else "legacy"
+            "legacy"
+            if legacy
+            else "book-source-v1" if group in BOOK_SOURCE_GROUPS else "legacy"
         ),
     )
 

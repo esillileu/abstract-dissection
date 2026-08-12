@@ -60,6 +60,20 @@ python -m exp analyze ds2 -e 01-08 --error-style errorbar
 `--seed 1`은 MLflow의 실제 `seed/master=1`인 완료 run만 선택하며 출력 이름에
 `_seed-1`을 붙인다.
 
+`--legacy`는 `protocol.version=legacy`인 이전 완료 run을 선택한다. 최신 protocol
+분석 결과를 덮어쓰지 않도록 출력 이름에 `_legacy`를 붙이며, `--seed`와 함께 쓸 수
+있다. 이전 철자와의 호환을 위해 `--lagacy`도 같은 옵션으로 인식한다.
+
+```bash
+python -m exp analyze ds2 -e 03-07 --legacy
+python -m exp analyze ds2 -e 03 --legacy --seed 1 --summary
+```
+
+각 분석은 출력 옆의 숨김 `*.analysis-cache.json` manifest에 조회 조건과 선택된 run
+ID를 기록한다. 다음 실행에서 run ID와 출력 파일이 모두 같으면 아티팩트를 다시 받거나
+렌더링하지 않고 기존 결과 경로를 출력한다. 그래프와 `--summary`는 서로 다른 manifest를
+사용한다.
+
 ## 최종 metric과 학습 시간 요약
 
 `-e 01 --summary`부터 `-e 07 --summary`는 그림 없이 각 atomic run의 최종

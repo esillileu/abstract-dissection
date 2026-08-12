@@ -146,11 +146,16 @@ def analyze_command(
     seed: int | None,
     summary: bool,
     original: bool,
+    legacy: bool = False,
 ) -> None:
     if error_style not in {"band", "errorbar"}:
         raise ValueError(f"unsupported error style: {error_style}")
     if all_experiments and experiments:
         raise ValueError("choose at most one of --all or --experiment/-e")
+    if legacy and domain.name != "ds2":
+        raise ValueError("--legacy is supported only for ds2 analysis")
+    if legacy and original:
+        raise ValueError("choose at most one of --legacy or --original")
     if original:
         if domain.name in {"ds1", "ds2"}:
             raise ValueError(
@@ -171,14 +176,17 @@ def analyze_command(
             analyze_original(domain, selected, output_dir=output_dir)
         return
     module = importlib.import_module(domain.analysis_module)
-    module.analyze(
-        experiments=[] if all_experiments else experiments,
-        tracking_uri=tracking_uri,
-        error_style=error_style,
-        output_dir=output_dir,
-        seed=seed,
-        summary=summary,
-    )
+    arguments = {
+        "experiments": [] if all_experiments else experiments,
+        "tracking_uri": tracking_uri,
+        "error_style": error_style,
+        "output_dir": output_dir,
+        "seed": seed,
+        "summary": summary,
+    }
+    if legacy:
+        arguments["legacy"] = True
+    module.analyze(**arguments)
 
 
 def select_original_experiments(
