@@ -125,7 +125,8 @@ def _metric_name(key: str, *, split: str = "") -> str:
         prefix = split.lower() if split.lower() in {"train", "valid", "test"} else "train"
         return f"{prefix}/perplexity"
     if "accuracy" in lowered:
-        return "test/accuracy"
+        prefix = split.lower() if split.lower() in {"train", "test", "test-full"} else "test"
+        return f"{prefix}/accuracy"
     if "loss" in lowered or "objective" in lowered:
         return "train/loss"
     return f"observation/{key}"

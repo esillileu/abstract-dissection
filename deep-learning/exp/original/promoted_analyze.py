@@ -33,7 +33,7 @@ def analyze(*, domain: str, experiments: list[str], tracking_uri: str | None, er
         suffix = "" if seed is None else f"_seed-{seed}"
         if summary:
             output = root / f"{experiment_id}_summary{suffix}.csv"
-            _summary(output, runs)
+            _summary(output, runs, domain=domain, experiment_id=experiment_id)
         else:
             output = root / f"{experiment_id}_{error_style}{suffix}.png"
             _curves(client, output, runs, error_style)
@@ -50,19 +50,103 @@ def _experiments(domain: str, requested: list[str]) -> list[str]:
     return parse_experiment_ids(requested)
 
 
-def _summary(path: Path, runs) -> None:
-    keys = sorted({key for run in runs for key in run.data.metrics if key.startswith("final/") or key.startswith("runtime/")})
+def _summary(path: Path, runs, *, domain: str, experiment_id: str) -> None:
+    keys = sorted(
+        {key for run in runs for key in run.data.metrics if key.startswith("final/") or key.startswith("runtime/")}
+    )
+    specs = _summary_specs(domain, experiment_id, keys)
+    grouped = defaultdict(list)
+    for run in runs:
+        atomic = run.data.tags.get("atomic_run.id", "")
+        for key, _label, _scale, _decimals, _unit in specs:
+            if key in run.data.metrics:
+                grouped[(atomic, key)].append(float(run.data.metrics[key]))
+    rows = []
+    for (atomic, key), values in sorted(grouped.items()):
+        array = np.asarray(values, dtype=float)
+        rows.append(
+            (
+                atomic,
+                key,
+                len(values),
+                float(array.mean()),
+                float(array.std(ddof=1)) if len(values) > 1 else 0.0,
+                float(array.min()),
+                float(array.max()),
+            )
+        )
+    print(f"{domain}/{experiment_id} summary (mean ± sample standard deviation; min-max)")
+    current_atomic = None
+    for atomic, key, count, mean, standard_deviation, minimum, maximum in rows:
+        if atomic != current_atomic:
+            print(f"[{atomic}]")
+            current_atomic = atomic
+        label, scale, decimals, unit = next(
+            (label, scale, decimals, unit)
+            for spec_key, label, scale, decimals, unit in specs
+            if spec_key == key
+        )
+        print(
+            f"{label}{unit}: {mean * scale:.{decimals}f} ± "
+            f"{standard_deviation * scale:.{decimals}f}, "
+            f"[{minimum * scale:.{decimals}f}, {maximum * scale:.{decimals}f}], "
+            f"n={count}"
+        )
     with path.open("w", encoding="utf-8", newline="") as stream:
         writer = csv.writer(stream)
-        writer.writerow(["atomic_run_id", "metric", "count", "mean", "std"])
-        grouped = defaultdict(list)
-        for run in runs:
-            atomic = run.data.tags.get("atomic_run.id", "")
-            for key in keys:
-                if key in run.data.metrics:
-                    grouped[(atomic, key)].append(float(run.data.metrics[key]))
-        for (atomic, key), values in sorted(grouped.items()):
-            writer.writerow([atomic, key, len(values), float(np.mean(values)), float(np.std(values))])
+        writer.writerow(
+            [
+                "atomic_run_id",
+                "metric",
+                "count",
+                "mean",
+                "standard_deviation",
+                "minimum",
+                "maximum",
+            ]
+        )
+        writer.writerows(rows)
+
+
+def _summary_specs(domain: str, experiment_id: str, keys: list[str]):
+    """Map projected MLflow metrics back to the original summary vocabulary."""
+
+    if domain == "ds1_original":
+        if experiment_id in {"e01", "e02"}:
+            wanted = (("final/train/loss", "final_train_objective", 1.0, 3, ""),)
+        elif experiment_id in {"e03", "e04"}:
+            wanted = tuple(
+                (f"final/{split}/accuracy", f"final_{split}_accuracy", 100.0, 2, " (%)")
+                for split in ("train", "test")
+            )
+        elif experiment_id == "e05":
+            wanted = (("final/test/accuracy", "final_train_accuracy", 100.0, 2, " (%)"),)
+        elif experiment_id in {"e06", "e07"}:
+            wanted = tuple(
+                (f"final/{split}/accuracy", f"final_{split.replace('-', '_')}_accuracy", 100.0, 2, " (%)")
+                for split in ("train", "test", "test-full")
+            )
+        else:
+            wanted = ()
+    elif domain == "ds2_original":
+        if experiment_id in {"e01", "e02"}:
+            wanted = (("final/train/loss", "final_loss", 1.0, 3, ""),)
+        elif experiment_id == "e03":
+            wanted = (("final/train/perplexity", "final_train_perplexity", 1.0, 2, ""),)
+        elif experiment_id == "e04":
+            wanted = tuple(
+                (f"final/{split}/perplexity", f"final_{split}_perplexity", 1.0, 2, "")
+                for split in ("train", "test")
+            )
+        elif experiment_id in {"e06", "e07"}:
+            wanted = (("final/test/accuracy", "final_test_accuracy", 100.0, 2, " (%)"),)
+        else:
+            wanted = ()
+    else:
+        wanted = ()
+    return tuple(spec for spec in wanted if spec[0] in keys or spec[0] == "runtime/train_total_s") + (
+        ("runtime/train_total_s", "training_time", 1.0, 1, " (s)"),
+    )
 
 
 def _curves(client, path: Path, runs, error_style: str) -> None:
