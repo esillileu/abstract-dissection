@@ -165,6 +165,7 @@ def test_vsweap_cli_dispatches_only_when_explicit(
             "--reverse-vocab-order",
             "--output-dir",
             str(tmp_path),
+            "--no-record",
         ],
     )
 
@@ -189,7 +190,10 @@ def test_vsweap_cli_leaves_default_vocab_sizes_to_each_device(
 
     result = runner.invoke(
         app,
-        ["profile", "deepscratch", "ds2", "-e", "02", "--vsweap", "--device", "cpu"],
+        [
+            "profile", "deepscratch", "ds2", "-e", "02", "--vsweap",
+            "--device", "cpu", "--no-record",
+        ],
     )
 
     assert result.exit_code == 0

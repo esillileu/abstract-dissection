@@ -209,6 +209,11 @@ class _Sink:
                         try:
                             if client and self.run_id:
                                 client.set_tag(self.run_id, "trial.status", "finished" if status == "FINISHED" else "failed")
+                                client.set_tag(
+                                    self.run_id,
+                                    "result.durable_complete",
+                                    "true" if status == "FINISHED" else "false",
+                                )
                             self.mlflow.end_run(status=status)
                         except Exception as exc: self.errors.append(f"MLflow finalization failed: {exc}")
                     return

@@ -275,12 +275,30 @@ def profile(
     measured_updates: Annotated[int, typer.Option("--measured-updates")] = 50,
     vsweap_timing: Annotated[str, typer.Option("--vsweap-timing")] = "window",
     reverse_vocab_order: Annotated[bool, typer.Option("--reverse-vocab-order")] = False,
+    tracking_uri: Annotated[str | None, typer.Option("--tracking-uri")] = None,
+    record: Annotated[bool, typer.Option("--record/--no-record")] = True,
 ) -> None:
     if volume is not Volume.DS2:
         raise ValueError("DeepScratch DS1 has no declared profiles")
     if variant is not Variant.IMPLEMENTED:
         raise ValueError("selected profile supports only variant implemented")
     from .ds2.profile.cli import profile as ds2_profile
+
+    selected_experiments = parse_experiment_ids(experiment or [])
+    if len(selected_experiments) != 1:
+        raise ValueError("profile requires exactly one experiment")
+    selected_experiment = selected_experiments[0]
+    if output_dir is None:
+        output_dir = WorkspacePaths.from_environment(Path.cwd()).resolve(
+            StateOwner.CACHE,
+            StateCoordinate(
+                "deepscratch",
+                volume.value,
+                selected_experiment,
+                variant.value,
+                "profile",
+            ),
+        )
 
     ds2_profile(
         experiment=experiment,
@@ -296,6 +314,18 @@ def profile(
         vsweap_timing=vsweap_timing,
         reverse_vocab_order=reverse_vocab_order,
     )
+    if record:
+        from .profile_results import record_profile_result
+
+        run_id = record_profile_result(
+            tracking_uri
+            or os.getenv("MLFLOW_TRACKING_URI", "http://127.0.0.1:5000"),
+            volume=volume.value,
+            experiment_id=selected_experiment,
+            variant=variant.value,
+            output=output_dir,
+        )
+        typer.echo(f"profile run: {run_id}")
 
 
 @cli_errors

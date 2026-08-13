@@ -19,6 +19,7 @@ def test_e06_profile_cli_dispatches_to_isolated_profiler(monkeypatch, tmp_path) 
             "--condition", "vanilla-forward", "--update-warmup", "3",
             "--measured-updates", "7", "--update-repetitions", "2",
             "--output-dir", str(tmp_path),
+            "--no-record",
         ],
     )
 
