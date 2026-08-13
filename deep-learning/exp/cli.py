@@ -11,6 +11,8 @@ from exp.ds1 import cli as ds1_cli
 from exp.ds2 import cli as ds2_cli
 from exp.ds1_original import cli as ds1_original_cli
 from exp.ds2_original import cli as ds2_original_cli
+from exp.deepscratch import cli as deepscratch_cli
+from exp.framework import DomainRegistry
 
 
 app = typer.Typer(
@@ -52,6 +54,16 @@ _register_domain("ds1", ds1_cli)
 _register_domain("ds2", ds2_cli)
 _register_domain("ds1_original", ds1_original_cli)
 _register_domain("ds2_original", ds2_original_cli)
+
+# Canonical domain plugin. Historical volume-shaped commands remain migration
+# shims while active legacy writers finish.
+PLUGIN_REGISTRY = DomainRegistry()
+PLUGIN_REGISTRY.register(deepscratch_cli.DEFINITION)
+plan_app.command("deepscratch")(deepscratch_cli.plan)
+run_app.command("deepscratch")(deepscratch_cli.run)
+analyze_app.command("deepscratch")(deepscratch_cli.analyze)
+profile_app.command("deepscratch")(deepscratch_cli.profile)
+app.command("import-legacy")(deepscratch_cli.import_legacy)
 
 
 def main(argv: Sequence[str] | None = None) -> None:

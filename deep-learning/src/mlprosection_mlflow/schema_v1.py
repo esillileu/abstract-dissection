@@ -324,7 +324,7 @@ def build_tags(
         "structure/signature": identity.structure_signature,
         "atomic_run/id": identity.atomic_run_id,
     }
-    return {
+    tags = {
         "schema.version": "1",
         "project.name": "mlprosection",
         "run.type": "seed_trial",
@@ -361,6 +361,19 @@ def build_tags(
         "retry.of": os.getenv("MLFLOW_RETRY_OF", ""),
         "parent.mlflow_run_id": os.getenv("MLFLOW_PARENT_RUN_ID", ""),
     }
+    declared_tags = _section(config, "tracking").get("tags", {})
+    if not isinstance(declared_tags, dict):
+        raise ValueError("tracking.tags must be a mapping")
+    substitutions = {
+        "atomic_run_id": identity.atomic_run_id,
+        "condition_id": identity.atomic_run_id,
+        "experiment_id": identity.experiment_ids[0],
+    }
+    tags.update({
+        str(key): str(value).format_map(substitutions)
+        for key, value in declared_tags.items()
+    })
+    return tags
 
 
 def _section(config: dict[str, object], name: str) -> dict[str, object]:

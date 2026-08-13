@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import csv
+from contextlib import contextmanager
+from contextvars import ContextVar
 import json
 import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Callable, Iterable, Mapping, Sequence
 
 import numpy as np
@@ -19,6 +22,111 @@ apply_plot_theme()
 
 
 DEFAULT_TRACKING_URI = "http://127.0.0.1:5000"
+
+
+_ANALYSIS_SCOPE: ContextVar[
+    tuple[dict[str, tuple[str, ...]], str | None]
+] = ContextVar(
+    "experiment_analysis_scope", default=({}, None)
+)
+
+
+@contextmanager
+def analysis_scope(
+    *,
+    experiment_aliases: Mapping[str, str | Sequence[str]],
+    variant: str | None = None,
+):
+    """Temporarily map logical names to one or more physical experiments."""
+    aliases = {
+        name: (sources,) if isinstance(sources, str) else tuple(sources)
+        for name, sources in experiment_aliases.items()
+    }
+    token = _ANALYSIS_SCOPE.set((aliases, variant))
+    try:
+        yield
+    finally:
+        _ANALYSIS_SCOPE.reset(token)
+
+
+class _ScopedMlflowClient:
+    _VIRTUAL_PREFIX = "logical:"
+
+    def __init__(
+        self,
+        client,
+        aliases: dict[str, tuple[str, ...]],
+        variant: str | None,
+    ) -> None:
+        self._client = client
+        self._aliases = aliases
+        self._variant = variant
+        self._virtual_sources: dict[str, tuple[tuple[str, str], ...]] = {}
+        self._run_sources: dict[str, str] = {}
+
+    def __getattr__(self, name):
+        return getattr(self._client, name)
+
+    def get_experiment_by_name(self, name: str):
+        source_names = self._aliases.get(name)
+        if source_names is None:
+            return self._client.get_experiment_by_name(name)
+        sources = []
+        for source_name in source_names:
+            experiment = self._client.get_experiment_by_name(source_name)
+            if experiment is not None:
+                sources.append((source_name, experiment.experiment_id))
+        if not sources:
+            return None
+        virtual_id = f"{self._VIRTUAL_PREFIX}{name}"
+        self._virtual_sources[virtual_id] = tuple(sources)
+        return SimpleNamespace(experiment_id=virtual_id, name=name)
+
+    def search_runs(self, experiment_ids, filter_string="", **kwargs):
+        physical_sources: list[tuple[str | None, str]] = []
+        for experiment_id in experiment_ids:
+            virtual = self._virtual_sources.get(str(experiment_id))
+            if virtual is None:
+                physical_sources.append((None, str(experiment_id)))
+            else:
+                physical_sources.extend(virtual)
+        combined = []
+        for source_name, experiment_id in physical_sources:
+            scoped_filter = filter_string
+            if self._variant is not None and source_name is not None:
+                if source_name.startswith("deepscratch."):
+                    variant_filter = (
+                        "tags.`implementation.variant` = "
+                        f"'{self._variant}'"
+                    )
+                    scoped_filter = (
+                        f"{scoped_filter} AND {variant_filter}"
+                        if scoped_filter else variant_filter
+                    )
+            runs = self._client.search_runs(
+                [experiment_id], filter_string=scoped_filter, **kwargs
+            )
+            for run in runs:
+                if (
+                    run.data.tags.get("transfer.import.disposition")
+                    == "imported-alternate"
+                ):
+                    continue
+                if source_name is not None:
+                    self._run_sources[run.info.run_id] = source_name
+                combined.append(run)
+        order_by = kwargs.get("order_by") or []
+        if any(
+            str(order).lower() == "attributes.start_time desc"
+            for order in order_by
+        ):
+            combined.sort(
+                key=lambda run: int(run.info.start_time or 0), reverse=True
+            )
+        return combined
+
+    def source_experiment_name(self, run_id: str) -> str | None:
+        return self._run_sources.get(run_id)
 
 
 class AnalysisClient:
@@ -74,7 +182,11 @@ def mlflow_client(tracking_uri: str):
     except ImportError as exc:  # pragma: no cover - depends on optional extra
         raise RuntimeError("Install tracking dependencies with `uv sync --extra tracking`.") from exc
     mlflow.set_tracking_uri(tracking_uri)
-    return MlflowClient(tracking_uri=tracking_uri)
+    client = MlflowClient(tracking_uri=tracking_uri)
+    aliases, variant = _ANALYSIS_SCOPE.get()
+    if aliases or variant is not None:
+        return _ScopedMlflowClient(client, aliases, variant)
+    return client
 
 
 def completed_seed_runs(
@@ -124,7 +236,13 @@ def completed_seed_runs(
                 atomic,
                 str(seed),
                 int(run.info.start_time or 0),
-                _local_artifact_root(experiment_name, tags.get("run.key")),
+                _local_artifact_root(
+                    getattr(client, "source_experiment_name", lambda _id: None)(
+                        run.info.run_id
+                    )
+                    or experiment_name,
+                    tags.get("run.key"),
+                ),
             ),
         )
     for (atomic, _), run in selected.items():
