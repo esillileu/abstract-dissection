@@ -92,6 +92,12 @@ def inspect_plan_status(
         if (
             expected_protocol is not None
             and attempt.protocol_version != expected_protocol
+            and not (
+                variant is Variant.ORIGINAL
+                and attempt.protocol_version == "legacy"
+                and not attempt.namespace.startswith("deepscratch.")
+                and expected_protocol == "book-source-v1"
+            )
         ):
             continue
         key = (attempt.experiment_id, attempt.condition_id, attempt.seed)

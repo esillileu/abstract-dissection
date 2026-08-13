@@ -186,3 +186,28 @@ def test_plan_status_rejects_attempts_from_another_protocol(
     )
 
     assert report.counts["missing"] == 1
+
+
+def test_original_legacy_protocol_maps_to_declared_book_protocol(
+    tmp_path: Path,
+) -> None:
+    client = MlflowClient(_uri(tmp_path))
+    experiment_id = client.create_experiment("ds2_original")
+    _run(
+        client,
+        experiment_id,
+        "RNNLM",
+        status="FINISHED",
+        start_time=1,
+        protocol_version="legacy",
+    )
+
+    report = inspect_plan_status(
+        client,
+        [_plan("RNNLM")],
+        volume=Volume.DS2,
+        variant=Variant.ORIGINAL,
+        expected_protocols={("e01", "RNNLM"): "book-source-v1"},
+    )
+
+    assert report.counts["completed"] == 1
