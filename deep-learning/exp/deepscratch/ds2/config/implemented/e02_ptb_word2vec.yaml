@@ -1,4 +1,4 @@
-domain: ds2
+domain: deepscratch.ds2.implemented
 kind: word2vec
 run: {experiment_id: e02, group_id: GT02, protocol: PTB Word2Vec, recipe_id: ds2-gt02-ptb-word2vec, structure_signature: ptb-word2vec-w5-e100}
 execution: {mode: seeded, default_device: cuda:0}
@@ -15,7 +15,7 @@ recording:
 numerics: {dtype: float32, backend: cupy, device: cuda:0, deterministic: true}
 checkpoint: {save_final: true, save_best: false, format: v2}
 profiling: {enabled: false, synchronize_train: true}
-tracking: {enabled: true, experiment: ds2}
+tracking: {enabled: true, experiment: deepscratch.ds2}
 variants:
   W2V-PTB-CBOW-NS: {run: {structure_signature: ptb-cbow-negative-sampling-w5-e100}, model: {name: CBOW}, objective: {name: NegativeSampling}}
   W2V-PTB-SKIPGRAM-NS: {run: {structure_signature: ptb-skipgram-negative-sampling-w5-e100}, model: {name: SkipGram}, objective: {name: NegativeSampling}}

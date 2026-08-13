@@ -25,7 +25,7 @@ after 20 warmup updates:
 
 This estimate excludes the experiment trainer's periodic recording probes.
 The profile result is stored in
-`exp/deepscratch/ds2/profile/e02/results/fused-dense-adam/cuda0/update.json`.
+`.cache/experiments/deepscratch/ds2/e02/implemented/profile/fused-dense-adam/cuda0/update.json`.
 
 ## Actual one-epoch training
 
@@ -38,7 +38,7 @@ Seed 1 completed all 9,295 updates without NaN, Inf, or divergence:
 - final book loss: 2.229693
 
 The run artifacts are under
-`exp/ds2/results/mlflow_artifacts/3354d37d7bad9f973e9b5f002efead1f79a326f99492860e42cc28319e85df59/`.
+`.legacy/experiments/ds2/results/mlflow_artifacts/3354d37d7bad9f973e9b5f002efead1f79a326f99492860e42cc28319e85df59/`.
 
 ## Same-as-e02 training-time estimate
 

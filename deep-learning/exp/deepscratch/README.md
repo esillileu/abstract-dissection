@@ -9,6 +9,10 @@ storage namespaces; they are not executable domains. Runtime code, configuration
 analysis, profiling, and vendored source now live below
 `exp/deepscratch/ds1` and `exp/deepscratch/ds2`.
 
+The domain root contains only `cli.py`, `definition.py`, `identity.py`, and
+the owned `analysis/`, `execution/`, `legacy/`, `original_runtime/`, `ds1/`,
+and `ds2/` packages. Result payloads never belong under the source tree.
+
 Derived analysis output defaults to:
 
 ```text
@@ -16,6 +20,24 @@ Derived analysis output defaults to:
 ```
 
 Use `EXP_ARTIFACT_ROOT` to replace the `.artifacts/experiments` root.
+
+New run state has four distinct owners:
+
+```text
+results/experiments   durable staging and verified local mirrors
+.artifacts/experiments derived tables and figures
+.cache/experiments    downloads, transformed data, and analysis manifests
+.legacy/experiments   unaudited historical durable payloads
+```
+
+In particular, the retired `exp/deepscratch.ds2/results` directory is not a
+writer target. It is an unaudited historical mirror and remains untouched
+until storage audit proves a safe migration or cleanup action.
+
+Override them with `EXP_RESULT_STAGING_ROOT`, `EXP_ARTIFACT_ROOT`,
+`EXP_CACHE_ROOT`, and `EXP_LEGACY_ROOT`. A SchemaV1 run remains incomplete
+until MLflow has received and digest-verified its result manifest and required
+checkpoint payloads. Only then is `result.durable_complete=true` written.
 
 ## Check planned run coverage
 
@@ -48,7 +70,7 @@ The command accepts the same `-e`, `-a`, `-x`, `--seed`, `--seed-set`, and
 The same original alias is available for analysis summaries:
 
 ```bash
-just exp analyze deepscratch ds2 -e 05 -o -s
+just exp analyze deepscratch ds2 -e 05 -o
 ```
 
 Cross-variant analysis is explicit and writes a comparison table containing
@@ -56,12 +78,27 @@ only declared comparable metrics. Missing native observations are recorded as
 `unavailable` rather than synthesized:
 
 ```bash
-just exp analyze deepscratch ds2 -e 03 --variant all -s
+just exp analyze deepscratch ds2 -e 03 --variant all
 ```
 
 An imported alternate remains excluded by default. Select an exact attempt
 when needed:
 
 ```bash
-just exp analyze deepscratch ds2 -e 03 -o -s --run-id <mlflow-run-id>
+just exp analyze deepscratch ds2 -e 03 -o --run-id <mlflow-run-id>
 ```
+
+## Audit and clean local mirrors
+
+Storage cleanup is always a dry run unless `--apply` is present:
+
+```bash
+just exp storage deepscratch audit
+just exp storage deepscratch cleanup --verified-mirrors
+just exp storage deepscratch cleanup --verified-mirrors --apply
+```
+
+Only a locally digest-valid mirror backed by a `FINISHED`, durable MLflow run
+is eligible. Running, failed, incomplete, orphaned, and legacy-quarantined data
+is never selected. The audit also refuses cutover while a historical writer
+namespace contains a running run.

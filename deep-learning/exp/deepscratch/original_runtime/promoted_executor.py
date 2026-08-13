@@ -40,7 +40,12 @@ class _ModelRecord:
 def execute(config: dict[str, object], context, *, domain: str, source_root: Path) -> ExperimentResult:
     experiment = str(config["source_experiment"])
     trial_id = str(config["trial_id"])
-    volume = domain.removesuffix("_original")
+    try:
+        _, volume, variant = domain.split(".")
+    except ValueError as exc:
+        raise ValueError(f"invalid canonical execution identity: {domain}") from exc
+    if variant != "original":
+        raise ValueError(f"original executor received non-original identity: {domain}")
     module = importlib.import_module(
         f"exp.deepscratch.{volume}.original.run.{experiment}"
     )
@@ -56,7 +61,7 @@ def execute(config: dict[str, object], context, *, domain: str, source_root: Pat
     tokens = set_runtime(seed=seed, selected_device=selected_device, config=config)
     started = perf_counter()
     try:
-        if domain == "ds1_original":
+        if domain == "deepscratch.ds1.original":
             trial.runner(source_root, output)
         else:
             trial.runner(source_root, output, _dependency_root(config, output))

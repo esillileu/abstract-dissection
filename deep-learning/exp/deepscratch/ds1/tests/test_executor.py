@@ -73,7 +73,7 @@ def test_ds1_run_spec_rejects_legacy_trainer_policy(tmp_path) -> None:
     path.write_text(
         """
 kind: supervised_classification
-domain: ds1
+domain: deepscratch.ds1.implemented
 run: {experiment_id: e99, group_id: GT99, protocol: test, recipe_id: test, structure_signature: test}
 training: {record_step_validation_interval: 1}
 budget: {max_epochs: 1}

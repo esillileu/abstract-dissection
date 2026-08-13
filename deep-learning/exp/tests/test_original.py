@@ -10,7 +10,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from exp.deepscratch.original_runtime.cache import (
+from exp.deepscratch.original_runtime.cache_protocol import (
     SCHEMA_VERSION,
     cache_is_valid,
     publish_result,
@@ -172,7 +172,7 @@ def test_ds1_renderer_uses_only_persisted_fixture(
         )
 
     before = set(sys.modules)
-    from exp.deepscratch.ds1.original.render.api import render
+    from exp.deepscratch.ds1.original.native_analysis.api import render
 
     outputs = render(["e09"], root=root)
     newly_imported = set(sys.modules) - before
@@ -199,7 +199,7 @@ def test_npz_is_host_numpy_and_never_requires_pickle(tmp_path: Path) -> None:
 def test_to_host_converts_a_sequence_of_cupy_scalars(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from exp.deepscratch.original_runtime.cache import to_host
+    from exp.deepscratch.original_runtime.cache_protocol import to_host
 
     class FakeCupyArray:
         def __init__(self, value: int) -> None:

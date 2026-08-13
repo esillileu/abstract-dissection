@@ -5,7 +5,7 @@ import pickle
 
 import numpy as np
 
-from exp.canonicalize_word2vec_checkpoints import canonicalize
+from exp.deepscratch.ds2.implemented.checkpoint_migration import canonicalize
 from mlprosection.nn.model.architecture import CBOW
 from mlprosection.nn.objective import SoftmaxWithLoss
 from mlprosection.optim.SGD import Adam

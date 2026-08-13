@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from exp.spec import RunIdentity, load_variant, mapping
+from exp.framework.execution.spec import RunIdentity, load_variant, mapping
 
 
 @dataclass(frozen=True)
@@ -134,8 +134,11 @@ def parse_run_spec(
 ) -> RunSpec:
     path = Path(path)
     raw = load_variant(path, atomic_run_id=atomic_run_id, overrides=overrides)
-    if raw.get("domain") != "ds2":
-        raise ValueError(f"DS2 YAML requires domain: ds2: {path}")
+    if raw.get("domain") != "deepscratch.ds2.implemented":
+        raise ValueError(
+            "DS2 implemented YAML requires domain: "
+            f"deepscratch.ds2.implemented: {path}"
+        )
     if raw.get("kind") not in {"word2vec", "language_modeling", "seq2seq", "observation"}:
         raise ValueError(f"DS2 does not support kind: {raw.get('kind')}")
     _reject_old_catalog_keys(raw)

@@ -1,4 +1,4 @@
-domain: ds2
+domain: deepscratch.ds2.implemented
 kind: seq2seq
 run: {experiment_id: e07, group_id: GT07, protocol: date Seq2seq, protocol_version: book-source-v1, recipe_id: ds2-gt07-date-book-v1, structure_signature: date-seq2seq}
 execution: {mode: seeded, default_device: cuda:0}
@@ -16,7 +16,7 @@ recording:
 numerics: {dtype: float32, backend: cupy, device: cuda:0, deterministic: true}
 checkpoint: {save_final: true, save_best: true, format: v2}
 profiling: {enabled: false}
-tracking: {enabled: true, experiment: ds2, upload_eval_checkpoints: true}
+tracking: {enabled: true, experiment: deepscratch.ds2, upload_eval_checkpoints: true}
 variants:
   SEQD-VAN-REV: {run: {structure_signature: date-seq2seq-16-256}, model: {name: Seq2seq, wordvec_size: 16, hidden_size: 256}}
   SEQD-PEEKY-REV: {run: {structure_signature: date-peeky-16-256}, model: {name: PeekySeq2seq, wordvec_size: 16, hidden_size: 256}}

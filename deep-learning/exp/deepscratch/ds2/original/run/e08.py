@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from exp.deepscratch.original_runtime.cache import cache_is_valid
+from exp.deepscratch.original_runtime.cache_protocol import cache_is_valid
 from exp.deepscratch.original_runtime.runtime_context import array_module, synchronize
 
 from .common import COMMON_SOURCES, Trial, importlib, load_npz, np, restore_params, save_csv, save_npz, source_imports, to_host

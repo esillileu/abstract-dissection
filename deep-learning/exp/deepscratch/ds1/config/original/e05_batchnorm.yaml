@@ -1,5 +1,5 @@
-domain: ds1_original
-kind: ds1_original
+domain: deepscratch.ds1.original
+kind: deepscratch.ds1.original
 run: {experiment_id: e05, group_id: ORIGINAL-E05}
 source_experiment: e05
 trial_id: placeholder
@@ -7,7 +7,7 @@ execution: {mode: seeded, default_device: cpu}
 seed_policy: {seed_set: research_v1, seed_count: 10}
 dataset: {id: mnist, split_seed: 1984}
 numerics: {backend: numpy, device: cpu}
-tracking: {enabled: true, experiment: ds1_original}
+tracking: {enabled: true, experiment: deepscratch.ds1}
 checkpoint: {save_final: false}
 variants:
   BN-01-OFF: {trial_id: dlfs1.ch06.batchnorm.scale-01.bn-off}

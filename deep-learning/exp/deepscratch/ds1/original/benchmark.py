@@ -12,11 +12,18 @@ from time import perf_counter
 
 import numpy as np
 
+from exp.framework.paths import StateCoordinate, StateOwner, WorkspacePaths
+
 
 BOOK_ROOT = Path(
     "01_deep-learning-from-base/WegraLee-deep-learning-from-scratch"
 ).resolve()
-DEFAULT_OUTPUT = Path("exp/deepscratch/ds1/original/legacy_results/fixed_seed")
+DEFAULT_OUTPUT = WorkspacePaths.from_environment(Path.cwd()).resolve(
+    StateOwner.CACHE,
+    StateCoordinate(
+        "deepscratch", "ds1", "e06-e07", "original", "native-benchmark"
+    ),
+)
 EXPERIMENTS = ("e06", "e07")
 
 

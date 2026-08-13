@@ -3,7 +3,7 @@ from __future__ import annotations
 import matplotlib.pyplot as plt
 import numpy as np
 
-from exp.analyze import Curve
+from exp.framework.analysis.core import Curve
 from exp.deepscratch.ds1.analysis import e06_simple_cnn
 
 

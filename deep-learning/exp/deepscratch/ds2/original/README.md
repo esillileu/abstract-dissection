@@ -1,14 +1,14 @@
 # DS2 original-source domain
 
 This domain runs the second book's upstream source as ordinary seeded
-experiments. The default `research_v1` seed set expands 12 conditions in e01,
-e03, e04, e05, e06, e07, and e08 to 120 runs. Word2Vec e02 and all of its
-extensions are intentionally absent.
+experiments. The default `research_v1` seed set expands 14 conditions in e01,
+e02, e03, e04, e05, e06, e07, and e08 to 140 runs. e02 contains the original
+ch04 CBOW and SkipGram negative-sampling trials.
 
 ```bash
-python -m exp plan ds2_original --all
-python -m exp run ds2_original -e 03 --seed 1 --device cpu --dry-run
-python -m exp analyze ds2_original -e 03 --error-style errorbar
+python -m exp plan deepscratch ds2 --all --variant original
+python -m exp run deepscratch ds2 -e 03 --seed 1 --device cpu --variant original --dry-run
+python -m exp analyze deepscratch ds2 -e 03 --variant original
 ```
 
 The clean upstream snapshot is in `src/`; see `PROVENANCE.json` for its commit

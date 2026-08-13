@@ -1,4 +1,4 @@
-domain: ds1
+domain: deepscratch.ds1.implemented
 kind: observation
 run: {experiment_id: e09, group_id: GO01, protocol: optimizer trajectory observation, protocol_version: book-source-v1, recipe_id: ds1-go01-optimizer-trajectory, structure_signature: anisotropic-quadratic-v1}
 execution: {mode: seeded, default_device: cpu}
@@ -13,7 +13,7 @@ recording: {evaluation_sources: [], triggers: [], outputs: [observations/traject
 numerics: {dtype: float64, backend: numpy, device: cpu}
 checkpoint: {save_final: false, save_on_eval: false, format: none}
 profiling: {enabled: false}
-tracking: {enabled: true, experiment: ds1, upload_checkpoint: false}
+tracking: {enabled: true, experiment: deepscratch.ds1, upload_checkpoint: false}
 variants:
   TOY-SGD: {optimizer: {name: toy_sgd, learning_rate: 0.95}}
   TOY-MOMENTUM: {optimizer: {name: toy_momentum, learning_rate: 0.1, momentum: 0.9}}

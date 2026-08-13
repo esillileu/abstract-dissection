@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from exp.spec import load_variant
+from exp.framework.execution.spec import load_variant
 
 
 @dataclass(frozen=True)

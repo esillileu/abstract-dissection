@@ -16,6 +16,14 @@ from typing import Any
 
 import numpy as np
 
+from exp.framework.paths import WorkspacePaths
+
+
+DEFAULT_LEGACY_MIRROR_ROOT = (
+    WorkspacePaths.from_environment(Path.cwd()).legacy_root
+    / "ds2/results/mlflow_artifacts"
+)
+
 
 @dataclass(frozen=True)
 class MigrationReport:
@@ -339,7 +347,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--mirror-root",
         type=Path,
-        default=Path(".legacy/experiments/ds2/results/mlflow_artifacts"),
+        default=DEFAULT_LEGACY_MIRROR_ROOT,
     )
     parser.add_argument("--apply", action="store_true")
     args = parser.parse_args(argv)

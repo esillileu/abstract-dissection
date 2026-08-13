@@ -6,9 +6,7 @@ from pathlib import Path
 
 from mlprosection.experiment.checkpoint import load_model_checkpoint
 
-
-TRAIN_FULL_ACCURACY = "final/train-full/accuracy"
-TRAIN_TEST_ACCURACY_GAP = "final/train-test/accuracy-gap"
+from ..result_schema import TRAIN_FULL_ACCURACY, TRAIN_TEST_ACCURACY_GAP
 
 TARGET_RUNS = {
     ("GT06", "CNN-SIMPLE-BOOK"),

@@ -25,9 +25,14 @@ from exp.deepscratch.ds1.implemented.final_gap import (
     evaluate_checkpoint_gap,
 )
 from exp.deepscratch.ds1.implemented.spec import parse_run_spec
+from exp.framework.paths import WorkspacePaths
 
 
 DEFAULT_TRACKING_URI = "http://127.0.0.1:5000"
+DEFAULT_LEGACY_CHECKPOINT_ROOT = (
+    WorkspacePaths.from_environment(Path.cwd()).legacy_root
+    / "ds1/results/checkpoints"
+)
 TARGET_NAMES = {
     "e06": ("GT06", "CNN-SIMPLE-BOOK"),
     "e07": ("GT07", "CNN-DEEP-BOOK"),
@@ -163,7 +168,7 @@ def evaluate_run(client, run, *, device: str) -> dict[str, float]:
 def resolve_run_checkpoint(client, run) -> Path:
     run_key = run.data.tags.get("run.key")
     if run_key:
-        root = Path(".legacy/experiments/ds1/results/checkpoints") / str(run_key)
+        root = DEFAULT_LEGACY_CHECKPOINT_ROOT / str(run_key)
         for candidate in (root / "latest.json", root / "final.npz"):
             if candidate.is_file():
                 return candidate

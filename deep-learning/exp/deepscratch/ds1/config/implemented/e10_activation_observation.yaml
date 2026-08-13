@@ -1,4 +1,4 @@
-domain: ds1
+domain: deepscratch.ds1.implemented
 kind: observation
 run: {experiment_id: e10, group_id: GO02, protocol: activation distribution observation, protocol_version: book-source-v1, recipe_id: ds1-go02-activation-observation, structure_signature: synthetic-100x5-bias0}
 execution: {mode: seeded, default_device: cpu}
@@ -13,7 +13,7 @@ recording: {evaluation_sources: [], triggers: [], outputs: [observations/activat
 numerics: {dtype: float64, backend: numpy, device: cpu}
 checkpoint: {save_final: false, save_on_eval: false, format: none}
 profiling: {enabled: false}
-tracking: {enabled: true, experiment: ds1, upload_checkpoint: false}
+tracking: {enabled: true, experiment: deepscratch.ds1, upload_checkpoint: false}
 variants:
   ACT-SIGMOID-STD001: {model: {activation: sigmoid, initializer: 'std:0.01'}}
   ACT-SIGMOID-XAVIER: {model: {activation: sigmoid, initializer: xavier}}

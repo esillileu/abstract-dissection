@@ -1,5 +1,5 @@
-domain: ds2_original
-kind: ds2_original
+domain: deepscratch.ds2.original
+kind: deepscratch.ds2.original
 run: {experiment_id: e05, group_id: ORIGINAL-E05}
 source_experiment: e05
 trial_id: dlfs2.ch06.ptb-better-rnnlm
@@ -12,6 +12,6 @@ model: {name: BetterRnnlm, wordvec_size: 650, hidden_size: 650, dropout_ratio: 0
 optimizer: {name: sgd, learning_rate: 20.0, validation_decay: 4.0, max_grad: 0.25}
 evaluation: {valid_every_epochs: 1, test_at_end: true}
 numerics: {backend: cupy, device: cuda:0}
-tracking: {enabled: true, experiment: ds2_original}
+tracking: {enabled: true, experiment: deepscratch.ds2}
 checkpoint: {save_final: false}
 variants: {BETTER-RNNLM: {}}

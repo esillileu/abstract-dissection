@@ -6,7 +6,7 @@ from pathlib import Path
 
 import numpy as np
 
-from exp.analyze import RunRef
+from exp.framework.analysis.core import RunRef
 from exp.deepscratch.ds2.analysis import e02_ptb_word2vec as analysis
 
 
@@ -92,7 +92,14 @@ def test_render_writes_text_and_csv_without_a_graph(
     )
     grouped = {series: [] for series in analysis.ATOMIC_RUN_IDS}
     grouped[analysis.ATOMIC_RUN_IDS[0]] = [run]
-    monkeypatch.setattr(analysis, "runs", lambda *_args, **_kwargs: grouped)
+
+    class AnalysisInput:
+        def runs(self, condition_ids):
+            return {condition: grouped[condition] for condition in condition_ids}
+
+        def artifact_file(self, _run, artifact_path):
+            candidate = artifact_root / artifact_path
+            return candidate if candidate.is_file() else None
     monkeypatch.setattr(
         analysis,
         "load_ptb",
@@ -100,7 +107,7 @@ def test_render_writes_text_and_csv_without_a_graph(
     )
 
     outputs = analysis.render(
-        object(),
+        AnalysisInput(),
         "band",
         tmp_path / "e02_band.png",
     )

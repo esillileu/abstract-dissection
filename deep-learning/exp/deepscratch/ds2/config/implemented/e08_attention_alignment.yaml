@@ -1,4 +1,4 @@
-domain: ds2
+domain: deepscratch.ds2.implemented
 kind: observation
 run: {experiment_id: e08, group_id: GO01, protocol: attention alignment observation, protocol_version: book-source-v1, recipe_id: ds2-go01-attention-alignment-book-v1, structure_signature: date-attention-alignment}
 execution: {mode: seeded, default_device: cpu}
@@ -18,7 +18,7 @@ recording:
 numerics: {dtype: float32, backend: numpy, device: cpu, deterministic: true}
 checkpoint: {save_final: false, save_best: false, format: v2, source_group_id: GT07, source_atomic_run_id: SEQD-ATTN-REV, source_kind: final, source_protocol_version: book-source-v1, source_path: null}
 profiling: {enabled: false}
-tracking: {enabled: true, experiment: ds2, upload_checkpoint: false}
+tracking: {enabled: true, experiment: deepscratch.ds2, upload_checkpoint: false}
 variants:
   ATTENTION-ALIGNMENT: {}
   ATTENTION-ALIGNMENT-GREEDY:

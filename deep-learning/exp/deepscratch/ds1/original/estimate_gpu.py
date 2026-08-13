@@ -9,10 +9,17 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from time import perf_counter
 
-from .train_original import BOOK_ROOT, _add_book_to_import_path
+from exp.framework.paths import StateCoordinate, StateOwner, WorkspacePaths
+
+from .benchmark import BOOK_ROOT, _add_book_to_import_path
 
 
-DEFAULT_OUTPUT = Path("exp/deepscratch/ds1/original/legacy_results/fixed_seed/cupy_estimate.json")
+DEFAULT_OUTPUT = WorkspacePaths.from_environment(Path.cwd()).resolve(
+    StateOwner.CACHE,
+    StateCoordinate(
+        "deepscratch", "ds1", "runtime-estimate", "original", "gpu"
+    ),
+) / "estimate.json"
 UPDATES_PER_EPOCH = 600
 EPOCHS = 20
 TOTAL_UPDATES = UPDATES_PER_EPOCH * EPOCHS

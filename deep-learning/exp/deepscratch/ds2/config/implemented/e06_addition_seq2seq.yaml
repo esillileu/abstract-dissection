@@ -1,4 +1,4 @@
-domain: ds2
+domain: deepscratch.ds2.implemented
 kind: seq2seq
 run: {experiment_id: e06, group_id: GT06, protocol: addition Seq2seq, protocol_version: book-source-v1, recipe_id: ds2-gt06-addition-book-v1, structure_signature: addition-seq2seq}
 execution: {mode: seeded, default_device: cuda:0}
@@ -15,9 +15,11 @@ recording:
 numerics: {dtype: float32, backend: cupy, device: cuda:0, deterministic: true}
 checkpoint: {save_final: true, save_best: true, format: v2}
 profiling: {enabled: false}
-tracking: {enabled: true, experiment: ds2}
+tracking: {enabled: true, experiment: deepscratch.ds2}
 variants:
   SEQA-VAN-FWD: {run: {structure_signature: addition-seq2seq-16-128}, model: {name: Seq2seq, wordvec_size: 16, hidden_size: 128}, dataset: {reverse: false}}
   SEQA-VAN-REV: {run: {structure_signature: addition-seq2seq-16-128}, model: {name: Seq2seq, wordvec_size: 16, hidden_size: 128}, dataset: {reverse: true}}
   SEQA-PEEKY-FWD: {run: {structure_signature: addition-peeky-16-128}, model: {name: PeekySeq2seq, wordvec_size: 16, hidden_size: 128}, dataset: {reverse: false}}
   SEQA-PEEKY-REV: {run: {structure_signature: addition-peeky-16-128}, model: {name: PeekySeq2seq, wordvec_size: 16, hidden_size: 128}, dataset: {reverse: true}}
+  SEQA-ATTN-FWD: {run: {structure_signature: addition-attention-16-128}, model: {name: AttentionSeq2seq, wordvec_size: 16, hidden_size: 128}, dataset: {reverse: false}}
+  SEQA-ATTN-REV: {run: {structure_signature: addition-attention-16-128}, model: {name: AttentionSeq2seq, wordvec_size: 16, hidden_size: 128}, dataset: {reverse: true}}

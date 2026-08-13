@@ -13,13 +13,18 @@ from time import perf_counter
 
 import numpy as np
 
+from exp.framework.paths import StateCoordinate, StateOwner, WorkspacePaths
+
 
 BOOK_ROOT = Path(
     "01_deep-learning-from-base/deep-learning-from-scratch-2"
 ).resolve()
 B2_SOURCE_ROOT = Path("01_deep-learning-from-base/src").resolve()
 PTB_TRAIN = B2_SOURCE_ROOT / "datasets/ptb.train.npy"
-DEFAULT_OUTPUT = Path("exp/deepscratch/ds2/original/legacy_results/fixed_seed/gpu_estimate.json")
+DEFAULT_OUTPUT = WorkspacePaths.from_environment(Path.cwd()).resolve(
+    StateOwner.CACHE,
+    StateCoordinate("deepscratch", "ds2", "runtime-estimate", "original", "gpu"),
+) / "estimate.json"
 
 
 @dataclass(frozen=True)

@@ -2,4 +2,4 @@ from exp.deepscratch.original_runtime.promoted_spec import parse
 
 
 def parse_run_spec(path, *, atomic_run_id=None, overrides=None):
-    return parse(path, domain="ds1_original", atomic_run_id=atomic_run_id, overrides=overrides)
+    return parse(path, domain="deepscratch.ds1.original", atomic_run_id=atomic_run_id, overrides=overrides)

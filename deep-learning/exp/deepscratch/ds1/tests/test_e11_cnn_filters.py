@@ -5,7 +5,7 @@ from pathlib import Path
 
 import numpy as np
 
-from exp.analyze import RunRef
+from exp.framework.analysis.core import RunRef
 from exp.deepscratch.ds1.analysis.e11_cnn_filters import (
     RUN_GROUPS,
     _checkpoint_weights_path,
@@ -109,7 +109,12 @@ def test_checkpoint_resolver_supports_v2_final_directory(tmp_path: Path) -> None
         local_artifact_root=artifact_root,
     )
 
-    resolved = _checkpoint_weights_path(_NoDownloadClient(), run)
+    class AnalysisInput:
+        def artifact_file(self, _run, artifact_path):
+            candidate = artifact_root / artifact_path
+            return candidate if candidate.is_file() else None
+
+    resolved = _checkpoint_weights_path(AnalysisInput(), run)
 
     assert resolved is not None
     assert resolved[0] == checkpoint / "model_parameters.npz"

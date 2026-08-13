@@ -3,22 +3,21 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-import pytest
-
-from exp.domain import RunOptions, RunOrder, RunSelection
+from exp.framework.execution import RunOptions, RunOrder, RunSelection
 from exp.deepscratch.ds1.catalog import ORIGINAL as DS1_ORIGINAL
 from exp.deepscratch.ds2.catalog import ORIGINAL as DS2_ORIGINAL
-from exp.planning import Planner
+from exp.framework.execution.planning import Planner
 
 
-def test_default_catalog_sizes_and_ds2_word2vec_exclusion() -> None:
+def test_default_catalog_sizes_include_ds2_original_word2vec() -> None:
     ds1 = Planner(DS1_ORIGINAL).build(RunSelection(all_experiments=True), RunOptions(device="cpu"))
     ds2 = Planner(DS2_ORIGINAL).build(RunSelection(all_experiments=True), RunOptions(device="cpu"))
 
     assert len(ds1) == 480
-    assert len(ds2) == 120
+    assert len(ds2) == 140
     assert {plan.experiment_id for plan in ds2} == {
         "e01",
+        "e02",
         "e03",
         "e04",
         "e05",
@@ -78,9 +77,13 @@ def test_ds2_e08_requires_matching_seed_source() -> None:
     assert spec["checkpoint"]["source_artifact_path"] == "raw/checkpoint.npz"
 
 
-def test_unknown_ds2_e02_is_rejected() -> None:
-    with pytest.raises(ValueError, match="unknown experiment"):
-        Planner(DS2_ORIGINAL).build(RunSelection(experiment_ids=("e02",)), RunOptions())
+def test_ds2_e02_expands_original_word2vec_conditions() -> None:
+    plans = Planner(DS2_ORIGINAL).build(
+        RunSelection(experiment_ids=("e02",)), RunOptions()
+    )
+
+    assert len(plans) == 20
+    assert {plan.atomic_run_id for plan in plans} == {"PTB-CBOW", "PTB-SKIPGRAM"}
 
 
 def test_legacy_cache_is_archived_outside_seed_statistics() -> None:

@@ -5,9 +5,9 @@ The default `research_v1` seed set contains seeds 1–10 and expands the 48
 conditions in e01–e07, e09, and e10 to 480 runs.
 
 ```bash
-python -m exp plan ds1_original --all
-python -m exp run ds1_original -e 01 --seed 1 --device cpu --dry-run
-python -m exp analyze ds1_original -e 01 --error-style band
+python -m exp plan deepscratch ds1 --all --variant original
+python -m exp run deepscratch ds1 -e 01 --seed 1 --device cpu --variant original --dry-run
+python -m exp analyze deepscratch ds1 -e 01 --variant original
 ```
 
 The clean upstream snapshot is in `src/`; see `PROVENANCE.json` for its commit

@@ -11,7 +11,7 @@ from typing import Callable, Iterator
 
 import numpy as np
 
-from exp.deepscratch.original_runtime.cache import save_csv, save_npz, to_host
+from exp.deepscratch.original_runtime.cache_protocol import save_csv, save_npz, to_host
 from exp.deepscratch.original_runtime.runtime_context import array_module
 
 

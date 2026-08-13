@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import json
 from pathlib import Path
 
-from exp.deepscratch.original_runtime.cache import cache_is_valid, load_csv
+from exp.deepscratch.original_runtime.cache_protocol import cache_is_valid, load_csv
 
 
 SUMMARY_FIELDS = (

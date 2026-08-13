@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from exp.spec import RunIdentity, load_variant, mapping
+from exp.framework.execution.spec import RunIdentity, load_variant, mapping
 
 
 TriggerType = Literal["updates", "epoch_first_update", "epoch_end", "terminal"]
@@ -116,8 +116,11 @@ def parse_run_spec(
 ) -> RunSpec:
     path = Path(path)
     raw = load_variant(path, atomic_run_id=atomic_run_id, overrides=overrides)
-    if raw.get("domain") != "ds1":
-        raise ValueError(f"DS1 YAML requires domain: ds1: {path}")
+    if raw.get("domain") != "deepscratch.ds1.implemented":
+        raise ValueError(
+            "DS1 implemented YAML requires domain: "
+            f"deepscratch.ds1.implemented: {path}"
+        )
     if raw.get("kind") not in {"supervised_classification", "observation"}:
         raise ValueError(f"DS1 does not support kind: {raw.get('kind')}")
     _reject_old_catalog_keys(raw)

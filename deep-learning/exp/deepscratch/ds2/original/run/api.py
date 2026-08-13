@@ -6,7 +6,7 @@ import importlib
 import shutil
 from pathlib import Path
 
-from exp.deepscratch.original_runtime.cache import cache_is_valid, publish_result, stable_hash, staging_directory
+from exp.deepscratch.original_runtime.cache_protocol import cache_is_valid, publish_result, stable_hash, staging_directory
 from exp.deepscratch.original_runtime.worktree import clean_worktree, head_commit, source_hashes
 
 from .common import Trial
