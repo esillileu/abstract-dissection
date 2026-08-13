@@ -6,8 +6,8 @@ from collections.abc import Sequence
 
 import typer
 
-from exp.deepscratch import cli as deepscratch_cli
-from exp.framework import DomainRegistry
+from exp.deepscratch.definition import DEFINITION
+from exp.framework import CommandGroups, DomainRegistry
 
 
 app = typer.Typer(
@@ -20,21 +20,28 @@ run_app = typer.Typer(help="Execute catalog or original-source experiments.")
 analyze_app = typer.Typer(help="Render or summarize experiment results.")
 check_app = typer.Typer(help="Compare declared plans with recorded run state.")
 profile_app = typer.Typer(help="Profile experiment update and module runtimes.")
+storage_app = typer.Typer(help="Audit and clean experiment result storage.")
 app.add_typer(plan_app, name="plan")
 app.add_typer(run_app, name="run")
 app.add_typer(analyze_app, name="analyze")
 app.add_typer(check_app, name="check")
 app.add_typer(profile_app, name="profile")
+app.add_typer(storage_app, name="storage")
 
 
 PLUGIN_REGISTRY = DomainRegistry()
-PLUGIN_REGISTRY.register(deepscratch_cli.DEFINITION)
-plan_app.command("deepscratch")(deepscratch_cli.plan)
-run_app.command("deepscratch")(deepscratch_cli.run)
-analyze_app.command("deepscratch")(deepscratch_cli.analyze)
-check_app.command("deepscratch")(deepscratch_cli.check)
-profile_app.command("deepscratch")(deepscratch_cli.profile)
-app.command("import-legacy")(deepscratch_cli.import_legacy)
+PLUGIN_REGISTRY.register(
+    DEFINITION,
+    CommandGroups(
+        root=app,
+        plan=plan_app,
+        run=run_app,
+        analyze=analyze_app,
+        check=check_app,
+        profile=profile_app,
+        storage=storage_app,
+    ),
+)
 
 
 def main(argv: Sequence[str] | None = None) -> None:

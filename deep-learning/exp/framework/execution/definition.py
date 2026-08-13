@@ -1,4 +1,4 @@
-"""Shared domain and run contracts for the experiment CLI."""
+"""Generic execution identities and plan contracts."""
 
 from __future__ import annotations
 
@@ -15,13 +15,15 @@ class RunOrder(str, Enum):
 
 
 @dataclass(frozen=True)
-class DomainDefinition:
+class ExecutionDefinition:
     name: str
     config_root: Path
     spec_module: str
     executor_module: str
-    analysis_module: str
     default_seed_set: str = "research_v1"
+    domain: str | None = None
+    suite: str | None = None
+    variant: str | None = None
 
     def load_run_spec(
         self,
@@ -31,10 +33,9 @@ class DomainDefinition:
         overrides: dict[str, object],
     ) -> Any:
         return importlib.import_module(self.spec_module).parse_run_spec(
-            path,
-            atomic_run_id=atomic_run_id,
-            overrides=overrides,
+            path, atomic_run_id=atomic_run_id, overrides=overrides
         )
+
 
 @dataclass(frozen=True)
 class RunSelection:

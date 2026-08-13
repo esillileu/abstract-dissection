@@ -9,7 +9,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from exp.analyze import RunRef, artifact_file
+from exp.framework.analysis.core import RunRef, artifact_file
 
 
 PARAMETER_MANIFEST_PATH = "model/parameter_manifest.json"

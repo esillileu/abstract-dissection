@@ -207,6 +207,14 @@ class _Sink:
                     if self.mlflow:
                         status = "FAILED" if self.errors else str(value or "FINISHED")
                         try:
+                            if status == "FINISHED" and client and self.run_id:
+                                try:
+                                    _verify_uploaded_manifest(client, self.run_id)
+                                except Exception as exc:
+                                    self.errors.append(
+                                        f"MLflow artifact verification failed: {exc}"
+                                    )
+                                    status = "FAILED"
                             if client and self.run_id:
                                 client.set_tag(self.run_id, "trial.status", "finished" if status == "FINISHED" else "failed")
                                 client.set_tag(
@@ -286,6 +294,7 @@ class _Sink:
             )
             child_tags = {
                 **self.tags,
+                "result.durable_complete": "false",
                 "mlflow.parentRunId": parent_run_id,
                 "parent.mlflow_run_id": parent_run_id,
             }
@@ -296,6 +305,19 @@ class _Sink:
         except Exception as exc:
             self.errors.append(f"MLflow startup failed: {exc}")
             return None
+
+
+def _verify_uploaded_manifest(client, run_id: str) -> None:
+    """Verify every uploaded record file before declaring a run durable."""
+    manifest_path = Path(client.download_artifacts(run_id, "result_manifest.json"))
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if manifest.get("schema_version") != 1 or not isinstance(manifest.get("files"), list):
+        raise ValueError("invalid result manifest")
+    for item in [*manifest["files"], *manifest.get("checkpoints", [])]:
+        relative = str(item["path"])
+        downloaded = Path(client.download_artifacts(run_id, relative))
+        if file_digest(downloaded) != item["sha256"]:
+            raise ValueError(f"artifact digest mismatch: {relative}")
 
 
 def get_or_create_condition_parent(client, *, experiment_id: str, child_tags: dict[str, str]) -> str:

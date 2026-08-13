@@ -9,7 +9,7 @@ from mlprosection.experiment import ExperimentContext, run_config
 from mlprosection.experiment.progress import ProgressReporter
 
 from .checkpoint_source import resolve_checkpoint_source
-from .schema_v1 import SchemaV1Run
+from .schema_v1 import SchemaV1Run, write_result_manifest
 from .runtime import build_profiling_metric_rows, build_schema_metrics, write_json
 
 
@@ -27,12 +27,9 @@ def run_yaml(
 ):
     """Run a domain YAML and upload the CSV-backed record to MLflow."""
     if spec_module is None:
-        if executor_module == "exp.deepscratch.ds1.implemented.executor":
-            spec_module = "exp.deepscratch.ds1.implemented.spec"
-        elif executor_module == "exp.deepscratch.ds2.implemented.executor":
-            spec_module = "exp.deepscratch.ds2.implemented.spec"
-        else:
-            raise ValueError("run_yaml requires a domain spec_module")
+        raise ValueError("run_yaml requires a domain spec_module")
+    if executor_module is None:
+        raise ValueError("run_yaml requires a domain executor_module")
     parser = importlib.import_module(spec_module)
     config = parser.parse_run_spec(path, atomic_run_id=atomic_run_id, overrides=overrides).to_executor_config()
     if seed is not None:
@@ -105,6 +102,7 @@ def run_yaml(
             candidate = record.local_checkpoint_root / str(payload["path"])
             if candidate.exists():
                 checkpoint_paths[role] = candidate
+        write_result_manifest(record.artifact_root, checkpoint_paths)
         errors = runtime.complete(
             artifact_root=record.artifact_root,
             metric_rows=metric_rows,

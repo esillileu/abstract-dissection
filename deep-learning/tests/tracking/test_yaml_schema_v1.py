@@ -56,3 +56,39 @@ def test_final_checkpoint_selects_latest_v2_generation(tmp_path) -> None:
 
     assert path == generation
     assert digest == "abc"
+
+
+def test_deepscratch_writer_uses_durable_staging_root(tmp_path, monkeypatch) -> None:
+    import mlprosection_mlflow.schema_v1 as schema
+
+    monkeypatch.setattr(schema, "ARTIFACT_ROOT", None)
+    monkeypatch.setenv("EXP_RESULT_STAGING_ROOT", str(tmp_path / "staging"))
+    run = SchemaV1Run({
+        "kind": "supervised_classification",
+        "seed": 1,
+        "atomic_run_id": "MLP-OPT-SGD",
+        "experiment_ids": ["e01"],
+        "execution_group_id": "g01",
+        "recipe_id": "recipe",
+        "structure_signature": "model",
+        "dataset": {"id": "mnist"},
+        "model": {"family": "mlp", "task_type": "classification"},
+        "training": {"entrypoint": "config.yaml", "max_epochs": 0},
+        "tracking": {
+            "enabled": False,
+            "experiment": "deepscratch.ds1",
+                "tags": {
+                    "domain.name": "deepscratch",
+                    "suite.name": "ds1",
+                    "deepscratch.volume": "ds1",
+                "implementation.variant": "implemented",
+            },
+        },
+    })
+
+    expected = (
+        tmp_path / "staging/deepscratch/ds1/e01/implemented"
+        / run.identity.run_key
+    )
+    assert run.artifact_root == expected / "record"
+    assert run.local_checkpoint_root == expected / "checkpoints"

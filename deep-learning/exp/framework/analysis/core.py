@@ -3,137 +3,23 @@
 from __future__ import annotations
 
 import csv
-from contextlib import contextmanager
-from contextvars import ContextVar
 import json
 import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Callable, Iterable, Mapping, Sequence
 
 import numpy as np
 
-from exp.plot_theme import MUTED, apply_plot_theme, remove_figure_title
+from exp.framework.paths import WorkspacePaths
+from exp.framework.plotting.theme import MUTED, apply_plot_theme, remove_figure_title
 
 
 apply_plot_theme()
 
 
 DEFAULT_TRACKING_URI = "http://127.0.0.1:5000"
-
-
-_ANALYSIS_SCOPE: ContextVar[
-    tuple[dict[str, tuple[str, ...]], str | None, frozenset[str]]
-] = ContextVar(
-    "experiment_analysis_scope", default=({}, None, frozenset())
-)
-
-
-@contextmanager
-def analysis_scope(
-    *,
-    experiment_aliases: Mapping[str, str | Sequence[str]],
-    variant: str | None = None,
-    run_ids: Sequence[str] = (),
-):
-    """Temporarily map logical names to one or more physical experiments."""
-    aliases = {
-        name: (sources,) if isinstance(sources, str) else tuple(sources)
-        for name, sources in experiment_aliases.items()
-    }
-    token = _ANALYSIS_SCOPE.set((aliases, variant, frozenset(run_ids)))
-    try:
-        yield
-    finally:
-        _ANALYSIS_SCOPE.reset(token)
-
-
-class _ScopedMlflowClient:
-    _VIRTUAL_PREFIX = "logical:"
-
-    def __init__(
-        self,
-        client,
-        aliases: dict[str, tuple[str, ...]],
-        variant: str | None,
-        run_ids: frozenset[str],
-    ) -> None:
-        self._client = client
-        self._aliases = aliases
-        self._variant = variant
-        self._run_ids = run_ids
-        self._virtual_sources: dict[str, tuple[tuple[str, str], ...]] = {}
-        self._run_sources: dict[str, str] = {}
-
-    def __getattr__(self, name):
-        return getattr(self._client, name)
-
-    def get_experiment_by_name(self, name: str):
-        source_names = self._aliases.get(name)
-        if source_names is None:
-            return self._client.get_experiment_by_name(name)
-        sources = []
-        for source_name in source_names:
-            experiment = self._client.get_experiment_by_name(source_name)
-            if experiment is not None:
-                sources.append((source_name, experiment.experiment_id))
-        if not sources:
-            return None
-        virtual_id = f"{self._VIRTUAL_PREFIX}{name}"
-        self._virtual_sources[virtual_id] = tuple(sources)
-        return SimpleNamespace(experiment_id=virtual_id, name=name)
-
-    def search_runs(self, experiment_ids, filter_string="", **kwargs):
-        physical_sources: list[tuple[str | None, str]] = []
-        for experiment_id in experiment_ids:
-            virtual = self._virtual_sources.get(str(experiment_id))
-            if virtual is None:
-                physical_sources.append((None, str(experiment_id)))
-            else:
-                physical_sources.extend(virtual)
-        combined = []
-        for source_name, experiment_id in physical_sources:
-            scoped_filter = filter_string
-            if self._variant is not None and source_name is not None:
-                if source_name.startswith("deepscratch."):
-                    variant_filter = (
-                        "tags.`implementation.variant` = "
-                        f"'{self._variant}'"
-                    )
-                    scoped_filter = (
-                        f"{scoped_filter} AND {variant_filter}"
-                        if scoped_filter else variant_filter
-                    )
-            runs = self._client.search_runs(
-                [experiment_id], filter_string=scoped_filter, **kwargs
-            )
-            for run in runs:
-                if self._run_ids and run.info.run_id not in self._run_ids:
-                    continue
-                if (
-                    not self._run_ids
-                    and
-                    run.data.tags.get("transfer.import.disposition")
-                    == "imported-alternate"
-                ):
-                    continue
-                if source_name is not None:
-                    self._run_sources[run.info.run_id] = source_name
-                combined.append(run)
-        order_by = kwargs.get("order_by") or []
-        if any(
-            str(order).lower() == "attributes.start_time desc"
-            for order in order_by
-        ):
-            combined.sort(
-                key=lambda run: int(run.info.start_time or 0), reverse=True
-            )
-        return combined
-
-    def source_experiment_name(self, run_id: str) -> str | None:
-        return self._run_sources.get(run_id)
 
 
 class AnalysisClient:
@@ -144,11 +30,9 @@ class AnalysisClient:
         client,
         *,
         seed: int | None = None,
-        legacy: bool = False,
     ) -> None:
         self._client = client
         self.analysis_seed = None if seed is None else str(seed)
-        self.analysis_legacy = legacy
         self.analysis_selections: list[dict[str, object]] = []
 
     def __getattr__(self, name):
@@ -189,11 +73,7 @@ def mlflow_client(tracking_uri: str):
     except ImportError as exc:  # pragma: no cover - depends on optional extra
         raise RuntimeError("Install tracking dependencies with `uv sync --extra tracking`.") from exc
     mlflow.set_tracking_uri(tracking_uri)
-    client = MlflowClient(tracking_uri=tracking_uri)
-    aliases, variant, run_ids = _ANALYSIS_SCOPE.get()
-    if aliases or variant is not None or run_ids:
-        return _ScopedMlflowClient(client, aliases, variant, run_ids)
-    return client
+    return MlflowClient(tracking_uri=tracking_uri)
 
 
 def completed_seed_runs(
@@ -243,13 +123,7 @@ def completed_seed_runs(
                 atomic,
                 str(seed),
                 int(run.info.start_time or 0),
-                _local_artifact_root(
-                    getattr(client, "source_experiment_name", lambda _id: None)(
-                        run.info.run_id
-                    )
-                    or experiment_name,
-                    tags.get("run.key"),
-                ),
+                _local_artifact_root(tags.get("run.key"), tags),
             ),
         )
     for (atomic, _), run in selected.items():
@@ -278,8 +152,15 @@ ANALYSIS_CACHE_SCHEMA_VERSION = 6
 
 
 def analysis_cache_path(output: Path) -> Path:
-    """Return the sidecar manifest path for one analysis invocation."""
-    return output.with_name(f".{output.name}.analysis-cache.json")
+    """Keep cache metadata out of the durable artifact tree."""
+    paths = WorkspacePaths.from_environment(Path.cwd())
+    try:
+        relative = output.resolve().relative_to(paths.artifact_root.resolve())
+    except ValueError:
+        return output.with_name(f".{output.name}.analysis-cache.json")
+    return (paths.cache_root / relative).with_name(
+        f".{output.name}.analysis-cache.json"
+    )
 
 
 def cached_analysis_outputs(
@@ -384,11 +265,28 @@ def write_analysis_cache(
     temporary.replace(path)
 
 
-def _local_artifact_root(experiment_name: str, run_key: str | None) -> Path | None:
+def _local_artifact_root(
+    run_key: str | None,
+    tags: Mapping[str, str] | None = None,
+) -> Path | None:
     if not run_key:
         return None
-    path = Path("exp") / experiment_name / "results" / "mlflow_artifacts" / run_key
-    return path if path.is_dir() else None
+    metadata = tags or {}
+    domain = metadata.get("domain.name")
+    suite = metadata.get("suite.name")
+    study = metadata.get("experiment.id") or metadata.get("experiment.ids", "").split(",")[0]
+    variant = metadata.get("implementation.variant")
+    if all((domain, suite, study, variant)):
+        staging = WorkspacePaths.from_environment(Path.cwd()).run_staging(
+            domain=str(domain),
+            suite=str(suite),
+            study=str(study),
+            variant=str(variant),
+            run_key=run_key,
+        ) / "record"
+        if staging.is_dir():
+            return staging
+    return None
 
 
 def artifact_file(client, run: RunRef, artifact_path: str) -> Path | None:

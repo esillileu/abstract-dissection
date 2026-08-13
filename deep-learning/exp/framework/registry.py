@@ -3,13 +3,26 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol
+
+
+@dataclass(frozen=True)
+class CommandGroups:
+    root: Any
+    plan: Any
+    run: Any
+    analyze: Any
+    check: Any
+    profile: Any
+    storage: Any
 
 
 class DomainPlugin(Protocol):
     """A domain owns its vocabulary and command dispatch."""
 
     name: str
+
+    def register_commands(self, groups: CommandGroups) -> None: ...
 
 
 @dataclass
@@ -19,10 +32,16 @@ class DomainRegistry:
     def __init__(self) -> None:
         self._plugins = {}
 
-    def register(self, plugin: DomainPlugin) -> None:
+    def register(
+        self,
+        plugin: DomainPlugin,
+        groups: CommandGroups | None = None,
+    ) -> None:
         if plugin.name in self._plugins:
             raise ValueError(f"duplicate domain plugin: {plugin.name}")
         self._plugins[plugin.name] = plugin
+        if groups is not None:
+            plugin.register_commands(groups)
 
     def get(self, name: str) -> DomainPlugin:
         try:

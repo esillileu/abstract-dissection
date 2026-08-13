@@ -6,8 +6,8 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from exp.analyze import RunRef
-from exp.model_parameters import (
+from exp.framework.analysis.core import RunRef
+from exp.framework.analysis.model_parameters import (
     ParameterCount,
     append_parameter_counts,
     count_model_parameters,

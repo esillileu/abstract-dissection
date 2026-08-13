@@ -22,8 +22,8 @@ from pptx.oxml import parse_xml
 from pptx.oxml.ns import nsdecls
 from pptx.util import Inches
 
-from exp.analyze import Curve, RunRef, save_figure
-from exp.plot_theme import apply_plot_theme
+from exp.framework.analysis.core import Curve, RunRef, save_figure
+from exp.framework.plotting.theme import apply_plot_theme
 
 
 ROOT = Path(__file__).resolve().parent
@@ -249,7 +249,7 @@ def make_sd_current_graphs(asset_dir: Path) -> dict[str, Path]:
                 if len(curve.steps)
             }
         # This experiment stores its curve only in MLflow metric history.
-        from exp.analyze import mlflow_client
+        from exp.framework.analysis.core import mlflow_client
 
         ds1_common.completed_seed_runs = original[1]
         spatial_path = asset_dir / "ds1_e08_mean_sd.png"

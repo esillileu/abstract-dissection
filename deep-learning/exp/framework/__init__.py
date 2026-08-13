@@ -1,6 +1,13 @@
 """Domain-neutral experiment framework contracts."""
 
-from .registry import DomainPlugin, DomainRegistry
-from .state import StateCoordinate, StateOwner, WorkspacePaths
+from .registry import CommandGroups, DomainPlugin, DomainRegistry
+from .paths import StateCoordinate, StateOwner, WorkspacePaths
 
-__all__ = ["DomainPlugin", "DomainRegistry", "StateCoordinate", "StateOwner", "WorkspacePaths"]
+__all__ = [
+    "CommandGroups",
+    "DomainPlugin",
+    "DomainRegistry",
+    "StateCoordinate",
+    "StateOwner",
+    "WorkspacePaths",
+]
