@@ -40,11 +40,14 @@ def test_e09_analysis_visualization_uses_gt09_and_150_epoch_axis(
     assert calls == [
         (
             "GT09",
-            ("SEQA-VAN-FWD", "SEQA-VAN-REV", "SEQA-PEEKY-FWD", "SEQA-PEEKY-REV"),
+            (
+                "SEQA-VAN-FWD", "SEQA-VAN-REV", "SEQA-PEEKY-FWD",
+                "SEQA-PEEKY-REV", "SEQA-ATTN-FWD", "SEQA-ATTN-REV",
+            ),
         )
     ]
     assert tuple(curves) == calls[0][1]
-    assert len(axis.lines) == 4
+    assert len(axis.lines) == 6
     assert axis.get_xlabel() == "epochs"
     assert axis.get_ylabel() == "accuracy"
     assert axis.get_ylim() == (0.0, 1.0)

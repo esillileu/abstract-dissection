@@ -14,14 +14,16 @@ def render(
     *,
     group_id="GT06",
     max_epoch_index=None,
+    definitions=None,
 ):
     del output
-    definitions = [
-        ("SEQA-VAN-FWD", "vanilla / forward", "o"),
-        ("SEQA-VAN-REV", "vanilla / reverse", "s"),
-        ("SEQA-PEEKY-FWD", "peeky / forward", "^"),
-        ("SEQA-PEEKY-REV", "peeky / reverse", "D"),
-    ]
+    if definitions is None:
+        definitions = (
+            ("SEQA-VAN-FWD", "vanilla / forward", "o"),
+            ("SEQA-VAN-REV", "vanilla / reverse", "s"),
+            ("SEQA-PEEKY-FWD", "peeky / forward", "^"),
+            ("SEQA-PEEKY-REV", "peeky / reverse", "D"),
+        )
     grouped = runs(client, group_id, [item[0] for item in definitions])
     figure, axis = plt.subplots()
     figure._analysis_match_original_canvas = True
@@ -35,5 +37,5 @@ def render(
         axis.set_xlim(0, max_epoch_index)
     mark_empty(axis)
     if axis.has_data():
-        axis.legend()
+        axis.legend(loc="upper left")
     return figure, curves

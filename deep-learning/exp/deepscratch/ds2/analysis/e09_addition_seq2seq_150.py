@@ -3,6 +3,16 @@
 from .e06_addition_seq2seq import render as _render_e06_style
 
 
+DEFINITIONS = (
+    ("SEQA-VAN-FWD", "vanilla / forward", "o"),
+    ("SEQA-VAN-REV", "vanilla / reverse", "s"),
+    ("SEQA-PEEKY-FWD", "peeky / forward", "^"),
+    ("SEQA-PEEKY-REV", "peeky / reverse", "D"),
+    ("SEQA-ATTN-FWD", "attention / forward", "v"),
+    ("SEQA-ATTN-REV", "attention / reverse", "P"),
+)
+
+
 def render(client, error_style, output):
     del output
     return _render_e06_style(
@@ -10,4 +20,5 @@ def render(client, error_style, output):
         error_style,
         group_id="GT09",
         max_epoch_index=149,
+        definitions=DEFINITIONS,
     )
