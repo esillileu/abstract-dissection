@@ -29,8 +29,14 @@ TRIAL_IDS = {
         f"dlfs1.ch06.init-compare.{name}"
         for name in ("std-001", "xavier", "he")
     ),
-    "e03": ("dlfs1.ch06.weight-decay.lambda-01",),
-    "e04": ("dlfs1.ch06.dropout.on-ratio-02",),
+    "e03": (
+        "dlfs1.ch06.weight-decay.off",
+        "dlfs1.ch06.weight-decay.lambda-01",
+    ),
+    "e04": (
+        "dlfs1.ch06.dropout.off",
+        "dlfs1.ch06.dropout.on-ratio-02",
+    ),
     "e05": tuple(
         f"dlfs1.ch06.batchnorm.scale-{index:02d}.bn-{state}"
         for index in range(1, 17)

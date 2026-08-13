@@ -84,11 +84,11 @@ E02 = StudyDeclaration("e02", tuple(
     for canonical, implemented in (("std001", "STD001"), ("xavier", "XAVIER"), ("he", "HE"))
 ))
 E03 = StudyDeclaration("e03", (
-    condition("weight-decay.off", ("REG-WD-OFF",), metrics=(ACCURACY, TRAIN_ACCURACY_CURVE, TEST_ACCURACY_CURVE)),
+    condition("weight-decay.off", ("REG-WD-OFF",), ("WEIGHT-DECAY-OFF",), (ACCURACY, TRAIN_ACCURACY_CURVE, TEST_ACCURACY_CURVE)),
     condition("weight-decay.0.1", ("REG-WD-01",), ("WEIGHT-DECAY-01",), (ACCURACY, TRAIN_ACCURACY_CURVE, TEST_ACCURACY_CURVE)),
 ))
 E04 = StudyDeclaration("e04", (
-    condition("dropout.off", ("REG-DROPOUT-OFF",), metrics=(ACCURACY, TRAIN_ACCURACY_CURVE, TEST_ACCURACY_CURVE)),
+    condition("dropout.off", ("REG-DROPOUT-OFF",), ("DROPOUT-OFF",), (ACCURACY, TRAIN_ACCURACY_CURVE, TEST_ACCURACY_CURVE)),
     condition("dropout.0.2", ("REG-DROPOUT-ON-02",), ("DROPOUT-02",), (ACCURACY, TRAIN_ACCURACY_CURVE, TEST_ACCURACY_CURVE)),
 ))
 E05 = StudyDeclaration("e05", tuple(
