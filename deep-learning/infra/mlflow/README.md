@@ -29,6 +29,28 @@ local MLflow history and artifacts.
 
 ## Export and import
 
+`just mlflow export`, `export-run`, and `import` are the generic low-level
+transfer tools. They remain available for operational backup, recovery, and
+non-DeepScratch experiments. In particular, generic import may merge source
+experiment tags and supplement missing data on a reused run.
+
+For a DeepScratch archive that must remain in a historical namespace, use the
+domain-aware command instead:
+
+```bash
+just exp import-legacy deepscratch ds2 \
+  --variant implemented \
+  --input infra/mlflow/exports/ds2.zip
+```
+
+This validates the requested volume/variant against the archive's source
+experiment, never targets `deepscratch.ds1` or `deepscratch.ds2`, and does not
+modify reused experiments or runs. After import,
+`just exp analyze deepscratch ds2` reads both the new writer namespace and its
+matching historical namespace through one logical selection. Imported
+alternate payloads require explicit run-ID selection and do not replace the
+default analysis attempt.
+
 `transfer.py` moves one run or an entire experiment through a portable v2 ZIP
 archive. It preserves the complete metric history (value, timestamp, and step),
 parameters, tags, run name/status/start/end times, dataset inputs, experiment
