@@ -1,0 +1,226 @@
+"""Materialized, canonical input for DeepScratch study renderers.
+
+Renderers consume this model instead of querying MLflow or knowing whether a
+selected run came from the canonical or quarantined legacy namespace.
+"""
+
+from __future__ import annotations
+
+import csv
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Callable, Mapping, Sequence
+
+import numpy as np
+
+from exp.framework.analysis.core import Curve, aggregate
+from exp.framework.paths import WorkspacePaths
+from exp.framework.results import NativeRunResult
+
+from ..identity import Variant
+from .declarations import StudyDeclaration
+
+
+@dataclass(frozen=True)
+class AnalysisRun:
+    run_id: str
+    canonical_condition_id: str
+    native_condition_id: str
+    seed: str
+    variant: Variant
+    result: NativeRunResult
+    local_artifact_root: Path | None = None
+
+
+class StudyAnalysisInput:
+    """All selected native results for one study and one variant."""
+
+    def __init__(
+        self,
+        client,
+        declaration: StudyDeclaration,
+        variant: Variant,
+        runs: Sequence[AnalysisRun],
+        *,
+        cache_dir: Path,
+    ) -> None:
+        self._client = client
+        self.declaration = declaration
+        self.variant = variant
+        self._runs = tuple(runs)
+        self.cache_dir = cache_dir
+
+    def runs(self, condition_ids: Sequence[str]) -> dict[str, list[AnalysisRun]]:
+        """Resolve suite-declared aliases to the already selected run set."""
+        output: dict[str, list[AnalysisRun]] = {}
+        for requested in condition_ids:
+            condition = next(
+                (
+                    item
+                    for item in self.declaration.conditions
+                    if requested == item.canonical_id
+                    or requested in item.implemented_aliases
+                    or requested in item.original_aliases
+                ),
+                None,
+            )
+            if condition is None:
+                output[requested] = []
+                continue
+            output[requested] = sorted(
+                (
+                    run
+                    for run in self._runs
+                    if run.canonical_condition_id == condition.canonical_id
+                ),
+                key=lambda run: _seed_key(run.seed),
+            )
+        return output
+
+    def artifact_file(self, run: AnalysisRun, artifact_path: str) -> Path | None:
+        native_path = run.result.artifact_aliases.get(artifact_path, artifact_path)
+        materialized = Path(native_path)
+        if materialized.is_absolute():
+            return materialized if materialized.is_file() else None
+        if run.local_artifact_root is not None:
+            candidate = run.local_artifact_root / native_path
+            if candidate.is_file():
+                return candidate
+        target = self.cache_dir / "downloads" / run.run_id / native_path
+        if target.is_file():
+            return target
+        target.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            downloaded = Path(
+                self._client.download_artifacts(
+                    run.run_id,
+                    native_path,
+                    str(target.parent),
+                )
+            )
+        except Exception:
+            return None
+        return downloaded if downloaded.is_file() else None
+
+    def artifact_rows(
+        self, run: AnalysisRun, artifact_path: str
+    ) -> list[dict[str, str]]:
+        path = self.artifact_file(run, artifact_path)
+        if path is None:
+            return []
+        with path.open(encoding="utf-8", newline="") as stream:
+            return list(csv.DictReader(stream))
+
+    def histories_from_artifact(
+        self,
+        runs: Sequence[AnalysisRun],
+        *,
+        artifact_path: str,
+        x: str,
+        y: str,
+        row_filter: Callable[[Mapping[str, str]], bool] | None = None,
+        x_value: Callable[[Mapping[str, str]], float] | None = None,
+        y_value: Callable[[Mapping[str, str]], float] | None = None,
+    ) -> list[dict[float, float]]:
+        histories = []
+        for run in runs:
+            history: dict[float, float] = {}
+            for row in self.artifact_rows(run, artifact_path):
+                if row_filter is not None and not row_filter(row):
+                    continue
+                try:
+                    step = x_value(row) if x_value is not None else float(row[x])
+                    value = y_value(row) if y_value is not None else float(row[y])
+                except (KeyError, TypeError, ValueError):
+                    continue
+                if np.isfinite(step) and np.isfinite(value):
+                    history[float(step)] = float(value)
+            if history:
+                histories.append(history)
+        return histories
+
+    def metric_histories(
+        self, runs: Sequence[AnalysisRun], metric_id: str
+    ) -> list[dict[float, float]]:
+        histories = []
+        for run in runs:
+            series = run.result.metric(metric_id)
+            if series is None:
+                values = self._client.get_metric_history(run.run_id, metric_id)
+                history = {
+                    float(item.step): float(item.value)
+                    for item in values
+                    if np.isfinite(item.value)
+                }
+            else:
+                history = dict(zip(series.steps, series.values, strict=True))
+            if history:
+                histories.append(history)
+        return histories
+
+    def metric_value(self, run: AnalysisRun, metric_id: str) -> float | None:
+        series = run.result.metric(metric_id)
+        if series is not None and series.values:
+            return float(series.values[-1])
+        history = self._client.get_metric_history(run.run_id, metric_id)
+        return None if not history else float(history[-1].value)
+
+
+def artifact_file(data: StudyAnalysisInput, run: AnalysisRun, artifact_path: str):
+    return data.artifact_file(run, artifact_path)
+
+
+def artifact_rows(data: StudyAnalysisInput, run: AnalysisRun, artifact_path: str):
+    return data.artifact_rows(run, artifact_path)
+
+
+def histories_from_artifact(data: StudyAnalysisInput, runs, **kwargs):
+    return data.histories_from_artifact(runs, **kwargs)
+
+
+def metric_histories(data: StudyAnalysisInput, runs, metric: str):
+    return data.metric_histories(runs, metric)
+
+
+def curve_from_artifact(data: StudyAnalysisInput, runs, **kwargs) -> Curve:
+    return aggregate(data.histories_from_artifact(runs, **kwargs))
+
+
+def local_artifact_root(client, run_id: str) -> Path | None:
+    """Resolve only the canonical staging location advertised by run tags."""
+    run = client.get_run(run_id)
+    tags = run.data.tags
+    run_key = tags.get("run.key")
+    required = (
+        tags.get("domain.name"),
+        tags.get("suite.name"),
+        tags.get("experiment.id"),
+        tags.get("implementation.variant"),
+        run_key,
+    )
+    if not all(required):
+        return None
+    path = WorkspacePaths.from_environment(Path.cwd()).run_staging(
+        domain=str(required[0]),
+        suite=str(required[1]),
+        study=str(required[2]),
+        variant=str(required[3]),
+        run_key=str(required[4]),
+    ) / "record"
+    return path if path.is_dir() else None
+
+
+def _seed_key(value: str) -> tuple[int, str]:
+    return (0, f"{int(value):020d}") if value.isdigit() else (1, value)
+
+
+__all__ = [
+    "AnalysisRun",
+    "StudyAnalysisInput",
+    "artifact_file",
+    "artifact_rows",
+    "curve_from_artifact",
+    "histories_from_artifact",
+    "local_artifact_root",
+    "metric_histories",
+]

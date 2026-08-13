@@ -51,8 +51,8 @@
 집계한다. 공통 x축의 평균과 최솟값, 최댓값으로 원본 그래프를 복원한다.
 
 ```bash
-python -m exp analyze ds2 --all --error-style band
-python -m exp analyze ds2 -e 01-08 --error-style errorbar
+python -m exp analyze deepscratch ds2 --all
+python -m exp analyze deepscratch ds2 -e 01-08
 ```
 
 `-e`는 `01`, `e01`, `01-08`, `01,03,06-08` 형식을 지원한다.
@@ -65,8 +65,8 @@ python -m exp analyze ds2 -e 01-08 --error-style errorbar
 있다. 이전 철자와의 호환을 위해 `--lagacy`도 같은 옵션으로 인식한다.
 
 ```bash
-python -m exp analyze ds2 -e 03-07 --legacy
-python -m exp analyze ds2 -e 03 --legacy --seed 1 --summary
+python -m exp analyze deepscratch ds2 -e 03-07 --variant all
+python -m exp analyze deepscratch ds2 -e 03 --variant all --seed 1
 ```
 
 각 분석은 출력 옆의 숨김 `*.analysis-cache.json` manifest에 조회 조건과 선택된 run
@@ -99,11 +99,11 @@ E08은 checkpoint를 읽어 attention alignment를 관찰하는 실행이며 자
 원본 코드는 이제 `ds2_original` 정식 도메인에서 seed별로 분석한다.
 
 ```bash
-python -m exp analyze ds2_original -e 01,03-04,06-08 -s
+python -m exp analyze deepscratch ds2 -e 01,03-04,06-08 --variant original
 ```
 
 이 경로는 MLflow 재현 run을 조회하지 않고
-기존 고정-seed 캐시는 `exp/deepscratch/ds2/original/legacy_results/fixed_seed/`에 보관되며 새 통계에서 제외된다.
+기존 고정-seed 캐시의 canonical 격리 위치는 `.legacy/experiments/ds2_original/fixed_seed/`이며 새 통계에서 제외된다. source-tree의 기존 payload는 감사 전 read-only fallback으로만 읽는다.
 원본 시행이 없는 확장 E05와 관찰 전용 E08은 제외한다. 단일 원본 시행은
 `seed_runs=1`, 표준편차 `0`으로 기록한다. 기존 원본 캐시에 학습 시간이나
 parameter count가 없으면 해당 CSV 행은 빈 값으로 남긴다. 계측 schema-v2

@@ -9,7 +9,7 @@ from pathlib import Path
 
 import numpy as np
 
-from exp.analyze import artifact_file
+from exp.deepscratch.analysis.input import artifact_file
 from mlprosection.datasets import load_ptb
 
 from .common import runs

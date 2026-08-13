@@ -3,7 +3,7 @@
 import numpy as np
 from matplotlib.lines import Line2D
 
-from exp.plot_theme import INK, SURFACE
+from exp.framework.plotting.theme import INK, SURFACE
 
 
 def add_wave_break(figure, upper, lower) -> None:

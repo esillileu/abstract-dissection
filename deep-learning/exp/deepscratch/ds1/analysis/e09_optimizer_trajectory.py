@@ -4,8 +4,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import LinearSegmentedColormap
 
-from exp.analyze import aggregate, histories_from_artifact, mark_empty
-from exp.plot_theme import ACCENT_COLORS, CORE_HIGHLIGHT, SURFACE
+from exp.framework.analysis.core import aggregate, mark_empty
+from exp.deepscratch.analysis.input import histories_from_artifact
+from exp.framework.plotting.theme import ACCENT_COLORS, CORE_HIGHLIGHT, SURFACE
 
 from .common import runs
 

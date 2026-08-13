@@ -1,21 +1,19 @@
 from __future__ import annotations
 
-from types import SimpleNamespace
-
 import pytest
 from typer.testing import CliRunner
 
 from exp.cli import app
 from exp.deepscratch.definition import DEFINITION
 from exp.deepscratch.identity import Variant, Volume
-from exp.domain import RunOptions, RunOrder, RunSelection
-from exp.parsing import (
+from exp.framework.execution import RunOptions, RunOrder, RunSelection
+from exp.framework.execution.parsing import (
     parse_atomic_run_ids,
     parse_experiment_ids,
     parse_overrides,
     parse_seed_values,
 )
-from exp.planning import Planner
+from exp.framework.execution.planning import Planner
 
 
 runner = CliRunner()
@@ -68,7 +66,7 @@ def test_catalog_plan_counts_and_default_devices() -> None:
     ds2 = _plans("ds2", all_experiments=True)
 
     assert len(ds1) == 66
-    assert len(ds2) == 29
+    assert len(ds2) == 33
     assert {
         plan.device
         for plan in ds1
@@ -147,28 +145,67 @@ def test_nonstandard_seed_and_removed_seed_first_are_rejected() -> None:
     ).exit_code != 0
 
 
-def test_analyze_uses_typed_dispatch(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_analyze_uses_single_normalized_orchestrator(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
     captured = {}
-    module = SimpleNamespace(
-        analyze=lambda **kwargs: captured.update(kwargs)
+
+    def fake_write_analysis(*args, **kwargs):
+        captured["tracking_uri"] = args[0]
+        captured.update(kwargs)
+        return tmp_path / "observations.csv"
+
+    monkeypatch.setattr(
+        "exp.deepscratch.analysis.orchestrator.write_analysis",
+        fake_write_analysis,
     )
-    monkeypatch.setattr("exp.commands.importlib.import_module", lambda _name: module)
 
     result = runner.invoke(
-        app, ["analyze", "deepscratch", "ds2", "-e", "01", "--summary"]
+        app, ["analyze", "deepscratch", "ds2", "-e", "01"]
     )
 
     assert result.exit_code == 0
     assert str(captured.pop("output_dir")).endswith(
-        ".artifacts/experiments/deepscratch/ds2/e01/implemented/analysis"
+        "exp/deepscratch/results"
     )
-    assert captured == {
-        "experiments": ["01"],
-        "tracking_uri": None,
-        "error_style": "band",
-        "seed": None,
-        "summary": True,
-    }
+    assert captured["experiment_ids"] == ["e01"]
+    assert captured["variants"] == (Variant.IMPLEMENTED,)
+    assert captured["seed"] is None
+    assert captured["run_id"] is None
+    assert captured["error_style"] == "band"
+    assert captured["print_summary"] is False
+
+
+def test_analyze_accepts_explicit_errorbar_style(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    captured = {}
+
+    def fake_write_analysis(*args, **kwargs):
+        captured.update(kwargs)
+        return tmp_path
+
+    monkeypatch.setattr(
+        "exp.deepscratch.analysis.orchestrator.write_analysis",
+        fake_write_analysis,
+    )
+    result = runner.invoke(
+        app,
+        [
+            "analyze",
+            "deepscratch",
+            "ds1",
+            "-e",
+            "01",
+            "--error-style",
+            "errorbar",
+            "-s",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert captured["error_style"] == "errorbar"
+    assert captured["print_summary"] is True
 
 
 def test_only_canonical_domain_is_exposed() -> None:

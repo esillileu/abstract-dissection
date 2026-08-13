@@ -2,8 +2,8 @@
 
 import matplotlib.pyplot as plt
 
-from exp.analyze import mark_empty, plot_curve
-from exp.plot_theme import ACCENT_COLORS
+from exp.framework.analysis.core import mark_empty, plot_curve
+from exp.framework.plotting.theme import ACCENT_COLORS
 
 from .common import accuracy_curve, runs
 

@@ -3,8 +3,9 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
-from exp.analyze import aggregate, histories_from_artifact, mark_empty, plot_curve
-from exp.plot_theme import ACCENT_COLORS
+from exp.framework.analysis.core import aggregate, mark_empty, plot_curve
+from exp.deepscratch.analysis.input import histories_from_artifact
+from exp.framework.plotting.theme import ACCENT_COLORS
 
 from .broken_axis import add_wave_break
 from .common import runs

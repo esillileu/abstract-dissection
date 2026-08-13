@@ -1,15 +1,18 @@
 import ast
 from pathlib import Path
+import re
 
+import yaml
 from typer.testing import CliRunner
 
 from exp.cli import PLUGIN_REGISTRY, app
 from exp.deepscratch.cli import _writer_overrides
-from exp.deepscratch.identity import DeepScratchCoordinate, Variant, Volume, legacy_namespace
-from exp.deepscratch.comparison import ComparableMetric, normalize_metric
-from exp.framework.results import MetricSeries, NativeResult
-from exp.framework.state import StateCoordinate, StateOwner, WorkspacePaths
-from exp.parsing import parse_overrides
+from exp.deepscratch.identity import DeepScratchCoordinate, Variant, Volume
+from exp.deepscratch.legacy.namespaces import legacy_namespace
+from exp.deepscratch.analysis.normalization import ComparableMetric, normalize_metric
+from exp.framework.results import MetricSeries, NativeRunResult
+from exp.framework.paths import StateCoordinate, StateOwner, WorkspacePaths
+from exp.framework.execution.parsing import parse_overrides
 from mlprosection_mlflow.schema_v1 import build_tags
 from mlprosection_mlflow.runtime import RunIdentity
 
@@ -23,7 +26,7 @@ def test_deepscratch_is_the_canonical_domain_plugin() -> None:
     coordinate = DeepScratchCoordinate(
         Volume.DS2, "e05", "BETTER-RNNLM", Variant.ORIGINAL
     )
-    assert coordinate.atomic_run_id == "BETTER-RNNLM"
+    assert coordinate.condition_id == "BETTER-RNNLM"
     assert coordinate.mlflow_experiment == "deepscratch.ds2"
     assert coordinate.metadata(
         schema_name="ds2-original", schema_version=1, protocol_version="book-v1"
@@ -31,8 +34,10 @@ def test_deepscratch_is_the_canonical_domain_plugin() -> None:
 
 
 def test_workspace_paths_are_owned_and_typed(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("EXP_RESULT_STAGING_ROOT", str(tmp_path / "results"))
     monkeypatch.setenv("EXP_CACHE_ROOT", str(tmp_path / "cache"))
     monkeypatch.setenv("EXP_ARTIFACT_ROOT", str(tmp_path / "artifacts"))
+    monkeypatch.setenv("EXP_LEGACY_ROOT", str(tmp_path / "legacy"))
     paths = WorkspacePaths.from_environment(tmp_path / "repository")
     coordinate = StateCoordinate(
         "deepscratch", "ds2", "e02", "implemented", "profile"
@@ -43,6 +48,30 @@ def test_workspace_paths_are_owned_and_typed(tmp_path: Path, monkeypatch) -> Non
     assert paths.resolve(StateOwner.ARTIFACT, coordinate) == (
         tmp_path / "artifacts/deepscratch/ds2/e02/implemented/profile"
     )
+    assert paths.resolve(StateOwner.RESULT, coordinate) == (
+        tmp_path / "results/deepscratch/ds2/e02/implemented/profile"
+    )
+    assert paths.resolve(StateOwner.LEGACY, coordinate) == (
+        tmp_path / "legacy/deepscratch/ds2/e02/implemented/profile"
+    )
+
+
+def test_workspace_path_defaults_match_storage_lifecycle(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    for name in (
+        "EXP_RESULT_STAGING_ROOT",
+        "EXP_CACHE_ROOT",
+        "EXP_ARTIFACT_ROOT",
+        "EXP_LEGACY_ROOT",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    paths = WorkspacePaths.from_environment(tmp_path)
+    assert paths.result_staging_root == tmp_path / "results/experiments"
+    assert paths.artifact_root == tmp_path / ".artifacts/experiments"
+    assert paths.cache_root == tmp_path / ".cache/experiments"
+    assert paths.legacy_root == tmp_path / ".legacy/experiments"
 
 
 def test_new_cli_defaults_to_implemented_and_supports_original_alias() -> None:
@@ -58,25 +87,29 @@ def test_new_cli_defaults_to_implemented_and_supports_original_alias() -> None:
     assert "4 planned runs" in original.output
 
 
-def test_analyze_original_alias_dispatches_original_variant(monkeypatch) -> None:
+def test_analyze_original_alias_dispatches_original_variant(
+    monkeypatch, tmp_path: Path
+) -> None:
     captured = {}
 
-    def fake_analyze_command(definition, **kwargs):
-        captured["domain"] = definition.name
+    def fake_write_analysis(*args, **kwargs):
+        captured["tracking_uri"] = args[0]
         captured.update(kwargs)
+        return tmp_path / "observations.csv"
 
     monkeypatch.setattr(
-        "exp.deepscratch.cli.analyze_command", fake_analyze_command
+        "exp.deepscratch.analysis.orchestrator.write_analysis",
+        fake_write_analysis,
     )
 
     result = runner.invoke(
-        app, ["analyze", "deepscratch", "ds2", "-e", "03", "-o", "-s"]
+        app, ["analyze", "deepscratch", "ds2", "-e", "03", "-o"]
     )
 
     assert result.exit_code == 0
-    assert captured["domain"] == "ds2_original"
-    assert captured["experiments"] == ["03"]
-    assert captured["summary"] is True
+    assert captured["experiment_ids"] == ["e03"]
+    assert captured["variants"] == (Variant.ORIGINAL,)
+    assert captured["error_style"] == "band"
 
 
 def test_analyze_original_alias_rejects_explicit_variant() -> None:
@@ -156,6 +189,7 @@ def test_writer_overrides_preserve_dotted_tag_names_and_templates() -> None:
         "experiment": "deepscratch.ds2",
         "tags": {
             "domain.name": "deepscratch",
+            "suite.name": "ds2",
             "deepscratch.volume": "ds2",
             "implementation.variant": "implemented",
             "experiment.id": "{experiment_id}",
@@ -170,7 +204,7 @@ def test_comparison_view_never_synthesizes_missing_metrics() -> None:
     coordinate = DeepScratchCoordinate(
         Volume.DS2, "e03", "RNNLM", Variant.ORIGINAL
     )
-    result = NativeResult(
+    result = NativeRunResult(
         run_id="run",
         schema_name="ds2-original",
         schema_version=1,
@@ -229,6 +263,174 @@ def test_variant_and_volume_import_boundaries() -> None:
                 if ".original.run" in name
             )
     assert violations == []
+
+
+def test_generic_layers_do_not_know_deepscratch() -> None:
+    violations = []
+    roots = (Path("exp/framework"), Path("src/mlprosection_mlflow"))
+    for root in roots:
+        for path in root.rglob("*.py"):
+            violations.extend(
+                (path, name)
+                for name in _imports(path)
+                if name.startswith("exp.deepscratch")
+            )
+    assert violations == []
+
+
+def test_retired_python_facades_are_absent() -> None:
+    assert not {
+        Path("exp/domain.py"),
+        Path("exp/commands.py"),
+        Path("exp/planning.py"),
+        Path("exp/runner.py"),
+        Path("exp/analyze.py"),
+        Path("exp/plot_theme.py"),
+        Path("exp/framework/state.py"),
+        Path("exp/deepscratch/legacy_import.py"),
+        Path("exp/deepscratch/legacy_results.py"),
+        Path("exp/deepscratch/active_runs.py"),
+    } & {path for path in Path("exp").rglob("*.py")}
+    assert not Path("exp/deepscratch/ds1/original/render").exists()
+    assert not Path("exp/deepscratch/ds2/original/render").exists()
+
+
+def test_exp_root_contains_only_package_and_composition_entrypoints() -> None:
+    assert {path.name for path in Path("exp").glob("*.py")} == {
+        "__init__.py",
+        "__main__.py",
+        "cli.py",
+    }
+
+
+def test_deepscratch_root_contains_only_domain_entrypoints_and_owned_packages() -> None:
+    root = Path("exp/deepscratch")
+    assert {path.name for path in root.glob("*.py")} == {
+        "__init__.py",
+        "cli.py",
+        "definition.py",
+        "identity.py",
+    }
+    assert {
+        path.name
+        for path in root.iterdir()
+        if path.is_dir() and path.name != "__pycache__"
+    } == {
+        "analysis",
+        "ds1",
+        "ds2",
+        "execution",
+        "legacy",
+        "original_runtime",
+        "results",
+    }
+
+
+def test_runtime_code_does_not_write_under_source_tree() -> None:
+    violations = []
+    forbidden = (
+        'ROOT / "results"',
+        'Path(".artifacts/experiments',
+        'Path(".cache/experiments',
+        'Path(".legacy/experiments',
+    )
+    for path in Path("exp/deepscratch").rglob("*.py"):
+        if Path("exp/deepscratch/legacy") in path.parents or "tests" in path.parts:
+            continue
+        text = path.read_text(encoding="utf-8")
+        if any(token in text for token in forbidden) or re.search(
+            r'Path\("exp/deepscratch/[^"]*/results', text
+        ):
+            violations.append(path)
+    assert violations == []
+
+
+def test_legacy_namespace_access_is_confined_to_legacy_package() -> None:
+    violations = []
+    for path in Path("exp").rglob("*.py"):
+        if Path("exp/deepscratch/legacy") in path.parents or "tests" in path.parts:
+            continue
+        text = path.read_text(encoding="utf-8")
+        if any(name in text for name in ('"ds1_original"', '"ds2_original"')):
+            violations.append(path)
+    assert violations == []
+
+
+def test_retired_short_mlflow_namespaces_are_not_used_by_runtime_code() -> None:
+    violations = []
+    for path in Path("exp/deepscratch").rglob("*.py"):
+        if Path("exp/deepscratch/legacy") in path.parents or "tests" in path.parts:
+            continue
+        text = path.read_text(encoding="utf-8")
+        if 'experiment_name="ds1"' in text or 'experiment_name="ds2"' in text:
+            violations.append(path)
+    assert violations == []
+
+
+def test_legacy_compatibility_has_one_public_import_boundary() -> None:
+    violations = []
+    for path in Path("exp").rglob("*.py"):
+        if Path("exp/deepscratch/legacy") in path.parents or "tests" in path.parts:
+            continue
+        for name in _imports(path):
+            if ".legacy." in name:
+                violations.append((path, name))
+    assert violations == []
+
+
+def test_analysis_does_not_import_variant_execution_internals() -> None:
+    violations = []
+    for volume in ("ds1", "ds2"):
+        for path in Path(f"exp/deepscratch/{volume}/analysis").rglob("*.py"):
+            violations.extend(
+                (path, name)
+                for name in _imports(path)
+                if any(
+                    token in name
+                    for token in (
+                        ".implemented.executor",
+                        ".implemented.records",
+                        ".implemented.spec",
+                        ".original.executor",
+                        ".original.spec",
+                    )
+                )
+            )
+    assert violations == []
+
+
+def test_suite_declarations_cover_every_catalog_condition() -> None:
+    for volume in (Volume.DS1, Volume.DS2):
+        schema = __import__(
+            f"exp.deepscratch.{volume.value}.result_schema",
+            fromlist=["STUDIES"],
+        )
+        for variant in Variant:
+            root = Path(f"exp/deepscratch/{volume.value}/config/{variant.value}")
+            for path in sorted(root.glob("e[0-9][0-9]_*.yaml")):
+                source = yaml.safe_load(path.read_text(encoding="utf-8"))
+                catalog = set(source["variants"])
+                study = schema.STUDIES[path.name[:3]]
+                declared = {
+                    alias
+                    for condition in study.conditions
+                    for alias in condition.aliases(variant)
+                }
+                assert declared == catalog, (volume, variant, path, declared ^ catalog)
+
+
+def test_current_configs_separate_execution_identity_from_storage_namespace() -> None:
+    for volume in (Volume.DS1, Volume.DS2):
+        for variant in Variant:
+            root = Path(f"exp/deepscratch/{volume.value}/config/{variant.value}")
+            for path in root.glob("e*.yaml"):
+                source = yaml.safe_load(path.read_text(encoding="utf-8"))
+                assert source["domain"] == (
+                    f"deepscratch.{volume.value}.{variant.value}"
+                )
+                assert source["tracking"]["experiment"] == (
+                    f"deepscratch.{volume.value}"
+                )
 
 
 def _imports(path: Path) -> set[str]:

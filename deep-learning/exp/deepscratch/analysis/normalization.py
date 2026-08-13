@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from exp.framework.results import NativeResult
+from exp.framework.results import NativeRunResult
 
-from .identity import DeepScratchCoordinate
+from ..identity import DeepScratchCoordinate
+from .declarations import MetricDeclaration
 
 
 @dataclass(frozen=True)
@@ -36,9 +37,42 @@ class ComparisonObservation:
     unavailable_reason: str | None = None
 
 
+NormalizedObservation = ComparisonObservation
+
+
+def normalize_declared_metric(
+    coordinate: DeepScratchCoordinate,
+    result: NativeRunResult,
+    declaration: MetricDeclaration,
+) -> ComparisonObservation:
+    """Normalize one suite declaration without guessing absent values."""
+    native_ids = declaration.native_ids(coordinate.variant)
+    base = ComparableMetric(
+        metric_id=declaration.metric_id,
+        unit=declaration.unit,
+        split=declaration.split,
+        axis=declaration.axis,
+        evaluation_protocol=result.protocol_version,
+        native_metric_id=next(
+            (item for item in native_ids if result.metric(item) is not None),
+            native_ids[0],
+        ),
+        value_scale=declaration.value_scale,
+    )
+    if result.protocol_version not in declaration.protocols:
+        return _unavailable(
+            coordinate,
+            result,
+            base,
+            "evaluation protocol is not declared comparable: "
+            f"{result.protocol_version}",
+        )
+    return normalize_metric(coordinate, result, base)
+
+
 def normalize_metric(
     coordinate: DeepScratchCoordinate,
-    result: NativeResult,
+    result: NativeRunResult,
     declaration: ComparableMetric,
 ) -> ComparisonObservation:
     if result.protocol_version != declaration.evaluation_protocol:
@@ -83,7 +117,7 @@ def normalize_metric(
 
 def _unavailable(
     coordinate: DeepScratchCoordinate,
-    result: NativeResult,
+    result: NativeRunResult,
     declaration: ComparableMetric,
     reason: str,
 ) -> ComparisonObservation:

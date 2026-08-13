@@ -3,7 +3,8 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
-from exp.analyze import aggregate, histories_from_artifact, mark_empty, save_figure, write_summary
+from exp.framework.analysis.core import aggregate, mark_empty, save_figure, write_summary
+from exp.deepscratch.analysis.input import histories_from_artifact
 
 from .common import runs
 

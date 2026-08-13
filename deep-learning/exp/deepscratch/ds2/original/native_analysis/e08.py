@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from exp.plot_theme import INK
+from exp.framework.plotting.theme import INK
 
 from .common import load_csv, load_npz, np, plt, save, trial
 

@@ -7,9 +7,8 @@ import numpy as np
 from matplotlib import rcParams
 import pytest
 
-from exp.analyze import (
+from exp.framework.analysis.core import (
     AnalysisClient,
-    RunRef,
     aggregate,
     cached_analysis_console_output,
     cached_analysis_outputs,
@@ -18,16 +17,8 @@ from exp.analyze import (
     plot_curve,
     write_analysis_cache,
 )
-from exp.deepscratch.ds1.analysis.final_metrics import (
-    final_test_accuracy_curve,
-    summaries_for_runs,
-    training_time_curve,
-)
-from exp.deepscratch.ds2.analysis.e01_toy_word2vec import render
-from exp.deepscratch.ds2.analysis import common as ds2_analysis_common
-from exp.deepscratch.ds2.analysis.render import _save_result
 from exp.deepscratch.ds2.analysis import render as ds2_render
-from exp.plot_theme import (
+from exp.framework.plotting.theme import (
     ACCENT_COLORS,
     BACKGROUND,
     CORE_HIGHLIGHT,
@@ -174,162 +165,24 @@ def test_analysis_cache_misses_when_selected_run_id_changes(tmp_path):
     assert cached_analysis_outputs(client, output) is None
 
 
-def test_ds2_render_skips_renderer_on_analysis_cache_hit(
+def test_ds2_render_study_saves_figure_and_summary(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
 ):
-    source = FakeClient([_run("run-1", atomic="A", seed=1, start_time=20)])
-    client = AnalysisClient(source)
-    completed_seed_runs(
-        client,
-        experiment_name="ds2",
-        group_id="GT01",
-        atomic_run_ids=["A"],
-        protocol_version="legacy",
-    )
-    output = tmp_path / "e01_band.png"
-    summary = output.with_suffix(".csv")
-    output.write_bytes(b"figure")
-    summary.write_text("summary\n", encoding="utf-8")
-    write_analysis_cache(
-        client,
-        output,
-        [output, summary],
-        console_output="cached summary body\n",
-    )
-    monkeypatch.setattr(ds2_render, "mlflow_client", lambda _uri: source)
+    output = tmp_path / "ds2_e01_imp.png"
+    figure, axis = plt.subplots()
+    axis.plot([0.0, 1.0], [1.0, 2.0])
+    curve = aggregate([{0.0: 1.0, 1.0: 2.0}])
     monkeypatch.setitem(
         ds2_render.RENDERERS,
         "e01",
-        lambda *_args: pytest.fail("renderer should not run on a cache hit"),
+        lambda *_args: (figure, {"CBOW": curve}),
     )
 
-    ds2_render.analyze(
-        experiments=["e01"],
-        tracking_uri="test",
-        error_style="band",
-        output_dir=tmp_path,
-        seed=None,
-        summary=False,
-    )
+    paths = ds2_render.render_study(object(), "e01", output)
 
-    captured = capsys.readouterr()
-    assert "e01: analysis cache hit" in captured.err
-    assert "cached summary body" in captured.out
-    assert str(output) in captured.out
-    assert str(summary) in captured.out
-
-
-def test_ds2_analysis_selects_protocol_by_execution_group(monkeypatch):
-    captured = []
-
-    def fake_completed_seed_runs(*_args, **kwargs):
-        captured.append(kwargs["protocol_version"])
-        return {atomic_id: [object()] for atomic_id in kwargs["atomic_run_ids"]}
-
-    monkeypatch.setattr(
-        ds2_analysis_common,
-        "completed_seed_runs",
-        fake_completed_seed_runs,
-    )
-
-    ds2_analysis_common.runs(FakeClient(), "GT05", ["LM-BETTER-RECIPE"])
-    ds2_analysis_common.runs(FakeClient(), "GT06", ["SEQA-VAN-FWD"])
-
-    assert captured == ["book-source-v1", "book-source-v1"]
-
-
-def test_ds2_analysis_falls_back_when_book_protocol_has_no_match(monkeypatch):
-    captured = []
-
-    def fake_completed_seed_runs(*_args, **kwargs):
-        captured.append((kwargs["protocol_version"], kwargs["atomic_run_ids"]))
-        return {
-            atomic_id: ([] if kwargs["protocol_version"] else [object()])
-            for atomic_id in kwargs["atomic_run_ids"]
-        }
-
-    monkeypatch.setattr(
-        ds2_analysis_common,
-        "completed_seed_runs",
-        fake_completed_seed_runs,
-    )
-
-    grouped = ds2_analysis_common.runs(
-        FakeClient(),
-        "GT04",
-        ["LM-LSTM"],
-    )
-
-    assert grouped["LM-LSTM"]
-    assert captured == [
-        ("book-source-v1", ["LM-LSTM"]),
-        (None, ["LM-LSTM"]),
-    ]
-
-
-def test_ds2_analysis_falls_back_for_non_book_group_too(monkeypatch):
-    captured = []
-
-    def fake_completed_seed_runs(*_args, **kwargs):
-        captured.append(kwargs["protocol_version"])
-        return {
-            atomic_id: ([] if kwargs["protocol_version"] else [object()])
-            for atomic_id in kwargs["atomic_run_ids"]
-        }
-
-    monkeypatch.setattr(
-        ds2_analysis_common,
-        "completed_seed_runs",
-        fake_completed_seed_runs,
-    )
-
-    grouped = ds2_analysis_common.runs(FakeClient(), "GT01", ["CBOW-TOY"])
-
-    assert grouped["CBOW-TOY"]
-    assert captured == ["legacy", None]
-
-
-def test_ds2_analysis_only_falls_back_for_unmatched_series(monkeypatch):
-    preferred = object()
-    existing = object()
-
-    def fake_completed_seed_runs(*_args, **kwargs):
-        if kwargs["protocol_version"] == "book-source-v1":
-            return {"NEW": [preferred], "OLD": []}
-        assert kwargs["atomic_run_ids"] == ["OLD"]
-        return {"OLD": [existing]}
-
-    monkeypatch.setattr(
-        ds2_analysis_common,
-        "completed_seed_runs",
-        fake_completed_seed_runs,
-    )
-
-    grouped = ds2_analysis_common.runs(FakeClient(), "GT05", ["NEW", "OLD"])
-
-    assert grouped == {"NEW": [preferred], "OLD": [existing]}
-
-
-def test_ds2_analysis_can_select_legacy_protocol(monkeypatch):
-    captured = []
-
-    def fake_completed_seed_runs(*_args, **kwargs):
-        captured.append(kwargs["protocol_version"])
-        return {}
-
-    monkeypatch.setattr(
-        ds2_analysis_common,
-        "completed_seed_runs",
-        fake_completed_seed_runs,
-    )
-    client = AnalysisClient(FakeClient(), legacy=True)
-
-    ds2_analysis_common.runs(client, "GT05", ["LM-BETTER-RECIPE"])
-    ds2_analysis_common.runs(client, "GT06", ["SEQA-VAN-FWD"])
-
-    assert captured == ["legacy", "legacy"]
+    assert paths == [output, tmp_path / "ds2_e01_imp_curves.csv"]
+    assert all(path.is_file() for path in paths)
 
 
 def test_band_uses_one_sample_standard_deviation(monkeypatch):
@@ -410,26 +263,22 @@ def test_remove_figure_title_preserves_subplot_titles():
     plt.close(figure)
 
 
-def test_missing_experiment_still_renders_empty_figure(tmp_path):
-    client = FakeClient()
-    client.get_experiment_by_name = lambda _name: None
+def test_renderer_registry_saves_empty_figure(tmp_path, monkeypatch):
     output = tmp_path / "empty.png"
-    result = render(client, "band", output)
-    figure = result[0]
-    axis = figure.axes[0]
-
-    paths = _save_result(result, output)
+    figure, axis = plt.subplots()
+    monkeypatch.setitem(
+        ds2_render.RENDERERS,
+        "e01",
+        lambda *_args: (figure, {}),
+    )
+    paths = ds2_render.render_study(object(), "e01", output)
 
     assert output in paths
     assert output.is_file()
-    assert plt.imread(output).shape[:2] == (480, 640)
-    np.testing.assert_allclose(
-        axis.get_position().bounds,
-        (0.125, 0.11, 0.775, 0.77),
-    )
+    assert all(size > 0 for size in plt.imread(output).shape[:2])
     assert figure._suptitle is None
     assert axis.get_title() == ""
-    assert output.with_suffix(".csv").is_file()
+    assert output.with_name("empty_curves.csv").is_file()
 
 
 def test_experiment_selection_supports_ranges_and_reports_extensions():
@@ -439,59 +288,3 @@ def test_experiment_selection_supports_ranges_and_reports_extensions():
 
     assert selected == ["e01", "e03", "e04", "e08"]
     assert skipped == ["e05"]
-
-
-def test_final_metrics_aggregate_full_test_accuracy_and_training_wall_time(tmp_path):
-    run_refs = []
-    for index, (accuracy, timing_ns) in enumerate(
-        ((0.991, (1_000_000_000, 2_000_000_000)), (0.993, (4_000_000_000,)))
-    ):
-        root = tmp_path / f"seed-{index}"
-        root.mkdir()
-        (root / "evaluations.csv").write_text(
-            "axis,axis_step,update,epoch,evaluation_set_id,split,example_count,loss,accuracy\n"
-            f"terminal,20,12000,20,mnist-test-full,test,10000,,{accuracy}\n",
-            encoding="utf-8",
-        )
-        (root / "timing_windows.csv").write_text(
-            "start_update,end_update,update_count,closed_by,train_wall_time_ns\n"
-            + "".join(
-                f"1,2,1,epoch,{value}\n"
-                for value in timing_ns
-            ),
-            encoding="utf-8",
-        )
-        run_refs.append(
-            RunRef(
-                run_id=f"run-{index}",
-                atomic_run_id="CNN-DEEP-BOOK",
-                seed=str(index),
-                start_time=index,
-                local_artifact_root=root,
-            )
-        )
-
-    accuracy_curve = final_test_accuracy_curve(FakeClient(), run_refs)
-    time_curve = training_time_curve(FakeClient(), run_refs)
-    summaries = summaries_for_runs(
-        FakeClient(),
-        {"CNN-DEEP-BOOK": run_refs},
-    )
-
-    np.testing.assert_allclose(
-        [accuracy_curve.mean[0], accuracy_curve.minimum[0], accuracy_curve.maximum[0]],
-        [0.992, 0.991, 0.993],
-    )
-    np.testing.assert_allclose(
-        [time_curve.mean[0], time_curve.minimum[0], time_curve.maximum[0]],
-        [3.5, 3.0, 4.0],
-    )
-    assert accuracy_curve.run_count == time_curve.run_count == 2
-    np.testing.assert_allclose(
-        summaries["CNN-DEEP-BOOK/final_test_accuracy"].standard_deviation,
-        np.sqrt(2) / 1000,
-    )
-    np.testing.assert_allclose(
-        summaries["CNN-DEEP-BOOK/training_time_s"].standard_deviation,
-        np.sqrt(0.5),
-    )

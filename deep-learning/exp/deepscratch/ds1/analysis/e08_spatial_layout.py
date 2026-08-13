@@ -5,15 +5,15 @@ import numpy as np
 
 from mlprosection.datasets.mnist import load_mnist
 
-from exp.analyze import (
+from exp.framework.analysis.core import (
     aggregate,
     mark_empty,
-    metric_histories,
     plot_curve,
     save_figure,
     write_summary,
 )
-from exp.plot_theme import ACCENT_COLORS, SURFACE
+from exp.deepscratch.analysis.input import metric_histories
+from exp.framework.plotting.theme import ACCENT_COLORS, SURFACE
 
 from .broken_axis import add_wave_break
 from .common import runs

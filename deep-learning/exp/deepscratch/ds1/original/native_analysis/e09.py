@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from exp.plot_theme import ACCENT_COLORS, CORE_HIGHLIGHT
+from exp.framework.plotting.theme import ACCENT_COLORS, CORE_HIGHLIGHT
 
 from .common import load_csv, np, plt, save, trial
 

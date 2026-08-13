@@ -47,8 +47,8 @@
 최댓값을 계산한다.
 
 ```bash
-python -m exp analyze ds1 --all --error-style band
-python -m exp analyze ds1 -e 01-07 --error-style errorbar
+python -m exp analyze deepscratch ds1 --all
+python -m exp analyze deepscratch ds1 -e 01-07
 ```
 
 `-e`는 `01`, `e01`, `01-07`, `01,03,05-07` 형식을 지원한다.
@@ -56,7 +56,7 @@ python -m exp analyze ds1 -e 01-07 --error-style errorbar
 특정 완료 seed만 그리려면 MLflow의 실제 `seed/master` 값을 지정한다.
 
 ```bash
-python -m exp analyze ds1 -e 06 --seed 1
+python -m exp analyze deepscratch ds1 -e 06 --seed 1
 ```
 
 이때 출력 이름에는 `_seed-1`이 붙어 전체 seed 집계 그래프를 덮어쓰지 않는다.
@@ -139,11 +139,11 @@ python -m exp.deepscratch.ds1.implemented.backfill_full_train_gap --apply --devi
 원본 코드는 이제 `ds1_original` 정식 도메인에서 seed별로 분석한다.
 
 ```bash
-python -m exp analyze ds1_original -e 01-07 -s
+python -m exp analyze deepscratch ds1 -e 01-07 --variant original
 ```
 
 이 경로는 MLflow 재현 run을 조회하지 않고
-기존 고정-seed 캐시는 `exp/deepscratch/ds1/original/legacy_results/fixed_seed/`에 보관되며 새 통계에서 제외된다.
+기존 고정-seed 캐시의 canonical 격리 위치는 `.legacy/experiments/ds1_original/fixed_seed/`이며 새 통계에서 제외된다. source-tree의 기존 payload는 감사 전 read-only fallback으로만 읽는다.
 원본 최종 성능 metric이 있는 E01–E07을 지원하며 관찰 전용 E09–E10은 제외한다.
 단일 원본 시행은 `seed_runs=1`, 표준편차 `0`으로 기록한다. 기존 원본 캐시에
 학습 시간이나 parameter count가 없으면 해당 CSV 행은 빈 값으로 남긴다. 계측

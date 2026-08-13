@@ -11,8 +11,9 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 
-from exp.analyze import artifact_file, mark_empty, save_figure
-from exp.plot_theme import SURFACE
+from exp.framework.analysis.core import mark_empty, save_figure
+from exp.deepscratch.analysis.input import artifact_file
+from exp.framework.plotting.theme import SURFACE
 
 from .common import runs
 

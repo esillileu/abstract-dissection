@@ -2,7 +2,7 @@
 
 import matplotlib.pyplot as plt
 
-from exp.analyze import mark_empty, plot_curve
+from exp.framework.analysis.core import mark_empty, plot_curve
 
 from .common import runs, source_curve
 

@@ -1,25 +1,12 @@
-"""Thin CLI dispatcher for the individual DS2 analysis modules."""
+"""DS2 book-layout renderer registry."""
 
 from __future__ import annotations
 
-from contextlib import redirect_stdout
-from io import StringIO
-import sys
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 
-from exp.analyze import (
-    AnalysisClient,
-    cached_analysis_console_output,
-    cached_analysis_outputs,
-    mlflow_client,
-    parse_experiment_selection,
-    save_figure,
-    tracking_uri_default,
-    write_analysis_cache,
-    write_summary,
-)
+from exp.framework.analysis.core import save_figure, write_summary
 
 from . import (
     e01_toy_word2vec,
@@ -32,14 +19,8 @@ from . import (
     e08_attention,
     e09_addition_seq2seq_150,
 )
-from .final_metrics import FINAL_METRIC_RENDERERS
-from exp.framework.state import StateCoordinate, StateOwner, WorkspacePaths
 
 
-IMAGE_ROOT = WorkspacePaths.from_environment(Path.cwd()).resolve(
-    StateOwner.ARTIFACT,
-    StateCoordinate("deepscratch", "ds2", "all", "implemented", "analysis"),
-)
 RENDERERS = {
     "e01": e01_toy_word2vec.render,
     "e02": e02_ptb_word2vec.render,
@@ -51,75 +32,26 @@ RENDERERS = {
     "e08": e08_attention.render,
     "e09": e09_addition_seq2seq_150.render,
 }
-SUMMARY_RENDERERS = FINAL_METRIC_RENDERERS
+STUDY_SOURCES = {}
 
 
-def _save_result(result, output):
+def render_study(
+    data,
+    study_id: str,
+    output: Path,
+    *,
+    error_style: str = "band",
+) -> list[Path]:
+    """Render the book's study-specific composition with project error bars."""
+    result = RENDERERS[study_id](data, error_style, output)
     if isinstance(result, list):
         return result
     figure, curves = result
     save_figure(figure, output)
-    write_summary(output.with_suffix(".csv"), curves)
+    summary = output.with_name(f"{output.stem}_curves.csv")
+    write_summary(summary, curves)
     plt.close(figure)
-    return [output, output.with_suffix(".csv")]
+    return [output, summary]
 
 
-def analyze(
-    *,
-    experiments: list[str],
-    tracking_uri: str | None,
-    error_style: str,
-    output_dir: Path | None,
-    seed: int | None,
-    summary: bool,
-    legacy: bool = False,
-) -> None:
-    if error_style not in {"band", "errorbar"}:
-        raise ValueError(f"unsupported error style: {error_style}")
-    renderers = SUMMARY_RENDERERS if summary else RENDERERS
-    selected, skipped = parse_experiment_selection(experiments, renderers)
-    if skipped:
-        print(f"skipping unsupported or extension analyses: {', '.join(skipped)}", file=sys.stderr)
-    if not selected:
-        raise ValueError("selection contains no supported analyses")
-    client = AnalysisClient(
-        mlflow_client(tracking_uri or tracking_uri_default()),
-        seed=seed,
-        legacy=legacy,
-    )
-    root = output_dir or IMAGE_ROOT
-    outputs = []
-    for experiment in selected:
-        seed_suffix = "" if seed is None else f"_seed-{seed}"
-        legacy_suffix = "_legacy" if legacy else ""
-        if summary:
-            output = root / (
-                f"{experiment}_summary{legacy_suffix}{seed_suffix}.csv"
-            )
-        else:
-            output = root / (
-                f"{experiment}_{error_style}{legacy_suffix}{seed_suffix}.png"
-            )
-        cached_outputs = cached_analysis_outputs(client, output)
-        if cached_outputs is not None:
-            print(f"{experiment}: analysis cache hit", file=sys.stderr)
-            print(cached_analysis_console_output(output), end="")
-            outputs.extend(cached_outputs)
-            continue
-        client.analysis_selections = []
-        console = StringIO()
-        with redirect_stdout(console):
-            experiment_outputs = _save_result(
-                renderers[experiment](client, error_style, output), output
-            )
-        console_output = console.getvalue()
-        print(console_output, end="")
-        write_analysis_cache(
-            client,
-            output,
-            experiment_outputs,
-            console_output=console_output,
-        )
-        outputs.extend(experiment_outputs)
-    for path in outputs:
-        print(path)
+__all__ = ["RENDERERS", "STUDY_SOURCES", "render_study"]

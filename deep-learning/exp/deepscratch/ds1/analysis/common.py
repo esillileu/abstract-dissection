@@ -2,34 +2,38 @@
 
 from __future__ import annotations
 
-from exp.analyze import aggregate, completed_seed_runs, histories_from_artifact, smooth_histories
+from exp.framework.analysis.core import aggregate, smooth_histories
 
 
-def runs(client, group: str, atomic_ids: list[str]):
-    return completed_seed_runs(
-        client,
-        experiment_name="ds1",
-        group_id=group,
-        atomic_run_ids=atomic_ids,
-    )
+def runs(data, group: str, atomic_ids: list[str]):
+    del group
+    return data.runs(atomic_ids)
 
 
 def loss_curve(client, run_refs):
-    histories = histories_from_artifact(
-        client,
-        run_refs,
-        artifact_path="updates.csv",
-        x="update",
-        y="loss",
-        x_value=lambda row: float(row["update"]) - 1,
-    )
+    histories = []
+    for run in run_refs:
+        series = run.result.metric("train/loss") or run.result.metric(
+            "train/objective"
+        )
+        if series is not None:
+            histories.append({
+                float(step) - 1: float(value)
+                for step, value in zip(series.steps, series.values, strict=True)
+            })
+    if not histories:
+        histories = client.histories_from_artifact(
+            run_refs,
+            artifact_path="updates.csv",
+            x="update",
+            y="loss",
+            x_value=lambda row: float(row["update"]) - 1,
+        )
     return aggregate(smooth_histories(histories))
 
 
 def accuracy_curve(client, run_refs, *, split: str, x_value, axis: str | None = None):
-    return aggregate(
-        histories_from_artifact(
-            client,
+    histories = client.histories_from_artifact(
             run_refs,
             artifact_path="evaluations.csv",
             x="axis_step",
@@ -38,4 +42,17 @@ def accuracy_curve(client, run_refs, *, split: str, x_value, axis: str | None = 
             and (axis is None or row.get("axis") == axis),
             x_value=x_value,
         )
-    )
+    if not histories:
+        native_ids = (
+            ("update/eval_train/accuracy", "train/accuracy")
+            if split == "train"
+            else ("update/eval_test/accuracy", "test/accuracy")
+        )
+        for run in run_refs:
+            series = next(
+                (run.result.metric(metric_id) for metric_id in native_ids if run.result.metric(metric_id) is not None),
+                None,
+            )
+            if series is not None:
+                histories.append(dict(zip(series.steps, series.values, strict=True)))
+    return aggregate(histories)

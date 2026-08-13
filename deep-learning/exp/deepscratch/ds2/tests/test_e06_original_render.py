@@ -2,14 +2,14 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 
-from exp.deepscratch.original_runtime.cache import save_csv
+from exp.deepscratch.original_runtime.cache_protocol import save_csv
 
 
 def test_original_e06_combines_all_conditions_in_one_figure(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    from exp.deepscratch.ds2.original.render import e06
+    from exp.deepscratch.ds2.original.native_analysis import e06
 
     root = tmp_path / "original"
     for index, trial_id in enumerate(e06.TRIAL_IDS):

@@ -6,7 +6,8 @@ from collections import defaultdict
 import matplotlib.pyplot as plt
 import numpy as np
 
-from exp.analyze import Curve, artifact_file, artifact_rows, save_figure, write_summary
+from exp.framework.analysis.core import Curve, save_figure, write_summary
+from exp.deepscratch.analysis.input import artifact_file, artifact_rows
 
 from .common import runs
 

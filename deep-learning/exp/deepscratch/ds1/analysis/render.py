@@ -1,31 +1,12 @@
-"""Thin CLI dispatcher for the individual DS1 analysis modules."""
+"""DS1 book-layout renderer registry."""
 
 from __future__ import annotations
 
-from contextlib import redirect_stdout
-from io import StringIO
-import sys
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 
-from exp.analyze import (
-    AnalysisClient,
-    cached_analysis_console_output,
-    cached_analysis_outputs,
-    completed_seed_runs,
-    mlflow_client,
-    parse_experiment_selection,
-    save_figure,
-    tracking_uri_default,
-    write_analysis_cache,
-    write_summary,
-)
-from exp.model_parameters import (
-    append_parameter_counts,
-    format_parameter_count,
-    parameter_count_for_runs,
-)
+from exp.framework.analysis.core import save_figure, write_summary
 
 from . import (
     e01_optimizer,
@@ -34,25 +15,15 @@ from . import (
     e04_dropout,
     e05_batchnorm,
     e06_simple_cnn,
-    e06_summary,
     e07_deep_cnn,
-    e07_summary,
     e08_spatial_layout,
-    e08_summary,
     e09_optimizer_trajectory,
     e10_activation,
     e11_cnn_filters,
     e12_extended_mlp,
-    e12_summary,
 )
-from .generic_summary import SUMMARY_RENDERERS as GENERIC_SUMMARY_RENDERERS
-from exp.framework.state import StateCoordinate, StateOwner, WorkspacePaths
 
 
-IMAGE_ROOT = WorkspacePaths.from_environment(Path.cwd()).resolve(
-    StateOwner.ARTIFACT,
-    StateCoordinate("deepscratch", "ds1", "all", "implemented", "analysis"),
-)
 RENDERERS = {
     "e01": e01_optimizer.render,
     "e02": e02_initializer.render,
@@ -67,146 +38,29 @@ RENDERERS = {
     "e11": e11_cnn_filters.render,
     "e12": e12_extended_mlp.render,
 }
-SUMMARY_RENDERERS = {
-    **GENERIC_SUMMARY_RENDERERS,
-    "e06": e06_summary.render,
-    "e07": e07_summary.render,
-    "e08": e08_summary.render,
-    "e11": e11_cnn_filters.render_summary,
-    "e12": e12_summary.render,
-}
-SUMMARY_MODELS = {
-    "e01": (
-        "GT01",
-        ("MLP-OPT-SGD", "MLP-OPT-MOMENTUM", "MLP-OPT-ADAGRAD", "MLP-OPT-ADAM"),
-    ),
-    "e02": ("GT02", ("MLP-INIT-STD001", "MLP-INIT-XAVIER", "MLP-INIT-HE")),
-    "e03": ("GT03", ("REG-WD-OFF", "REG-WD-01")),
-    "e04": ("GT04", ("REG-DROPOUT-OFF", "REG-DROPOUT-ON-02")),
-    "e05": (
-        "GT05",
-        tuple(
-            f"BN-SCALE-{index:02d}-{state}"
-            for index in range(1, 17)
-            for state in ("ON", "OFF")
-        ),
-    ),
-    "e06": ("GT06", e06_summary.ATOMIC_RUN_IDS),
-    "e07": ("GT07", [e07_summary.ATOMIC_RUN_ID]),
-    "e08": ("GT08", e08_summary.ATOMIC_RUN_IDS),
-}
-SUMMARY_CROSS_GROUP_MODELS = {
-    "e12": e12_summary.MODELS,
+STUDY_SOURCES = {
+    "e07": ("e06", "e07"),
+    "e11": ("e06", "e08"),
 }
 
 
-def _save_result(result, output):
+def render_study(
+    data,
+    study_id: str,
+    output: Path,
+    *,
+    error_style: str = "band",
+) -> list[Path]:
+    """Render the book's study-specific composition with project error bars."""
+    result = RENDERERS[study_id](data, error_style, output)
     if isinstance(result, list):
         return result
     figure, curves = result
-    extra_outputs = list(getattr(figure, "_analysis_extra_outputs", ()))
     save_figure(figure, output)
-    write_summary(output.with_suffix(".csv"), curves)
+    summary = output.with_name(f"{output.stem}_curves.csv")
+    write_summary(summary, curves)
     plt.close(figure)
-    return [output, output.with_suffix(".csv"), *extra_outputs]
+    return [output, summary]
 
 
-def analyze(
-    *,
-    experiments: list[str],
-    tracking_uri: str | None,
-    error_style: str,
-    output_dir: Path | None,
-    seed: int | None,
-    summary: bool,
-) -> None:
-    if error_style not in {"band", "errorbar"}:
-        raise ValueError(f"unsupported error style: {error_style}")
-    renderers = SUMMARY_RENDERERS if summary else RENDERERS
-    selected, skipped = parse_experiment_selection(experiments, renderers)
-    if skipped:
-        print(
-            f"skipping unsupported or extension analyses: {', '.join(skipped)}",
-            file=sys.stderr,
-        )
-    if not selected:
-        raise ValueError("selection contains no supported analyses")
-    client = AnalysisClient(
-        mlflow_client(tracking_uri or tracking_uri_default()), seed=seed
-    )
-    root = output_dir or IMAGE_ROOT
-    outputs = []
-    for experiment in selected:
-        output_id = experiment
-        seed_suffix = "" if seed is None else f"_seed-{seed}"
-        if summary:
-            output = root / f"{output_id}_summary{seed_suffix}.csv"
-        else:
-            output = root / f"{output_id}_{error_style}{seed_suffix}.png"
-        cached_outputs = cached_analysis_outputs(client, output)
-        if cached_outputs is not None:
-            print(f"{experiment}: analysis cache hit", file=sys.stderr)
-            print(cached_analysis_console_output(output), end="")
-            outputs.extend(cached_outputs)
-            continue
-        client.analysis_selections = []
-        console = StringIO()
-        with redirect_stdout(console):
-            experiment_outputs = _save_result(
-                renderers[experiment](client, error_style, output), output
-            )
-            if summary and experiment in SUMMARY_MODELS:
-                group_id, atomic_run_ids = SUMMARY_MODELS[experiment]
-                grouped_runs = completed_seed_runs(
-                    client,
-                    experiment_name="ds1",
-                    group_id=group_id,
-                    atomic_run_ids=atomic_run_ids,
-                )
-                parameter_counts = {
-                    atomic_run_id: parameter_count_for_runs(
-                        client,
-                        grouped_runs[atomic_run_id],
-                    )
-                    for atomic_run_id in atomic_run_ids
-                }
-                for atomic_run_id, parameter_count in parameter_counts.items():
-                    print(
-                        f"[{atomic_run_id}] "
-                        f"{format_parameter_count(parameter_count)}"
-                    )
-                append_parameter_counts(
-                    output.with_suffix(".csv"), parameter_counts
-                )
-            if summary and experiment in SUMMARY_CROSS_GROUP_MODELS:
-                parameter_counts = {}
-                for group_id, atomic_run_id in SUMMARY_CROSS_GROUP_MODELS[experiment]:
-                    grouped_runs = completed_seed_runs(
-                        client,
-                        experiment_name="ds1",
-                        group_id=group_id,
-                        atomic_run_ids=[atomic_run_id],
-                    )
-                    parameter_counts[atomic_run_id] = parameter_count_for_runs(
-                        client,
-                        grouped_runs[atomic_run_id],
-                    )
-                for atomic_run_id, parameter_count in parameter_counts.items():
-                    print(
-                        f"[{atomic_run_id}] "
-                        f"{format_parameter_count(parameter_count)}"
-                    )
-                append_parameter_counts(
-                    output.with_suffix(".csv"), parameter_counts
-                )
-        console_output = console.getvalue()
-        print(console_output, end="")
-        write_analysis_cache(
-            client,
-            output,
-            experiment_outputs,
-            console_output=console_output,
-        )
-        outputs.extend(experiment_outputs)
-    for path in outputs:
-        print(path)
+__all__ = ["RENDERERS", "STUDY_SOURCES", "render_study"]
