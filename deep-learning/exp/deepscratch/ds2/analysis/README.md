@@ -114,7 +114,9 @@ parameter count를 `timing.json`, `parameter_manifest.json`에서 읽는다.
 - `--error-style errorbar`: 평균선 위 min–max error bar
 - 완료 run이 없으면 빈 그래프 또는 값이 비어 있는 분석 CSV를 만든다.
 - 출력 기본 경로는 `.artifacts/experiments/deepscratch/ds2/<experiment>/implemented/analysis/`이다.
-- `GT01`은 같은 toy/full-softmax 조건의 CBOW와 Skip-gram을 함께 표시한다.
+- `GT01`은 toy/full-softmax CBOW와 Skip-gram을 각각 별도 그래프로 표시한다. 원본은
+  `e01_toy_cbow.png`/`e01_toy_skipgram.png`, 구현은 출력 stem 뒤에 `_cbow`/`_skipgram`을
+  붙인 PNG를 생성한다.
 - `GT02`는 그래프를 만들지 않는다. 네 조건의 final `W_in`에 대해 교재의
   `you`, `year`, `car`, `toyota` 유사어 top-5와 네 유추 문제의 top-5,
   기대 정답 순위 및 hit@5를 터미널과 `e02_word_vectors.txt/.csv`에 출력한다.

@@ -2,25 +2,25 @@
 
 import matplotlib.pyplot as plt
 
-from exp.framework.analysis.core import mark_empty, plot_curve
+from exp.framework.analysis.core import mark_empty, plot_curve, save_figure, write_summary
 from exp.framework.plotting.theme import ACCENT_COLORS
 
 from .common import runs, source_curve
 
 
 def render(client, error_style, output):
-    del output
     definitions = {
         "W2V-TOY-CBOW-FULL": ("CBOW", ACCENT_COLORS[0], "-", "o"),
-        # "W2V-TOY-SKIPGRAM-FULL": ("Skip-gram", ACCENT_COLORS[1], "--", "s"),
+        "W2V-TOY-SKIPGRAM-FULL": ("Skip-gram", ACCENT_COLORS[1], "--", "s"),
     }
     grouped = runs(client, "GT01", list(definitions))
     curves = {}
-    figure, axis = plt.subplots()
-    figure._analysis_match_original_canvas = True
+    outputs = []
     for atomic, (label, color, linestyle, marker) in definitions.items():
         curve = source_curve(client, grouped[atomic], "book_loss")
-        curves[atomic] = curve
+        curves[label] = curve
+        figure, axis = plt.subplots()
+        figure._analysis_match_original_canvas = True
         plot_curve(
             axis,
             curve,
@@ -31,11 +31,21 @@ def render(client, error_style, output):
             error_style=error_style,
             error_every=5,
         )
-    axis.set(
-        xlabel="iterations (x20)",
-        ylabel="book loss",
-    )
-    mark_empty(axis)
-    if axis.has_data():
-        axis.legend()
-    return figure, curves
+        axis.set(
+            xlabel="iterations (x20)",
+            ylabel="book loss",
+        )
+        mark_empty(axis)
+        if axis.has_data():
+            axis.legend()
+        slug = atomic.removeprefix("W2V-TOY-").removesuffix("-FULL").lower().replace("-", "")
+        condition_output = output.with_name(
+            f"{output.stem}_{slug}{output.suffix}"
+        )
+        save_figure(figure, condition_output)
+        plt.close(figure)
+        outputs.append(condition_output)
+    summary = output.with_name(f"{output.stem}_curves.csv")
+    write_summary(summary, curves)
+    outputs.append(summary)
+    return outputs
