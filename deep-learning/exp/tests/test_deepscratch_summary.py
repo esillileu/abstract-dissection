@@ -22,6 +22,14 @@ def test_ds2_e05_declares_train_validation_and_test_perplexity() -> None:
     ]
 
 
+@pytest.mark.parametrize("study_id", ["e06", "e07"])
+def test_ds2_seq2seq_summaries_declare_test_accuracy_only(study_id: str) -> None:
+    metric = DS2_SUMMARY_METRICS[study_id][0]
+    assert metric.metric_id == "test_accuracy"
+    assert metric.unit == "percent"
+    assert metric.value_scale == 100.0
+
+
 def test_summary_reports_seed_statistics_time_and_parameter_count(
     tmp_path,
     capsys: pytest.CaptureFixture[str],

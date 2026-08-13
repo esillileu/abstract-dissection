@@ -29,6 +29,7 @@ EXACT = MetricDeclaration(
     ("final/test/exact_match", "test/exact_match"),
     ("final/test/accuracy", "test/accuracy"),
     protocols=("book-source-v1", "legacy"),
+    value_scale=100.0,
 )
 SUMMARY_TRAIN_LOSS = MetricDeclaration(
     "train_loss", "nats", "train", "run",
@@ -61,16 +62,25 @@ SUMMARY_VALID_PPL = MetricDeclaration(
     protocols=("book-source-v1", "legacy"),
 )
 SUMMARY_TRAIN_EXACT = MetricDeclaration(
-    "train_exact_match", "fraction", "train", "run",
+    "train_exact_match", "percent", "train", "run",
     ("final/train/exact_match", "final/train/accuracy", "train/accuracy"),
     ("final/train/exact_match", "final/train/accuracy", "train/accuracy"),
     protocols=("book-source-v1", "legacy"),
+    value_scale=100.0,
 )
 SUMMARY_TEST_EXACT = MetricDeclaration(
-    "test_exact_match", "fraction", "test", "run",
+    "test_exact_match", "percent", "test", "run",
     ("final/test/exact_match", "final/test/accuracy", "test/accuracy"),
     ("final/test/exact_match", "final/test/accuracy", "test/accuracy"),
     protocols=("book-source-v1", "legacy"),
+    value_scale=100.0,
+)
+SUMMARY_TEST_ACCURACY = MetricDeclaration(
+    "test_accuracy", "percent", "test", "run",
+    ("final/test/exact_match", "final/test/accuracy", "test/accuracy"),
+    ("final/test/exact_match", "final/test/accuracy", "test/accuracy"),
+    protocols=("book-source-v1", "legacy"),
+    value_scale=100.0,
 )
 
 
@@ -158,8 +168,8 @@ SUMMARY_METRICS = {
     "e03": (SUMMARY_TRAIN_PPL, SUMMARY_TEST_PPL),
     "e04": (SUMMARY_TRAIN_PPL, SUMMARY_TEST_PPL),
     "e05": (SUMMARY_TRAIN_PPL, SUMMARY_VALID_PPL, SUMMARY_TEST_PPL),
-    "e06": (SUMMARY_TRAIN_EXACT, SUMMARY_TEST_EXACT),
-    "e07": (SUMMARY_TRAIN_EXACT, SUMMARY_TEST_EXACT),
+    "e06": (SUMMARY_TEST_ACCURACY,),
+    "e07": (SUMMARY_TEST_ACCURACY,),
     "e08": (SUMMARY_TRAIN_EXACT, SUMMARY_TEST_EXACT),
     "e09": (SUMMARY_TRAIN_EXACT, SUMMARY_TEST_EXACT),
 }
