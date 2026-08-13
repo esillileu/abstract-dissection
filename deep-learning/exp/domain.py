@@ -21,11 +21,6 @@ class DomainDefinition:
     spec_module: str
     executor_module: str
     analysis_module: str
-    original_run_module: str | None = None
-    original_render_module: str | None = None
-    original_summary_module: str | None = None
-    original_experiments: tuple[str, ...] = ()
-    original_default_order: tuple[str, ...] = ()
     default_seed_set: str = "research_v1"
 
     def load_run_spec(
@@ -40,10 +35,6 @@ class DomainDefinition:
             atomic_run_id=atomic_run_id,
             overrides=overrides,
         )
-
-    def original_order(self) -> tuple[str, ...]:
-        return self.original_default_order or self.original_experiments
-
 
 @dataclass(frozen=True)
 class RunSelection:

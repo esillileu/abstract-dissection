@@ -106,7 +106,6 @@ def run(
         override_values=_writer_overrides(volume, selected, override_values or []),
         order=order, dry_run=dry_run, progress=progress,
         progress_every=progress_every, tracking_uri=tracking_uri,
-        original=False, force=False, output_dir=None,
     )
 
 
@@ -259,7 +258,6 @@ def analyze(
                 experiments=experiment or [], all_experiments=all_experiments,
                 tracking_uri=tracking_uri, error_style=error_style,
                 output_dir=scoped_output, seed=seed, summary=summary,
-                original=False,
             )
     if variant == "all":
         from .cross_variant import write_comparison_table
