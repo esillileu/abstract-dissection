@@ -6,8 +6,8 @@ from pathlib import Path
 import pytest
 
 from exp.domain import RunOptions, RunOrder, RunSelection
-from exp.ds1_original.cli import DEFINITION as DS1_ORIGINAL
-from exp.ds2_original.cli import DEFINITION as DS2_ORIGINAL
+from exp.deepscratch.ds1.catalog import ORIGINAL as DS1_ORIGINAL
+from exp.deepscratch.ds2.catalog import ORIGINAL as DS2_ORIGINAL
 from exp.planning import Planner
 
 
@@ -30,7 +30,7 @@ def test_default_catalog_sizes_and_ds2_word2vec_exclusion() -> None:
 
 def test_ds2_e05_uses_upstream_better_rnnlm_recipe() -> None:
     spec = DS2_ORIGINAL.load_run_spec(
-        Path("exp/ds2_original/config/e05_better_rnnlm.yaml"),
+        Path("exp/deepscratch/ds2/config/original/e05_better_rnnlm.yaml"),
         atomic_run_id="BETTER-RNNLM",
         overrides={},
     ).to_executor_config()
@@ -52,11 +52,11 @@ def test_atomic_seed_override_and_seed_first_order() -> None:
 
 
 def test_upstream_import_context_restores_modules() -> None:
-    from exp.ds1.original.run.common import source_imports
+    from exp.deepscratch.ds1.original.run.common import source_imports
 
     sentinel = object()
     previous = sys.modules.get("common", sentinel)
-    source = Path("exp/ds1_original/src")
+    source = Path("exp/deepscratch/ds1/original/source")
     with source_imports(source):
         __import__("common.layers")
         assert "common.layers" in sys.modules
@@ -69,7 +69,7 @@ def test_upstream_import_context_restores_modules() -> None:
 
 def test_ds2_e08_requires_matching_seed_source() -> None:
     spec = DS2_ORIGINAL.load_run_spec(
-        Path("exp/ds2_original/config/e08_attention.yaml"),
+        Path("exp/deepscratch/ds2/config/original/e08_attention.yaml"),
         atomic_run_id="ATTENTION-ALIGNMENT",
         overrides={},
     ).to_executor_config()

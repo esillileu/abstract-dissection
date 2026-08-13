@@ -45,14 +45,14 @@ dev = [
 [tool.ruff]
 extend-exclude = [
     "01_deep-learning-from-base",
-    "exp/ds1_original/src",
-    "exp/ds2_original/src",
+    "exp/deepscratch/ds1/original/source",
+    "exp/deepscratch/ds2/original/source",
 ]
 
 [tool.pytest.ini_options]
 testpaths = ["tests", "exp"]
 norecursedirs = [
     "01_deep-learning-from-base",
-    "exp/ds1_original/src",
-    "exp/ds2_original/src",
+    "exp/deepscratch/ds1/original/source",
+    "exp/deepscratch/ds2/original/source",
 ]

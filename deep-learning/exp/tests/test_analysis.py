@@ -18,15 +18,15 @@ from exp.analyze import (
     plot_curve,
     write_analysis_cache,
 )
-from exp.ds1.analyze.final_metrics import (
+from exp.deepscratch.ds1.analysis.final_metrics import (
     final_test_accuracy_curve,
     summaries_for_runs,
     training_time_curve,
 )
-from exp.ds2.analyze.e01_toy_word2vec import render
-from exp.ds2.analyze import common as ds2_analysis_common
-from exp.ds2.analyze.render import _save_result
-from exp.ds2.analyze import render as ds2_render
+from exp.deepscratch.ds2.analysis.e01_toy_word2vec import render
+from exp.deepscratch.ds2.analysis import common as ds2_analysis_common
+from exp.deepscratch.ds2.analysis.render import _save_result
+from exp.deepscratch.ds2.analysis import render as ds2_render
 from exp.plot_theme import (
     ACCENT_COLORS,
     BACKGROUND,

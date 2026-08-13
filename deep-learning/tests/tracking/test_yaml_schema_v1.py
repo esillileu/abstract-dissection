@@ -12,7 +12,7 @@ def test_yaml_contract_projects_to_the_schema_v1_artifact_tree(tmp_path, monkeyp
         "experiment_ids": ["e01"], "execution_group_id": "g01", "recipe_id": "RC-TOY-OPT",
         "structure_signature": "analytic-toy-v1", "dataset": {"id": "DS-TOY"},
         "model": {"family": "analytic", "task_type": "optimization"},
-        "training": {"entrypoint": "exp/ds1/config/e01_mnist_optimizer.yaml", "max_epochs": 0},
+        "training": {"entrypoint": "exp/deepscratch/ds1/config/implemented/e01_mnist_optimizer.yaml", "max_epochs": 0},
     })
 
     run.write_artifacts(

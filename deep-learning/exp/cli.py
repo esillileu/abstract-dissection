@@ -6,11 +6,6 @@ from collections.abc import Sequence
 
 import typer
 
-from exp.domain import DomainDefinition
-from exp.ds1 import cli as ds1_cli
-from exp.ds2 import cli as ds2_cli
-from exp.ds1_original import cli as ds1_original_cli
-from exp.ds2_original import cli as ds2_original_cli
 from exp.deepscratch import cli as deepscratch_cli
 from exp.framework import DomainRegistry
 
@@ -32,33 +27,6 @@ app.add_typer(check_app, name="check")
 app.add_typer(profile_app, name="profile")
 
 
-DOMAIN_REGISTRY: dict[str, DomainDefinition] = {}
-
-
-def _register_domain(name: str, module: object) -> None:
-    definition = getattr(module, "DEFINITION")
-    if name in DOMAIN_REGISTRY:
-        raise RuntimeError(f"duplicate experiment domain: {name}")
-    if definition.name != name:
-        raise RuntimeError(
-            f"domain registry name mismatch: {name} != {definition.name}"
-        )
-    DOMAIN_REGISTRY[name] = definition
-    plan_app.command(name)(getattr(module, "plan"))
-    run_app.command(name)(getattr(module, "run"))
-    analyze_app.command(name)(getattr(module, "analyze"))
-    profile = getattr(module, "profile", None)
-    if profile is not None:
-        profile_app.command(name)(profile)
-
-
-_register_domain("ds1", ds1_cli)
-_register_domain("ds2", ds2_cli)
-_register_domain("ds1_original", ds1_original_cli)
-_register_domain("ds2_original", ds2_original_cli)
-
-# Canonical domain plugin. Historical volume-shaped commands remain migration
-# shims while active legacy writers finish.
 PLUGIN_REGISTRY = DomainRegistry()
 PLUGIN_REGISTRY.register(deepscratch_cli.DEFINITION)
 plan_app.command("deepscratch")(deepscratch_cli.plan)

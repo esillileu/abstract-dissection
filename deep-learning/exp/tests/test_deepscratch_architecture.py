@@ -1,3 +1,4 @@
+import ast
 from pathlib import Path
 
 from typer.testing import CliRunner
@@ -194,3 +195,48 @@ def test_comparison_view_never_synthesizes_missing_metrics() -> None:
     assert observation.unavailable_reason == (
         "native metric is absent: runtime/train_total_s"
     )
+
+
+def test_variant_and_volume_import_boundaries() -> None:
+    root = Path("exp/deepscratch")
+    violations = []
+    for path in root.rglob("*.py"):
+        if "source" in path.parts or "tests" in path.parts:
+            continue
+        imports = _imports(path)
+        relative = path.relative_to(root).parts
+        if relative[0] == "ds1":
+            violations.extend(
+                (path, name) for name in imports
+                if name.startswith("exp.deepscratch.ds2")
+            )
+        if relative[0] == "ds2":
+            violations.extend(
+                (path, name) for name in imports
+                if name.startswith("exp.deepscratch.ds1")
+            )
+        if "implemented" in relative:
+            violations.extend(
+                (path, name) for name in imports if ".original" in name
+            )
+        if "original" in relative:
+            violations.extend(
+                (path, name) for name in imports if ".implemented" in name
+            )
+        if relative[:3] == ("ds2", "profile", "e02"):
+            violations.extend(
+                (path, name) for name in imports
+                if ".original.run" in name
+            )
+    assert violations == []
+
+
+def _imports(path: Path) -> set[str]:
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    names = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            names.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            names.add(node.module)
+    return names

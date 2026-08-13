@@ -5,10 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from exp.domain import DomainDefinition
-from exp.ds1.cli import DEFINITION as DS1_IMPLEMENTED
-from exp.ds1_original.cli import DEFINITION as DS1_ORIGINAL
-from exp.ds2.cli import DEFINITION as DS2_IMPLEMENTED
-from exp.ds2_original.cli import DEFINITION as DS2_ORIGINAL
+from .ds1.catalog import IMPLEMENTED as DS1_IMPLEMENTED
+from .ds1.catalog import ORIGINAL as DS1_ORIGINAL
+from .ds2.catalog import IMPLEMENTED as DS2_IMPLEMENTED
+from .ds2.catalog import ORIGINAL as DS2_ORIGINAL
 
 from .identity import Variant, Volume
 

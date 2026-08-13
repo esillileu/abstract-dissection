@@ -166,8 +166,8 @@ def _current_config_digest(root: Path) -> str | None:
     entrypoint = Path(str(training["entrypoint"]))
     if not entrypoint.is_file():
         return None
-    from exp.ds2.executor import _config_digest
-    from exp.ds2.spec import parse_run_spec
+    from exp.deepscratch.ds2.implemented.executor import _config_digest
+    from exp.deepscratch.ds2.implemented.spec import parse_run_spec
 
     config = parse_run_spec(
         entrypoint,

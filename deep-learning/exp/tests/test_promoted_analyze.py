@@ -3,8 +3,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from exp.original import promoted_analyze
-from exp.original.promoted_analyze import _curves, _latest_seed_runs, _summary
+from exp.deepscratch.original_runtime import promoted_analyze
+from exp.deepscratch.original_runtime.promoted_analyze import _curves, _latest_seed_runs, _summary
 
 
 def _run(run_id, *, atomic, seed, start_time):

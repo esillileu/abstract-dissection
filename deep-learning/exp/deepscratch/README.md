@@ -3,6 +3,20 @@
 The canonical CLI owns the DS1/DS2 volume and implemented/original variant
 vocabulary.
 
+The old `exp plan|run|analyze ds1`, `ds2`, `ds1_original`, and `ds2_original`
+commands have been removed. Historical MLflow experiment names remain readable
+storage namespaces; they are not executable domains. Runtime code, configuration,
+analysis, profiling, and vendored source now live below
+`exp/deepscratch/ds1` and `exp/deepscratch/ds2`.
+
+Derived analysis output defaults to:
+
+```text
+.artifacts/experiments/deepscratch/<volume>/<experiment>/<variant>/analysis
+```
+
+Use `EXP_ARTIFACT_ROOT` to replace the `.artifacts/experiments` root.
+
 ## Check planned run coverage
 
 `check` expands the same catalog, condition, and seed selection as `plan`, then

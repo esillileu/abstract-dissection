@@ -27,10 +27,10 @@ def run_yaml(
 ):
     """Run a domain YAML and upload the CSV-backed record to MLflow."""
     if spec_module is None:
-        if executor_module == "exp.ds1.executor":
-            spec_module = "exp.ds1.spec"
-        elif executor_module == "exp.ds2.executor":
-            spec_module = "exp.ds2.spec"
+        if executor_module == "exp.deepscratch.ds1.implemented.executor":
+            spec_module = "exp.deepscratch.ds1.implemented.spec"
+        elif executor_module == "exp.deepscratch.ds2.implemented.executor":
+            spec_module = "exp.deepscratch.ds2.implemented.spec"
         else:
             raise ValueError("run_yaml requires a domain spec_module")
     parser = importlib.import_module(spec_module)

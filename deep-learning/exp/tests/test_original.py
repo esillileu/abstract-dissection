@@ -10,9 +10,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from exp.cli import app
-from typer.testing import CliRunner
-from exp.original.cache import (
+from exp.deepscratch.original_runtime.cache import (
     SCHEMA_VERSION,
     cache_is_valid,
     publish_result,
@@ -20,9 +18,6 @@ from exp.original.cache import (
     save_npz,
     staging_directory,
 )
-
-runner = CliRunner()
-
 
 def _publish(target: Path, *, value: str = "one") -> None:
     staging = staging_directory(target)
@@ -77,23 +72,11 @@ def test_publish_replaces_an_incomplete_result(tmp_path: Path) -> None:
     assert (target / "raw.txt").read_text(encoding="utf-8") == "complete"
 
 
-@pytest.mark.parametrize("command", ("run", "analyze"))
-@pytest.mark.parametrize("domain", ("ds1", "ds2"))
-def test_legacy_original_flag_points_to_promoted_domain(
-    command: str,
-    domain: str,
-) -> None:
-    result = runner.invoke(app, [command, domain, "--original"])
-
-    assert result.exit_code != 0
-    assert f"{command} {domain}_original" in result.output
-
-
 def test_ds2_original_summary_reads_only_original_cache(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    from exp.ds2.original.summary import summarize
+    from exp.deepscratch.ds2.original.summary import summarize
 
     root = tmp_path / "original"
     target = (
@@ -189,7 +172,7 @@ def test_ds1_renderer_uses_only_persisted_fixture(
         )
 
     before = set(sys.modules)
-    from exp.ds1.original.render.api import render
+    from exp.deepscratch.ds1.original.render.api import render
 
     outputs = render(["e09"], root=root)
     newly_imported = set(sys.modules) - before
@@ -216,7 +199,7 @@ def test_npz_is_host_numpy_and_never_requires_pickle(tmp_path: Path) -> None:
 def test_to_host_converts_a_sequence_of_cupy_scalars(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from exp.original.cache import to_host
+    from exp.deepscratch.original_runtime.cache import to_host
 
     class FakeCupyArray:
         def __init__(self, value: int) -> None:
@@ -249,7 +232,7 @@ def test_manifest_records_schema_and_completed_status(tmp_path: Path) -> None:
 
 
 def test_parameter_count_deduplicates_shared_tensor_references() -> None:
-    from exp.original.measurement import count_parameters
+    from exp.deepscratch.original_runtime.measurement import count_parameters
 
     shared = np.zeros((3, 4))
     independent = np.zeros(5)
@@ -258,7 +241,7 @@ def test_parameter_count_deduplicates_shared_tensor_references() -> None:
 
 
 def test_ds2_original_trials_all_use_cupy() -> None:
-    from exp.ds2.original.run.api import trials_for
+    from exp.deepscratch.ds2.original.run.api import trials_for
 
     trials = trials_for(
         ["e01", "e02", "e03", "e04", "e05", "e06", "e07", "e08"]
@@ -281,8 +264,8 @@ def test_ds2_original_trials_all_use_cupy() -> None:
 
 
 def test_ds2_ch07_compatibility_alias_supports_peeky_import() -> None:
-    from exp.ds2.original.run.api import UPSTREAM
-    from exp.ds2.original.run.common import (
+    from exp.deepscratch.ds2.original.run.api import UPSTREAM
+    from exp.deepscratch.ds2.original.run.common import (
         install_ch07_compatibility_aliases,
         source_imports,
     )

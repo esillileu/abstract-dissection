@@ -15,7 +15,9 @@ from exp.commands import analyze_command, plan_command, run_command
 from exp.domain import RunOrder
 from exp.domain import RunOptions, RunSelection
 from exp.parsing import parse_overrides
+from exp.parsing import parse_experiment_ids
 from exp.planning import Planner
+from exp.framework.state import StateCoordinate, StateOwner, WorkspacePaths
 
 from .definition import DEFINITION
 from .identity import Variant, Volume
@@ -218,7 +220,25 @@ def analyze(
     )
     for selected in variants:
         implementation = DEFINITION.implementation(volume, selected)
-        scoped_output = output_dir
+        if output_dir is None:
+            selected_experiments = parse_experiment_ids(experiment or [])
+            experiment_part = (
+                selected_experiments[0]
+                if len(selected_experiments) == 1 and not all_experiments
+                else "all"
+            )
+            scoped_output = WorkspacePaths.from_environment(Path.cwd()).resolve(
+                StateOwner.ARTIFACT,
+                StateCoordinate(
+                    "deepscratch",
+                    volume.value,
+                    experiment_part,
+                    selected.value,
+                    "analysis",
+                ),
+            )
+        else:
+            scoped_output = output_dir
         if output_dir is not None and len(variants) > 1:
             scoped_output = output_dir / selected.value
         with analysis_scope(
@@ -247,18 +267,34 @@ def profile(
     device: Annotated[list[str] | None, typer.Option("--device")] = None,
     mode: Annotated[str, typer.Option("--mode")] = "all",
     output_dir: Annotated[Path | None, typer.Option("--output-dir")] = None,
+    vsweap: Annotated[bool, typer.Option("--vsweap")] = False,
+    vocab_size: Annotated[list[int] | None, typer.Option("--vocab-size")] = None,
+    condition: Annotated[list[str] | None, typer.Option("--condition")] = None,
+    update_warmup: Annotated[int, typer.Option("--update-warmup")] = 20,
+    update_repetitions: Annotated[int, typer.Option("--update-repetitions")] = 5,
+    measured_updates: Annotated[int, typer.Option("--measured-updates")] = 50,
+    vsweap_timing: Annotated[str, typer.Option("--vsweap-timing")] = "window",
+    reverse_vocab_order: Annotated[bool, typer.Option("--reverse-vocab-order")] = False,
 ) -> None:
     if volume is not Volume.DS2:
         raise ValueError("DeepScratch DS1 has no declared profiles")
     if variant is not Variant.IMPLEMENTED:
         raise ValueError("selected profile supports only variant implemented")
-    from exp.ds2.cli import profile as ds2_profile
+    from .ds2.profile.cli import profile as ds2_profile
 
     ds2_profile(
         experiment=experiment,
         device=device,
         mode=mode,
         output_dir=output_dir,
+        vsweap=vsweap,
+        vocab_size=vocab_size,
+        condition=condition,
+        update_warmup=update_warmup,
+        update_repetitions=update_repetitions,
+        measured_updates=measured_updates,
+        vsweap_timing=vsweap_timing,
+        reverse_vocab_order=reverse_vocab_order,
     )
 
 

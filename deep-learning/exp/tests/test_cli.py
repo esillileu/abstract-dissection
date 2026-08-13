@@ -5,8 +5,9 @@ from types import SimpleNamespace
 import pytest
 from typer.testing import CliRunner
 
-from exp.cli import DOMAIN_REGISTRY, app
-from exp.commands import select_original_experiments
+from exp.cli import app
+from exp.deepscratch.definition import DEFINITION
+from exp.deepscratch.identity import Variant, Volume
 from exp.domain import RunOptions, RunOrder, RunSelection
 from exp.parsing import (
     parse_atomic_run_ids,
@@ -30,7 +31,7 @@ def _plans(
     excluded: tuple[str, ...] = (),
     order: RunOrder = RunOrder.CATALOG_FIRST,
 ):
-    return Planner(DOMAIN_REGISTRY[domain]).build(
+    return Planner(DEFINITION.implementation(Volume(domain), Variant.IMPLEMENTED)).build(
         RunSelection(
             experiment_ids=experiments,
             all_experiments=all_experiments,
@@ -116,11 +117,13 @@ def test_help_exposes_action_and_domain_registry(arguments: list[str]) -> None:
     if not arguments:
         assert all(action in result.output for action in ("plan", "run", "analyze"))
     else:
-        assert all(domain in result.output for domain in DOMAIN_REGISTRY)
+        assert "deepscratch" in result.output
 
 
 def test_new_order_succeeds_and_old_order_is_rejected() -> None:
-    current = runner.invoke(app, ["plan", "ds1", "-e", "01", "--seed", "1"])
+    current = runner.invoke(
+        app, ["plan", "deepscratch", "ds1", "-e", "01", "--seed", "1"]
+    )
     old = runner.invoke(app, ["ds1", "plan", "-e", "01", "--seed", "1"])
 
     assert current.exit_code == 0
@@ -130,17 +133,17 @@ def test_new_order_succeeds_and_old_order_is_rejected() -> None:
 
 
 def test_run_requires_explicit_experiment_selection() -> None:
-    result = runner.invoke(app, ["run", "ds1", "--dry-run"])
+    result = runner.invoke(app, ["run", "deepscratch", "ds1", "--dry-run"])
     assert result.exit_code != 0
     assert "requires --all or --experiment/-e" in result.output
 
 
 def test_nonstandard_seed_and_removed_seed_first_are_rejected() -> None:
     assert runner.invoke(
-        app, ["plan", "ds1", "-e", "01", "-seed", "1"]
+        app, ["plan", "deepscratch", "ds1", "-e", "01", "-seed", "1"]
     ).exit_code != 0
     assert runner.invoke(
-        app, ["plan", "ds1", "-e", "01", "--seed-first"]
+        app, ["plan", "deepscratch", "ds1", "-e", "01", "--seed-first"]
     ).exit_code != 0
 
 
@@ -152,52 +155,25 @@ def test_analyze_uses_typed_dispatch(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("exp.commands.importlib.import_module", lambda _name: module)
 
     result = runner.invoke(
-        app, ["analyze", "ds2", "-e", "01", "--summary"]
+        app, ["analyze", "deepscratch", "ds2", "-e", "01", "--summary"]
     )
 
     assert result.exit_code == 0
+    assert str(captured.pop("output_dir")).endswith(
+        ".artifacts/experiments/deepscratch/ds2/e01/implemented/analysis"
+    )
     assert captured == {
         "experiments": ["01"],
         "tracking_uri": None,
         "error_style": "band",
-        "output_dir": None,
         "seed": None,
         "summary": True,
     }
 
 
-@pytest.mark.parametrize("flag", ("--legacy", "--lagacy"))
-def test_ds2_analyze_dispatches_legacy_selection(
-    monkeypatch: pytest.MonkeyPatch,
-    flag: str,
-) -> None:
-    captured = {}
-    module = SimpleNamespace(analyze=lambda **kwargs: captured.update(kwargs))
-    monkeypatch.setattr("exp.commands.importlib.import_module", lambda _name: module)
-
-    result = runner.invoke(app, ["analyze", "ds2", "-e", "03", flag])
-
-    assert result.exit_code == 0
-    assert captured["experiments"] == ["03"]
-    assert captured["legacy"] is True
-
-
-def test_registered_domain_contracts_are_complete_and_unique() -> None:
-    assert len(DOMAIN_REGISTRY) == len(set(DOMAIN_REGISTRY))
-    for name, definition in DOMAIN_REGISTRY.items():
-        assert definition.name == name
-        assert definition.config_root.is_dir()
-        assert definition.spec_module
-        assert definition.executor_module
-        assert definition.analysis_module
-
-
-def test_ds2_original_default_order_handles_dependencies_and_long_run_last() -> None:
-    domain = DOMAIN_REGISTRY["ds2"]
-
-    assert select_original_experiments(domain, []) == [
-        "e01", "e03", "e04", "e06", "e07", "e08", "e02"
-    ]
-    assert select_original_experiments(domain, ["08,01,02"]) == [
-        "e08", "e01", "e02"
-    ]
+def test_only_canonical_domain_is_exposed() -> None:
+    for action in ("plan", "run", "analyze"):
+        help_result = runner.invoke(app, [action, "--help"])
+        assert help_result.exit_code == 0
+        assert "deepscratch" in help_result.output
+        assert "ds1_original" not in help_result.output
