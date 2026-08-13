@@ -8,17 +8,18 @@ from pathlib import Path
 
 import numpy as np
 
+from exp.deepscratch.ds2.profile.paths import profile_cache
+
 from .modules import COMPONENTS, profile_modules
 from .update import (
     CONDITIONS,
-    ROOT,
     _load_data,
     _metadata,
     profile_condition,
 )
 
 
-DEFAULT_RESULTS = ROOT / ".artifacts/experiments/deepscratch/ds2/e02/profile"
+DEFAULT_RESULTS = profile_cache("e02")
 
 
 def run(

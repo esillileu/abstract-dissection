@@ -7,7 +7,7 @@ import csv
 import json
 from pathlib import Path
 
-from exp.framework.state import StateCoordinate, StateOwner, WorkspacePaths
+from exp.framework.paths import StateCoordinate, StateOwner, WorkspacePaths
 
 
 ROOT = Path(__file__).resolve().parents[5]

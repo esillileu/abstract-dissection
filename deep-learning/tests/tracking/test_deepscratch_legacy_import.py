@@ -5,11 +5,10 @@ from pathlib import Path
 import pytest
 from mlflow.tracking import MlflowClient
 
-from exp.deepscratch.active_runs import find_active_legacy_runs, require_cutover_safe
+from exp.deepscratch.legacy.cutover import find_active_legacy_runs, require_cutover_safe
 from exp.deepscratch.identity import Variant, Volume
-from exp.deepscratch.legacy_import import import_legacy_archive, inspect_archive
-from exp.deepscratch.legacy_results import LegacyResultStore
-from exp.analyze import analysis_scope, completed_seed_runs, mlflow_client
+from exp.deepscratch.legacy.importer import import_legacy_archive, inspect_archive
+from exp.deepscratch.legacy.projection import LegacyResultStore
 from mlprosection_mlflow.transfer import export_experiment
 
 
@@ -168,132 +167,3 @@ def test_running_collision_is_deferred_and_cutover_gate_reports_it(tmp_path: Pat
     assert len(find_active_legacy_runs(client)) == 1
     with pytest.raises(RuntimeError, match="cutover blocked"):
         require_cutover_safe(client)
-
-
-def test_analysis_scope_reads_new_and_legacy_namespaces_as_one_coordinate(
-    tmp_path: Path,
-) -> None:
-    uri = _uri(tmp_path / "analysis")
-    client = MlflowClient(uri)
-    legacy_id = client.create_experiment("ds2")
-    new_id = client.create_experiment("deepscratch.ds2")
-
-    def create(experiment_id: str, run_id: str, start: int, **tags: str) -> str:
-        run = client.create_run(
-            experiment_id,
-            start_time=start,
-            run_name=run_id,
-            tags={
-                "run.type": "seed_trial",
-                "execution_group.id": "GT01",
-                "atomic_run.id": "W2V-TOY-CBOW-FULL",
-                "protocol.version": "legacy",
-                "master_seed": "1",
-                **tags,
-            },
-        )
-        client.log_param(run.info.run_id, "seed/master", "1")
-        client.set_terminated(run.info.run_id)
-        return run.info.run_id
-
-    create(legacy_id, "legacy", 10)
-    newest = create(
-        new_id,
-        "new-implemented",
-        30,
-        **{"implementation.variant": "implemented"},
-    )
-    create(
-        new_id,
-        "new-original",
-        40,
-        **{"implementation.variant": "original"},
-    )
-    create(
-        legacy_id,
-        "alternate",
-        50,
-        **{"transfer.import.disposition": "imported-alternate"},
-    )
-
-    with analysis_scope(
-        experiment_aliases={"ds2": ("deepscratch.ds2", "ds2")},
-        variant="implemented",
-    ):
-        grouped = completed_seed_runs(
-            mlflow_client(uri),
-            experiment_name="ds2",
-            group_id="GT01",
-            atomic_run_ids=["W2V-TOY-CBOW-FULL"],
-            protocol_version="legacy",
-        )
-
-    assert [run.run_id for run in grouped["W2V-TOY-CBOW-FULL"]] == [newest]
-
-
-def test_analysis_scope_falls_back_to_legacy_when_new_namespace_is_absent(
-    tmp_path: Path,
-) -> None:
-    uri = _uri(tmp_path / "legacy-analysis")
-    client = MlflowClient(uri)
-    experiment_id = client.create_experiment("ds1_original")
-    run = client.create_run(
-        experiment_id,
-        tags={
-            "run.type": "seed_trial",
-            "execution_group.id": "GT01",
-            "atomic_run.id": "ORIGINAL",
-            "master_seed": "1",
-        },
-    )
-    client.set_terminated(run.info.run_id)
-
-    with analysis_scope(
-        experiment_aliases={
-            "ds1_original": ("deepscratch.ds1", "ds1_original")
-        },
-        variant="original",
-    ):
-        grouped = completed_seed_runs(
-            mlflow_client(uri),
-            experiment_name="ds1_original",
-            group_id="GT01",
-            atomic_run_ids=["ORIGINAL"],
-        )
-
-    assert [item.run_id for item in grouped["ORIGINAL"]] == [run.info.run_id]
-
-
-def test_explicit_run_id_can_select_imported_alternate(tmp_path: Path) -> None:
-    uri = _uri(tmp_path / "alternate-analysis")
-    client = MlflowClient(uri)
-    experiment_id = client.create_experiment("ds2_original")
-    alternate = client.create_run(
-        experiment_id,
-        tags={
-            "run.type": "seed_trial",
-            "execution_group.id": "ORIGINAL-E03",
-            "atomic_run.id": "LM-SMALL-RNN",
-            "master_seed": "1",
-            "transfer.import.disposition": "imported-alternate",
-        },
-    )
-    client.set_terminated(alternate.info.run_id)
-
-    with analysis_scope(
-        experiment_aliases={
-            "ds2_original": ("deepscratch.ds2", "ds2_original")
-        },
-        variant="original",
-        run_ids=(alternate.info.run_id,),
-    ):
-        grouped = completed_seed_runs(
-            mlflow_client(uri),
-            experiment_name="ds2_original",
-            group_id="ORIGINAL-E03",
-            atomic_run_ids=["LM-SMALL-RNN"],
-        )
-
-    assert [item.run_id for item in grouped["LM-SMALL-RNN"]] == [
-        alternate.info.run_id
-    ]

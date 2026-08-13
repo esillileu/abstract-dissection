@@ -4,9 +4,9 @@ from pathlib import Path
 
 from mlflow.tracking import MlflowClient
 
-from exp.domain import RunPlan
+from exp.framework.execution import RunPlan
 from exp.deepscratch.identity import Variant, Volume
-from exp.deepscratch.status import inspect_plan_status
+from exp.deepscratch.execution.status import inspect_plan_status
 
 
 def _uri(path: Path) -> str:

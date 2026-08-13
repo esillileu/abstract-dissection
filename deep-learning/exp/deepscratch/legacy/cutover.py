@@ -8,7 +8,7 @@ from typing import Any
 from mlflow.entities import ViewType
 from mlflow.tracking import MlflowClient
 
-from .identity import LEGACY_NAMESPACES
+from .namespaces import LEGACY_NAMESPACES
 
 
 @dataclass(frozen=True)

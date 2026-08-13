@@ -12,10 +12,8 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 
-from exp.plot_theme import ACCENT_COLORS, INK, MUTED, apply_plot_theme
-
-from .update import ROOT
-
+from exp.framework.plotting.theme import ACCENT_COLORS, INK, MUTED, apply_plot_theme
+from exp.deepscratch.ds2.profile.paths import profile_artifacts, profile_cache
 
 CONDITIONS = (
     "implemented-cbow-fs",
@@ -25,8 +23,8 @@ CONDITIONS = (
     "implemented-skipgram-ns",
     "implemented-skipgram-fused-ns",
 )
-DEFAULT_RESULTS_DIR = ROOT / "exp/deepscratch/ds2/profile/e02/results"
-DEFAULT_OUTPUT_DIR = ROOT / "exp/deepscratch/ds2/profile/e02/figures"
+DEFAULT_RESULTS_DIR = profile_cache("e02")
+DEFAULT_OUTPUT_DIR = profile_artifacts("e02")
 OUTPUT_STEM = "gpu_module_time_stacked"
 CSV_FIELDS = (
     "model",

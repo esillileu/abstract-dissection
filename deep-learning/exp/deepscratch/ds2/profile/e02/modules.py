@@ -15,10 +15,10 @@ from pathlib import Path
 import numpy as np
 
 from mlprosection.profiling import BenchmarkRunner
+from exp.deepscratch.ds2.profile.paths import profile_cache
 
 from .update import (
     CONDITIONS,
-    ROOT,
     _batch,
     _build_condition,
     _load_data,
@@ -48,7 +48,7 @@ ORIGINAL_COMPONENTS = (
     "optimizer",
 )
 COMPONENTS = IMPLEMENTED_COMPONENTS + FUSED_COMPONENTS + ORIGINAL_COMPONENTS
-DEFAULT_OUTPUT = ROOT / ".artifacts/experiments/deepscratch/ds2/e02/profile/modules.json"
+DEFAULT_OUTPUT = profile_cache("e02") / "modules.json"
 
 
 class ComponentFixture:

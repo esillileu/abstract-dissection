@@ -4,14 +4,15 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import asdict, dataclass
+import importlib
 from typing import Any, Literal, Sequence
 
-from mlflow.entities import ViewType
 from mlflow.tracking import MlflowClient
 
-from exp.domain import RunPlan
+from exp.framework.execution import RunPlan
 
-from .identity import Variant, Volume, legacy_namespace
+from ..identity import Variant, Volume
+from .selection import CanonicalAttemptSelector
 
 
 PlanStatus = Literal["completed", "running", "failed", "missing"]
@@ -92,11 +93,12 @@ def inspect_plan_status(
         if (
             expected_protocol is not None
             and attempt.protocol_version != expected_protocol
-            and not (
-                variant is Variant.ORIGINAL
-                and attempt.protocol_version == "legacy"
-                and not attempt.namespace.startswith("deepscratch.")
-                and expected_protocol == "book-source-v1"
+            and not _protocol_compatible(
+                volume,
+                variant,
+                attempt.experiment_id,
+                attempt.protocol_version,
+                expected_protocol,
             )
         ):
             continue
@@ -115,63 +117,46 @@ def inspect_plan_status(
     return PlanStatusReport(volume.value, variant.value, tuple(entries))
 
 
+def _protocol_compatible(
+    volume: Volume,
+    variant: Variant,
+    study_id: str,
+    actual: str,
+    expected: str,
+) -> bool:
+    if variant is not Variant.ORIGINAL:
+        return False
+    schema = importlib.import_module(
+        f"exp.deepscratch.{volume.value}.result_schema"
+    )
+    pairs = schema.PROTOCOL_EQUIVALENCE.get(study_id, ())
+    return any({actual, expected} <= set(pair) for pair in pairs)
+
+
 def _attempts(
     client: MlflowClient,
     *,
     volume: Volume,
     variant: Variant,
 ) -> list[_Attempt]:
-    namespaces = (
-        f"deepscratch.{volume.value}",
-        legacy_namespace(volume, variant),
-    )
-    attempts: list[_Attempt] = []
-    for namespace in namespaces:
-        try:
-            experiment = client.get_experiment_by_name(namespace)
-        except Exception as exc:
-            raise RuntimeError(
-                f"failed to inspect MLflow experiment {namespace}: {exc}"
-            ) from exc
-        if experiment is None:
-            continue
-        try:
-            runs = client.search_runs(
-                [experiment.experiment_id],
-                run_view_type=ViewType.ACTIVE_ONLY,
-                order_by=["attributes.start_time DESC"],
-                max_results=10_000,
-            )
-        except Exception as exc:
-            raise RuntimeError(
-                f"failed to inspect MLflow runs in {namespace}: {exc}"
-            ) from exc
-        for run in runs:
-            tags = run.data.tags
-            if tags.get("run.type") != "seed_trial":
-                continue
-            if (
-                namespace.startswith("deepscratch.")
-                and tags.get("implementation.variant") != variant.value
-            ):
-                continue
-            if tags.get("transfer.import.disposition") == "imported-alternate":
-                continue
-            experiment_id = _experiment_id(run)
-            condition_id = _condition_id(run)
-            if not experiment_id or not condition_id:
-                continue
-            attempts.append(_Attempt(
-                run_id=run.info.run_id,
-                namespace=namespace,
-                experiment_id=experiment_id,
-                condition_id=condition_id,
-                seed=_seed(run),
-                protocol_version=tags.get("protocol.version", "legacy"),
-                status=str(run.info.status).upper(),
-                start_time=int(run.info.start_time or 0),
-            ))
-    return attempts
+    try:
+        selected = CanonicalAttemptSelector(client).attempts(volume, variant)
+    except Exception as exc:
+        raise RuntimeError(f"failed to inspect MLflow attempts: {exc}") from exc
+    return [
+        _Attempt(
+            run_id=item.run_id,
+            namespace=item.namespace,
+            experiment_id=item.study_id,
+            condition_id=item.condition_id,
+            seed=item.seed,
+            protocol_version=item.protocol_version,
+            status=item.status,
+            start_time=item.start_time,
+        )
+        for item in selected
+        if item.disposition != "imported-alternate"
+    ]
 
 
 def _classify(

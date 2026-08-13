@@ -19,6 +19,7 @@ from mlprosection.nn.layers import TimeLSTM
 from mlprosection.nn.model.architecture.recurrent import BetterRnnlm
 from mlprosection.optim.SGD import SGD
 from mlprosection.optim.transform import ClipGradNorm
+from exp.deepscratch.ds2.profile.paths import profile_cache
 
 from .reference import ReferenceTimeLSTM, replace_better_rnnlm_lstms
 from .phase1 import Phase1TimeLSTM, replace_better_rnnlm_lstms as replace_phase1_lstms
@@ -29,8 +30,7 @@ from .phase3 import (
 )
 
 
-ROOT = Path(__file__).resolve().parent
-DEFAULT_RESULTS = ROOT / "results"
+DEFAULT_RESULTS = profile_cache("e05")
 PHASES = ("model_forward", "objective", "backward", "clipping", "sgd", "state_detach")
 
 

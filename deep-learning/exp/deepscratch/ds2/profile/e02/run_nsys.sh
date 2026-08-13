@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-profile_root="exp/deepscratch/ds2/profile/e02/results/nsys"
+profile_root="${EXP_CACHE_ROOT:-.cache/experiments}/deepscratch/ds2/e02/implemented/profile/nsys"
 measured_updates="${MEASURED_UPDATES:-100}"
 phase_updates="${PHASE_UPDATES:-5}"
 mkdir -p "${profile_root}"
@@ -56,4 +56,5 @@ for condition in "${conditions[@]}"; do
     "${profile_root}/${condition}.nsys-rep" >/dev/null
 done
 
-uv run python -m exp.deepscratch.ds2.profile.e02.summarize_nsys
+uv run python -m exp.deepscratch.ds2.profile.e02.summarize_nsys \
+  --input "${profile_root}"

@@ -20,7 +20,8 @@ from mlprosection_mlflow.transfer import (
     _safe_extract,
 )
 
-from .identity import Variant, Volume, legacy_namespace
+from ..identity import Variant, Volume
+from .namespaces import legacy_namespace
 
 
 Disposition = Literal[

@@ -8,9 +8,10 @@ import json
 import sqlite3
 from pathlib import Path
 
+from exp.deepscratch.ds2.profile.paths import profile_cache
 
-ROOT = Path(__file__).resolve().parent
-DEFAULT_INPUT = ROOT / "results/nsys"
+
+DEFAULT_INPUT = profile_cache("e05") / "nsys"
 
 
 def _has_table(connection: sqlite3.Connection, table: str) -> bool:

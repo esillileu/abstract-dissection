@@ -11,8 +11,9 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 
-from exp.analyze import save_figure
-from exp.plot_theme import ACCENT_COLORS, MUTED
+from exp.framework.analysis.core import save_figure
+from exp.framework.plotting.theme import ACCENT_COLORS, MUTED
+from exp.deepscratch.ds2.profile.paths import profile_cache
 from mlprosection import Tensor
 from mlprosection.core.backend import BackendConfig, make_backend
 from mlprosection.nn.model.architecture import (
@@ -33,14 +34,13 @@ from mlprosection.optim.SGD import Adam
 from mlprosection.profiling import BenchmarkRunner
 
 from .update import (
-    ROOT,
     _metadata,
     run_fused_update,
     run_implemented_update,
 )
 
 
-DEFAULT_RESULTS = ROOT / ".artifacts/experiments/deepscratch/ds2/e02/profile"
+DEFAULT_RESULTS = profile_cache("e02")
 DEFAULT_VOCAB_SIZES = (
     1_000,
     2_000,

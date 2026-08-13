@@ -8,7 +8,16 @@ from typing import Any
 from mlflow.entities import ViewType
 from mlflow.tracking import MlflowClient
 
-from .identity import Variant, Volume, legacy_namespace
+from ..identity import Variant, Volume
+from .namespaces import legacy_namespace
+
+
+LEGACY_E05_ORIGINAL_SEED4_RUN_ID = "8b19fdcd874c4c38b6a6480dc865101c"
+LEGACY_E05_ORIGINAL_SEED4_COORDINATE = {
+    "study_id": "e05",
+    "condition_id": "BETTER-RNNLM",
+    "seed": "4",
+}
 
 
 @dataclass(frozen=True)

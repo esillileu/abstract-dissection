@@ -7,10 +7,11 @@ import csv
 from pathlib import Path
 import sqlite3
 
+from exp.deepscratch.ds2.profile.paths import profile_artifacts, profile_cache
 
-ROOT = Path(__file__).resolve().parents[5]
-DEFAULT_INPUT = ROOT / "exp/deepscratch/ds2/profile/e02/results/nsys"
-DEFAULT_OUTPUT = DEFAULT_INPUT / "cuda_api_summary.csv"
+
+DEFAULT_INPUT = profile_cache("e02") / "nsys"
+DEFAULT_OUTPUT = profile_artifacts("e02") / "cuda_api_summary.csv"
 
 
 def summarize_database(path: Path) -> dict[str, int | str]:

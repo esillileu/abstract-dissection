@@ -48,12 +48,13 @@ from mlprosection.profiling import (
     estimate_training_time,
 )
 from exp.deepscratch.ds2.original.benchmark import build_word2vec_full_softmax
+from exp.deepscratch.ds2.profile.paths import REPOSITORY_ROOT, profile_cache
 
 
-ROOT = Path(__file__).resolve().parents[5]
+ROOT = REPOSITORY_ROOT
 BOOK_ROOT = ROOT / "exp/deepscratch/ds2/original/source"
 PTB_TRAIN = ROOT / "01_deep-learning-from-base/src/datasets/ptb.train.npy"
-DEFAULT_OUTPUT = ROOT / ".artifacts/experiments/deepscratch/ds2/e02/profile/update.json"
+DEFAULT_OUTPUT = profile_cache("e02") / "update.json"
 DEFAULT_EPOCHS = 10
 
 CONDITIONS = (

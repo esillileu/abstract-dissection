@@ -2,7 +2,7 @@ from pathlib import Path
 
 from mlflow.tracking import MlflowClient
 
-from exp.deepscratch.profile_results import record_profile_result
+from exp.deepscratch.ds2.profile.result_writer import record_profile_result
 
 
 def test_profile_result_is_marked_durable_after_artifact_upload(tmp_path: Path) -> None:

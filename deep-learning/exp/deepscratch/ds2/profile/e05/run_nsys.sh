@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-profile_root="exp/deepscratch/ds2/profile/e05/results/nsys"
+profile_root="${EXP_CACHE_ROOT:-.cache/experiments}/deepscratch/ds2/e05/implemented/profile/nsys"
 payload_root="$(mktemp -d /tmp/e05-nsys-payload.XXXXXX)"
 nsys_bin="${NSYS_BIN:-$(command -v nsys)}"
 mkdir -p "${profile_root}" "${payload_root}"

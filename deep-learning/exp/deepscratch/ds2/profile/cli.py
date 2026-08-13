@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from exp.parsing import parse_experiment_ids
+from exp.framework.execution.parsing import parse_experiment_ids
 
 
 def profile(

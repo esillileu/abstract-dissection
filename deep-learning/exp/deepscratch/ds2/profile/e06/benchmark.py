@@ -17,10 +17,10 @@ from mlprosection.nn.model.architecture import PeekySeq2seq, Seq2seq
 from mlprosection.nn.objective import TemporalSoftmaxCrossEntropy
 from mlprosection.optim.SGD import Adam
 from mlprosection.optim.transform import ClipGradNorm
+from exp.deepscratch.ds2.profile.paths import profile_cache
 
 
-ROOT = Path(__file__).resolve().parent
-DEFAULT_RESULTS = ROOT / "results"
+DEFAULT_RESULTS = profile_cache("e06")
 CONDITIONS = {
     "vanilla-forward": (Seq2seq, False),
     "vanilla-reverse": (Seq2seq, True),
