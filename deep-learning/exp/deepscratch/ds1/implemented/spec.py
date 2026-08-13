@@ -48,6 +48,7 @@ class RunSpec:
     profiling: dict[str, object]
     objective: dict[str, object]
     path: Path
+    protocol_version: str = "legacy"
 
     @property
     def config(self) -> dict[str, object]:
@@ -78,6 +79,7 @@ class RunSpec:
             "experiment_ids": [self.identity.experiment_id],
             "execution_group_id": self.identity.group_id,
             "recipe_id": self.identity.recipe_id,
+            "protocol_version": self.protocol_version,
             "structure_signature": self.identity.structure_signature,
             "dataset": dict(self.dataset),
             "loader": dict(self.loader),
@@ -145,6 +147,7 @@ def parse_run_spec(
         profiling=mapping(raw, "profiling"),
         objective=mapping(raw, "objective"),
         path=path,
+        protocol_version=str(run.get("protocol_version", "legacy")),
     )
     _validate(spec)
     return spec

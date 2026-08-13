@@ -50,3 +50,18 @@ The same original alias is available for analysis summaries:
 ```bash
 just exp analyze deepscratch ds2 -e 05 -o -s
 ```
+
+Cross-variant analysis is explicit and writes a comparison table containing
+only declared comparable metrics. Missing native observations are recorded as
+`unavailable` rather than synthesized:
+
+```bash
+just exp analyze deepscratch ds2 -e 03 --variant all -s
+```
+
+An imported alternate remains excluded by default. Select an exact attempt
+when needed:
+
+```bash
+just exp analyze deepscratch ds2 -e 03 -o -s --run-id <mlflow-run-id>
+```

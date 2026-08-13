@@ -1,6 +1,6 @@
 domain: ds1
 kind: supervised_classification
-run: {experiment_id: e08, group_id: GT08, protocol: MNIST spatial-layout comparison, recipe_id: ds1-gt08-spatial-layout, structure_signature: mnist-spatial-layout}
+run: {experiment_id: e08, group_id: GT08, protocol: MNIST spatial-layout comparison, protocol_version: book-source-v1, recipe_id: ds1-gt08-spatial-layout, structure_signature: mnist-spatial-layout}
 execution: {mode: seeded, default_device: cuda:0}
 seed_policy: {seed_set: research_v1, seed_count: 10, paired_execution: true}
 dataset: {id: mnist-full, source: mnist, train_limit: 60000, test_limit: 10000}

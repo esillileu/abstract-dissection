@@ -262,3 +262,38 @@ def test_analysis_scope_falls_back_to_legacy_when_new_namespace_is_absent(
         )
 
     assert [item.run_id for item in grouped["ORIGINAL"]] == [run.info.run_id]
+
+
+def test_explicit_run_id_can_select_imported_alternate(tmp_path: Path) -> None:
+    uri = _uri(tmp_path / "alternate-analysis")
+    client = MlflowClient(uri)
+    experiment_id = client.create_experiment("ds2_original")
+    alternate = client.create_run(
+        experiment_id,
+        tags={
+            "run.type": "seed_trial",
+            "execution_group.id": "ORIGINAL-E03",
+            "atomic_run.id": "LM-SMALL-RNN",
+            "master_seed": "1",
+            "transfer.import.disposition": "imported-alternate",
+        },
+    )
+    client.set_terminated(alternate.info.run_id)
+
+    with analysis_scope(
+        experiment_aliases={
+            "ds2_original": ("deepscratch.ds2", "ds2_original")
+        },
+        variant="original",
+        run_ids=(alternate.info.run_id,),
+    ):
+        grouped = completed_seed_runs(
+            mlflow_client(uri),
+            experiment_name="ds2_original",
+            group_id="ORIGINAL-E03",
+            atomic_run_ids=["LM-SMALL-RNN"],
+        )
+
+    assert [item.run_id for item in grouped["LM-SMALL-RNN"]] == [
+        alternate.info.run_id
+    ]

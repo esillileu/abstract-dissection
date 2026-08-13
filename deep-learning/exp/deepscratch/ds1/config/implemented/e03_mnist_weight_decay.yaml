@@ -1,6 +1,6 @@
 domain: ds1
 kind: supervised_classification
-run: {experiment_id: e03, group_id: GT03, protocol: MNIST MLP weight decay, recipe_id: ds1-gt03-weight-decay, structure_signature: mnist-mlp-784-100x6-10-relu}
+run: {experiment_id: e03, group_id: GT03, protocol: MNIST MLP weight decay, protocol_version: book-source-v1, recipe_id: ds1-gt03-weight-decay, structure_signature: mnist-mlp-784-100x6-10-relu}
 execution: {mode: seeded, default_device: cpu}
 seed_policy: {seed_set: research_v1, seed_count: 10, paired_execution: true}
 dataset: {id: mnist-train-first-300, source: mnist, flatten: true, train_limit: 300, test_limit: 10000}

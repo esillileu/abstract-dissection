@@ -25,9 +25,9 @@ DEFAULT_TRACKING_URI = "http://127.0.0.1:5000"
 
 
 _ANALYSIS_SCOPE: ContextVar[
-    tuple[dict[str, tuple[str, ...]], str | None]
+    tuple[dict[str, tuple[str, ...]], str | None, frozenset[str]]
 ] = ContextVar(
-    "experiment_analysis_scope", default=({}, None)
+    "experiment_analysis_scope", default=({}, None, frozenset())
 )
 
 
@@ -36,13 +36,14 @@ def analysis_scope(
     *,
     experiment_aliases: Mapping[str, str | Sequence[str]],
     variant: str | None = None,
+    run_ids: Sequence[str] = (),
 ):
     """Temporarily map logical names to one or more physical experiments."""
     aliases = {
         name: (sources,) if isinstance(sources, str) else tuple(sources)
         for name, sources in experiment_aliases.items()
     }
-    token = _ANALYSIS_SCOPE.set((aliases, variant))
+    token = _ANALYSIS_SCOPE.set((aliases, variant, frozenset(run_ids)))
     try:
         yield
     finally:
@@ -57,10 +58,12 @@ class _ScopedMlflowClient:
         client,
         aliases: dict[str, tuple[str, ...]],
         variant: str | None,
+        run_ids: frozenset[str],
     ) -> None:
         self._client = client
         self._aliases = aliases
         self._variant = variant
+        self._run_ids = run_ids
         self._virtual_sources: dict[str, tuple[tuple[str, str], ...]] = {}
         self._run_sources: dict[str, str] = {}
 
@@ -107,7 +110,11 @@ class _ScopedMlflowClient:
                 [experiment_id], filter_string=scoped_filter, **kwargs
             )
             for run in runs:
+                if self._run_ids and run.info.run_id not in self._run_ids:
+                    continue
                 if (
+                    not self._run_ids
+                    and
                     run.data.tags.get("transfer.import.disposition")
                     == "imported-alternate"
                 ):
@@ -183,9 +190,9 @@ def mlflow_client(tracking_uri: str):
         raise RuntimeError("Install tracking dependencies with `uv sync --extra tracking`.") from exc
     mlflow.set_tracking_uri(tracking_uri)
     client = MlflowClient(tracking_uri=tracking_uri)
-    aliases, variant = _ANALYSIS_SCOPE.get()
-    if aliases or variant is not None:
-        return _ScopedMlflowClient(client, aliases, variant)
+    aliases, variant, run_ids = _ANALYSIS_SCOPE.get()
+    if aliases or variant is not None or run_ids:
+        return _ScopedMlflowClient(client, aliases, variant, run_ids)
     return client
 
 

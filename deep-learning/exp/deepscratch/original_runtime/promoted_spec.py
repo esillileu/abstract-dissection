@@ -35,6 +35,7 @@ def parse(path: str | Path, *, domain: str, atomic_run_id: str | None, overrides
         "experiment_ids": [str(run["experiment_id"])],
         "execution_group_id": str(run.get("group_id", run["experiment_id"])),
         "recipe_id": str(run.get("recipe_id", raw["trial_id"])),
+        "protocol_version": str(run.get("protocol_version", "book-source-v1")),
         "structure_signature": str(run.get("structure_signature", raw["trial_id"])),
         "trial_id": str(raw["trial_id"]),
         "source_experiment": str(raw["source_experiment"]),

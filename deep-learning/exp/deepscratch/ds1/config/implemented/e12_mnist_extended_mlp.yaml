@@ -1,6 +1,6 @@
 domain: ds1
 kind: supervised_classification
-run: {experiment_id: e12, group_id: GT09, protocol: MNIST extended MLP versus DeepConvNet, recipe_id: ds1-gt09-extended-mlp, structure_signature: mnist-mlp-784-100x6-10-relu-bn-dropout02-wd01}
+run: {experiment_id: e12, group_id: GT09, protocol: MNIST extended MLP versus DeepConvNet, protocol_version: book-source-v1, recipe_id: ds1-gt09-extended-mlp, structure_signature: mnist-mlp-784-100x6-10-relu-bn-dropout02-wd01}
 execution: {mode: seeded, default_device: cuda:0}
 seed_policy: {seed_set: research_v1, seed_count: 10, paired_execution: true}
 dataset: {id: mnist-flat-full, source: mnist, flatten: true, train_limit: 60000, test_limit: 10000}

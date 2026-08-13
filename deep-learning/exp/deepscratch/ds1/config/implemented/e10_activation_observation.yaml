@@ -1,6 +1,6 @@
 domain: ds1
 kind: observation
-run: {experiment_id: e10, group_id: GO02, protocol: activation distribution observation, recipe_id: ds1-go02-activation-observation, structure_signature: synthetic-100x5-bias0}
+run: {experiment_id: e10, group_id: GO02, protocol: activation distribution observation, protocol_version: book-source-v1, recipe_id: ds1-go02-activation-observation, structure_signature: synthetic-100x5-bias0}
 execution: {mode: seeded, default_device: cpu}
 seed_policy: {seed_set: research_v1, seed_count: 1, paired_execution: true}
 dataset: {id: SYNTH-NORMAL-1000x100, source: synthetic_normal, input_seed: 40402, sample_count: 1000, input_width: 100}

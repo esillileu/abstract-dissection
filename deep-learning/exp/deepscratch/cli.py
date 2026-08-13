@@ -207,6 +207,7 @@ def analyze(
     summary: Annotated[bool, typer.Option("-s", "--summary")] = False,
     variant: Annotated[str, typer.Option("--variant")] = "implemented",
     original: Annotated[bool, typer.Option("-o")] = False,
+    run_id: Annotated[str | None, typer.Option("--run-id")] = None,
 ) -> None:
     if variant not in {"implemented", "original", "all"}:
         raise ValueError("--variant must be implemented, original, or all")
@@ -214,6 +215,8 @@ def analyze(
         raise ValueError("-o cannot be combined with an explicit --variant")
     if original:
         variant = "original"
+    if run_id is not None and variant == "all":
+        raise ValueError("--run-id requires one explicit variant")
     variants = (
         (Variant.IMPLEMENTED, Variant.ORIGINAL)
         if variant == "all" else (Variant(variant),)
@@ -249,6 +252,7 @@ def analyze(
                 )
             },
             variant=selected.value,
+            run_ids=() if run_id is None else (run_id,),
         ):
             analyze_command(
                 implementation,
@@ -257,6 +261,27 @@ def analyze(
                 output_dir=scoped_output, seed=seed, summary=summary,
                 original=False,
             )
+    if variant == "all":
+        from .cross_variant import write_comparison_table
+
+        selected_experiments = parse_experiment_ids(experiment or [])
+        comparison_root = WorkspacePaths.from_environment(Path.cwd()).resolve(
+            StateOwner.ARTIFACT,
+            StateCoordinate(
+                "deepscratch",
+                volume.value,
+                selected_experiments[0] if len(selected_experiments) == 1 else "all",
+                "comparison",
+            ),
+        )
+        output = write_comparison_table(
+            tracking_uri
+            or os.getenv("MLFLOW_TRACKING_URI", "http://127.0.0.1:5000"),
+            volume=volume,
+            experiment_ids=selected_experiments,
+            output_dir=comparison_root,
+        )
+        typer.echo(f"comparison: {output}")
 
 
 @cli_errors

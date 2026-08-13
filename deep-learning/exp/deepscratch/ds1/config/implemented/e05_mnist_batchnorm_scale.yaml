@@ -1,6 +1,6 @@
 domain: ds1
 kind: supervised_classification
-run: {experiment_id: e05, group_id: GT05, protocol: MNIST MLP BatchNorm scale, recipe_id: ds1-gt05-batchnorm-scale, structure_signature: mnist-mlp-100x5}
+run: {experiment_id: e05, group_id: GT05, protocol: MNIST MLP BatchNorm scale, protocol_version: book-source-v1, recipe_id: ds1-gt05-batchnorm-scale, structure_signature: mnist-mlp-100x5}
 execution: {mode: seeded, default_device: cpu}
 seed_policy: {seed_set: research_v1, seed_count: 10, paired_execution: true}
 dataset: {id: mnist-train-first-1000, source: mnist, flatten: true, train_limit: 1000, test_limit: 10000}

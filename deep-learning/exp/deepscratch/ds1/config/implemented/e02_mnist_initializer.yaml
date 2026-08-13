@@ -1,6 +1,6 @@
 domain: ds1
 kind: supervised_classification
-run: {experiment_id: e02, group_id: GT02, protocol: MNIST MLP initialization, recipe_id: ds1-gt02-initializer, structure_signature: mnist-mlp-784-100x4-10-relu}
+run: {experiment_id: e02, group_id: GT02, protocol: MNIST MLP initialization, protocol_version: book-source-v1, recipe_id: ds1-gt02-initializer, structure_signature: mnist-mlp-784-100x4-10-relu}
 execution: {mode: seeded, default_device: cpu}
 seed_policy: {seed_set: research_v1, seed_count: 10, paired_execution: true}
 dataset: {id: mnist-train-full, source: mnist, flatten: true, train_limit: 60000, test_limit: 10000}

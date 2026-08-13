@@ -1,6 +1,6 @@
 domain: ds1
 kind: supervised_classification
-run: {experiment_id: e07, group_id: GT07, protocol: MNIST DeepConvNet, recipe_id: ds1-gt07-deep-cnn, structure_signature: mnist-deepcnn-6conv-fc50}
+run: {experiment_id: e07, group_id: GT07, protocol: MNIST DeepConvNet, protocol_version: book-source-v1, recipe_id: ds1-gt07-deep-cnn, structure_signature: mnist-deepcnn-6conv-fc50}
 execution: {mode: seeded, default_device: cuda:0}
 seed_policy: {seed_set: research_v1, seed_count: 10, paired_execution: true}
 dataset: {id: mnist-image-full, source: mnist, flatten: false, train_limit: 60000, test_limit: 10000}
