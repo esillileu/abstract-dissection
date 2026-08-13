@@ -4,8 +4,8 @@ DS2는 실행 그룹 `GT01`–`GT07`, `GT09`를 `e01`–`e09` YAML로 선언한�
 `.legacy/experiments/deepscratch2`는 보존용 legacy이며 이 catalog의 입력이 아니다.
 
 ```bash
-just exp plan ds2 -e 02 --seed 1
-just exp run ds2 -e 02 --seed 1
+just exp plan deepscratch ds2 -e 02 --seed 1
+just exp run deepscratch ds2 -e 02 --seed 1
 ```
 
 `-e`는 실행 그룹에 대응하는 catalog ID이고, `--seed`는
@@ -18,9 +18,9 @@ just exp run ds2 -e 02 --seed 1
 쉼표로 여러 ID를 지정할 수 있다. ID는 선택한 `-e`/`--all` 범위 안에서 검증된다.
 
 ```bash
-just exp plan ds2 -e 02 -a W2V-PTB-CBOW-NS --seed 1
-just exp run ds2 -e 02 -a W2V-PTB-CBOW-NS,W2V-PTB-SKIPGRAM-NS --seed 1
-just exp run ds2 -e 02 -x W2V-PTB-CBOW-FULL --seed 1
+just exp plan deepscratch ds2 -e 02 -a W2V-PTB-CBOW-NS --seed 1
+just exp run deepscratch ds2 -e 02 -a W2V-PTB-CBOW-NS,W2V-PTB-SKIPGRAM-NS --seed 1
+just exp run deepscratch ds2 -e 02 -x W2V-PTB-CBOW-FULL --seed 1
 ```
 
 기본 실행 순서는 atomic run 우선이다. 선택한 모든 atomic run을 같은 seed끼리 먼저
@@ -28,8 +28,8 @@ just exp run ds2 -e 02 -x W2V-PTB-CBOW-FULL --seed 1
 적용되며, `--seed`에 지정한 값의 순서를 따른다.
 
 ```bash
-just exp plan ds2 -e 01-02 --seed 1-3 --order seed-first
-just exp run ds2 -e 01-02 --seed 1-3 --order seed-first
+just exp plan deepscratch ds2 -e 01-02 --seed 1-3 --order seed-first
+just exp run deepscratch ds2 -e 01-02 --seed 1-3 --order seed-first
 ```
 
 | catalog ID | 실행 그룹 | YAML |

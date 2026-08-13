@@ -25,7 +25,7 @@ just exp profile ds2 -e 05 \
   --update-warmup 20 \
   --measured-updates 50 \
   --update-repetitions 5
-uv run python -m exp.ds2.profile.e05.validation
+uv run python -m exp.deepscratch.ds2.profile.e05.validation
 ```
 
 Phase 2 and Phase 3 remain independently selectable after production promotion:
@@ -33,7 +33,7 @@ Phase 2 and Phase 3 remain independently selectable after production promotion:
 ```bash
 just exp profile ds2 -e 05 --stage phase2
 just exp profile ds2 -e 05 --stage phase3
-uv run python -m exp.ds2.profile.e05.validation --stage phase3
+uv run python -m exp.deepscratch.ds2.profile.e05.validation --stage phase3
 ```
 
 Capture short before/after Nsight traces and summarize them:

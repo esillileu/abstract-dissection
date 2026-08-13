@@ -7,13 +7,27 @@ import csv
 import json
 from pathlib import Path
 
+from exp.framework.state import StateCoordinate, StateOwner, WorkspacePaths
 
-ROOT = Path(__file__).resolve().parents[4]
-DEFAULT_INPUT = ROOT / "exp/deepscratch/ds2/profile/e02/results/update.json"
-DEFAULT_REPORT = ROOT / "exp/deepscratch/ds2/profile/e02/results/analysis.md"
-DEFAULT_CSV = ROOT / "exp/deepscratch/ds2/profile/e02/results/comparisons.csv"
-DEFAULT_EXPERIMENT_SUMMARY = ROOT / "exp/ds2/results/image/e02_summary.csv"
-DEFAULT_NSYS_SUMMARY = ROOT / "exp/deepscratch/ds2/profile/e02/results/nsys/cuda_api_summary.csv"
+
+ROOT = Path(__file__).resolve().parents[5]
+PATHS = WorkspacePaths.from_environment(ROOT)
+PROFILE_CACHE = PATHS.resolve(
+    StateOwner.CACHE,
+    StateCoordinate("deepscratch", "ds2", "e02", "implemented", "profile"),
+)
+PROFILE_ARTIFACTS = PATHS.resolve(
+    StateOwner.ARTIFACT,
+    StateCoordinate("deepscratch", "ds2", "e02", "implemented", "profile"),
+)
+DEFAULT_INPUT = PROFILE_CACHE / "update.json"
+DEFAULT_REPORT = PROFILE_ARTIFACTS / "analysis.md"
+DEFAULT_CSV = PROFILE_ARTIFACTS / "comparisons.csv"
+DEFAULT_EXPERIMENT_SUMMARY = PATHS.resolve(
+    StateOwner.ARTIFACT,
+    StateCoordinate("deepscratch", "ds2", "e02", "implemented", "analysis"),
+) / "e02_summary.csv"
+DEFAULT_NSYS_SUMMARY = PROFILE_CACHE / "nsys/cuda_api_summary.csv"
 
 
 def _by_condition(payload: dict[str, object]) -> dict[str, dict[str, object]]:

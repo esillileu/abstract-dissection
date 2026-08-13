@@ -23,7 +23,7 @@ To evaluate the book's pretrained BetterRnnlm pickle on the complete PTB test
 split without training e05, run:
 
 ```bash
-python -m exp.ds2_original.eval_e05
+python -m exp.deepscratch.ds2.original.eval_e05
 ```
 
 The temporary evaluator defaults to `BetterRnnlm (1).pkl` in the repository

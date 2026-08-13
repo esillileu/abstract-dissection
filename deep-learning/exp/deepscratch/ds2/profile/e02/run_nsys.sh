@@ -33,7 +33,7 @@ for condition in "${conditions[@]}"; do
     --sample=none \
     --trace=cuda,nvtx,osrt \
     --output="${profile_root}/${condition}" \
-    uv run python -m exp.ds2.profile.e02.update \
+    uv run python -m exp.deepscratch.ds2.profile.e02.update \
       --condition "${condition}" \
       --device cuda:0 \
       --stage detail \
@@ -56,4 +56,4 @@ for condition in "${conditions[@]}"; do
     "${profile_root}/${condition}.nsys-rep" >/dev/null
 done
 
-uv run python -m exp.ds2.profile.e02.summarize_nsys
+uv run python -m exp.deepscratch.ds2.profile.e02.summarize_nsys

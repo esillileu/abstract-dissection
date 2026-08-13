@@ -36,7 +36,7 @@
 ## 현재 executor 재현 상태
 
 이 표는 문서의 **목표 protocol**이 아니라, 2026-07-22 현재
-`exp/ds1/executor.py`와 `exp/deepscratch/ds1/config/implemented/`으로 실제 실행할 때의 상태다. `부분`
+`exp/deepscratch/ds1/implemented/executor.py`와 `exp/deepscratch/ds1/config/implemented/`으로 실제 실행할 때의 상태다. `부분`
 그룹의 결과는 해당 원본 그래프의 완전 재현으로 사용하면 안 된다.
 
 | 그룹 | 상태 | 현재 가능한 범위 | 재현되지 않는 사항 |

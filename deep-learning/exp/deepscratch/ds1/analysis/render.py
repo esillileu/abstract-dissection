@@ -46,9 +46,13 @@ from . import (
     e12_summary,
 )
 from .generic_summary import SUMMARY_RENDERERS as GENERIC_SUMMARY_RENDERERS
+from exp.framework.state import StateCoordinate, StateOwner, WorkspacePaths
 
 
-IMAGE_ROOT = Path("exp/ds1/results/image")
+IMAGE_ROOT = WorkspacePaths.from_environment(Path.cwd()).resolve(
+    StateOwner.ARTIFACT,
+    StateCoordinate("deepscratch", "ds1", "all", "implemented", "analysis"),
+)
 RENDERERS = {
     "e01": e01_optimizer.render,
     "e02": e02_initializer.render,

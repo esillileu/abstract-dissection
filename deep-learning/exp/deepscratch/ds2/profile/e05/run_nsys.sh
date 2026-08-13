@@ -39,4 +39,4 @@ for stage in "${stages[@]}"; do
     "${profile_root}/${stage}.nsys-rep" >/dev/null
 done
 
-uv run python -m exp.ds2.profile.e05.summarize_nsys
+uv run python -m exp.deepscratch.ds2.profile.e05.summarize_nsys

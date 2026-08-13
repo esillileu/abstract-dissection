@@ -16,7 +16,7 @@ import numpy as np
 BOOK_ROOT = Path(
     "01_deep-learning-from-base/WegraLee-deep-learning-from-scratch"
 ).resolve()
-DEFAULT_OUTPUT = Path("exp/ds1_original/results/legacy_cache/fixed_seed")
+DEFAULT_OUTPUT = Path("exp/deepscratch/ds1/original/legacy_results/fixed_seed")
 EXPERIMENTS = ("e06", "e07")
 
 

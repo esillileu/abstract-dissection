@@ -109,7 +109,7 @@ JSON의 각 조건에는 다음 값이 기록된다.
 전체 비교 보고서는 열네 조건을 담은 결과를 입력으로 생성한다.
 
 ```bash
-uv run python -m exp.ds2.profile.e02.analyze \
+uv run python -m exp.deepscratch.ds2.profile.e02.analyze \
   --input exp/deepscratch/ds2/profile/e02/results/update_cuda0.json
 ```
 

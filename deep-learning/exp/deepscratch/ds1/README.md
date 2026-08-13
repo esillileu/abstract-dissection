@@ -3,8 +3,8 @@
 DS1은 통합 `exp` CLI의 action/domain 순서를 사용한다.
 
 ```bash
-just exp plan ds1 -e 01 --seed 1,2,3,4
-just exp run ds1 -e 01 --seed 1,2,3,4
+just exp plan deepscratch ds1 -e 01 --seed 1,2,3,4
+just exp run deepscratch ds1 -e 01 --seed 1,2,3,4
 ```
 
 `-e`는 `e01`–`e10`과 확장 실험 `e12`의 catalog experiment ID를 선택한다. `--seed`는
@@ -16,9 +16,9 @@ just exp run ds1 -e 01 --seed 1,2,3,4
 쉼표로 여러 ID를 지정할 수 있다. ID는 선택한 `-e`/`--all` 범위 안에서 검증된다.
 
 ```bash
-just exp plan ds1 -e 01 -a MLP-OPT-SGD --seed 1
-just exp run ds1 -e 01 -a MLP-OPT-SGD,MLP-OPT-ADAM --seed 1
-just exp run ds1 -e 01 -x MLP-OPT-SGD --seed 1
+just exp plan deepscratch ds1 -e 01 -a MLP-OPT-SGD --seed 1
+just exp run deepscratch ds1 -e 01 -a MLP-OPT-SGD,MLP-OPT-ADAM --seed 1
+just exp run deepscratch ds1 -e 01 -x MLP-OPT-SGD --seed 1
 ```
 
 기본 실행 순서는 atomic run 우선이다. 선택한 모든 atomic run을 같은 seed끼리 먼저
@@ -26,11 +26,11 @@ just exp run ds1 -e 01 -x MLP-OPT-SGD --seed 1
 적용되며, `--seed`에 지정한 값의 순서를 따른다.
 
 ```bash
-just exp plan ds1 -e 01-02 --seed 1-3 --order seed-first
-just exp run ds1 -e 01-02 --seed 1-3 --order seed-first
+just exp plan deepscratch ds1 -e 01-02 --seed 1-3 --order seed-first
+just exp run deepscratch ds1 -e 01-02 --seed 1-3 --order seed-first
 ```
 
 Catalog mapping은 `e01=GT01`부터 `e08=GT08`까지이며, `e12=GT09`가 교재 옵션을
 모두 적용한 MLP와 기존 GT07 DeepConvNet을 비교하는 확장 실험이다. 각 YAML의 `variants`가 실행할
 atomic trial을, `policy.seed_count`가 사용할 registry seed 수를 결정한다. 따라서
-`just exp plan ds1 --all --seed 1`은 master seed 1의 66개 atomic trial을 보인다.
+`just exp plan deepscratch ds1 --all --seed 1`은 master seed 1의 66개 atomic trial을 보인다.

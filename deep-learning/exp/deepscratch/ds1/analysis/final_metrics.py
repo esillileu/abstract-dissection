@@ -17,8 +17,8 @@ from .common import runs
 
 
 ORIGINAL_DATA_ROOT = (
-    Path(__file__).resolve().parents[2]
-    / "ds1_original/results/legacy_cache/fixed_seed/data"
+    Path(__file__).resolve().parents[1]
+    / "original/legacy_results/fixed_seed/data"
 )
 ORIGINAL_TRIAL_IDS = {
     "CNN-SIMPLE-BOOK": ("e06", "dlfs1.ch07.simple-convnet"),

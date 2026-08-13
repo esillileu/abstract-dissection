@@ -7,13 +7,13 @@ results. Evaluation and artifact I/O are excluded from the timing window.
 Run it after the shared GPU is available:
 
 ```bash
-uv run python -m exp.ds2.profile.e06.benchmark
+uv run python -m exp.deepscratch.ds2.profile.e06.benchmark
 ```
 
 For a short smoke profile:
 
 ```bash
-uv run python -c 'from pathlib import Path; from exp.ds2.profile.e06.benchmark import run; run(warmup=2, iterations=5, repetitions=1, output_dir=Path("exp/deepscratch/ds2/profile/e06/results/smoke"))'
+uv run python -c 'from pathlib import Path; from exp.deepscratch.ds2.profile.e06.benchmark import run; run(warmup=2, iterations=5, repetitions=1, output_dir=Path("exp/deepscratch/ds2/profile/e06/results/smoke"))'
 ```
 
 The protocol uses the e06 dataset split, batch size 128, `drop_last=true`,

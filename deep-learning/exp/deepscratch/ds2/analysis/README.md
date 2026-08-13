@@ -103,7 +103,7 @@ python -m exp analyze ds2_original -e 01,03-04,06-08 -s
 ```
 
 이 경로는 MLflow 재현 run을 조회하지 않고
-기존 고정-seed 캐시는 `exp/ds2_original/results/legacy_cache/fixed_seed/`에 보관되며 새 통계에서 제외된다.
+기존 고정-seed 캐시는 `exp/deepscratch/ds2/original/legacy_results/fixed_seed/`에 보관되며 새 통계에서 제외된다.
 원본 시행이 없는 확장 E05와 관찰 전용 E08은 제외한다. 단일 원본 시행은
 `seed_runs=1`, 표준편차 `0`으로 기록한다. 기존 원본 캐시에 학습 시간이나
 parameter count가 없으면 해당 CSV 행은 빈 값으로 남긴다. 계측 schema-v2
@@ -113,7 +113,7 @@ parameter count를 `timing.json`, `parameter_manifest.json`에서 읽는다.
 - `--error-style band`: 평균선 주변 ±1 표본 표준편차 반투명 영역
 - `--error-style errorbar`: 평균선 위 min–max error bar
 - 완료 run이 없으면 빈 그래프 또는 값이 비어 있는 분석 CSV를 만든다.
-- 출력 기본 경로는 `exp/ds2/results/image/`이다.
+- 출력 기본 경로는 `.artifacts/experiments/deepscratch/ds2/<experiment>/implemented/analysis/`이다.
 - `GT01`은 같은 toy/full-softmax 조건의 CBOW와 Skip-gram을 함께 표시한다.
 - `GT02`는 그래프를 만들지 않는다. 네 조건의 final `W_in`에 대해 교재의
   `you`, `year`, `car`, `toyota` 유사어 top-5와 네 유추 문제의 top-5,

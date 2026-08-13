@@ -3,6 +3,9 @@ src/mlprosection/datasets/*-ubyte.gz
 
 # Local experiment outputs
 experiments/data/
+.artifacts/
+.cache/
+.legacy/
 
 # Local MLflow server state (SQLite backend and served artifacts)
 infra/mlflow/data/
@@ -11,20 +14,10 @@ infra/mlflow/exports/
 *.tar.gz
 
 **/results/
-!exp/ds1_original/results/
-exp/ds1_original/results/*
-!exp/ds1_original/results/legacy_cache/
-exp/ds1_original/results/legacy_cache/*
-!exp/ds1_original/results/legacy_cache/fixed_seed/
-exp/ds1_original/results/legacy_cache/fixed_seed/*
-!exp/ds1_original/results/legacy_cache/fixed_seed/README.md
-!exp/ds2_original/results/
-exp/ds2_original/results/*
-!exp/ds2_original/results/legacy_cache/
-exp/ds2_original/results/legacy_cache/*
-!exp/ds2_original/results/legacy_cache/fixed_seed/
-exp/ds2_original/results/legacy_cache/fixed_seed/*
-!exp/ds2_original/results/legacy_cache/fixed_seed/README.md
+exp/deepscratch/ds1/original/legacy_results/fixed_seed/*
+!exp/deepscratch/ds1/original/legacy_results/fixed_seed/README.md
+exp/deepscratch/ds2/original/legacy_results/fixed_seed/*
+!exp/deepscratch/ds2/original/legacy_results/fixed_seed/README.md
 01_deep-learning-from-base/WegraLee-deep-learning-from-scratch/
 01_deep-learning-from-base/deep-learning-from-scratch-2/
 

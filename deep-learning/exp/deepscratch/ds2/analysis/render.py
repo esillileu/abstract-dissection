@@ -33,9 +33,13 @@ from . import (
     e09_addition_seq2seq_150,
 )
 from .final_metrics import FINAL_METRIC_RENDERERS
+from exp.framework.state import StateCoordinate, StateOwner, WorkspacePaths
 
 
-IMAGE_ROOT = Path("exp/ds2/results/image")
+IMAGE_ROOT = WorkspacePaths.from_environment(Path.cwd()).resolve(
+    StateOwner.ARTIFACT,
+    StateCoordinate("deepscratch", "ds2", "all", "implemented", "analysis"),
+)
 RENDERERS = {
     "e01": e01_toy_word2vec.render,
     "e02": e02_ptb_word2vec.render,

@@ -163,7 +163,7 @@ def evaluate_run(client, run, *, device: str) -> dict[str, float]:
 def resolve_run_checkpoint(client, run) -> Path:
     run_key = run.data.tags.get("run.key")
     if run_key:
-        root = Path("exp/ds1/results/checkpoints") / str(run_key)
+        root = Path(".legacy/experiments/ds1/results/checkpoints") / str(run_key)
         for candidate in (root / "latest.json", root / "final.npz"):
             if candidate.is_file():
                 return candidate

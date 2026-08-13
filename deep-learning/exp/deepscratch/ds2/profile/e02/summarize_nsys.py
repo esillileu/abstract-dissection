@@ -8,7 +8,7 @@ from pathlib import Path
 import sqlite3
 
 
-ROOT = Path(__file__).resolve().parents[4]
+ROOT = Path(__file__).resolve().parents[5]
 DEFAULT_INPUT = ROOT / "exp/deepscratch/ds2/profile/e02/results/nsys"
 DEFAULT_OUTPUT = DEFAULT_INPUT / "cuda_api_summary.csv"
 

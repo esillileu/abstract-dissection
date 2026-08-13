@@ -339,7 +339,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--mirror-root",
         type=Path,
-        default=Path("exp/ds2/results/mlflow_artifacts"),
+        default=Path(".legacy/experiments/ds2/results/mlflow_artifacts"),
     )
     parser.add_argument("--apply", action="store_true")
     args = parser.parse_args(argv)

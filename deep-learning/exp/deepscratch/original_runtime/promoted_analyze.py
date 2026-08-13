@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from exp.analyze import aggregate, mark_empty, mlflow_client, plot_curve, save_figure, tracking_uri_default, write_summary
+from exp.framework.state import StateCoordinate, StateOwner, WorkspacePaths
 
 
 def analyze(*, domain: str, experiments: list[str], tracking_uri: str | None, error_style: str, output_dir: Path | None, seed: int | None, summary: bool) -> None:
@@ -18,7 +19,11 @@ def analyze(*, domain: str, experiments: list[str], tracking_uri: str | None, er
     experiment = client.get_experiment_by_name(domain)
     if experiment is None:
         raise ValueError(f"MLflow experiment does not exist: {domain}")
-    root = output_dir or Path("exp") / domain / "results" / "image"
+    volume = domain.removesuffix("_original")
+    root = output_dir or WorkspacePaths.from_environment(Path.cwd()).resolve(
+        StateOwner.ARTIFACT,
+        StateCoordinate("deepscratch", volume, "all", "original", "analysis"),
+    )
     root.mkdir(parents=True, exist_ok=True)
     for experiment_id in selected:
         runs = client.search_runs(
@@ -80,7 +85,9 @@ def _latest_seed_runs(runs, *, seed: int | None = None):
 
 def _experiments(domain: str, requested: list[str]) -> list[str]:
     if not requested:
-        return [path.name[:3] for path in sorted((Path("exp") / domain / "config").glob("e[0-9][0-9]_*.yaml"))]
+        volume = domain.removesuffix("_original")
+        config = Path("exp/deepscratch") / volume / "config/original"
+        return [path.name[:3] for path in sorted(config.glob("e[0-9][0-9]_*.yaml"))]
     from exp.parsing import parse_experiment_ids
 
     return parse_experiment_ids(requested)

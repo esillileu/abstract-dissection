@@ -84,7 +84,7 @@ def test_unknown_ds2_e02_is_rejected() -> None:
 
 
 def test_legacy_cache_is_archived_outside_seed_statistics() -> None:
-    assert Path("exp/ds1_original/results/legacy_cache/fixed_seed").is_dir()
-    assert Path("exp/ds2_original/results/legacy_cache/fixed_seed").is_dir()
+    assert Path("exp/deepscratch/ds1/original/legacy_results/fixed_seed").is_dir()
+    assert Path("exp/deepscratch/ds2/original/legacy_results/fixed_seed").is_dir()
     assert not Path("exp/ds1/results/original").exists()
     assert not Path("exp/ds2/results/original").exists()

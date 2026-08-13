@@ -64,7 +64,7 @@ python -m exp analyze ds1 -e 06 --seed 1
 - `--error-style band`: 평균선 주변 ±1 표본 표준편차 반투명 영역
 - `--error-style errorbar`: 평균선 위 min–max error bar
 - 완료 run이 없으면 `No completed runs` 빈 그래프와 값이 비어 있는 summary CSV를 만든다.
-- 출력 기본 경로는 `exp/ds1/results/image/`이다.
+- 출력 기본 경로는 `.artifacts/experiments/deepscratch/ds1/<experiment>/implemented/analysis/`이다.
 - 명시적으로 포함한 spatial-layout 비교 `GT08`은 `e08` 분석으로 제공한다.
 - `e01`–`e12`를 지원한다. `e11`은 checkpoint 필터 분석이며 실행 catalog는 아니다.
 
@@ -131,9 +131,9 @@ dry-run이고 checkpoint 평가나 MLflow 변경을 하지 않는다. 실제 반
 필요하다.
 
 ```bash
-python -m exp.ds1.backfill_full_train_gap
-python -m exp.ds1.backfill_full_train_gap --target e06 --seed 1
-python -m exp.ds1.backfill_full_train_gap --apply --device cuda:0
+python -m exp.deepscratch.ds1.implemented.backfill_full_train_gap
+python -m exp.deepscratch.ds1.implemented.backfill_full_train_gap --target e06 --seed 1
+python -m exp.deepscratch.ds1.implemented.backfill_full_train_gap --apply --device cuda:0
 ```
 
 원본 코드는 이제 `ds1_original` 정식 도메인에서 seed별로 분석한다.
@@ -143,7 +143,7 @@ python -m exp analyze ds1_original -e 01-07 -s
 ```
 
 이 경로는 MLflow 재현 run을 조회하지 않고
-기존 고정-seed 캐시는 `exp/ds1_original/results/legacy_cache/fixed_seed/`에 보관되며 새 통계에서 제외된다.
+기존 고정-seed 캐시는 `exp/deepscratch/ds1/original/legacy_results/fixed_seed/`에 보관되며 새 통계에서 제외된다.
 원본 최종 성능 metric이 있는 E01–E07을 지원하며 관찰 전용 E09–E10은 제외한다.
 단일 원본 시행은 `seed_runs=1`, 표준편차 `0`으로 기록한다. 기존 원본 캐시에
 학습 시간이나 parameter count가 없으면 해당 CSV 행은 빈 값으로 남긴다. 계측
