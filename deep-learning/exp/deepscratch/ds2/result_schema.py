@@ -89,8 +89,16 @@ def condition(canonical, implemented, original=(), metric=LOSS):
 
 
 E01 = StudyDeclaration("e01", (
-    condition("toy-cbow", ("W2V-TOY-CBOW-FULL",), ("TOY-CBOW",)),
-    condition("toy-skipgram", ("W2V-TOY-SKIPGRAM-FULL",)),
+    condition(
+        "toy-cbow",
+        ("W2V-TOY-CBOW-FULL",),
+        ("TOY-CBOW", "W2V-TOY-CBOW-FULL"),
+    ),
+    condition(
+        "toy-skipgram",
+        ("W2V-TOY-SKIPGRAM-FULL",),
+        ("TOY-SKIPGRAM", "W2V-TOY-SKIPGRAM-FULL"),
+    ),
 ))
 E02_NAMES = (
     "W2V-PTB-CBOW-NS", "W2V-PTB-SKIPGRAM-NS", "W2V-PTB-CBOW-FUSED-NS",

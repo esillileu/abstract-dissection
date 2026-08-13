@@ -113,7 +113,6 @@ def _metric_rows(root: Path) -> tuple[list[tuple[int, str, float]], dict[str, fl
     final: dict[str, float] = {}
     with path.open(encoding="utf-8", newline="") as stream:
         for index, row in enumerate(csv.DictReader(stream)):
-            step = _int_value(row.get("update"), row.get("epoch"), row.get("plot_index"), default=index)
             if row.get("metric") and row.get("value") not in {None, ""}:
                 pairs = [(str(row["metric"]), row["value"])]
             else:
@@ -124,6 +123,25 @@ def _metric_rows(root: Path) -> tuple[list[tuple[int, str, float]], dict[str, fl
                 except (TypeError, ValueError):
                     continue
                 metric = _metric_name(key, split=str(row.get("split", "")))
+                if metric.endswith("/accuracy"):
+                    # DS1 original e03/e04 record accuracy once per epoch,
+                    # while their update counter advances three times per
+                    # epoch.  Preserve the graph's epoch axis in the metric
+                    # series; zero is a valid first epoch and must not fall
+                    # through via truthiness-based selection.
+                    step = _int_value(
+                        row.get("epoch"),
+                        row.get("update"),
+                        row.get("plot_index"),
+                        default=index,
+                    )
+                else:
+                    step = _int_value(
+                        row.get("update"),
+                        row.get("epoch"),
+                        row.get("plot_index"),
+                        default=index,
+                    )
                 output.append((step, metric, number))
                 final[f"final/{metric}"] = number
     return output, final
