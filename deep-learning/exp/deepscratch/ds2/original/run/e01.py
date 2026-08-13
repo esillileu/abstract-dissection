@@ -1,4 +1,4 @@
-"""Original ch03 toy CBOW full-softmax training."""
+"""Original ch03 toy CBOW and Skip-gram full-softmax training."""
 
 from pathlib import Path
 
@@ -9,17 +9,25 @@ from .common import COMMON_SOURCES, Trial, checkpoint_arrays, importlib, np, sav
 from .common import to_device
 
 
-def run(worktree: Path, output: Path, _root: Path) -> None:
+MODEL_SOURCES = {
+    "cbow": "simple_cbow",
+    "skipgram": "simple_skip_gram",
+}
+
+
+def run(kind: str, worktree: Path, output: Path, _root: Path) -> None:
+    module_name = MODEL_SOURCES[kind]
+    class_name = {"cbow": "SimpleCBOW", "skipgram": "SimpleSkipGram"}[kind]
     with source_imports(worktree, gpu=True):
         cp = array_module()
         util = importlib.import_module("common.util")
         trainer_cls = importlib.import_module("common.trainer").Trainer
         optimizer_cls = importlib.import_module("common.optimizer").Adam
-        model_module = importlib.import_module("ch03.simple_cbow")
+        model_module = importlib.import_module(f"ch03.{module_name}")
         # ch03 predates the book's config.GPU switch and imports NumPy directly.
         # Redirect only its array namespace while leaving the source snapshot intact.
         model_module.np = cp
-        model_cls = model_module.SimpleCBOW
+        model_cls = getattr(model_module, class_name)
         np.random.seed(master_seed())
         cp.random.seed(master_seed())
         corpus, word_to_id, id_to_word = util.preprocess(
@@ -52,12 +60,28 @@ def run(worktree: Path, output: Path, _root: Path) -> None:
     save_npz(output / "checkpoint.npz", word_vectors=vectors, **params)
 
 
-TRIALS = (
+TRIALS = tuple(
     Trial(
-        "dlfs2.ch03.toy-cbow-full-softmax",
+        (
+            "dlfs2.ch03.toy-cbow-full-softmax"
+            if kind == "cbow"
+            else "dlfs2.ch03.toy-skipgram-full-softmax"
+        ),
         "cupy",
-        {"model": "SimpleCBOW", "epochs": 1000, "batch_size": 3, "window": 1},
-        COMMON_SOURCES + ("ch03/simple_cbow.py", "ch03/train.py"),
-        run,
-    ),
+        {
+            "model": {"cbow": "SimpleCBOW", "skipgram": "SimpleSkipGram"}[kind],
+            "epochs": 1000,
+            "batch_size": 3,
+            "window": 1,
+        },
+        COMMON_SOURCES
+        + (
+            f"ch03/{MODEL_SOURCES[kind]}.py",
+            "ch03/train.py",
+        ),
+        lambda worktree, output, root, kind=kind: run(
+            kind, worktree, output, root
+        ),
+    )
+    for kind in ("cbow", "skipgram")
 )

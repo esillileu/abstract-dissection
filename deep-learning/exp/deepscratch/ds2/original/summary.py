@@ -13,7 +13,10 @@ from exp.deepscratch.original_runtime.summary import (
 
 SUPPORTED_EXPERIMENTS = ("e01", "e02", "e03", "e04", "e06", "e07")
 TRIAL_IDS = {
-    "e01": ("dlfs2.ch03.toy-cbow-full-softmax",),
+    "e01": (
+        "dlfs2.ch03.toy-cbow-full-softmax",
+        "dlfs2.ch03.toy-skipgram-full-softmax",
+    ),
     "e02": tuple(
         (
             f"dlfs2.ch04.ptb-{name}-negative-sampling"

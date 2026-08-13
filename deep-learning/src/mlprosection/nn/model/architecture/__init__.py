@@ -14,7 +14,7 @@ from .word2vec import (
     SkipGramBatchAdapter,
 )
 from .recurrent import (
-    AttentionSeq2seq,
+    AttentionPeekySeq2seq, AttentionSeq2seq,
     BetterRnnlm,
     PeekySeq2seq,
     Rnnlm,
@@ -29,6 +29,6 @@ __all__ = [
     "OneHotCBOW", "OneHotCBOWBatchAdapter",
     "OneHotSkipGram", "OneHotSkipGramBatchAdapter",
     "SkipGram", "SkipGramBatchAdapter",
-    "AttentionSeq2seq", "BetterRnnlm",
+    "AttentionPeekySeq2seq", "AttentionSeq2seq", "BetterRnnlm",
     "PeekySeq2seq", "Rnnlm", "Seq2seq", "TiedRnnlm", "VanillaRnnlm",
 ]

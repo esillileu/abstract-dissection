@@ -10,6 +10,8 @@ DEFINITIONS = (
     ("SEQA-PEEKY-REV", "peeky / reverse", "D"),
     ("SEQA-ATTN-FWD", "attention / forward", "v"),
     ("SEQA-ATTN-REV", "attention / reverse", "P"),
+    ("SEQA-ATTN-PEEKY-FWD", "attention + peeky / forward", "<"),
+    ("SEQA-ATTN-PEEKY-REV", "attention + peeky / reverse", ">"),
 )
 
 

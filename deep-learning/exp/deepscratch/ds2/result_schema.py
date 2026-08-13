@@ -158,6 +158,8 @@ E09 = StudyDeclaration("e09", tuple(
         "SEQA-PEEKY-REV",
         "SEQA-ATTN-FWD",
         "SEQA-ATTN-REV",
+        "SEQA-ATTN-PEEKY-FWD",
+        "SEQA-ATTN-PEEKY-REV",
     )
 ))
 

@@ -4,7 +4,7 @@
 
 - 분석용 평균/표준편차, AUC, threshold 도달, paired difference, 최종 모델 순위는 포함하지 않는다.
 - 구현·데모·단순 표시 예제는 제외했다. 표의 값은 원본이 실제 학습 중 또는 평가에서 기록·출력·그린 raw 값이다.
-- source-default와 source에 명시된 모델·입력 방향 선택 조건, 관찰 시행을 전개하면 15개다. 실제 run ID는 `<trial_id>.seed-<n>`으로 만든다.
+- source-default와 source에 명시된 모델·입력 방향 선택 조건, 관찰 시행을 전개하면 16개다. 실제 run ID는 `<trial_id>.seed-<n>`으로 만든다.
 
 ## 공통 raw record
 
@@ -20,6 +20,7 @@
 | 시행 ID | 원본 실행·고정 조건 | 원본이 기록한 값과 시점 |
 | --- | --- | --- |
 | `dlfs2.ch03.toy-cbow-full-softmax` | [`ch03/train.py`](../../../01_deep-learning-from-base/deep-learning-from-scratch-2/ch03/train.py); toy sentence, window `1`, vocab `7`, SimpleCBOW embedding `5`, Adam `.001`, batch `3`, `1,000` epochs | Trainer interval 평균 train loss; 최종 word vector checkpoint/artifact |
+| `dlfs2.ch03.toy-skipgram-full-softmax` | [`ch03/simple_skip_gram.py`](../../../01_deep-learning-from-base/deep-learning-from-scratch-2/ch03/simple_skip_gram.py); toy sentence, window `1`, vocab `7`, SimpleSkipGram embedding `5`, Adam `.001`, batch `3`, `1,000` epochs | Trainer interval 평균 train loss; 최종 word vector checkpoint/artifact |
 | `dlfs2.ch04.ptb-cbow-negative-sampling` | [`ch04/train.py`](../../../01_deep-learning-from-base/deep-learning-from-scratch-2/ch04/train.py); PTB train, CBOW, window `5`, embedding `100`, negative sample `5`, Adam `.001`, batch `100`, `10` epochs | Trainer interval 평균 train loss와 elapsed time; 종료 때 word vectors와 word↔ID dictionary checkpoint |
 | `dlfs2.ch04.ptb-skipgram-negative-sampling` | 같은 [`ch04/train.py`](../../../01_deep-learning-from-base/deep-learning-from-scratch-2/ch04/train.py)의 명시된 `SkipGram` model 선택; PTB train, window `5`, embedding `100`, negative sample `5`, Adam `.001`, batch `100`, `10` epochs | CBOW와 같은 cadence의 Trainer interval 평균 train loss와 elapsed time; 별도 SkipGram word-vector checkpoint |
 | `dlfs2.ch05.ptb-small-rnnlm` | [`ch05/train.py`](../../../01_deep-learning-from-base/deep-learning-from-scratch-2/ch05/train.py); PTB train 첫 `1,000` tokens, SimpleRnnlm embedding/hidden `100`, SGD `.1`, batch `10`, BPTT `5`, `100` epochs | RnnlmTrainer interval 평균 NLL에서 계산한 train PPL을 list·콘솔에 기록 |
@@ -46,4 +47,4 @@
 
 ## 시행 선택의 범위
 
-`ch04/train.py`의 SkipGram, `ch07/train_seq2seq.py`의 Peeky·reverse, `ch08/train.py`의 Vanilla·Peeky는 source에서 한 줄을 전환해 선택하는 책의 실행 조건이므로 위에서 독립 시행으로 전개했다. 별도의 학습 entrypoint가 없는 `ch03/simple_skip_gram.py`은 원본 시행에는 포함하지 않고, GT01에서 CBOW와 같은 조건을 적용한 새 확장 시행으로 등록했다.
+`ch04/train.py`의 SkipGram, `ch07/train_seq2seq.py`의 Peeky·reverse, `ch08/train.py`의 Vanilla·Peeky는 source에서 한 줄을 전환해 선택하는 책의 실행 조건이므로 위에서 독립 시행으로 전개했다. 별도의 학습 entrypoint가 없는 `ch03/simple_skip_gram.py`은 ch03 toy CBOW와 동일한 조건으로 원본 시행에 등록했다.

@@ -23,3 +23,5 @@ variants:
   SEQA-PEEKY-REV: {run: {structure_signature: addition-peeky-16-128}, model: {name: PeekySeq2seq, wordvec_size: 16, hidden_size: 128}, dataset: {reverse: true}}
   SEQA-ATTN-FWD: {run: {structure_signature: addition-attention-16-128}, model: {name: AttentionSeq2seq, wordvec_size: 16, hidden_size: 128}, dataset: {reverse: false}}
   SEQA-ATTN-REV: {run: {structure_signature: addition-attention-16-128}, model: {name: AttentionSeq2seq, wordvec_size: 16, hidden_size: 128}, dataset: {reverse: true}}
+  SEQA-ATTN-PEEKY-FWD: {run: {structure_signature: addition-attention-peeky-16-128}, model: {name: AttentionPeekySeq2seq, wordvec_size: 16, hidden_size: 128}, dataset: {reverse: false}}
+  SEQA-ATTN-PEEKY-REV: {run: {structure_signature: addition-attention-peeky-16-128}, model: {name: AttentionPeekySeq2seq, wordvec_size: 16, hidden_size: 128}, dataset: {reverse: true}}

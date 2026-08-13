@@ -13,6 +13,7 @@ from mlprosection import Tensor
 from mlprosection.datasets import load_ptb, load_sequence
 from mlprosection.nn.sampling import UnigramSampler
 from mlprosection.nn.model.architecture import (
+    AttentionPeekySeq2seq,
     AttentionSeq2seq,
     BetterRnnlm,
     CBOW,
@@ -1049,6 +1050,8 @@ def _seq_model(name: str, vocab_size: int, values: dict[str, object], backend):
         return PeekySeq2seq(**kwargs)
     if name == "AttentionSeq2seq":
         return AttentionSeq2seq(**kwargs)
+    if name == "AttentionPeekySeq2seq":
+        return AttentionPeekySeq2seq(**kwargs)
     raise ValueError(f"unknown seq2seq name: {name}")
 
 
