@@ -30,3 +30,9 @@ they remain available through explicit run-ID selection.
 The command accepts the same `-e`, `-a`, `-x`, `--seed`, `--seed-set`, and
 `--set` selection inputs as planning. `-o` is the alias for
 `--variant original`.
+
+The same original alias is available for analysis summaries:
+
+```bash
+just exp analyze deepscratch ds2 -e 05 -o -s
+```

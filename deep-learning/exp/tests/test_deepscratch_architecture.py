@@ -3,10 +3,12 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from exp.cli import PLUGIN_REGISTRY, app
+from exp.deepscratch.cli import _writer_overrides
 from exp.deepscratch.identity import DeepScratchCoordinate, Variant, Volume, legacy_namespace
 from exp.deepscratch.comparison import ComparableMetric, normalize_metric
 from exp.framework.results import MetricSeries, NativeResult
 from exp.framework.state import StateCoordinate, StateOwner, WorkspacePaths
+from exp.parsing import parse_overrides
 from mlprosection_mlflow.schema_v1 import build_tags
 from mlprosection_mlflow.runtime import RunIdentity
 
@@ -53,6 +55,46 @@ def test_new_cli_defaults_to_implemented_and_supports_original_alias() -> None:
     assert "4 planned runs" in implemented.output
     assert original.exit_code == 0
     assert "4 planned runs" in original.output
+
+
+def test_analyze_original_alias_dispatches_original_variant(monkeypatch) -> None:
+    captured = {}
+
+    def fake_analyze_command(definition, **kwargs):
+        captured["domain"] = definition.name
+        captured.update(kwargs)
+
+    monkeypatch.setattr(
+        "exp.deepscratch.cli.analyze_command", fake_analyze_command
+    )
+
+    result = runner.invoke(
+        app, ["analyze", "deepscratch", "ds2", "-e", "03", "-o", "-s"]
+    )
+
+    assert result.exit_code == 0
+    assert captured["domain"] == "ds2_original"
+    assert captured["experiments"] == ["03"]
+    assert captured["summary"] is True
+
+
+def test_analyze_original_alias_rejects_explicit_variant() -> None:
+    result = runner.invoke(
+        app,
+        [
+            "analyze",
+            "deepscratch",
+            "ds2",
+            "-e",
+            "03",
+            "-o",
+            "--variant",
+            "all",
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "cannot be combined" in result.output
 
 
 def test_declared_tracking_tags_expand_logical_identity(monkeypatch) -> None:
@@ -102,6 +144,25 @@ def test_declared_tracking_tags_expand_logical_identity(monkeypatch) -> None:
     assert tags["experiment.id"] == "e01"
     assert tags["condition.id"] == "CONDITION"
     assert tags["implementation.variant"] == "implemented"
+
+
+def test_writer_overrides_preserve_dotted_tag_names_and_templates() -> None:
+    overrides = parse_overrides(
+        _writer_overrides(Volume.DS2, Variant.IMPLEMENTED, [])
+    )
+
+    assert overrides["tracking"] == {
+        "experiment": "deepscratch.ds2",
+        "tags": {
+            "domain.name": "deepscratch",
+            "deepscratch.volume": "ds2",
+            "implementation.variant": "implemented",
+            "experiment.id": "{experiment_id}",
+            "condition.id": "{condition_id}",
+            "result.schema.name": "ds2-implemented",
+            "result.schema.version": "1",
+        },
+    }
 
 
 def test_comparison_view_never_synthesizes_missing_metrics() -> None:

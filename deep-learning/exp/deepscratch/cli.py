@@ -34,16 +34,19 @@ def _writer_overrides(
     values: list[str],
 ) -> list[str]:
     schema = f"{volume.value}-{variant.value}"
+    tags = {
+        "domain.name": "deepscratch",
+        "deepscratch.volume": volume.value,
+        "implementation.variant": variant.value,
+        "experiment.id": "{experiment_id}",
+        "condition.id": "{condition_id}",
+        "result.schema.name": schema,
+        "result.schema.version": "1",
+    }
     return [
         *values,
         f"tracking.experiment=deepscratch.{volume.value}",
-        "tracking.tags.domain.name=deepscratch",
-        f"tracking.tags.deepscratch.volume={volume.value}",
-        f"tracking.tags.implementation.variant={variant.value}",
-        "tracking.tags.experiment.id={experiment_id}",
-        "tracking.tags.condition.id={condition_id}",
-        f"tracking.tags.result.schema.name={schema}",
-        "tracking.tags.result.schema.version=1",
+        f"tracking.tags={json.dumps(tags, separators=(',', ':'))}",
     ]
 
 
@@ -201,9 +204,14 @@ def analyze(
     seed: Annotated[int | None, typer.Option("--seed")] = None,
     summary: Annotated[bool, typer.Option("-s", "--summary")] = False,
     variant: Annotated[str, typer.Option("--variant")] = "implemented",
+    original: Annotated[bool, typer.Option("-o")] = False,
 ) -> None:
     if variant not in {"implemented", "original", "all"}:
         raise ValueError("--variant must be implemented, original, or all")
+    if original and variant != "implemented":
+        raise ValueError("-o cannot be combined with an explicit --variant")
+    if original:
+        variant = "original"
     variants = (
         (Variant.IMPLEMENTED, Variant.ORIGINAL)
         if variant == "all" else (Variant(variant),)
