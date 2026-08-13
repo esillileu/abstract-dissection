@@ -43,6 +43,18 @@ def accuracy_curve(client, run_refs, *, split: str, x_value, axis: str | None = 
             x_value=x_value,
         )
     if not histories:
+        # Promoted original DS1 runs keep the source evaluation rows in
+        # raw/metrics.csv.  Prefer that artifact over the persisted MLflow
+        # metric series, whose step is the global update counter.
+        histories = client.histories_from_artifact(
+            run_refs,
+            artifact_path="raw/metrics.csv",
+            x="epoch",
+            y="accuracy",
+            row_filter=lambda row: row.get("split") == split,
+            x_value=x_value,
+        )
+    if not histories:
         native_ids = (
             ("update/eval_train/accuracy", "train/accuracy")
             if split == "train"
