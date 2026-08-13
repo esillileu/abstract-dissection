@@ -174,7 +174,7 @@ def test_plan_status_rejects_attempts_from_another_protocol(
         "RNNLM",
         status="FINISHED",
         start_time=1,
-        protocol_version="legacy",
+        protocol_version="experimental-v0",
     )
 
     report = inspect_plan_status(
@@ -186,6 +186,33 @@ def test_plan_status_rejects_attempts_from_another_protocol(
     )
 
     assert report.counts["missing"] == 1
+
+
+def test_implemented_legacy_protocol_maps_to_declared_book_protocol(
+    tmp_path: Path,
+) -> None:
+    client = MlflowClient(_uri(tmp_path))
+    experiment_id = client.create_experiment("ds1")
+    run_id = _run(
+        client,
+        experiment_id,
+        "ADAM",
+        status="FINISHED",
+        start_time=1,
+        protocol_version="legacy",
+    )
+
+    report = inspect_plan_status(
+        client,
+        [RunPlan("ds1", "e01", Path("e01.yaml"), "ADAM", 1, "cpu")],
+        volume=Volume.DS1,
+        variant=Variant.IMPLEMENTED,
+        expected_protocols={("e01", "ADAM"): "book-source-v1"},
+    )
+
+    assert report.counts["completed"] == 1
+    assert report.entries[0].run_id == run_id
+    assert report.entries[0].namespace == "ds1"
 
 
 def test_original_legacy_protocol_maps_to_declared_book_protocol(

@@ -95,7 +95,6 @@ def inspect_plan_status(
             and attempt.protocol_version != expected_protocol
             and not _protocol_compatible(
                 volume,
-                variant,
                 attempt.experiment_id,
                 attempt.protocol_version,
                 expected_protocol,
@@ -119,13 +118,10 @@ def inspect_plan_status(
 
 def _protocol_compatible(
     volume: Volume,
-    variant: Variant,
     study_id: str,
     actual: str,
     expected: str,
 ) -> bool:
-    if variant is not Variant.ORIGINAL:
-        return False
     schema = importlib.import_module(
         f"exp.deepscratch.{volume.value}.result_schema"
     )
