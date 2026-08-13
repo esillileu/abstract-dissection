@@ -9,4 +9,6 @@ dataset: {id: mnist, split_seed: 1984}
 numerics: {backend: numpy, device: cpu}
 tracking: {enabled: true, experiment: deepscratch.ds1}
 checkpoint: {save_final: false}
-variants: {WEIGHT-DECAY-01: {}}
+variants:
+  WEIGHT-DECAY-OFF: {trial_id: dlfs1.ch06.weight-decay.off}
+  WEIGHT-DECAY-01: {trial_id: dlfs1.ch06.weight-decay.lambda-01}

@@ -10,7 +10,7 @@ from exp.deepscratch.original_runtime.runtime_context import budget, master_seed
 from .common import COMMON_SOURCES, Trial, importlib, patch_cupy_modules, save_csv, save_params, source_imports
 
 
-def run(worktree: Path, output: Path) -> None:
+def run(worktree: Path, output: Path, *, weight_decay_lambda: float) -> None:
     rows = []
     with source_imports(worktree):
         load_mnist = importlib.import_module("dataset.mnist").load_mnist
@@ -23,7 +23,7 @@ def run(worktree: Path, output: Path) -> None:
         x_test, t_test = xp.asarray(x_test), xp.asarray(t_test)
         xp.random.seed(master_seed())
         network = network_cls(
-            784, [100] * 6, 10, weight_decay_lambda=0.1
+            784, [100] * 6, 10, weight_decay_lambda=weight_decay_lambda
         )
         measurements = OriginalMeasurements(output)
         with measurements.training():
@@ -55,10 +55,21 @@ def run(worktree: Path, output: Path) -> None:
 
 TRIALS = (
     Trial(
+        "dlfs1.ch06.weight-decay.off",
+        "numpy",
+        {"weight_decay_lambda": 0.0, "epochs": 201, "train_size": 300},
+        COMMON_SOURCES + ("ch06/overfit_weight_decay.py",),
+        lambda worktree, output: run(
+            worktree, output, weight_decay_lambda=0.0
+        ),
+    ),
+    Trial(
         "dlfs1.ch06.weight-decay.lambda-01",
         "numpy",
         {"weight_decay_lambda": 0.1, "epochs": 201, "train_size": 300},
         COMMON_SOURCES + ("ch06/overfit_weight_decay.py",),
-        run,
+        lambda worktree, output: run(
+            worktree, output, weight_decay_lambda=0.1
+        ),
     ),
 )

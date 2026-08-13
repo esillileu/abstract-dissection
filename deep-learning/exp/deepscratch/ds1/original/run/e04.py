@@ -10,7 +10,7 @@ from exp.deepscratch.original_runtime.runtime_context import budget, master_seed
 from .common import COMMON_SOURCES, Trial, importlib, patch_cupy_modules, save_csv, save_params, source_imports
 
 
-def run(worktree: Path, output: Path) -> None:
+def run(worktree: Path, output: Path, *, use_dropout: bool) -> None:
     with source_imports(worktree):
         load_mnist = importlib.import_module("dataset.mnist").load_mnist
         network_cls = importlib.import_module(
@@ -27,7 +27,7 @@ def run(worktree: Path, output: Path) -> None:
             784,
             [100] * 6,
             10,
-            use_dropout=True,
+            use_dropout=use_dropout,
             dropout_ration=0.2,
         )
         trainer = trainer_cls(
@@ -72,10 +72,17 @@ def run(worktree: Path, output: Path) -> None:
 
 TRIALS = (
     Trial(
+        "dlfs1.ch06.dropout.off",
+        "numpy",
+        {"use_dropout": False, "dropout_ratio": 0.0, "epochs": 301},
+        COMMON_SOURCES + ("ch06/overfit_dropout.py",),
+        lambda worktree, output: run(worktree, output, use_dropout=False),
+    ),
+    Trial(
         "dlfs1.ch06.dropout.on-ratio-02",
         "numpy",
         {"use_dropout": True, "dropout_ratio": 0.2, "epochs": 301},
         COMMON_SOURCES + ("ch06/overfit_dropout.py",),
-        run,
+        lambda worktree, output: run(worktree, output, use_dropout=True),
     ),
 )

@@ -9,4 +9,6 @@ dataset: {id: mnist, split_seed: 1984}
 numerics: {backend: numpy, device: cpu}
 tracking: {enabled: true, experiment: deepscratch.ds1}
 checkpoint: {save_final: false}
-variants: {DROPOUT-02: {}}
+variants:
+  DROPOUT-OFF: {trial_id: dlfs1.ch06.dropout.off}
+  DROPOUT-02: {trial_id: dlfs1.ch06.dropout.on-ratio-02}
