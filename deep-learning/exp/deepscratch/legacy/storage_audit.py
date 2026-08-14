@@ -28,20 +28,14 @@ class StorageEntry:
 def audit_storage(
     client,
     paths: WorkspacePaths,
-    *,
-    repository_root: Path | None = None,
 ) -> dict[str, object]:
     """Classify every staging payload without moving or deleting files."""
     require_cutover_safe(client)
     entries = []
-    repository = (repository_root or Path.cwd()).resolve()
     root = paths.staging_root / "exp"
-    roots = (root, repository / "results/experiments")
     manifests = [
-        (storage_root, manifest)
-        for storage_root in roots
-        if storage_root.exists()
-        for manifest in sorted(storage_root.glob("*/*/*/*/*/record/result_manifest.json"))
+        (root, manifest)
+        for manifest in sorted(root.glob("*/*/*/*/*/record/result_manifest.json"))
     ]
     for storage_root, manifest_path in manifests:
         run_root = manifest_path.parent.parent
@@ -75,12 +69,9 @@ def audit_storage(
             entries.append(StorageEntry(str(run_root), "incomplete", reason="no durable FINISHED MLflow run"))
         else:
             entries.append(StorageEntry(str(run_root), "verified", run_id=durable.info.run_id))
-    retired = _retired_local_roots(repository)
     return {
         "root": str(root),
-        "transition_root": str(repository / "results/experiments"),
         "entries": [asdict(item) for item in entries],
-        "legacy_entries": [asdict(item) for item in retired],
         "counts": {
             state: sum(item.lifecycle == state for item in entries)
             for state in ("verified", "incomplete", "orphan", "unaudited")
@@ -104,7 +95,6 @@ def cleanup_verified_mirrors(
     if apply:
         allowed_roots = (
             (paths.staging_root / "exp").resolve(),
-            (Path.cwd() / "results/experiments").resolve(),
         )
         for candidate in candidates:
             resolved = candidate.resolve()
@@ -137,29 +127,6 @@ def _verify_local(manifest_path: Path) -> tuple[bool, str | None]:
     except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
         return False, f"invalid result manifest: {exc}"
     return True, None
-
-
-def _retired_local_roots(repository_root: Path) -> list[StorageEntry]:
-    candidates = (
-        repository_root / "exp/deepscratch.ds1/results",
-        repository_root / "exp/deepscratch.ds2/results",
-        repository_root / "exp/deepscratch/ds1/original/legacy_results/fixed_seed",
-        repository_root / "exp/deepscratch/ds2/original/legacy_results/fixed_seed",
-    )
-    entries = []
-    for candidate in candidates:
-        if not candidate.exists():
-            continue
-        file_count = sum(path.is_file() for path in candidate.rglob("*"))
-        entries.append(StorageEntry(
-            str(candidate),
-            "legacy-only",
-            reason=(
-                f"retired local result root ({file_count} files); "
-                "read-only and never a cleanup candidate"
-            ),
-        ))
-    return entries
 
 
 def _filter(value: str) -> str:

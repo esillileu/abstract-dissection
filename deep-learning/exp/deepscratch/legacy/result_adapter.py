@@ -119,6 +119,10 @@ def _artifact_aliases(client, run_id: str) -> dict[str, str]:
         parameter_manifest = _parameter_manifest_projection(client, run_id)
         if parameter_manifest is not None:
             aliases["model/parameter_manifest.json"] = str(parameter_manifest)
+    if study_id == "e02" and "checkpoints/checkpoint_manifest.json" not in root_paths:
+        checkpoint_manifest = _word2vec_checkpoint_projection(client, run_id)
+        if checkpoint_manifest is not None:
+            aliases["checkpoints/checkpoint_manifest.json"] = str(checkpoint_manifest)
     if study_id in {"e06", "e07"} and "raw/checkpoint.npz" in raw_paths:
         manifest = _checkpoint_projection(client, run_id)
         if manifest is not None:
@@ -126,6 +130,50 @@ def _artifact_aliases(client, run_id: str) -> dict[str, str]:
     if "checkpoints" in root_paths:
         aliases.update(_checkpoint_generation_aliases(client, run_id))
     return aliases
+
+
+def _word2vec_checkpoint_projection(client, run_id: str) -> Path | None:
+    """Expose legacy e02 ``word_vectors`` through the canonical checkpoint API."""
+    root = (
+        WorkspacePaths.from_environment(Path.cwd()).cache_root
+        / "deepscratch"
+        / "legacy-projections"
+        / run_id
+        / "checkpoint"
+    )
+    manifest_path = root / "checkpoint_manifest.json"
+    weights_path = root / "model_parameters.npz"
+    if manifest_path.is_file() and weights_path.is_file():
+        return manifest_path.resolve()
+    try:
+        source = Path(client.download_artifacts(run_id, "raw/checkpoint.npz"))
+        with np.load(source, allow_pickle=False) as archive:
+            arrays = {name: np.asarray(archive[name]) for name in archive.files}
+        vectors = arrays.get("W_in", arrays.get("word_vectors"))
+        if vectors is None or vectors.ndim != 2:
+            return None
+    except (OSError, ValueError):
+        return None
+    root.mkdir(parents=True, exist_ok=True)
+    arrays.setdefault("W_in", vectors)
+    np.savez_compressed(weights_path, **arrays)
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "format": "legacy-word2vec-npz",
+                "final": {
+                    "path": str(weights_path.resolve()),
+                    "epoch": "",
+                    "update": "",
+                },
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return manifest_path.resolve()
 
 
 def _runtime_projection(client, run_id: str) -> float | None:

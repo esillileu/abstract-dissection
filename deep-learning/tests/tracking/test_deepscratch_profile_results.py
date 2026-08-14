@@ -27,3 +27,4 @@ def test_profile_result_is_marked_durable_after_artifact_upload(tmp_path: Path) 
     assert run.data.tags["result.durable_complete"] == "true"
     artifacts = {item.path for item in client.list_artifacts(run_id, "profile")}
     assert artifacts == {"profile/profile_manifest.json", "profile/raw"}
+    assert (tmp_path / "artifacts").is_dir()

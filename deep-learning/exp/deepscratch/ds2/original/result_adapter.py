@@ -1,6 +1,13 @@
 """Adapter for promoted-original DS2 SchemaV1 runs."""
 
+import json
+from dataclasses import replace
+from pathlib import Path
+
+import numpy as np
+
 from exp.deepscratch.identity import Variant
+from exp.framework.paths import WorkspacePaths
 from exp.framework.results import MlflowResultStore
 
 
@@ -14,7 +21,56 @@ def load_native_result(client, run_id, declarations):
             f"canonical run {run_id} has unsupported schema version "
             f"{result.schema_version}"
         )
-    return result
+    aliases = dict(result.artifact_aliases)
+    if "checkpoints/checkpoint_manifest.json" not in aliases:
+        manifest = _word2vec_checkpoint_projection(client, run_id)
+        if manifest is not None:
+            aliases["checkpoints/checkpoint_manifest.json"] = str(manifest)
+    return replace(result, artifact_aliases=aliases)
+
+
+def _word2vec_checkpoint_projection(client, run_id: str) -> Path | None:
+    """Expose promoted-original e02 ``word_vectors`` as canonical ``W_in``."""
+    root = (
+        WorkspacePaths.from_environment(Path.cwd()).cache_root
+        / "deepscratch"
+        / "legacy-projections"
+        / run_id
+        / "checkpoint"
+    )
+    manifest_path = root / "checkpoint_manifest.json"
+    weights_path = root / "model_parameters.npz"
+    if manifest_path.is_file() and weights_path.is_file():
+        return manifest_path.resolve()
+    try:
+        source = Path(client.download_artifacts(run_id, "raw/checkpoint.npz"))
+        with np.load(source, allow_pickle=False) as archive:
+            arrays = {name: np.asarray(archive[name]) for name in archive.files}
+        vectors = arrays.get("W_in", arrays.get("word_vectors"))
+        if vectors is None or vectors.ndim != 2:
+            return None
+    except (OSError, ValueError):
+        return None
+    root.mkdir(parents=True, exist_ok=True)
+    arrays.setdefault("W_in", vectors)
+    np.savez_compressed(weights_path, **arrays)
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "format": "promoted-original-word2vec-npz",
+                "final": {
+                    "path": str(weights_path.resolve()),
+                    "epoch": "",
+                    "update": "",
+                },
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return manifest_path.resolve()
 
 
 def _metric_specs(declarations):

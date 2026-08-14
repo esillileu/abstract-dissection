@@ -86,8 +86,8 @@ def test_ds2_e02_expands_original_word2vec_conditions() -> None:
     assert {plan.atomic_run_id for plan in plans} == {"PTB-CBOW", "PTB-SKIPGRAM"}
 
 
-def test_legacy_cache_is_archived_outside_seed_statistics() -> None:
-    assert Path("exp/deepscratch/ds1/original/legacy_results/fixed_seed").is_dir()
-    assert Path("exp/deepscratch/ds2/original/legacy_results/fixed_seed").is_dir()
+def test_retired_source_tree_result_roots_are_absent() -> None:
     assert not Path("exp/ds1/results/original").exists()
     assert not Path("exp/ds2/results/original").exists()
+    assert not Path("exp/deepscratch/ds1/original/legacy_results").exists()
+    assert not Path("exp/deepscratch/ds2/original/legacy_results").exists()

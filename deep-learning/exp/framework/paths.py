@@ -12,7 +12,6 @@ class StateOwner(str, Enum):
     STAGING = "staging"
     CACHE = "cache"
     RESULTS = "results"
-    LEGACY = "legacy"
 
 
 @dataclass(frozen=True)
@@ -37,7 +36,6 @@ class WorkspacePaths:
     staging_root: Path
     cache_root: Path
     results_root: Path
-    legacy_root: Path
 
     @classmethod
     def from_environment(cls, repository_root: Path) -> "WorkspacePaths":
@@ -45,8 +43,7 @@ class WorkspacePaths:
         return cls(
             _root("EXP_STAGING_ROOT", repository_root / ".staging", repository_root),
             _root("EXP_CACHE_ROOT", repository_root / ".cache", repository_root),
-            _root("EXP_RESULTS_ROOT", repository_root / "results_new", repository_root),
-            _root("EXP_LEGACY_ROOT", repository_root / ".legacy", repository_root),
+            _root("EXP_RESULTS_ROOT", repository_root / "results", repository_root),
         )
 
     def resolve(self, owner: StateOwner, coordinate: StateCoordinate) -> Path:
@@ -56,7 +53,6 @@ class WorkspacePaths:
         root = {
             StateOwner.STAGING: self.staging_root / "exp",
             StateOwner.CACHE: self.cache_root / "exp",
-            StateOwner.LEGACY: self.legacy_root / "exp",
         }[owner]
         return root.joinpath(*coordinate.parts())
 

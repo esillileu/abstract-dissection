@@ -11,9 +11,8 @@ python -m exp analyze deepscratch ds1 -e 01 --variant original
 ```
 
 The clean upstream snapshot is in `src/`; see `PROVENANCE.json` for its commit
-and the small compatibility adaptations. Fixed-seed results made by the retired
-`ds1 --original` interface are archived under `results/legacy_cache/fixed_seed`
-and are not part of seed statistics.
+and the small compatibility adaptations. Historical results are read from
+MLflow and local fixed-seed archives are not supported.
 
 The long-running conditions are e06 and e07; select them explicitly when a
 separate execution window is needed.

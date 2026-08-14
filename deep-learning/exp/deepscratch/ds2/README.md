@@ -1,7 +1,7 @@
 # DS2 실행 catalog
 
-DS2는 실행 그룹 `GT01`–`GT07`, `GT09`를 `e01`–`e09` YAML로 선언한다. 기존
-`.legacy/experiments/deepscratch2`는 보존용 legacy이며 이 catalog의 입력이 아니다.
+DS2는 실행 그룹 `GT01`–`GT07`, `GT09`를 `e01`–`e09` YAML로 선언한다.
+과거 실행은 MLflow의 historical namespace에서만 조회한다.
 
 ```bash
 just exp plan deepscratch ds2 -e 02 --seed 1

@@ -25,7 +25,10 @@ def record_profile_result(
     namespace = f"deepscratch.{volume}"
     experiment = client.get_experiment_by_name(namespace)
     experiment_id_mlflow = (
-        client.create_experiment(namespace)
+        client.create_experiment(
+            namespace,
+            artifact_location=_local_artifact_location(tracking_uri),
+        )
         if experiment is None
         else experiment.experiment_id
     )
@@ -74,6 +77,15 @@ def record_profile_result(
         client.set_terminated(run.info.run_id, status="FAILED")
         raise
     return run.info.run_id
+
+
+def _local_artifact_location(tracking_uri: str) -> str | None:
+    """Keep SQLite-backed test/dev artifacts beside the database, never in cwd."""
+    prefix = "sqlite:///"
+    if not tracking_uri.startswith(prefix):
+        return None
+    database = Path(tracking_uri.removeprefix(prefix)).resolve()
+    return (database.parent / "artifacts").as_uri()
 
 
 def _inventory(output: Path) -> list[dict[str, object]]:

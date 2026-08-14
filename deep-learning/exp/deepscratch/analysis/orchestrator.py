@@ -6,6 +6,7 @@ import csv
 import importlib
 import json
 from pathlib import Path
+import shutil
 import sys
 
 from mlflow.tracking import MlflowClient
@@ -453,7 +454,7 @@ def _render_studies(
                     continue
                 cache_output = cache_dir / "render" / rendered_path.name
                 cache_output.parent.mkdir(parents=True, exist_ok=True)
-                rendered_path.replace(cache_output)
+                shutil.move(str(rendered_path), str(cache_output))
                 cached_rendered.append(cache_output)
             summary_path = write_study_summary(
                 data,

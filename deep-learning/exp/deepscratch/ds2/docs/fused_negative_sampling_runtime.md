@@ -37,8 +37,7 @@ Seed 1 completed all 9,295 updates without NaN, Inf, or divergence:
 - final reporting loss: 0.371616
 - final book loss: 2.229693
 
-The run artifacts are under
-`.legacy/experiments/ds2/results/mlflow_artifacts/3354d37d7bad9f973e9b5f002efead1f79a326f99492860e42cc28319e85df59/`.
+The run artifacts are stored in MLflow; no local historical mirror is required.
 
 ## Same-as-e02 training-time estimate
 

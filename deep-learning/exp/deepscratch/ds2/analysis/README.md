@@ -102,18 +102,17 @@ E08은 checkpoint를 읽어 attention alignment를 관찰하는 실행이며 자
 python -m exp analyze deepscratch ds2 -e 01,03-04,06-08 --variant original
 ```
 
-이 경로는 MLflow 재현 run을 조회하지 않고
-기존 고정-seed 캐시의 canonical 격리 위치는 `.legacy/experiments/ds2_original/fixed_seed/`이며 새 통계에서 제외된다. source-tree의 기존 payload는 감사 전 read-only fallback으로만 읽는다.
-원본 시행이 없는 확장 E05와 관찰 전용 E08은 제외한다. 단일 원본 시행은
+이 경로는 MLflow의 완료된 seed run만 조회한다. 원본 시행이 없는 확장 E05와
+관찰 전용 E08은 제외한다. 단일 원본 시행은
 `seed_runs=1`, 표준편차 `0`으로 기록한다. 기존 원본 캐시에 학습 시간이나
-parameter count가 없으면 해당 CSV 행은 빈 값으로 남긴다. 계측 schema-v2
+parameter count가 없으면 해당 MLflow 행은 빈 값으로 남긴다. 계측 schema-v2
 runner로 재실행하면 synchronized training wall time과 공유 텐서를 중복 제거한
 parameter count를 `timing.json`, `parameter_manifest.json`에서 읽는다.
 
 - `--error-style band`: 평균선 주변 ±1 표본 표준편차 반투명 영역
 - `--error-style errorbar`: 평균선 위 min–max error bar
 - 완료 run이 없으면 빈 그래프 또는 값이 비어 있는 분석 CSV를 만든다.
-- 출력 기본 경로는 `results_new/exp/deepscratch/`이며 PNG와 Markdown만 평탄하게 게시한다.
+- 출력 기본 경로는 `results/exp/deepscratch/`이며 PNG와 Markdown만 평탄하게 게시한다.
 - `GT01`은 toy/full-softmax CBOW와 Skip-gram을 각각 별도 그래프로 표시한다. 원본은
   `e01_toy_cbow.png`/`e01_toy_skipgram.png`, 구현은 출력 stem 뒤에 `_cbow`/`_skipgram`을
   붙인 PNG를 생성한다.

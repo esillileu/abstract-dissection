@@ -12,9 +12,8 @@ python -m exp analyze deepscratch ds2 -e 03 --variant original
 ```
 
 The clean upstream snapshot is in `src/`; see `PROVENANCE.json` for its commit
-and compatibility adaptations. Fixed-seed results from the retired
-`ds2 --original` interface are archived under `results/legacy_cache/fixed_seed`
-and are excluded from seed statistics. e08 resolves the matching-seed e07
+and compatibility adaptations. Historical results are read from MLflow and
+local fixed-seed archives are not supported. e08 resolves the matching-seed e07
 AttentionSeq2seq `raw/checkpoint.npz` artifact through MLflow.
 
 The long-running conditions are e04, e05, e06, and e07.

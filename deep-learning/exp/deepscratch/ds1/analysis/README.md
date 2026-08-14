@@ -64,7 +64,7 @@ python -m exp analyze deepscratch ds1 -e 06 --seed 1
 - `--error-style band`: 평균선 주변 ±1 표본 표준편차 반투명 영역
 - `--error-style errorbar`: 평균선 위 min–max error bar
 - 완료 run이 없으면 `No completed runs` 빈 그래프와 값이 비어 있는 summary CSV를 만든다.
-- 출력 기본 경로는 `results_new/exp/deepscratch/`이며 PNG와 Markdown만 평탄하게 게시한다.
+- 출력 기본 경로는 `results/exp/deepscratch/`이며 PNG와 Markdown만 평탄하게 게시한다.
 - 명시적으로 포함한 spatial-layout 비교 `GT08`은 `e08` 분석으로 제공한다.
 - `e01`–`e12`를 지원한다. `e11`은 checkpoint 필터 분석이며 실행 catalog는 아니다.
 
@@ -142,10 +142,9 @@ python -m exp.deepscratch.ds1.implemented.backfill_full_train_gap --apply --devi
 python -m exp analyze deepscratch ds1 -e 01-07 --variant original
 ```
 
-이 경로는 MLflow 재현 run을 조회하지 않고
-기존 고정-seed 캐시의 canonical 격리 위치는 `.legacy/experiments/ds1_original/fixed_seed/`이며 새 통계에서 제외된다. source-tree의 기존 payload는 감사 전 read-only fallback으로만 읽는다.
-원본 최종 성능 metric이 있는 E01–E07을 지원하며 관찰 전용 E09–E10은 제외한다.
-단일 원본 시행은 `seed_runs=1`, 표준편차 `0`으로 기록한다. 기존 원본 캐시에
+이 경로는 MLflow의 완료된 seed run만 조회한다. 원본 최종 성능 metric이 있는
+E01–E07을 지원하며 관찰 전용 E09–E10은 제외한다.
+단일 원본 시행은 `seed_runs=1`, 표준편차 `0`으로 기록한다. MLflow run에
 학습 시간이나 parameter count가 없으면 해당 CSV 행은 빈 값으로 남긴다. 계측
 schema-v2 runner로 재실행하면 synchronized training wall time과 공유 텐서를
 중복 제거한 parameter count를 `timing.json`, `parameter_manifest.json`에서 읽는다.

@@ -38,7 +38,6 @@ def test_workspace_paths_are_owned_and_typed(tmp_path: Path, monkeypatch) -> Non
     monkeypatch.setenv("EXP_STAGING_ROOT", str(tmp_path / "staging"))
     monkeypatch.setenv("EXP_CACHE_ROOT", str(tmp_path / "cache"))
     monkeypatch.setenv("EXP_RESULTS_ROOT", str(tmp_path / "results"))
-    monkeypatch.setenv("EXP_LEGACY_ROOT", str(tmp_path / "legacy"))
     paths = WorkspacePaths.from_environment(tmp_path / "repository")
     coordinate = StateCoordinate(
         "deepscratch", "ds2", "e02", "implemented", "profile"
@@ -52,9 +51,6 @@ def test_workspace_paths_are_owned_and_typed(tmp_path: Path, monkeypatch) -> Non
     assert paths.resolve(StateOwner.STAGING, coordinate) == (
         tmp_path / "staging/exp/deepscratch/ds2/e02/implemented/profile"
     )
-    assert paths.resolve(StateOwner.LEGACY, coordinate) == (
-        tmp_path / "legacy/exp/deepscratch/ds2/e02/implemented/profile"
-    )
 
 
 def test_workspace_path_defaults_match_storage_lifecycle(
@@ -65,14 +61,12 @@ def test_workspace_path_defaults_match_storage_lifecycle(
         "EXP_STAGING_ROOT",
         "EXP_CACHE_ROOT",
         "EXP_RESULTS_ROOT",
-        "EXP_LEGACY_ROOT",
     ):
         monkeypatch.delenv(name, raising=False)
     paths = WorkspacePaths.from_environment(tmp_path)
     assert paths.staging_root == tmp_path / ".staging"
-    assert paths.results_root == tmp_path / "results_new"
+    assert paths.results_root == tmp_path / "results"
     assert paths.cache_root == tmp_path / ".cache"
-    assert paths.legacy_root == tmp_path / ".legacy"
 
 
 def test_workspace_paths_reject_coordinate_and_relative_root_escape(
@@ -347,7 +341,6 @@ def test_runtime_code_does_not_write_under_source_tree() -> None:
         'ROOT / "results"',
         'Path(".artifacts/experiments',
         'Path(".cache/experiments',
-        'Path(".legacy/experiments',
     )
     for path in Path("exp/deepscratch").rglob("*.py"):
         if Path("exp/deepscratch/legacy") in path.parents or "tests" in path.parts:

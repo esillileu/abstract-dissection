@@ -16,28 +16,23 @@ and `ds2/` packages. Result payloads never belong under the source tree.
 Human-facing analysis output defaults to one flat directory:
 
 ```text
-results_new/exp/deepscratch
+results/exp/deepscratch
 ```
 
-Use `EXP_RESULTS_ROOT` to replace the `results_new` root. Only PNG and Markdown
+Use `EXP_RESULTS_ROOT` to replace the `results` root. Only PNG and Markdown
 are published there; observations, CSV/JSON data, and manifests stay in cache.
 
-New run state has four distinct owners:
+New run state has three distinct owners:
 
 ```text
 .staging/exp          run records and checkpoints pending MLflow verification
 .cache/mlflow_artifact server/run-scoped artifact downloads
 .cache/exp            transformed data, observations, and analysis manifests
-results_new/exp       explicitly preserved PNG and Markdown results
-.legacy               migration-only historical payloads
+results/exp           explicitly preserved PNG and Markdown results
 ```
 
-In particular, the retired `exp/deepscratch.ds2/results` directory is not a
-writer target. It is an unaudited historical mirror and remains untouched
-until storage audit proves a safe migration or cleanup action.
-
-Override them with `EXP_STAGING_ROOT`, `EXP_CACHE_ROOT`, `EXP_RESULTS_ROOT`,
-and `EXP_LEGACY_ROOT`. A SchemaV1 run remains incomplete
+Override them with `EXP_STAGING_ROOT`, `EXP_CACHE_ROOT`, and
+`EXP_RESULTS_ROOT`. A SchemaV1 run remains incomplete
 until MLflow has received and digest-verified its result manifest and required
 checkpoint payloads. Only then is `result.durable_complete=true` written.
 
