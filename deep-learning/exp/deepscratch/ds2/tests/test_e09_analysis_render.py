@@ -91,12 +91,12 @@ def test_e09_additional_visualization_writes_six_standalone_graphs(
     )
 
     assert [path.name for path in outputs] == [
-        "seq2seq_vanilla_forward_vs_reverse.png",
-        "seq2seq_peeky_forward_vs_reverse.png",
-        "seq2seq_attention_forward_vs_reverse.png",
-        "seq2seq_attention_peeky_forward_vs_reverse.png",
-        "seq2seq_peeky_reverse_vs_attention_peeky_reverse.png",
-        "seq2seq_vanilla_reverse_vs_attention_reverse.png",
+        "ds2_e09_van_fwd_vs_van_rev.png",
+        "ds2_e09_pky_fwd_vs_pky_rev.png",
+        "ds2_e09_atn_fwd_vs_atn_rev.png",
+        "ds2_e09_atn_pky_fwd_vs_atn_pky_rev.png",
+        "ds2_e09_pky_rev_vs_atn_pky_rev.png",
+        "ds2_e09_van_rev_vs_atn_rev.png",
     ]
     assert all(path.is_file() for path in outputs)
     assert all(path.stat().st_size > 0 for path in outputs)

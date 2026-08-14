@@ -24,37 +24,37 @@ DEFINITIONS = (
 
 ADDITIONAL_GRAPHS = (
     (
-        "seq2seq_vanilla_forward_vs_reverse.png",
+        "ds2_e09_van_fwd_vs_van_rev.png",
         "Vanilla Seq2seq: Forward vs. Reverse",
         ("SEQA-VAN-FWD", "SEQA-VAN-REV"),
         "upper left",
     ),
     (
-        "seq2seq_peeky_forward_vs_reverse.png",
+        "ds2_e09_pky_fwd_vs_pky_rev.png",
         "Peeky Seq2seq: Forward vs. Reverse",
         ("SEQA-PEEKY-FWD", "SEQA-PEEKY-REV"),
         "upper left",
     ),
     (
-        "seq2seq_attention_forward_vs_reverse.png",
+        "ds2_e09_atn_fwd_vs_atn_rev.png",
         "Attention Seq2seq: Forward vs. Reverse",
         ("SEQA-ATTN-FWD", "SEQA-ATTN-REV"),
         "upper left",
     ),
     (
-        "seq2seq_attention_peeky_forward_vs_reverse.png",
+        "ds2_e09_atn_pky_fwd_vs_atn_pky_rev.png",
         "Attention + Peeky Seq2seq: Forward vs. Reverse",
         ("SEQA-ATTN-PEEKY-FWD", "SEQA-ATTN-PEEKY-REV"),
         "upper left",
     ),
     (
-        "seq2seq_peeky_reverse_vs_attention_peeky_reverse.png",
+        "ds2_e09_pky_rev_vs_atn_pky_rev.png",
         "Does Attention Help on Top of Peeky + Reverse?",
         ("SEQA-PEEKY-REV", "SEQA-ATTN-PEEKY-REV"),
         "lower right",
     ),
     (
-        "seq2seq_vanilla_reverse_vs_attention_reverse.png",
+        "ds2_e09_van_rev_vs_atn_rev.png",
         "Vanilla + Reverse vs. Attention + Reverse",
         ("SEQA-VAN-REV", "SEQA-ATTN-REV"),
         "lower right",
