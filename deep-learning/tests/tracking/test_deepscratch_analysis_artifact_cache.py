@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -26,6 +27,28 @@ def _run(run_id: str) -> AnalysisRun:
         variant=Variant.IMPLEMENTED,
         result=SimpleNamespace(artifact_aliases={}),
     )
+
+
+def test_artifact_download_hides_mlflow_progress_and_restores_environment(
+    tmp_path: Path, monkeypatch
+) -> None:
+    seen = []
+
+    class Client(_Client):
+        def download_artifacts(self, run_id, artifact_path, destination):
+            seen.append(os.environ.get("MLFLOW_ENABLE_ARTIFACTS_PROGRESS_BAR"))
+            return super().download_artifacts(run_id, artifact_path, destination)
+
+    monkeypatch.setenv("MLFLOW_ENABLE_ARTIFACTS_PROGRESS_BAR", "true")
+    client = Client(b"payload-")
+    data = StudyAnalysisInput(
+        client, None, Variant.IMPLEMENTED, (),
+        cache_dir=tmp_path / "artifacts", tracking_uri="sqlite:///one.db",
+    )
+
+    assert data.artifact_file(_run("run-1"), "metrics/history.csv") is not None
+    assert seen == ["false"]
+    assert os.environ["MLFLOW_ENABLE_ARTIFACTS_PROGRESS_BAR"] == "true"
 
 
 def test_artifact_download_is_reused_for_the_same_mlflow_run(tmp_path: Path) -> None:

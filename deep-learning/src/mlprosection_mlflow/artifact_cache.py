@@ -12,6 +12,27 @@ from typing import Iterator
 from urllib.parse import urlsplit, urlunsplit
 
 
+@contextmanager
+def _mlflow_artifact_progress_disabled() -> Iterator[None]:
+    """Hide MLflow's per-download progress bars.
+
+    Callers of the cache may request several artifacts as part of one larger
+    operation. MLflow creates a new progress bar for each download call, so
+    showing those bars here produces noisy, misleading output. The operation
+    owner remains responsible for presenting any aggregate progress.
+    """
+    variable = "MLFLOW_ENABLE_ARTIFACTS_PROGRESS_BAR"
+    previous = os.environ.get(variable)
+    os.environ[variable] = "false"
+    try:
+        yield
+    finally:
+        if previous is None:
+            os.environ.pop(variable, None)
+        else:
+            os.environ[variable] = previous
+
+
 def tracking_uri_key(uri: str) -> str:
     """Return a stable server identity without leaking URI credentials."""
     parsed = urlsplit(uri)
@@ -58,9 +79,10 @@ class MlflowArtifactCache:
         target.parent.mkdir(parents=True, exist_ok=True)
         temporary = Path(tempfile.mkdtemp(prefix=f".{target.name}.download-", dir=target.parent))
         try:
-            downloaded = Path(
-                self.client.download_artifacts(run_id, artifact_path, str(temporary))
-            ).resolve()
+            with _mlflow_artifact_progress_disabled():
+                downloaded = Path(
+                    self.client.download_artifacts(run_id, artifact_path, str(temporary))
+                ).resolve()
             if downloaded.is_relative_to(temporary.resolve()):
                 return downloaded
             local = temporary / downloaded.name
