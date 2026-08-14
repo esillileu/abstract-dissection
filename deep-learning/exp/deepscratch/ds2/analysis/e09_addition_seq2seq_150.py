@@ -24,37 +24,37 @@ DEFINITIONS = (
 
 ADDITIONAL_GRAPHS = (
     (
-        "ds2_e09_01_van_fwd_vs_van_rev.png",
+        "ds2_e09_11_van_fwd_vs_van_rev.png",
         "Vanilla Seq2seq: Forward vs. Reverse",
         ("SEQA-VAN-FWD", "SEQA-VAN-REV"),
         "upper left",
     ),
     (
-        "ds2_e09_01_pky_fwd_vs_pky_rev.png",
+        "ds2_e09_12_pky_fwd_vs_pky_rev.png",
         "Peeky Seq2seq: Forward vs. Reverse",
         ("SEQA-PEEKY-FWD", "SEQA-PEEKY-REV"),
         "upper left",
     ),
     (
-        "ds2_e09_01_atn_fwd_vs_atn_rev.png",
+        "ds2_e09_13_atn_fwd_vs_atn_rev.png",
         "Attention Seq2seq: Forward vs. Reverse",
         ("SEQA-ATTN-FWD", "SEQA-ATTN-REV"),
         "upper left",
     ),
     (
-        "ds2_e09_01_atn_pky_fwd_vs_atn_pky_rev.png",
+        "ds2_e09_14_atn_pky_fwd_vs_atn_pky_rev.png",
         "Attention + Peeky Seq2seq: Forward vs. Reverse",
         ("SEQA-ATTN-PEEKY-FWD", "SEQA-ATTN-PEEKY-REV"),
         "upper left",
     ),
     (
-        "ds2_e09_02_pky_rev_vs_atn_pky_rev.png",
+        "ds2_e09_20_pky_rev_vs_atn_pky_rev.png",
         "Does Attention Help on Top of Peeky + Reverse?",
         ("SEQA-PEEKY-REV", "SEQA-ATTN-PEEKY-REV"),
         "lower right",
     ),
     (
-        "ds2_e09_02_van_rev_vs_atn_rev.png",
+        "ds2_e09_20_van_rev_vs_atn_rev.png",
         "Vanilla + Reverse vs. Attention + Reverse",
         ("SEQA-VAN-REV", "SEQA-ATTN-REV"),
         "lower right",
@@ -76,7 +76,7 @@ def render(client, error_style, output):
 
 
 def render_additional_graphs(client, error_style, output) -> list[Path]:
-    """Render the six standalone GT09 comparisons beside the main figure."""
+    """Render GT09 comparison figures beside the main figure."""
     grouped = _e06.runs(client, "GT09", [item[0] for item in DEFINITIONS])
     curves = {
         atomic: _e06.source_curve(client, grouped[atomic], "exact_match_accuracy")
@@ -90,8 +90,8 @@ def render_additional_graphs(client, error_style, output) -> list[Path]:
     }
     output_dir = Path(output).parent
     outputs = []
-    for filename, _title, atomic_ids, legend_loc in ADDITIONAL_GRAPHS:
-        figure, axis = plt.subplots()
+
+    def configure_axis(axis, atomic_ids, *, title=None, legend_loc="upper left"):
         for atomic in atomic_ids:
             plot_curve(
                 axis,
@@ -108,11 +108,29 @@ def render_additional_graphs(client, error_style, output) -> list[Path]:
             xlim=(0, 149),
             ylim=(0, 1),
         )
+        if title is not None:
+            axis.set_title(title)
         mark_empty(axis)
         if axis.has_data():
             axis.legend(loc=legend_loc)
+
+    for filename, _title, atomic_ids, legend_loc in ADDITIONAL_GRAPHS:
+        figure, axis = plt.subplots()
+        configure_axis(axis, atomic_ids, legend_loc=legend_loc)
         path = output_dir / filename
         save_figure(figure, path)
         plt.close(figure)
         outputs.append(path)
+
+    combined_figure, axes = plt.subplots(2, 2, figsize=(12, 10), squeeze=False)
+    for axis, (_filename, title, atomic_ids, legend_loc) in zip(
+        axes.flat, ADDITIONAL_GRAPHS[:4]
+    ):
+        configure_axis(axis, atomic_ids, title=title, legend_loc=legend_loc)
+    combined_figure.tight_layout()
+    combined_path = output_dir / "ds2_e09_10_fwd_rev.png"
+    save_figure(combined_figure, combined_path)
+    plt.close(combined_figure)
+    outputs.append(combined_path)
+
     return outputs

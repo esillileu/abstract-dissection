@@ -62,7 +62,7 @@ def test_e09_analysis_visualization_uses_gt09_and_150_epoch_axis(
     plt.close(figure)
 
 
-def test_e09_additional_visualization_writes_six_standalone_graphs(
+def test_e09_additional_visualization_writes_standalone_and_combined_graphs(
     monkeypatch,
     tmp_path,
 ) -> None:
@@ -91,12 +91,13 @@ def test_e09_additional_visualization_writes_six_standalone_graphs(
     )
 
     assert [path.name for path in outputs] == [
-        "ds2_e09_van_fwd_vs_van_rev.png",
-        "ds2_e09_pky_fwd_vs_pky_rev.png",
-        "ds2_e09_atn_fwd_vs_atn_rev.png",
-        "ds2_e09_atn_pky_fwd_vs_atn_pky_rev.png",
-        "ds2_e09_pky_rev_vs_atn_pky_rev.png",
-        "ds2_e09_van_rev_vs_atn_rev.png",
+        "ds2_e09_11_van_fwd_vs_van_rev.png",
+        "ds2_e09_12_pky_fwd_vs_pky_rev.png",
+        "ds2_e09_13_atn_fwd_vs_atn_rev.png",
+        "ds2_e09_14_atn_pky_fwd_vs_atn_pky_rev.png",
+        "ds2_e09_20_pky_rev_vs_atn_pky_rev.png",
+        "ds2_e09_20_van_rev_vs_atn_rev.png",
+        "ds2_e09_10_fwd_rev.png",
     ]
     assert all(path.is_file() for path in outputs)
     assert all(path.stat().st_size > 0 for path in outputs)
@@ -133,9 +134,11 @@ def test_e09_additional_graphs_reuse_full_graph_colors_and_standard_size(
         object(), "band", tmp_path / "e09.png"
     )
 
-    assert len(outputs) == len(figures) == 6
-    assert all(figure.get_size_inches().tolist() == [6.4, 4.8] for figure in figures)
-    assert all(figure.axes[0].get_title() == "" for figure in figures)
+    assert len(outputs) == len(figures) == 7
+    assert [figure.get_size_inches().tolist() for figure in figures[:6]] == [[6.4, 4.8]] * 6
+    assert figures[6].get_size_inches().tolist() == [12.0, 10.0]
+    assert all(figure.axes[0].get_title() == "" for figure in figures[:6])
+    assert len(figures[6].axes) == 4
     first_lines = figures[0].axes[0].lines
     assert [line.get_color() for line in first_lines] == [ACCENT_COLORS[0], ACCENT_COLORS[1]]
     for figure in figures:
