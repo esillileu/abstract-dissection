@@ -240,7 +240,7 @@ def _candidate_text(candidates: tuple[RankedCandidate, ...]) -> str:
 
 def _series_label(series: str, variant: str | None) -> str:
     if variant == "original" and series in ORIGINAL_NATIVE_IDS:
-        return f"{series} (original: {ORIGINAL_NATIVE_IDS[series]})"
+        return ORIGINAL_NATIVE_IDS[series]
     return series
 
 
