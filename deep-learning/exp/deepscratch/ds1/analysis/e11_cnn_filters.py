@@ -152,39 +152,31 @@ def _shared_weight_limit(weight_sets: list[np.ndarray]) -> float:
     return limit if limit > 0.0 else 1.0
 
 
-def _render_comparison(
-    panels: list[tuple[str, str, np.ndarray]],
+def _render_panel(
+    panel: tuple[str, str, np.ndarray],
     *,
     output: Path,
+    limit: float,
 ) -> None:
-    figure = plt.figure(figsize=(6 * len(panels) + 0.6, 6))
-    grid = figure.add_gridspec(
-        1,
-        len(panels) + 1,
-        width_ratios=[1.0] * len(panels) + [0.035],
-        wspace=0.08,
-    )
-    axes = [figure.add_subplot(grid[0, index]) for index in range(len(panels))]
-    color_axis = figure.add_subplot(grid[0, -1])
-    limit = _shared_weight_limit([weights for _group, _condition, weights in panels])
+    group, condition, weights = panel
+    figure = plt.figure(figsize=(6.6, 6))
+    grid = figure.add_gridspec(1, 2, width_ratios=[1.0, 0.035], wspace=0.08)
+    axis = figure.add_subplot(grid[0, 0])
+    color_axis = figure.add_subplot(grid[0, 1])
     color_map = plt.colormaps["gray_r"].copy()
     color_map.set_bad(SURFACE)
-    images = []
-    for axis, (group, condition, weights) in zip(axes, panels, strict=True):
-        images.append(
-            axis.imshow(
-                _filter_mosaic(weights),
-                cmap=color_map,
-                interpolation="nearest",
-                vmin=-limit,
-                vmax=limit,
-            )
-        )
-        axis.set_title(f"{group} | {condition}\n{tuple(weights.shape)}")
-        axis.set_xticks(())
-        axis.set_yticks(())
+    image = axis.imshow(
+        _filter_mosaic(weights),
+        cmap=color_map,
+        interpolation="nearest",
+        vmin=-limit,
+        vmax=limit,
+    )
+    axis.set_title(f"{group} | {condition}\n{tuple(weights.shape)}")
+    axis.set_xticks(())
+    axis.set_yticks(())
     figure.colorbar(
-        images[0],
+        image,
         cax=color_axis,
         label="weight (shared scale)",
     )
@@ -194,6 +186,11 @@ def _render_comparison(
     figure._analysis_skip_tight_layout = True
     save_figure(figure, output)
     plt.close(figure)
+
+
+def _panel_output(output: Path, group: str, condition: str) -> Path:
+    suffix = f"_{group.lower()}_{condition.lower()}"
+    return output.with_name(f"{output.stem}{suffix}{output.suffix}")
 
 
 def _write_summary(path: Path, rows: list[dict[str, object]]) -> Path:
@@ -258,16 +255,30 @@ def _collect(
 def render(client, error_style, output):
     del error_style
     panels, summary_rows = _collect(client, image=output.as_posix())
+    outputs = []
     if panels:
-        _render_comparison(panels, output=output)
+        limit = _shared_weight_limit(
+            [weights for _group, _condition, weights in panels]
+        )
+        for panel in panels:
+            group, condition, _weights = panel
+            panel_output = _panel_output(output, group, condition)
+            _render_panel(panel, output=panel_output, limit=limit)
+            outputs.append(panel_output)
+        for row in summary_rows:
+            row["image"] = _panel_output(
+                output, str(row["group"]), str(row["condition"])
+            ).as_posix()
     else:
         figure, axis = plt.subplots(figsize=(8, 4))
         mark_empty(axis, "No completed seed-index 0 runs with final checkpoints")
         save_figure(figure, output)
         plt.close(figure)
+        outputs.append(output)
     summary = output.with_suffix(".csv")
     _write_summary(summary, summary_rows)
-    return [output, summary]
+    outputs.append(summary)
+    return outputs
 
 
 def render_summary(client, error_style, output):

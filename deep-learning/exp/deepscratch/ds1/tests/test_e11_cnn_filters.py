@@ -11,6 +11,7 @@ from exp.deepscratch.ds1.analysis.e11_cnn_filters import (
     _checkpoint_weights_path,
     _conv_weights,
     _filter_mosaic,
+    _panel_output,
     _shared_weight_limit,
     _visualization_runs,
 )
@@ -51,6 +52,14 @@ def test_shared_weight_limit_covers_every_panel_symmetrically() -> None:
     )
 
     assert limit == 2.0
+
+
+def test_panel_output_gives_each_condition_its_own_image() -> None:
+    output = Path("/tmp/e11.png")
+
+    assert _panel_output(output, "GT06", "CNN-SIMPLE-BOOK") == Path(
+        "/tmp/e11_gt06_cnn-simple-book.png"
+    )
 
 
 def test_conv_weights_selects_only_four_dimensional_weights_in_model_order(
