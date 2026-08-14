@@ -2,6 +2,10 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+from exp.deepscratch.analysis.orchestrator import _render_studies
+from exp.deepscratch.identity import Variant, Volume
+from exp.deepscratch.ds1 import result_schema as ds1_result_schema
+
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib import rcParams
@@ -288,3 +292,26 @@ def test_experiment_selection_supports_ranges_and_reports_extensions():
 
     assert selected == ["e01", "e03", "e04", "e08"]
     assert skipped == ["e05"]
+
+
+def test_render_studies_skips_analysis_without_runs(tmp_path, capsys):
+    outputs = _render_studies(
+        client=None,
+        output_dir=tmp_path / "results",
+        artifact_cache_dir=tmp_path / "artifacts",
+        tracking_uri="http://127.0.0.1:5000",
+        studies=ds1_result_schema.STUDIES,
+        selected_studies=["e01"],
+        variants=(Variant.IMPLEMENTED,),
+        render_inputs={},
+        volume=Volume.DS1,
+        error_style="band",
+        summary_metrics=ds1_result_schema.SUMMARY_METRICS,
+        print_summary=False,
+        seed=None,
+        filename_suffix="",
+        cache_dir=tmp_path / "cache",
+    )
+
+    assert outputs == []
+    assert "skipping ds1/e01: no FINISHED implemented runs" in capsys.readouterr().err

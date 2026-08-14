@@ -425,11 +425,11 @@ def _render_studies(
                 for run in render_inputs.get((source, variant), ())
             )
             if not selected_runs:
-                if len(variants) == 1:
-                    raise ValueError(
-                        f"no FINISHED {variant.value} runs for "
-                        f"{volume.value}/{study_id}"
-                    )
+                print(
+                    f"skipping {volume.value}/{study_id}: no FINISHED "
+                    f"{variant.value} runs",
+                    file=sys.stderr,
+                )
                 continue
             data = StudyAnalysisInput(
                 client,
