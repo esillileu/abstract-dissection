@@ -13,7 +13,7 @@ optimizer: {name: Adam, learning_rate: 0.001}
 budget: {max_epochs: 10}
 numerics: {backend: cupy, device: cuda:0, dtype: float32}
 tracking: {enabled: true, experiment: deepscratch.ds2}
-checkpoint: {save_final: false}
+checkpoint: {save_final: true, format: npz}
 variants:
   PTB-CBOW:
     trial_id: dlfs2.ch04.ptb-cbow-negative-sampling

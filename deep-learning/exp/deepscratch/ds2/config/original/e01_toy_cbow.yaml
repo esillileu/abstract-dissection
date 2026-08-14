@@ -8,7 +8,7 @@ seed_policy: {seed_set: research_v1, seed_count: 10}
 dataset: {id: toy-corpus, split_seed: 1984}
 numerics: {backend: cupy, device: cuda:0}
 tracking: {enabled: true, experiment: deepscratch.ds2}
-checkpoint: {save_final: false}
+checkpoint: {save_final: true, format: npz}
 variants:
   TOY-CBOW: {}
   TOY-SKIPGRAM:

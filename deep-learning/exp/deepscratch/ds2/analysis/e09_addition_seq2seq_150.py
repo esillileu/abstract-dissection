@@ -1,5 +1,13 @@
-"""DS2 GT09: addition Seq2seq accuracy graph with 150-epoch budget."""
+"""DS2 GT09: addition Seq2seq accuracy graphs with a 150-epoch budget."""
 
+from pathlib import Path
+
+import matplotlib.pyplot as plt
+
+from exp.framework.analysis.core import mark_empty, plot_curve, save_figure
+from exp.framework.plotting.theme import ACCENT_COLORS
+
+from . import e06_addition_seq2seq as _e06
 from .e06_addition_seq2seq import render as _render_e06_style
 
 
@@ -14,6 +22,45 @@ DEFINITIONS = (
     ("SEQA-ATTN-PEEKY-REV", "attention + peeky / reverse", ">"),
 )
 
+ADDITIONAL_GRAPHS = (
+    (
+        "seq2seq_vanilla_forward_vs_reverse.png",
+        "Vanilla Seq2seq: Forward vs. Reverse",
+        ("SEQA-VAN-FWD", "SEQA-VAN-REV"),
+        "upper left",
+    ),
+    (
+        "seq2seq_peeky_forward_vs_reverse.png",
+        "Peeky Seq2seq: Forward vs. Reverse",
+        ("SEQA-PEEKY-FWD", "SEQA-PEEKY-REV"),
+        "upper left",
+    ),
+    (
+        "seq2seq_attention_forward_vs_reverse.png",
+        "Attention Seq2seq: Forward vs. Reverse",
+        ("SEQA-ATTN-FWD", "SEQA-ATTN-REV"),
+        "upper left",
+    ),
+    (
+        "seq2seq_attention_peeky_forward_vs_reverse.png",
+        "Attention + Peeky Seq2seq: Forward vs. Reverse",
+        ("SEQA-ATTN-PEEKY-FWD", "SEQA-ATTN-PEEKY-REV"),
+        "upper left",
+    ),
+    (
+        "seq2seq_peeky_reverse_vs_attention_peeky_reverse.png",
+        "Does Attention Help on Top of Peeky + Reverse?",
+        ("SEQA-PEEKY-REV", "SEQA-ATTN-PEEKY-REV"),
+        "lower right",
+    ),
+    (
+        "seq2seq_vanilla_reverse_vs_attention_reverse.png",
+        "Vanilla + Reverse vs. Attention + Reverse",
+        ("SEQA-VAN-REV", "SEQA-ATTN-REV"),
+        "lower right",
+    ),
+)
+
 
 def render(client, error_style, output):
     del output
@@ -26,3 +73,46 @@ def render(client, error_style, output):
         figsize=(10, 5),
         legend_loc="lower right",
     )
+
+
+def render_additional_graphs(client, error_style, output) -> list[Path]:
+    """Render the six standalone GT09 comparisons beside the main figure."""
+    grouped = _e06.runs(client, "GT09", [item[0] for item in DEFINITIONS])
+    curves = {
+        atomic: _e06.source_curve(client, grouped[atomic], "exact_match_accuracy")
+        for atomic, _label, _marker in DEFINITIONS
+    }
+    labels = {atomic: label for atomic, label, _marker in DEFINITIONS}
+    markers = {atomic: marker for atomic, _label, marker in DEFINITIONS}
+    colors = {
+        atomic: ACCENT_COLORS[index]
+        for index, (atomic, _label, _marker) in enumerate(DEFINITIONS)
+    }
+    output_dir = Path(output).parent
+    outputs = []
+    for filename, _title, atomic_ids, legend_loc in ADDITIONAL_GRAPHS:
+        figure, axis = plt.subplots()
+        for atomic in atomic_ids:
+            plot_curve(
+                axis,
+                curves[atomic],
+                label=labels[atomic],
+                marker=markers[atomic],
+                error_style=error_style,
+                error_every=5,
+                color=colors[atomic],
+            )
+        axis.set(
+            xlabel="epochs",
+            ylabel="accuracy",
+            xlim=(0, 149),
+            ylim=(0, 1),
+        )
+        mark_empty(axis)
+        if axis.has_data():
+            axis.legend(loc=legend_loc)
+        path = output_dir / filename
+        save_figure(figure, path)
+        plt.close(figure)
+        outputs.append(path)
+    return outputs

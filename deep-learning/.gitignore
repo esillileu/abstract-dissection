@@ -5,6 +5,7 @@ src/mlprosection/datasets/*-ubyte.gz
 experiments/data/
 .artifacts/
 .cache/
+.staging/
 .legacy/
 
 # Local MLflow server state (SQLite backend and served artifacts)
@@ -14,6 +15,7 @@ infra/mlflow/exports/
 *.tar.gz
 
 **/results/
+**/results_new/
 !exp/framework/results/
 !exp/framework/results/**
 **/__pycache__/

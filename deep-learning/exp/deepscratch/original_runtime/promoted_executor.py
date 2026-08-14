@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import importlib
 import json
+import os
+import tempfile
 from pathlib import Path
 from time import perf_counter
 from types import SimpleNamespace
@@ -75,6 +78,7 @@ def execute(config: dict[str, object], context, *, domain: str, source_root: Pat
         "final/system/completed_epochs": float(_last_axis(output, "epoch")),
         "final/system/samples_seen": 0.0,
     })
+    _promote_final_checkpoint(config, context, output, final)
     provenance = {
         "domain": domain,
         "master_seed": seed,
@@ -86,6 +90,52 @@ def execute(config: dict[str, object], context, *, domain: str, source_root: Pat
     (output / "run_provenance.json").write_text(json.dumps(provenance, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     context.metadata["upstream_provenance"] = provenance
     return ExperimentResult(final, output, model=_ModelRecord(selected_device, output), artifacts=tuple(output.iterdir()), metric_rows=tuple(rows))
+
+
+def _promote_final_checkpoint(
+    config: dict[str, object], context, output: Path, final: dict[str, float]
+) -> Path | None:
+    """Publish an original parameter archive through the canonical checkpoint API."""
+    checkpoint = config.get("checkpoint", {})
+    if not isinstance(checkpoint, dict) or not checkpoint.get("save_final", False):
+        return None
+    source = output / "checkpoint.npz"
+    if not source.is_file():
+        raise ValueError("checkpoint.save_final requires raw/checkpoint.npz")
+    root = Path(str(context.metadata["checkpoint_root"]))
+    root.mkdir(parents=True, exist_ok=True)
+    target = root / "final.npz"
+    with tempfile.NamedTemporaryFile(dir=root, suffix=".npz", delete=False) as stream:
+        temporary = Path(stream.name)
+    try:
+        import numpy as np
+
+        with np.load(source, allow_pickle=False) as archive:
+            arrays = {name: archive[name] for name in archive.files}
+        # Original Word2Vec archives call the analysis-ready embedding matrix
+        # ``word_vectors`` and retain the exact upstream parameter sequence as
+        # ``param_###``.  Keep both and expose the canonical model key.
+        if "W_in" not in arrays and "word_vectors" in arrays:
+            arrays["W_in"] = arrays["word_vectors"]
+        np.savez(temporary, **arrays)
+        os.replace(temporary, target)
+    finally:
+        temporary.unlink(missing_ok=True)
+    digest = hashlib.sha256(target.read_bytes()).hexdigest()
+    pointer = {
+        "schema_version": 2,
+        "role": "latest",
+        "path": target.name,
+        "sha256": digest,
+        "epoch": int(final.get("final/system/completed_epochs", 0)),
+        "update": int(final.get("final/system/total_updates", 0)),
+    }
+    temporary_pointer = root / ".latest.json.tmp"
+    temporary_pointer.write_text(
+        json.dumps(pointer, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    os.replace(temporary_pointer, root / "latest.json")
+    return target
 
 
 def _dependency_root(config: dict[str, object], output: Path) -> Path:

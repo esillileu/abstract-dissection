@@ -32,6 +32,9 @@ RENDERERS = {
     "e08": e08_attention.render,
     "e09": e09_addition_seq2seq_150.render,
 }
+ADDITIONAL_RENDERERS = {
+    "e09": e09_addition_seq2seq_150.render_additional_graphs,
+}
 STUDY_SOURCES = {}
 
 
@@ -48,10 +51,14 @@ def render_study(
         return result
     figure, curves = result
     save_figure(figure, output)
+    outputs = [output]
+    additional_renderer = ADDITIONAL_RENDERERS.get(study_id)
+    if additional_renderer is not None:
+        outputs.extend(additional_renderer(data, error_style, output))
     summary = output.with_name(f"{output.stem}_curves.csv")
     write_summary(summary, curves)
     plt.close(figure)
-    return [output, summary]
+    return [*outputs, summary]
 
 
-__all__ = ["RENDERERS", "STUDY_SOURCES", "render_study"]
+__all__ = ["ADDITIONAL_RENDERERS", "RENDERERS", "STUDY_SOURCES", "render_study"]
