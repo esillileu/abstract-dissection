@@ -102,12 +102,12 @@ E01 = StudyDeclaration("e01", (
     condition(
         "toy-cbow",
         ("W2V-TOY-CBOW-FULL",),
-        ("TOY-CBOW", "W2V-TOY-CBOW-FULL"),
+        ("TOY-CBOW",),
     ),
     condition(
         "toy-skipgram",
         ("W2V-TOY-SKIPGRAM-FULL",),
-        ("TOY-SKIPGRAM", "W2V-TOY-SKIPGRAM-FULL"),
+        ("TOY-SKIPGRAM",),
     ),
 ))
 E02_NAMES = (

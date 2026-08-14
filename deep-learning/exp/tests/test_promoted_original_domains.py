@@ -13,8 +13,8 @@ def test_default_catalog_sizes_include_ds2_original_word2vec() -> None:
     ds1 = Planner(DS1_ORIGINAL).build(RunSelection(all_experiments=True), RunOptions(device="cpu"))
     ds2 = Planner(DS2_ORIGINAL).build(RunSelection(all_experiments=True), RunOptions(device="cpu"))
 
-    assert len(ds1) == 480
-    assert len(ds2) == 140
+    assert len(ds1) == 500
+    assert len(ds2) == 150
     assert {plan.experiment_id for plan in ds2} == {
         "e01",
         "e02",
