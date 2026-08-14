@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+from exp.deepscratch.legacy.result_adapter import _artifact_aliases
 from exp.deepscratch.analysis.orchestrator import _render_studies
 from exp.deepscratch.identity import Variant, Volume
 from exp.deepscratch.ds1 import result_schema as ds1_result_schema
@@ -9,6 +10,7 @@ from exp.deepscratch.ds1 import result_schema as ds1_result_schema
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib import rcParams
+from mlflow.exceptions import MlflowException
 import pytest
 
 from exp.framework.analysis.core import (
@@ -62,6 +64,46 @@ class FakeClient:
 
     def download_artifacts(self, run_id, artifact_path):
         raise FileNotFoundError((run_id, artifact_path))
+
+
+def test_legacy_e10_uses_mlflow_activation_histogram_artifact():
+    class Client:
+        def __init__(self):
+            self.downloads = []
+
+        def list_artifacts(self, run_id, path):
+            if path == "":
+                return [
+                    SimpleNamespace(path="updates.csv"),
+                    SimpleNamespace(path="evaluations.csv"),
+                    SimpleNamespace(path="observations"),
+                ]
+            if path == "raw":
+                return []
+            assert path == "observations"
+            return [
+                SimpleNamespace(path="observations/source_curves.csv"),
+                SimpleNamespace(path="observations/trajectory.csv"),
+                SimpleNamespace(path="observations/attention.csv"),
+                SimpleNamespace(path="observations/attention_render.json"),
+                SimpleNamespace(path="observations/activation_histogram.csv"),
+            ]
+
+        def get_run(self, run_id):
+            return SimpleNamespace(
+                data=SimpleNamespace(tags={"experiment.id": "e10"})
+            )
+
+        def download_artifacts(self, run_id, artifact_path):
+            self.downloads.append(artifact_path)
+            raise MlflowException("artifact does not exist")
+
+    client = Client()
+
+    aliases = _artifact_aliases(client, "run-without-activations")
+
+    assert "observations/activation_histogram.csv" not in aliases
+    assert client.downloads == []
 
 
 def test_aggregate_uses_only_steps_common_to_every_seed():

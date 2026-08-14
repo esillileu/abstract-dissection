@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 
 import numpy as np
+from mlflow.exceptions import MlflowException
 
 from exp.framework.paths import WorkspacePaths
 from exp.framework.results import MetricSeries, MlflowResultStore, NativeRunResult
@@ -98,7 +99,10 @@ def _artifact_aliases(client, run_id: str) -> dict[str, str]:
         run.data.tags.get("experiment.id")
         or run.data.tags.get("experiment.ids", "").split(",")[0]
     )
-    if study_id == "e10":
+    if (
+        study_id == "e10"
+        and "observations/activation_histogram.csv" not in observation_paths
+    ):
         histogram = _activation_histogram_projection(client, run_id)
         if histogram is not None:
             aliases["observations/activation_histogram.csv"] = str(histogram)
@@ -322,7 +326,7 @@ def _activation_histogram_projection(client, run_id: str) -> Path | None:
                     }
                     for index, count in enumerate(counts)
                 )
-    except (KeyError, OSError, ValueError):
+    except (KeyError, OSError, ValueError, MlflowException):
         return None
     target.parent.mkdir(parents=True, exist_ok=True)
     with target.open("w", encoding="utf-8", newline="") as stream:
