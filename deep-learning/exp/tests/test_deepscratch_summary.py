@@ -21,6 +21,21 @@ def test_ds2_e05_declares_train_validation_and_test_perplexity() -> None:
     ]
 
 
+def test_ds2_e02_summary_reports_book_loss_only() -> None:
+    metrics = DS2_SUMMARY_METRICS["e02"]
+
+    assert [metric.metric_id for metric in metrics] == ["book_loss"]
+    assert metrics[0].implemented_native_ids == (
+        "final/train/book_loss",
+        "update/train/book_loss",
+        "series/train/book_loss",
+    )
+    assert metrics[0].original_native_ids == (
+        "final/train/loss",
+        "train/loss",
+    )
+
+
 @pytest.mark.parametrize("study_id", ["e06", "e07"])
 def test_ds2_seq2seq_summaries_declare_test_accuracy_only(study_id: str) -> None:
     metric = DS2_SUMMARY_METRICS[study_id][0]
@@ -118,5 +133,7 @@ def test_summary_reports_seed_statistics_time_and_parameter_count(
     assert "| optimizer.sgd | implemented | training_time_s | seconds | 12.00 | 2.83 | 8.00" in summary
     assert "| optimizer.sgd | implemented | parameter_count | parameters | 12 | 0 | 0" in summary
     output = capsys.readouterr().out
-    assert "[e01/optimizer.sgd/implemented]" in output
+    assert "## e01 / optimizer.sgd / implemented" in output
     assert "sample standard deviation; variance=" in output
+    assert "Detailed statistics" not in output
+    assert "| condition |" not in output

@@ -43,6 +43,16 @@ SUMMARY_TEST_LOSS = MetricDeclaration(
     ("final/test/loss", "test/loss"),
     protocols=("book-source-v1", "legacy"),
 )
+SUMMARY_BOOK_LOSS = MetricDeclaration(
+    "book_loss", "nats", "train", "run",
+    (
+        "final/train/book_loss",
+        "update/train/book_loss",
+        "series/train/book_loss",
+    ),
+    ("final/train/loss", "train/loss"),
+    protocols=("book-source-v1", "legacy"),
+)
 SUMMARY_TRAIN_PPL = MetricDeclaration(
     "train_perplexity", "perplexity", "train", "run",
     ("final/train/perplexity", "train/perplexity"),
@@ -174,7 +184,7 @@ E09 = StudyDeclaration("e09", tuple(
 STUDIES = {item.study_id: item for item in (E01, E02, E03, E04, E05, E06, E07, E08, E09)}
 SUMMARY_METRICS = {
     "e01": (SUMMARY_TRAIN_LOSS, SUMMARY_TEST_LOSS),
-    "e02": (SUMMARY_TRAIN_LOSS, SUMMARY_TEST_LOSS),
+    "e02": (SUMMARY_BOOK_LOSS,),
     "e03": (SUMMARY_TRAIN_PPL, SUMMARY_TEST_PPL),
     "e04": (SUMMARY_TRAIN_PPL, SUMMARY_TEST_PPL),
     "e05": (SUMMARY_TRAIN_PPL, SUMMARY_VALID_PPL, SUMMARY_TEST_PPL),

@@ -113,19 +113,22 @@ def write_study_summary(
             writer.writeheader()
             writer.writerows(rows)
     if print_console:
-        _print_rows(rows)
+        print(_markdown_summary(rows), end="")
     return path
 
 
 def print_summary_file(path: Path) -> None:
-    print(path.read_text(encoding="utf-8"), end="")
+    summary, _separator, _table = path.read_text(encoding="utf-8").partition(
+        "## Detailed statistics"
+    )
+    print(summary.rstrip() + "\n")
 
 
 def _markdown(rows: list[dict[str, object]]) -> str:
-    columns = (
-        "condition", "variant", "metric", "unit", "mean", "sample stddev",
-        "variance", "min", "max", "seeds", "unavailable reason",
-    )
+    return _markdown_summary(rows) + "\n" + _markdown_table(rows)
+
+
+def _markdown_summary(rows: list[dict[str, object]]) -> str:
     lines = ["# Analysis summary", ""]
     current = None
     for row in rows:
@@ -136,14 +139,20 @@ def _markdown(rows: list[dict[str, object]]) -> str:
             lines.extend((f"## {' / '.join(str(item) for item in coordinate)}", ""))
             current = coordinate
         lines.append(f"- {_formatted_summary(row)}")
+    return "\n".join(lines).rstrip() + "\n"
 
-    lines.extend((
-        "",
+
+def _markdown_table(rows: list[dict[str, object]]) -> str:
+    columns = (
+        "condition", "variant", "metric", "unit", "mean", "sample stddev",
+        "variance", "min", "max", "seeds", "unavailable reason",
+    )
+    lines = [
         "## Detailed statistics",
         "",
         "| " + " | ".join(columns) + " |",
         "| " + " | ".join("---" for _ in columns) + " |",
-    ))
+    ]
     for row in rows:
         values = (
             row["canonical_condition_id"], row["variant"], row["metric_id"],

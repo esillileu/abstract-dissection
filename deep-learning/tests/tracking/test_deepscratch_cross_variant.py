@@ -121,4 +121,6 @@ def test_cli_variants_share_the_normalized_analysis_path(tmp_path: Path) -> None
         ])
         assert cached.exit_code == 0, cached.output
         assert "analysis cache hit" in cached.output
-        assert "| small-rnnlm |" in cached.output
+        assert " / small-rnnlm / " in cached.output
+        assert "Detailed statistics" not in cached.output
+        assert "| condition |" not in cached.output
