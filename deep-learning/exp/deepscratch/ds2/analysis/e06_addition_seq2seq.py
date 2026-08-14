@@ -15,6 +15,8 @@ def render(
     group_id="GT06",
     max_epoch_index=None,
     definitions=None,
+    figsize=None,
+    legend_loc="upper left",
 ):
     del output
     if definitions is None:
@@ -25,7 +27,7 @@ def render(
             ("SEQA-PEEKY-REV", "peeky / reverse", "D"),
         )
     grouped = runs(client, group_id, [item[0] for item in definitions])
-    figure, axis = plt.subplots()
+    figure, axis = plt.subplots(figsize=figsize)
     figure._analysis_match_original_canvas = True
     curves = {}
     for atomic, label, marker in definitions:
@@ -37,5 +39,5 @@ def render(
         axis.set_xlim(0, max_epoch_index)
     mark_empty(axis)
     if axis.has_data():
-        axis.legend(loc="upper left")
+        axis.legend(loc=legend_loc)
     return figure, curves

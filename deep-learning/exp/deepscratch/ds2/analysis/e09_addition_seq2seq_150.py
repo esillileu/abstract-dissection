@@ -23,4 +23,6 @@ def render(client, error_style, output):
         group_id="GT09",
         max_epoch_index=149,
         definitions=DEFINITIONS,
+        figsize=(10, 5),
+        legend_loc="lower right",
     )

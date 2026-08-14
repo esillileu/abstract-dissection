@@ -53,6 +53,9 @@ def test_e09_analysis_visualization_uses_gt09_and_150_epoch_axis(
     assert axis.get_ylabel() == "accuracy"
     assert axis.get_ylim() == (0.0, 1.0)
     assert axis.get_xlim() == (0.0, 149.0)
-    assert axis.get_legend() is not None
+    legend = axis.get_legend()
+    assert legend is not None
+    assert legend._loc == 4  # matplotlib's "lower right"
+    assert figure.get_size_inches().tolist() == [10.0, 5.0]
 
     plt.close(figure)
