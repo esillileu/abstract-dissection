@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import shutil
 import warnings
+from pathlib import Path
 from urllib.error import URLError
 from urllib.request import urlopen
 
@@ -59,14 +60,7 @@ class Runner:
             for receipt in receipts:
                 if not receipt.durable_complete:
                     continue
-                try:
-                    shutil.rmtree(receipt.staging_root)
-                except OSError as exc:
-                    warnings.warn(
-                        f"verified staging was preserved after cleanup failure: "
-                        f"{receipt.staging_root}: {exc}",
-                        stacklevel=2,
-                    )
+                _remove_durable_staging(receipt.staging_root)
 
     def _require_mlflow_server(self, plans: list[RunPlan], overrides: dict[str, object]) -> None:
         uris = set()
@@ -92,6 +86,22 @@ class Runner:
                 make_backend(BackendConfig(device=device, dtype="float32", seed=0))
             except Exception as exc:
                 raise RuntimeError(f"requested device is unavailable: {device}") from exc
+
+
+def _remove_durable_staging(staging_root: Path) -> None:
+    """Remove verified staging, tolerating an already-completed cleanup."""
+    try:
+        shutil.rmtree(staging_root)
+    except FileNotFoundError:
+        # Cleanup is intentionally idempotent. A previous run or another
+        # cleanup worker may already have removed it.
+        return
+    except OSError as exc:
+        warnings.warn(
+            f"verified staging was preserved after cleanup failure: "
+            f"{staging_root}: {exc}",
+            stacklevel=2,
+        )
 
 
 def print_plans(plans: list[RunPlan]) -> None:
