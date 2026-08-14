@@ -106,6 +106,41 @@ def test_legacy_e10_uses_mlflow_activation_histogram_artifact():
     assert client.downloads == []
 
 
+def test_legacy_e02_does_not_project_raw_checkpoint():
+    class Client:
+        def __init__(self):
+            self.downloads = []
+
+        def list_artifacts(self, run_id, path):
+            if path == "":
+                return [
+                    SimpleNamespace(path="updates.csv"),
+                    SimpleNamespace(path="evaluations.csv"),
+                    SimpleNamespace(path="observations"),
+                ]
+            assert path == "observations"
+            return [
+                SimpleNamespace(path="observations/source_curves.csv"),
+                SimpleNamespace(path="observations/trajectory.csv"),
+                SimpleNamespace(path="observations/attention.csv"),
+                SimpleNamespace(path="observations/attention_render.json"),
+            ]
+
+        def get_run(self, run_id):
+            return SimpleNamespace(data=SimpleNamespace(tags={"experiment.id": "e02"}))
+
+        def download_artifacts(self, run_id, artifact_path):
+            self.downloads.append(artifact_path)
+            raise AssertionError(f"unexpected artifact download: {artifact_path}")
+
+    client = Client()
+
+    aliases = _artifact_aliases(client, "legacy-e02")
+
+    assert "checkpoints/checkpoint_manifest.json" not in aliases
+    assert client.downloads == []
+
+
 def test_aggregate_uses_only_steps_common_to_every_seed():
     curve = aggregate([{0.0: 1.0, 1.0: 3.0}, {1.0: 5.0, 2.0: 9.0}])
 
