@@ -10,6 +10,7 @@ import shutil
 import sys
 
 from mlflow.tracking import MlflowClient
+from tqdm.auto import tqdm
 
 from exp.framework.paths import StateCoordinate, StateOwner, WorkspacePaths
 from mlprosection_mlflow.artifact_cache import artifact_download_progress
@@ -78,6 +79,11 @@ def write_analysis(
         for study_id in selected
         for source in renderer.STUDY_SOURCES.get(study_id, (study_id,))
     }
+    print(
+        f"analysis phase: selecting FINISHED runs for {len(source_studies)} study(s)",
+        file=sys.stderr,
+        flush=True,
+    )
     selections = []
     for study_id in sorted(source_studies):
         study = studies[study_id]
@@ -98,6 +104,17 @@ def write_analysis(
                     )
                     attempts[variant] = attempt
                 selections.append((study_id, condition, selected_seed, attempts))
+
+    selected_attempts = sum(
+        attempt is not None
+        for _study_id, _condition, _seed, attempts in selections
+        for attempt in attempts.values()
+    )
+    print(
+        f"analysis phase: selected {selected_attempts} run(s); checking analysis cache",
+        file=sys.stderr,
+        flush=True,
+    )
 
     signature = _cache_signature(
         tracking_uri=tracking_uri,
@@ -125,55 +142,67 @@ def write_analysis(
                     print_summary_file(path)
         return output_dir
 
+    print(
+        f"analysis phase: loading metrics for {selected_attempts} run(s)",
+        file=sys.stderr,
+        flush=True,
+    )
     rows = []
     render_inputs: dict[tuple[str, Variant], list[AnalysisRun]] = {}
-    for study_id, condition, selected_seed, attempts in selections:
-        observations = {}
-        for variant in variants:
-            attempt = attempts[variant]
-            if attempt is None:
-                continue
-            native = selector.load_result(
-                attempt,
-                volume=volume,
-                variant=variant,
-                declarations=tuple(dict.fromkeys((
-                    *condition.metrics,
-                    *summary_declarations(study_id, summary_metrics),
-                ))),
-            )
-            coordinate = DeepScratchCoordinate(
-                volume, study_id, condition.canonical_id, variant
-            )
-            observations[variant] = {
-                metric.metric_id: normalize_declared_metric(
-                    coordinate, native, metric
-                )
-                for metric in condition.metrics
-            }
-            render_inputs.setdefault((study_id, variant), []).append(
-                AnalysisRun(
-                    run_id=attempt.run_id,
-                    canonical_condition_id=condition.canonical_id,
-                    native_condition_id=attempt.condition_id,
-                    seed=selected_seed,
+    with tqdm(
+        total=selected_attempts,
+        desc="Loading MLflow metrics",
+        unit="run",
+        file=sys.stderr,
+    ) as metric_progress:
+        for study_id, condition, selected_seed, attempts in selections:
+            observations = {}
+            for variant in variants:
+                attempt = attempts[variant]
+                if attempt is None:
+                    continue
+                native = selector.load_result(
+                    attempt,
+                    volume=volume,
                     variant=variant,
-                    result=native,
-                    local_artifact_root=local_artifact_root(
-                        client, attempt.run_id
-                    ),
+                    declarations=tuple(dict.fromkeys((
+                        *condition.metrics,
+                        *summary_declarations(study_id, summary_metrics),
+                    ))),
                 )
-            )
-        if study_id in selected:
-            for metric in condition.metrics:
-                rows.append(_row(
-                    study_id,
-                    condition.canonical_id,
-                    selected_seed,
-                    metric,
-                    attempts,
-                    observations,
-                ))
+                coordinate = DeepScratchCoordinate(
+                    volume, study_id, condition.canonical_id, variant
+                )
+                observations[variant] = {
+                    metric.metric_id: normalize_declared_metric(
+                        coordinate, native, metric
+                    )
+                    for metric in condition.metrics
+                }
+                render_inputs.setdefault((study_id, variant), []).append(
+                    AnalysisRun(
+                        run_id=attempt.run_id,
+                        canonical_condition_id=condition.canonical_id,
+                        native_condition_id=attempt.condition_id,
+                        seed=selected_seed,
+                        variant=variant,
+                        result=native,
+                        local_artifact_root=local_artifact_root(
+                            client, attempt.run_id
+                        ),
+                    )
+                )
+                metric_progress.update(1)
+            if study_id in selected:
+                for metric in condition.metrics:
+                    rows.append(_row(
+                        study_id,
+                        condition.canonical_id,
+                        selected_seed,
+                        metric,
+                        attempts,
+                        observations,
+                    ))
     cache_dir.mkdir(parents=True, exist_ok=True)
     output = cache_dir / "observations.csv"
     fieldnames = (
@@ -191,6 +220,11 @@ def write_analysis(
         writer.writeheader()
         writer.writerows(rows)
     output_dir.mkdir(parents=True, exist_ok=True)
+    print(
+        "analysis phase: loading artifacts and rendering studies",
+        file=sys.stderr,
+        flush=True,
+    )
     with artifact_download_progress():
         visible_outputs = _render_studies(
             client,
