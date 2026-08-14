@@ -405,7 +405,7 @@ def storage(
     client = MlflowClient(tracking_uri=uri)
     paths = WorkspacePaths.from_environment(Path.cwd())
     report = (
-        audit_storage(client, paths, repository_root=Path.cwd())
+        audit_storage(client, paths)
         if action == "audit"
         else cleanup_verified_mirrors(client, paths, apply=apply)
     )
