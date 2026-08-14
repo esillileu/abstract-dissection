@@ -125,3 +125,25 @@ def test_render_writes_text_and_csv_without_a_graph(
         rows = list(csv.DictReader(file))
     assert len(rows) == 40
     assert {row["task"] for row in rows} == {"similarity", "analogy"}
+
+
+def test_append_markdown_report_places_word_vectors_after_summary(
+    tmp_path: Path,
+) -> None:
+    summary = tmp_path / "e02.md"
+    summary.write_text("# Summary\n\n| table |\n| --- |\n| value |\n", encoding="utf-8")
+    report = tmp_path / "e02.txt"
+    report.write_text(
+        "[W2V-PTB-CBOW-NS] seed=1, run_id=run-1\n"
+        "similarity you: we (0.9), i (0.8)\n"
+        "analogy king:man = queen:? expected=woman, rank=1, hit@5=yes: woman (0.9), other (0.8)\n",
+        encoding="utf-8",
+    )
+
+    analysis.append_markdown_report(summary, report)
+
+    text = summary.read_text(encoding="utf-8")
+    assert text.index("| value |") < text.index("## Word2Vec embedding evaluation")
+    assert "| question | 1위 | 2위 | 3위 | 4위 | 5위 |" in text
+    assert "| you | we | i |  |  |  |" in text
+    assert "| king:man = queen:? (expected=woman, rank=1, hit@5=yes) | woman | other |  |  |  |" in text

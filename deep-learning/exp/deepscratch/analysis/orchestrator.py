@@ -202,6 +202,7 @@ def write_analysis(
         error_style,
         summary_metrics,
         print_summary,
+        seed,
         "" if seed is None and run_id is None else (
             f"_seed-{seed}" if seed is not None else f"_run-{run_id[:8]}"
         ),
@@ -390,6 +391,7 @@ def _render_studies(
     error_style: str,
     summary_metrics,
     print_summary: bool,
+    seed: int | None,
     filename_suffix: str,
     cache_dir: Path,
 ) -> list[Path]:
@@ -444,6 +446,7 @@ def _render_studies(
                 output,
                 error_style=error_style,
             )
+            cached_rendered = []
             for rendered_path in rendered:
                 if rendered_path.suffix.lower() in {".png", ".md"}:
                     outputs.append(rendered_path)
@@ -451,7 +454,8 @@ def _render_studies(
                 cache_output = cache_dir / "render" / rendered_path.name
                 cache_output.parent.mkdir(parents=True, exist_ok=True)
                 rendered_path.replace(cache_output)
-            outputs.append(write_study_summary(
+                cached_rendered.append(cache_output)
+            summary_path = write_study_summary(
                 data,
                 volume=volume,
                 study_id=study_id,
@@ -461,5 +465,12 @@ def _render_studies(
                 print_console=print_summary,
                 filename_suffix=filename_suffix,
                 cache_dir=cache_dir,
-            ))
+            )
+            append_markdown = getattr(renderer, "append_markdown_report", None)
+            text_reports = [
+                path for path in cached_rendered if path.suffix.lower() == ".txt"
+            ]
+            if append_markdown is not None and text_reports:
+                append_markdown(summary_path, text_reports[0], seed=seed)
+            outputs.append(summary_path)
     return outputs

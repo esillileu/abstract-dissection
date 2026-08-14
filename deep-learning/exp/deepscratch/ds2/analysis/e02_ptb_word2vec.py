@@ -6,6 +6,7 @@ import csv
 from dataclasses import dataclass
 import json
 from pathlib import Path
+import re
 
 import numpy as np
 
@@ -319,6 +320,94 @@ def _write_csv(path: Path, evaluations: list[RunEvaluation]) -> None:
         writer = csv.DictWriter(file, fieldnames=CSV_FIELDS)
         writer.writeheader()
         writer.writerows(_csv_rows(evaluations))
+
+
+def append_markdown_report(
+    summary_path: Path,
+    text_path: Path,
+    *,
+    seed: int | None = None,
+) -> None:
+    """Append a score-free ranked candidate table below the scalar summary."""
+    summary = summary_path.read_text(encoding="utf-8").rstrip()
+    summary = summary.split("\n## Word2Vec embedding evaluation", 1)[0].rstrip()
+    report = _markdown_tables(
+        text_path.read_text(encoding="utf-8"),
+        selected_seed="1" if seed is None else str(seed),
+    )
+    summary_path.write_text(
+        summary
+        + "\n\n## Word2Vec embedding evaluation\n\n"
+        + report
+        + "\n",
+        encoding="utf-8",
+    )
+
+
+def _markdown_tables(text: str, *, selected_seed: str | None = None) -> str:
+    """Convert the renderer's detailed text into ranked Markdown tables."""
+    lines = text.splitlines()
+    groups: list[tuple[str, str, str, list[tuple[str, str, list[str]]]]] = []
+    current_series = current_seed = current_run_id = None
+    current_rows: list[tuple[str, str, list[str]]] = []
+
+    def flush() -> None:
+        if current_series is not None and current_seed is not None:
+            groups.append(
+                (current_series, current_seed, current_run_id or "", current_rows.copy())
+            )
+
+    for line in lines:
+        header = re.match(r"^\[(.+)\] seed=(.+?), run_id=(.+)$", line)
+        if header:
+            flush()
+            current_series, current_seed, current_run_id = header.groups()
+            current_rows = []
+            if selected_seed is not None and current_seed != selected_seed:
+                current_series = None
+            continue
+        similarity = re.match(r"^similarity ([^:]+): (.+)$", line)
+        analogy = re.match(
+            r"^analogy (.+?) expected=([^,]+), rank=([^,]+), "
+            r"hit@5=([^:]+): (.+)$",
+            line,
+        )
+        if current_series is None or (similarity is None and analogy is None):
+            continue
+        if similarity is not None:
+            task = "similarity"
+            question, candidates = similarity.groups()
+        else:
+            task = "analogy"
+            question, expected, rank, hit, candidates = analogy.groups()
+            question = (
+                f"{question} (expected={expected}, rank={rank}, hit@5={hit})"
+            )
+        words = [item.rsplit(" (", 1)[0] for item in candidates.split(", ")]
+        current_rows.append((task, question, words[:TOP_K]))
+    flush()
+
+    if not groups:
+        return "No completed runs with readable final checkpoints."
+
+    output: list[str] = []
+    last_series = None
+    for series, seed, run_id, rows in groups:
+        if series != last_series:
+            if output:
+                output.append("")
+            output.extend((f"### {series}", ""))
+            last_series = series
+        output.extend((f"#### seed {seed} (`{run_id}`)", ""))
+        for task, title in (("similarity", "Similarity"), ("analogy", "Analogy")):
+            task_rows = [row for row in rows if row[0] == task]
+            if not task_rows:
+                continue
+            output.extend((f"**{title}**", "", "| question | 1위 | 2위 | 3위 | 4위 | 5위 |", "| --- | --- | --- | --- | --- | --- |"))
+            for _, question, words in task_rows:
+                output.append("| " + " | ".join([question, *words, *("" for _ in range(TOP_K - len(words)))]) + " |")
+            output.append("")
+    return "\n".join(output).rstrip()
 
 
 def render(client, error_style, output):
