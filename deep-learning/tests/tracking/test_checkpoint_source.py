@@ -93,8 +93,9 @@ def test_matching_seed_selected_checkpoint_is_downloaded(
 
     assert resolved == (
         tmp_path
-        / "exp/ds2/results/source_checkpoints/source-run/best-epoch-0001"
-    ).relative_to(tmp_path)
+        / ".cache/mlflow_artifact"
+        / "f9413619c3096789/source-run/checkpoints/generations/best-epoch-0001"
+    )
     assert config["checkpoint"]["source_path"] == str(resolved)
     assert client.requested_artifacts[-1] == (
         "checkpoints/generations/best-epoch-0001"

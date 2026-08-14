@@ -98,21 +98,20 @@ def test_cli_variants_share_the_normalized_analysis_path(tmp_path: Path) -> None
             {"implemented": "imp", "original": "org"}[variant],
         )
         for label in labels:
-            summary = output / f"ds2_e03_{label}_summary.csv"
+            summary = output / f"ds2_e03_{label}.md"
             assert summary.is_file()
-            rows = list(csv.DictReader(summary.open(encoding="utf-8")))
-            assert len(rows) == 4
-            assert {row["metric_id"] for row in rows} == {
-                "train_perplexity",
-                "test_perplexity",
-                "training_time_s",
+            text = summary.read_text(encoding="utf-8")
+            for metric in (
+                "train_perplexity", "test_perplexity", "training_time_s",
                 "parameter_count",
-            }
+            ):
+                assert f"| {metric} |" in text
         if variant == "all":
             assert (output / "ds2_e03_imp.png").is_file()
             assert (output / "ds2_e03_org.png").is_file()
         else:
             assert (output / f"ds2_e03_{label}.png").is_file()
+        assert {path.suffix for path in output.iterdir()} <= {".png", ".md"}
         cached = cli.invoke(app, [
             "analyze", "deepscratch", "ds2", "-e", "03",
             "--variant", variant,
@@ -122,4 +121,4 @@ def test_cli_variants_share_the_normalized_analysis_path(tmp_path: Path) -> None
         ])
         assert cached.exit_code == 0, cached.output
         assert "analysis cache hit" in cached.output
-        assert "[e03/small-rnnlm/" in cached.output
+        assert "| small-rnnlm |" in cached.output

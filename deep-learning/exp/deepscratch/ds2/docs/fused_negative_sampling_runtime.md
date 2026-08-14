@@ -25,7 +25,7 @@ after 20 warmup updates:
 
 This estimate excludes the experiment trainer's periodic recording probes.
 The profile result is stored in
-`.cache/experiments/deepscratch/ds2/e02/implemented/profile/fused-dense-adam/cuda0/update.json`.
+`.cache/exp/deepscratch/ds2/e02/implemented/profile/fused-dense-adam/cuda0/update.json`.
 
 ## Actual one-epoch training
 

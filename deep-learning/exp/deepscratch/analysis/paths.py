@@ -4,10 +4,18 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from exp.framework.paths import WorkspacePaths
+
 from ..identity import Variant, Volume
 
 
-RESULT_ROOT = Path(__file__).resolve().parents[1] / "results"
+def default_result_root(
+    volume: Volume,
+    study_ids: list[str],
+    variants: tuple[Variant, ...],
+) -> Path:
+    """Resolve derived analysis output through the workspace path policy."""
+    return WorkspacePaths.from_environment(Path.cwd()).domain_results("deepscratch")
 
 
 def variant_label(variants: tuple[Variant, ...]) -> str:
@@ -35,12 +43,13 @@ def selection_directory(
     seed: int | None,
     run_id: str | None,
 ) -> Path:
-    """Keep default output flat; isolate non-default selections."""
-    if seed is None and run_id is None:
-        return root
-    study = study_ids[0] if len(study_ids) == 1 else "all"
-    suffix = f"seed-{seed}" if seed is not None else f"run-{run_id[:8]}"
-    return root / f"{result_stem(volume, study, variants)}_{suffix}"
+    """Human-facing results are always published into one flat directory."""
+    return root
 
 
-__all__ = ["RESULT_ROOT", "result_stem", "selection_directory", "variant_label"]
+__all__ = [
+    "default_result_root",
+    "result_stem",
+    "selection_directory",
+    "variant_label",
+]

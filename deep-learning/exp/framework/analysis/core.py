@@ -155,10 +155,10 @@ def analysis_cache_path(output: Path) -> Path:
     """Keep cache metadata out of the durable artifact tree."""
     paths = WorkspacePaths.from_environment(Path.cwd())
     try:
-        relative = output.resolve().relative_to(paths.artifact_root.resolve())
+        relative = output.resolve().relative_to(paths.results_root.resolve())
     except ValueError:
         return output.with_name(f".{output.name}.analysis-cache.json")
-    return (paths.cache_root / relative).with_name(
+    return (paths.cache_root / "exp" / relative).with_name(
         f".{output.name}.analysis-cache.json"
     )
 
@@ -296,7 +296,12 @@ def artifact_file(client, run: RunRef, artifact_path: str) -> Path | None:
         if local_path.is_file():
             return local_path
     try:
-        downloaded = Path(client.download_artifacts(run.run_id, artifact_path))
+        from mlprosection_mlflow.artifact_cache import MlflowArtifactCache
+
+        tracking_uri = str(getattr(client, "tracking_uri", DEFAULT_TRACKING_URI))
+        downloaded = MlflowArtifactCache(client, tracking_uri).get(
+            run.run_id, artifact_path
+        )
     except Exception:
         return None
     return downloaded if downloaded.is_file() else None

@@ -239,11 +239,12 @@ def analyze(
         if variant == "all" else (Variant(variant),)
     )
     from .analysis.orchestrator import write_analysis
-    from .analysis.paths import RESULT_ROOT, selection_directory
+    from .analysis.paths import default_result_root, selection_directory
 
     selected_experiments = parse_experiment_ids(experiment or [])
     output_dir = selection_directory(
-        output_dir or RESULT_ROOT,
+        output_dir
+        or default_result_root(volume, selected_experiments, variants),
         volume=volume,
         study_ids=selected_experiments,
         variants=variants,
@@ -315,7 +316,7 @@ def profile(
     selected_experiment = selected_experiments[0]
     if output_dir is None:
         output_dir = WorkspacePaths.from_environment(Path.cwd()).resolve(
-            StateOwner.RESULT if record else StateOwner.CACHE,
+            StateOwner.STAGING if record else StateOwner.CACHE,
             StateCoordinate(
                 "deepscratch",
                 volume.value,

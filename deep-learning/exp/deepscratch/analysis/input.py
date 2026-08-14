@@ -16,6 +16,7 @@ import numpy as np
 from exp.framework.analysis.core import Curve, aggregate
 from exp.framework.paths import WorkspacePaths
 from exp.framework.results import NativeRunResult
+from mlprosection_mlflow.artifact_cache import MlflowArtifactCache
 
 from ..identity import Variant
 from .declarations import StudyDeclaration
@@ -43,12 +44,16 @@ class StudyAnalysisInput:
         runs: Sequence[AnalysisRun],
         *,
         cache_dir: Path,
+        tracking_uri: str | None = None,
     ) -> None:
         self._client = client
         self.declaration = declaration
         self.variant = variant
         self._runs = tuple(runs)
         self.cache_dir = cache_dir
+        self._artifact_cache = MlflowArtifactCache(
+            client, tracking_uri or "default", root=cache_dir
+        )
 
     def runs(self, condition_ids: Sequence[str]) -> dict[str, list[AnalysisRun]]:
         """Resolve suite-declared aliases to the already selected run set."""
@@ -86,18 +91,12 @@ class StudyAnalysisInput:
             candidate = run.local_artifact_root / native_path
             if candidate.is_file():
                 return candidate
-        target = self.cache_dir / "downloads" / run.run_id / native_path
-        if target.is_file():
-            return target
-        target.parent.mkdir(parents=True, exist_ok=True)
+        # Downloads are keyed only by the MLflow store and run ID.  Analysis
+        # manifests are intentionally more sensitive (renderer options, study
+        # declarations, etc.), but changes to those inputs must not force an
+        # unchanged run's artifacts to be fetched again.
         try:
-            downloaded = Path(
-                self._client.download_artifacts(
-                    run.run_id,
-                    native_path,
-                    str(target.parent),
-                )
-            )
+            downloaded = self._artifact_cache.get(run.run_id, native_path)
         except Exception:
             return None
         return downloaded if downloaded.is_file() else None

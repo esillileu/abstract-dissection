@@ -3,6 +3,7 @@ from pathlib import Path
 import re
 
 import yaml
+import pytest
 from typer.testing import CliRunner
 
 from exp.cli import PLUGIN_REGISTRY, app
@@ -34,25 +35,25 @@ def test_deepscratch_is_the_canonical_domain_plugin() -> None:
 
 
 def test_workspace_paths_are_owned_and_typed(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setenv("EXP_RESULT_STAGING_ROOT", str(tmp_path / "results"))
+    monkeypatch.setenv("EXP_STAGING_ROOT", str(tmp_path / "staging"))
     monkeypatch.setenv("EXP_CACHE_ROOT", str(tmp_path / "cache"))
-    monkeypatch.setenv("EXP_ARTIFACT_ROOT", str(tmp_path / "artifacts"))
+    monkeypatch.setenv("EXP_RESULTS_ROOT", str(tmp_path / "results"))
     monkeypatch.setenv("EXP_LEGACY_ROOT", str(tmp_path / "legacy"))
     paths = WorkspacePaths.from_environment(tmp_path / "repository")
     coordinate = StateCoordinate(
         "deepscratch", "ds2", "e02", "implemented", "profile"
     )
     assert paths.resolve(StateOwner.CACHE, coordinate) == (
-        tmp_path / "cache/deepscratch/ds2/e02/implemented/profile"
+        tmp_path / "cache/exp/deepscratch/ds2/e02/implemented/profile"
     )
-    assert paths.resolve(StateOwner.ARTIFACT, coordinate) == (
-        tmp_path / "artifacts/deepscratch/ds2/e02/implemented/profile"
+    assert paths.resolve(StateOwner.RESULTS, coordinate) == (
+        tmp_path / "results/exp/deepscratch"
     )
-    assert paths.resolve(StateOwner.RESULT, coordinate) == (
-        tmp_path / "results/deepscratch/ds2/e02/implemented/profile"
+    assert paths.resolve(StateOwner.STAGING, coordinate) == (
+        tmp_path / "staging/exp/deepscratch/ds2/e02/implemented/profile"
     )
     assert paths.resolve(StateOwner.LEGACY, coordinate) == (
-        tmp_path / "legacy/deepscratch/ds2/e02/implemented/profile"
+        tmp_path / "legacy/exp/deepscratch/ds2/e02/implemented/profile"
     )
 
 
@@ -61,17 +62,31 @@ def test_workspace_path_defaults_match_storage_lifecycle(
     monkeypatch,
 ) -> None:
     for name in (
-        "EXP_RESULT_STAGING_ROOT",
+        "EXP_STAGING_ROOT",
         "EXP_CACHE_ROOT",
-        "EXP_ARTIFACT_ROOT",
+        "EXP_RESULTS_ROOT",
         "EXP_LEGACY_ROOT",
     ):
         monkeypatch.delenv(name, raising=False)
     paths = WorkspacePaths.from_environment(tmp_path)
-    assert paths.result_staging_root == tmp_path / "results/experiments"
-    assert paths.artifact_root == tmp_path / ".artifacts/experiments"
-    assert paths.cache_root == tmp_path / ".cache/experiments"
-    assert paths.legacy_root == tmp_path / ".legacy/experiments"
+    assert paths.staging_root == tmp_path / ".staging"
+    assert paths.results_root == tmp_path / "results_new"
+    assert paths.cache_root == tmp_path / ".cache"
+    assert paths.legacy_root == tmp_path / ".legacy"
+
+
+def test_workspace_paths_reject_coordinate_and_relative_root_escape(
+    tmp_path: Path, monkeypatch
+) -> None:
+    paths = WorkspacePaths.from_environment(tmp_path)
+    with pytest.raises(ValueError, match="invalid state coordinate"):
+        paths.run_staging(
+            domain="deepscratch", suite="ds2", study="..",
+            variant="implemented", run_key="run",
+        )
+    monkeypatch.setenv("EXP_CACHE_ROOT", "../outside")
+    with pytest.raises(ValueError, match="escapes repository root"):
+        WorkspacePaths.from_environment(tmp_path)
 
 
 def test_new_cli_defaults_to_implemented_and_supports_original_alias() -> None:

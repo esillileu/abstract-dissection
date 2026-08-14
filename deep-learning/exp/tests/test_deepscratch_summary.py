@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import csv
 import json
 from types import SimpleNamespace
 
@@ -105,17 +104,19 @@ def test_summary_reports_seed_statistics_time_and_parameter_count(
         print_console=True,
     )
 
-    rows = {
-        row["metric_id"]: row
-        for row in csv.DictReader(path.open(encoding="utf-8"))
-    }
-    assert rows["train_loss"]["mean"] == "2.00"
-    assert rows["train_loss"]["sample_standard_deviation"] == "1.41"
-    assert rows["train_loss"]["variance"] == "2.00"
-    assert rows["training_time_s"]["mean"] == "12.00"
-    assert rows["parameter_count"]["mean"] == "12"
-    assert rows["parameter_count"]["sample_standard_deviation"] == "0"
-    assert rows["parameter_count"]["seed_runs"] == "2"
+    summary = path.read_text(encoding="utf-8")
+    assert path.suffix == ".md"
+    assert "## e01 / optimizer.sgd / implemented" in summary
+    assert (
+        "- train_loss (nats): 2.00 ± 1.41 "
+        "(sample standard deviation; variance=2.00; n=2)"
+    ) in summary
+    assert summary.index("## e01 / optimizer.sgd / implemented") < summary.index(
+        "## Detailed statistics"
+    )
+    assert "| optimizer.sgd | implemented | train_loss | nats | 2.00 | 1.41 | 2.00" in summary
+    assert "| optimizer.sgd | implemented | training_time_s | seconds | 12.00 | 2.83 | 8.00" in summary
+    assert "| optimizer.sgd | implemented | parameter_count | parameters | 12 | 0 | 0" in summary
     output = capsys.readouterr().out
     assert "[e01/optimizer.sgd/implemented]" in output
     assert "sample standard deviation; variance=" in output

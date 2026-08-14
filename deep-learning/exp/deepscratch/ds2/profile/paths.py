@@ -22,7 +22,7 @@ def profile_cache(study_id: str) -> Path:
 
 def profile_artifacts(study_id: str) -> Path:
     return WORKSPACE_PATHS.resolve(
-        StateOwner.ARTIFACT,
+        StateOwner.RESULTS,
         StateCoordinate(
             "deepscratch", "ds2", study_id, "implemented", "profile"
         ),

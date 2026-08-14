@@ -166,7 +166,7 @@ def test_analyze_uses_single_normalized_orchestrator(
 
     assert result.exit_code == 0
     assert str(captured.pop("output_dir")).endswith(
-        "exp/deepscratch/results"
+        "results_new/exp/deepscratch"
     )
     assert captured["experiment_ids"] == ["e01"]
     assert captured["variants"] == (Variant.IMPLEMENTED,)

@@ -17,9 +17,9 @@ from exp.framework.paths import WorkspacePaths
 
 def _paths(tmp_path: Path) -> WorkspacePaths:
     return WorkspacePaths(
-        result_staging_root=tmp_path / "results",
+        staging_root=tmp_path / "staging",
         cache_root=tmp_path / "cache",
-        artifact_root=tmp_path / "artifacts",
+        results_root=tmp_path / "results",
         legacy_root=tmp_path / "legacy",
     )
 
@@ -71,6 +71,39 @@ def test_storage_cleanup_only_removes_verified_mirrors(tmp_path: Path) -> None:
     dry_run = cleanup_verified_mirrors(client, paths)
     assert dry_run["candidates"] == [str(local)]
     assert local.exists()
+    cleanup_verified_mirrors(client, paths, apply=True)
+    assert not local.exists()
+
+
+def test_storage_cleanup_migrates_verified_old_results_root(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    paths = _paths(tmp_path)
+    transitional = WorkspacePaths(
+        staging_root=tmp_path / "old-staging",
+        cache_root=paths.cache_root,
+        results_root=paths.results_root,
+        legacy_root=paths.legacy_root,
+    )
+    generated = _manifest(transitional, "old-run")
+    local = (
+        tmp_path / "results/experiments"
+        / generated.relative_to(transitional.staging_root / "exp")
+    )
+    local.parent.mkdir(parents=True)
+    generated.rename(local)
+    client = MlflowClient(_uri(tmp_path))
+    experiment = client.create_experiment("deepscratch.ds2")
+    run = client.create_run(experiment, tags={
+        "run.key": "old-run",
+        "implementation.variant": "original",
+        "result.durable_complete": "true",
+    })
+    client.set_terminated(run.info.run_id)
+
+    report = cleanup_verified_mirrors(client, paths)
+    assert report["candidates"] == [str(local)]
     cleanup_verified_mirrors(client, paths, apply=True)
     assert not local.exists()
 

@@ -13,7 +13,7 @@ uv run python -m exp.deepscratch.ds2.profile.e06.benchmark
 For a short smoke profile:
 
 ```bash
-uv run python -c 'from pathlib import Path; from exp.deepscratch.ds2.profile.e06.benchmark import run; run(warmup=2, iterations=5, repetitions=1, output_dir=Path(".cache/experiments/deepscratch/ds2/e06/implemented/profile/smoke"))'
+uv run python -c 'from pathlib import Path; from exp.deepscratch.ds2.profile.e06.benchmark import run; run(warmup=2, iterations=5, repetitions=1, output_dir=Path(".cache/exp/deepscratch/ds2/e06/implemented/profile/smoke"))'
 ```
 
 The protocol uses the e06 dataset split, batch size 128, `drop_last=true`,

@@ -55,6 +55,6 @@ seed 4, run `8b19fdcd874c4c38b6a6480dc865101c`. It remains in
 place instead of cloning it.
 
 To recover derived output on another machine, import the archive, run storage
-audit, remove `.cache/experiments` and `.artifacts/experiments` if desired, and
+audit, remove obsolete pre-policy cache and artifact trees if desired, and
 rerun `exp analyze`. Do not remove `.legacy` or incomplete staging as part of
 that procedure.

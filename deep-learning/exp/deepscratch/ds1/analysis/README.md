@@ -64,7 +64,7 @@ python -m exp analyze deepscratch ds1 -e 06 --seed 1
 - `--error-style band`: 평균선 주변 ±1 표본 표준편차 반투명 영역
 - `--error-style errorbar`: 평균선 위 min–max error bar
 - 완료 run이 없으면 `No completed runs` 빈 그래프와 값이 비어 있는 summary CSV를 만든다.
-- 출력 기본 경로는 `.artifacts/experiments/deepscratch/ds1/<experiment>/implemented/analysis/`이다.
+- 출력 기본 경로는 `results_new/exp/deepscratch/`이며 PNG와 Markdown만 평탄하게 게시한다.
 - 명시적으로 포함한 spatial-layout 비교 `GT08`은 `e08` 분석으로 제공한다.
 - `e01`–`e12`를 지원한다. `e11`은 checkpoint 필터 분석이며 실행 catalog는 아니다.
 

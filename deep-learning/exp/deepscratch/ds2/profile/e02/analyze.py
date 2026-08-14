@@ -17,16 +17,16 @@ PROFILE_CACHE = PATHS.resolve(
     StateCoordinate("deepscratch", "ds2", "e02", "implemented", "profile"),
 )
 PROFILE_ARTIFACTS = PATHS.resolve(
-    StateOwner.ARTIFACT,
+    StateOwner.RESULTS,
     StateCoordinate("deepscratch", "ds2", "e02", "implemented", "profile"),
 )
 DEFAULT_INPUT = PROFILE_CACHE / "update.json"
-DEFAULT_REPORT = PROFILE_ARTIFACTS / "analysis.md"
-DEFAULT_CSV = PROFILE_ARTIFACTS / "comparisons.csv"
+DEFAULT_REPORT = PROFILE_ARTIFACTS / "ds2_e02_profile.md"
+DEFAULT_CSV = PROFILE_CACHE / "comparisons.csv"
 DEFAULT_EXPERIMENT_SUMMARY = PATHS.resolve(
-    StateOwner.ARTIFACT,
+    StateOwner.RESULTS,
     StateCoordinate("deepscratch", "ds2", "e02", "implemented", "analysis"),
-) / "e02_summary.csv"
+) / "ds2_e02_imp.md"
 DEFAULT_NSYS_SUMMARY = PROFILE_CACHE / "nsys/cuda_api_summary.csv"
 
 

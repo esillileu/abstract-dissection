@@ -62,7 +62,7 @@ def test_deepscratch_writer_uses_durable_staging_root(tmp_path, monkeypatch) -> 
     import mlprosection_mlflow.schema_v1 as schema
 
     monkeypatch.setattr(schema, "ARTIFACT_ROOT", None)
-    monkeypatch.setenv("EXP_RESULT_STAGING_ROOT", str(tmp_path / "staging"))
+    monkeypatch.setenv("EXP_STAGING_ROOT", str(tmp_path / "staging"))
     run = SchemaV1Run({
         "kind": "supervised_classification",
         "seed": 1,
@@ -87,7 +87,7 @@ def test_deepscratch_writer_uses_durable_staging_root(tmp_path, monkeypatch) -> 
     })
 
     expected = (
-        tmp_path / "staging/deepscratch/ds1/e01/implemented"
+        tmp_path / "staging/exp/deepscratch/ds1/e01/implemented"
         / run.identity.run_key
     )
     assert run.artifact_root == expected / "record"

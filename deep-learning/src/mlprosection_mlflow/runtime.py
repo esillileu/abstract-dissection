@@ -309,15 +309,30 @@ class _Sink:
 
 def _verify_uploaded_manifest(client, run_id: str) -> None:
     """Verify every uploaded record file before declaring a run durable."""
-    manifest_path = Path(client.download_artifacts(run_id, "result_manifest.json"))
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    if manifest.get("schema_version") != 1 or not isinstance(manifest.get("files"), list):
-        raise ValueError("invalid result manifest")
-    for item in [*manifest["files"], *manifest.get("checkpoints", [])]:
-        relative = str(item["path"])
-        downloaded = Path(client.download_artifacts(run_id, relative))
-        if file_digest(downloaded) != item["sha256"]:
-            raise ValueError(f"artifact digest mismatch: {relative}")
+    from .artifact_cache import MlflowArtifactCache
+
+    cache = MlflowArtifactCache(
+        client,
+        str(getattr(client, "tracking_uri", "http://127.0.0.1:5000")),
+    )
+    staged: list[tuple[str, Path]] = []
+    try:
+        manifest_path = cache.fetch(run_id, "result_manifest.json")
+        staged.append(("result_manifest.json", manifest_path))
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if manifest.get("schema_version") != 1 or not isinstance(manifest.get("files"), list):
+            raise ValueError("invalid result manifest")
+        for item in [*manifest["files"], *manifest.get("checkpoints", [])]:
+            relative = str(item["path"])
+            downloaded = cache.fetch(run_id, relative)
+            staged.append((relative, downloaded))
+            if file_digest(downloaded) != item["sha256"]:
+                raise ValueError(f"artifact digest mismatch: {relative}")
+        for relative, source in staged:
+            cache.replace(run_id, relative, source)
+    finally:
+        for _, source in staged:
+            cache.discard(source)
 
 
 def get_or_create_condition_parent(client, *, experiment_id: str, child_tags: dict[str, str]) -> str:

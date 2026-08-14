@@ -113,7 +113,7 @@ parameter count를 `timing.json`, `parameter_manifest.json`에서 읽는다.
 - `--error-style band`: 평균선 주변 ±1 표본 표준편차 반투명 영역
 - `--error-style errorbar`: 평균선 위 min–max error bar
 - 완료 run이 없으면 빈 그래프 또는 값이 비어 있는 분석 CSV를 만든다.
-- 출력 기본 경로는 `.artifacts/experiments/deepscratch/ds2/<experiment>/implemented/analysis/`이다.
+- 출력 기본 경로는 `results_new/exp/deepscratch/`이며 PNG와 Markdown만 평탄하게 게시한다.
 - `GT01`은 toy/full-softmax CBOW와 Skip-gram을 각각 별도 그래프로 표시한다. 원본은
   `e01_toy_cbow.png`/`e01_toy_skipgram.png`, 구현은 출력 stem 뒤에 `_cbow`/`_skipgram`을
   붙인 PNG를 생성한다.

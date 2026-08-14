@@ -37,6 +37,7 @@ def write_analysis(
     error_style: str = "band",
     print_summary: bool = False,
     refresh: bool = False,
+    artifact_cache_dir: Path | None = None,
 ) -> Path:
     if cache_dir is None:
         cache_dir = WorkspacePaths.from_environment(Path.cwd()).resolve(
@@ -50,6 +51,11 @@ def write_analysis(
             ),
         )
     client = MlflowClient(tracking_uri=tracking_uri)
+    if artifact_cache_dir is None:
+        artifact_cache_dir = (
+            WorkspacePaths.from_environment(Path.cwd()).cache_root
+            / "mlflow_artifact"
+        )
     selector = CanonicalAttemptSelector(client)
     studies = importlib.import_module(
         f"exp.deepscratch.{volume.value}.result_schema"
@@ -113,7 +119,7 @@ def write_analysis(
         print("analysis cache hit", file=sys.stderr)
         if print_summary:
             for path in cached_outputs:
-                if path.name.endswith("_summary.csv"):
+                if path.suffix == ".md":
                     print_summary_file(path)
         return output_dir
 
@@ -186,7 +192,8 @@ def write_analysis(
     visible_outputs = _render_studies(
         client,
         output_dir,
-        cache_dir,
+        artifact_cache_dir,
+        tracking_uri,
         studies,
         sorted(selected),
         variants,
@@ -195,6 +202,10 @@ def write_analysis(
         error_style,
         summary_metrics,
         print_summary,
+        "" if seed is None and run_id is None else (
+            f"_seed-{seed}" if seed is not None else f"_run-{run_id[:8]}"
+        ),
+        cache_dir,
     )
     _write_cache_manifest(
         manifest_path,
@@ -369,7 +380,8 @@ def _seed_key(value: str) -> tuple[int, str]:
 def _render_studies(
     client,
     output_dir: Path,
-    cache_dir: Path,
+    artifact_cache_dir: Path,
+    tracking_uri: str,
     studies,
     selected_studies: list[str],
     variants: tuple[Variant, ...],
@@ -378,6 +390,8 @@ def _render_studies(
     error_style: str,
     summary_metrics,
     print_summary: bool,
+    filename_suffix: str,
+    cache_dir: Path,
 ) -> list[Path]:
     renderer = importlib.import_module(
         f"exp.deepscratch.{volume.value}.analysis.render"
@@ -417,18 +431,26 @@ def _render_studies(
                 declaration,
                 variant,
                 selected_runs,
-                cache_dir=cache_dir / study_id / variant.value,
+                cache_dir=artifact_cache_dir,
+                tracking_uri=tracking_uri,
             )
             output_variants = variants if len(variants) == 1 else (variant,)
             output = output_dir / (
-                f"{result_stem(volume, study_id, output_variants)}.png"
+                f"{result_stem(volume, study_id, output_variants)}{filename_suffix}.png"
             )
-            outputs.extend(renderer.render_study(
+            rendered = renderer.render_study(
                 data,
                 study_id,
                 output,
                 error_style=error_style,
-            ))
+            )
+            for rendered_path in rendered:
+                if rendered_path.suffix.lower() in {".png", ".md"}:
+                    outputs.append(rendered_path)
+                    continue
+                cache_output = cache_dir / "render" / rendered_path.name
+                cache_output.parent.mkdir(parents=True, exist_ok=True)
+                rendered_path.replace(cache_output)
             outputs.append(write_study_summary(
                 data,
                 volume=volume,
@@ -437,5 +459,7 @@ def _render_studies(
                 output_dir=output_dir,
                 output_variants=output_variants,
                 print_console=print_summary,
+                filename_suffix=filename_suffix,
+                cache_dir=cache_dir,
             ))
     return outputs

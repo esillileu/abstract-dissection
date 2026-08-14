@@ -13,29 +13,31 @@ The domain root contains only `cli.py`, `definition.py`, `identity.py`, and
 the owned `analysis/`, `execution/`, `legacy/`, `original_runtime/`, `ds1/`,
 and `ds2/` packages. Result payloads never belong under the source tree.
 
-Derived analysis output defaults to:
+Human-facing analysis output defaults to one flat directory:
 
 ```text
-.artifacts/experiments/deepscratch/<volume>/<experiment>/<variant>/analysis
+results_new/exp/deepscratch
 ```
 
-Use `EXP_ARTIFACT_ROOT` to replace the `.artifacts/experiments` root.
+Use `EXP_RESULTS_ROOT` to replace the `results_new` root. Only PNG and Markdown
+are published there; observations, CSV/JSON data, and manifests stay in cache.
 
 New run state has four distinct owners:
 
 ```text
-results/experiments   durable staging and verified local mirrors
-.artifacts/experiments derived tables and figures
-.cache/experiments    downloads, transformed data, and analysis manifests
-.legacy/experiments   unaudited historical durable payloads
+.staging/exp          run records and checkpoints pending MLflow verification
+.cache/mlflow_artifact server/run-scoped artifact downloads
+.cache/exp            transformed data, observations, and analysis manifests
+results_new/exp       explicitly preserved PNG and Markdown results
+.legacy               migration-only historical payloads
 ```
 
 In particular, the retired `exp/deepscratch.ds2/results` directory is not a
 writer target. It is an unaudited historical mirror and remains untouched
 until storage audit proves a safe migration or cleanup action.
 
-Override them with `EXP_RESULT_STAGING_ROOT`, `EXP_ARTIFACT_ROOT`,
-`EXP_CACHE_ROOT`, and `EXP_LEGACY_ROOT`. A SchemaV1 run remains incomplete
+Override them with `EXP_STAGING_ROOT`, `EXP_CACHE_ROOT`, `EXP_RESULTS_ROOT`,
+and `EXP_LEGACY_ROOT`. A SchemaV1 run remains incomplete
 until MLflow has received and digest-verified its result manifest and required
 checkpoint payloads. Only then is `result.durable_complete=true` written.
 

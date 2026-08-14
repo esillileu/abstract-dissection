@@ -4,6 +4,7 @@ import importlib
 import json
 from pathlib import Path
 import time
+from dataclasses import dataclass
 
 from mlprosection.experiment import ExperimentContext, run_config
 from mlprosection.experiment.progress import ProgressReporter
@@ -11,6 +12,14 @@ from mlprosection.experiment.progress import ProgressReporter
 from .checkpoint_source import resolve_checkpoint_source
 from .schema_v1 import SchemaV1Run, write_result_manifest
 from .runtime import build_profiling_metric_rows, build_schema_metrics, write_json
+
+
+@dataclass(frozen=True)
+class RunYamlReceipt:
+    result: object
+    run_id: str | None
+    staging_root: Path
+    durable_complete: bool
 
 
 def run_yaml(
@@ -113,4 +122,13 @@ def run_yaml(
         record.artifact_root / "runtime" / "upload_summary.json",
         {"uploaded": not errors and bool(config["tracking"].get("enabled", True)), "errors": errors, "artifact_root": str(record.artifact_root)},
     )
-    return result
+    return RunYamlReceipt(
+        result=result,
+        run_id=runtime.sink.run_id,
+        staging_root=record.artifact_root.parent,
+        durable_complete=(
+            bool(config["tracking"].get("enabled", True))
+            and runtime.sink.run_id is not None
+            and not errors
+        ),
+    )

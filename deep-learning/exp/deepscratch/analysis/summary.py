@@ -62,8 +62,12 @@ def write_study_summary(
     output_dir: Path,
     output_variants: tuple[Variant, ...],
     print_console: bool,
+    filename_suffix: str = "",
+    cache_dir: Path | None = None,
 ) -> Path:
-    path = output_dir / f"{result_stem(volume, study_id, output_variants)}_summary.csv"
+    path = output_dir / (
+        f"{result_stem(volume, study_id, output_variants)}{filename_suffix}.md"
+    )
     rows: list[dict[str, object]] = []
     conditions = data.runs(
         tuple(condition.canonical_id for condition in data.declaration.conditions)
@@ -97,19 +101,58 @@ def write_study_summary(
             )
         )
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8", newline="") as stream:
-        writer = csv.DictWriter(stream, fieldnames=FIELDS)
-        writer.writeheader()
-        writer.writerows(rows)
+    path.write_text(_markdown(rows), encoding="utf-8")
+    if cache_dir is not None:
+        cache_path = cache_dir / (
+            f"{result_stem(volume, study_id, output_variants)}"
+            f"{filename_suffix}_summary.csv"
+        )
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        with cache_path.open("w", encoding="utf-8", newline="") as stream:
+            writer = csv.DictWriter(stream, fieldnames=FIELDS)
+            writer.writeheader()
+            writer.writerows(rows)
     if print_console:
         _print_rows(rows)
     return path
 
 
 def print_summary_file(path: Path) -> None:
-    with path.open(encoding="utf-8", newline="") as stream:
-        rows = list(csv.DictReader(stream))
-    _print_rows(rows)
+    print(path.read_text(encoding="utf-8"), end="")
+
+
+def _markdown(rows: list[dict[str, object]]) -> str:
+    columns = (
+        "condition", "variant", "metric", "unit", "mean", "sample stddev",
+        "variance", "min", "max", "seeds", "unavailable reason",
+    )
+    lines = ["# Analysis summary", ""]
+    current = None
+    for row in rows:
+        coordinate = _coordinate(row)
+        if coordinate != current:
+            if current is not None:
+                lines.append("")
+            lines.extend((f"## {' / '.join(str(item) for item in coordinate)}", ""))
+            current = coordinate
+        lines.append(f"- {_formatted_summary(row)}")
+
+    lines.extend((
+        "",
+        "## Detailed statistics",
+        "",
+        "| " + " | ".join(columns) + " |",
+        "| " + " | ".join("---" for _ in columns) + " |",
+    ))
+    for row in rows:
+        values = (
+            row["canonical_condition_id"], row["variant"], row["metric_id"],
+            row["unit"], row["mean"], row["sample_standard_deviation"],
+            row["variance"], row["minimum"], row["maximum"], row["seed_runs"],
+            row["unavailable_reason"],
+        )
+        lines.append("| " + " | ".join(str(value).replace("|", "\\|") for value in values) + " |")
+    return "\n".join(lines) + "\n"
 
 
 def _metric_values(
@@ -198,23 +241,31 @@ def _format_number(value: float, decimals: int) -> str:
 def _print_rows(rows: list[dict[str, object]]) -> None:
     current = None
     for row in rows:
-        coordinate = (
-            row["study_id"],
-            row["canonical_condition_id"],
-            row["variant"],
-        )
+        coordinate = _coordinate(row)
         if coordinate != current:
             print(f"[{coordinate[0]}/{coordinate[1]}/{coordinate[2]}]")
             current = coordinate
-        if row["availability"] != "available":
-            print(f"{row['metric_id']}: unavailable")
-            continue
-        print(
-            f"{row['metric_id']} ({row['unit']}): "
-            f"{row['mean']} ± {row['sample_standard_deviation']} "
-            f"(sample standard deviation; variance={row['variance']}; "
-            f"n={row['seed_runs']})"
-        )
+        print(_formatted_summary(row))
+
+
+def _coordinate(row: Mapping[str, object]) -> tuple[object, object, object]:
+    return (
+        row["study_id"],
+        row["canonical_condition_id"],
+        row["variant"],
+    )
+
+
+def _formatted_summary(row: Mapping[str, object]) -> str:
+    if row["availability"] != "available":
+        reason = row["unavailable_reason"] or "reason unavailable"
+        return f"{row['metric_id']} ({row['unit']}): unavailable — {reason}"
+    return (
+        f"{row['metric_id']} ({row['unit']}): "
+        f"{row['mean']} ± {row['sample_standard_deviation']} "
+        f"(sample standard deviation; variance={row['variance']}; "
+        f"n={row['seed_runs']})"
+    )
 
 
 __all__ = [

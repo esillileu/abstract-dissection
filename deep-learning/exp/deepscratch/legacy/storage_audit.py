@@ -34,11 +34,18 @@ def audit_storage(
     """Classify every staging payload without moving or deleting files."""
     require_cutover_safe(client)
     entries = []
-    root = paths.result_staging_root
-    manifests = sorted(root.glob("*/*/*/*/*/record/result_manifest.json")) if root.exists() else []
-    for manifest_path in manifests:
+    repository = (repository_root or Path.cwd()).resolve()
+    root = paths.staging_root / "exp"
+    roots = (root, repository / "results/experiments")
+    manifests = [
+        (storage_root, manifest)
+        for storage_root in roots
+        if storage_root.exists()
+        for manifest in sorted(storage_root.glob("*/*/*/*/*/record/result_manifest.json"))
+    ]
+    for storage_root, manifest_path in manifests:
         run_root = manifest_path.parent.parent
-        relative = run_root.relative_to(root)
+        relative = run_root.relative_to(storage_root)
         domain, suite, _study, variant, run_key = relative.parts
         if domain != "deepscratch":
             entries.append(StorageEntry(str(run_root), "unaudited", reason="unknown domain"))
@@ -68,9 +75,10 @@ def audit_storage(
             entries.append(StorageEntry(str(run_root), "incomplete", reason="no durable FINISHED MLflow run"))
         else:
             entries.append(StorageEntry(str(run_root), "verified", run_id=durable.info.run_id))
-    retired = _retired_local_roots((repository_root or Path.cwd()).resolve())
+    retired = _retired_local_roots(repository)
     return {
         "root": str(root),
+        "transition_root": str(repository / "results/experiments"),
         "entries": [asdict(item) for item in entries],
         "legacy_entries": [asdict(item) for item in retired],
         "counts": {
@@ -94,8 +102,14 @@ def cleanup_verified_mirrors(
     ]
     removed = []
     if apply:
+        allowed_roots = (
+            (paths.staging_root / "exp").resolve(),
+            (Path.cwd() / "results/experiments").resolve(),
+        )
         for candidate in candidates:
-            candidate.relative_to(paths.result_staging_root)
+            resolved = candidate.resolve()
+            if not any(resolved.is_relative_to(root) for root in allowed_roots):
+                raise ValueError(f"cleanup candidate escaped staging roots: {candidate}")
             shutil.rmtree(candidate)
             removed.append(str(candidate))
     return {

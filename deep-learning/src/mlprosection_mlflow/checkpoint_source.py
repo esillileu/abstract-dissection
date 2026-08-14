@@ -45,6 +45,9 @@ def resolve_checkpoint_source(
         from mlflow.tracking import MlflowClient
 
         client = MlflowClient(tracking_uri=tracking_uri)
+    from .artifact_cache import MlflowArtifactCache
+
+    artifact_cache = MlflowArtifactCache(client, tracking_uri)
 
     experiment = client.get_experiment_by_name(experiment_name)
     if experiment is None:
@@ -92,23 +95,8 @@ def resolve_checkpoint_source(
             raise ValueError(
                 f"invalid checkpoint source artifact path: {arbitrary_artifact}"
             )
-        storage_domain = _storage_domain(experiment_name)
-        cache_root = (
-            Path("exp")
-            / storage_domain
-            / "results"
-            / "source_checkpoints"
-            / source_run.info.run_id
-        )
-        cache_root.mkdir(parents=True, exist_ok=True)
         try:
-            resolved = Path(
-                client.download_artifacts(
-                    source_run.info.run_id,
-                    artifact_path,
-                    str(cache_root),
-                )
-            )
+            resolved = artifact_cache.get(source_run.info.run_id, artifact_path)
         except Exception as exc:
             raise ValueError(
                 "checkpoint source artifact is missing for "
@@ -127,17 +115,10 @@ def resolve_checkpoint_source(
         raise ValueError(f"unsupported checkpoint source kind: {source_kind}")
 
     run_key = source_run.data.tags.get("run.key")
-    storage_domain = _storage_domain(experiment_name)
     if run_key:
-        local_root = (
-            Path("exp")
-            / storage_domain
-            / "results"
-            / "checkpoints"
-            / str(run_key)
-        )
-        pointer = local_root / f"{role}.json"
-        if pointer.is_file():
+        local_root = _local_checkpoint_root(source_run, str(run_key))
+        pointer = None if local_root is None else local_root / f"{role}.json"
+        if pointer is not None and pointer.is_file():
             from mlprosection.experiment.checkpoint import resolve_checkpoint_path
 
             resolved = resolve_checkpoint_path(pointer)
@@ -149,31 +130,18 @@ def resolve_checkpoint_source(
         client,
         source_run.info.run_id,
         source_kind=source_kind,
+        artifact_cache=artifact_cache,
     )
     checkpoint_name = Path(checkpoint_row["path"]).name
     artifact_paths = (
         f"checkpoints/generations/{checkpoint_name}",
         f"checkpoints/{checkpoint_name}",
     )
-    cache_root = (
-        Path("exp")
-        / storage_domain
-        / "results"
-        / "source_checkpoints"
-        / source_run.info.run_id
-    )
-    cache_root.mkdir(parents=True, exist_ok=True)
     resolved = None
     last_error: Exception | None = None
     for artifact_path in artifact_paths:
         try:
-            resolved = Path(
-                client.download_artifacts(
-                    source_run.info.run_id,
-                    artifact_path,
-                    str(cache_root),
-                )
-            )
+            resolved = artifact_cache.get(source_run.info.run_id, artifact_path)
             break
         except Exception as exc:
             last_error = exc
@@ -194,9 +162,10 @@ def _checkpoint_row(
     run_id: str,
     *,
     source_kind: str,
+    artifact_cache,
 ) -> dict[str, str]:
     try:
-        path = Path(client.download_artifacts(run_id, "checkpoints.csv"))
+        path = artifact_cache.get(run_id, "checkpoints.csv")
     except Exception as exc:
         raise ValueError(f"checkpoint index is missing for source run {run_id}") from exc
     with path.open(encoding="utf-8", newline="") as file:
@@ -210,13 +179,24 @@ def _checkpoint_row(
     return selected[-1]
 
 
-def _storage_domain(value: str) -> str:
-    return (
-        "".join(
-            character
-            if character.isalnum() or character in {"-", "_", "."}
-            else "-"
-            for character in value.strip()
-        )
-        or "mlprosection"
+def _local_checkpoint_root(source_run: Any, run_key: str) -> Path | None:
+    """Resolve canonical staging only when the run advertises its coordinate."""
+    from exp.framework.paths import WorkspacePaths
+
+    tags = source_run.data.tags
+    coordinate = (
+        tags.get("domain.name"),
+        tags.get("suite.name"),
+        tags.get("experiment.id"),
+        tags.get("implementation.variant"),
     )
+    if not all(coordinate):
+        return None
+    staging = WorkspacePaths.from_environment(Path.cwd()).run_staging(
+        domain=str(coordinate[0]),
+        suite=str(coordinate[1]),
+        study=str(coordinate[2]),
+        variant=str(coordinate[3]),
+        run_key=run_key,
+    )
+    return staging / "checkpoints"

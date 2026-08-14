@@ -110,10 +110,10 @@ JSON의 각 조건에는 다음 값이 기록된다.
 
 ```bash
 uv run python -m exp.deepscratch.ds2.profile.e02.analyze \
-  --input .cache/experiments/deepscratch/ds2/e02/implemented/profile/update_cuda0.json
+  --input .cache/exp/deepscratch/ds2/e02/implemented/profile/update_cuda0.json
 ```
 
-기본 출력은 git에서 제외되는 `.cache/experiments/deepscratch/ds2/e02/implemented/profile/`에 저장된다.
+기본 출력은 git에서 제외되는 `.cache/exp/deepscratch/ds2/e02/implemented/profile/`에 저장된다.
 
 - `update*.json`: 조건별 synchronized throughput, 추정 시간, phase timing
 - `modules*.json`: model/objective/optimizer 구성요소별 timing
@@ -185,7 +185,7 @@ GUI 없이 요약하려면 예를 들어 다음을 실행한다.
 ```bash
 nsys stats \
   --report cuda_api_sum,cuda_gpu_kern_sum,cuda_gpu_mem_time_sum \
-  .cache/experiments/deepscratch/ds2/e02/implemented/profile/nsys/implemented-cbow-ns.nsys-rep
+  .cache/exp/deepscratch/ds2/e02/implemented/profile/nsys/implemented-cbow-ns.nsys-rep
 ```
 
 ## 해석할 때 주의할 점
