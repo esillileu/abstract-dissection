@@ -24,6 +24,10 @@ ATOMIC_RUN_IDS = (
     "W2V-PTB-CBOW-ONEHOT-FULL",
     "W2V-PTB-SKIPGRAM-ONEHOT-FULL",
 )
+ORIGINAL_NATIVE_IDS = {
+    "W2V-PTB-CBOW-NS": "PTB-CBOW",
+    "W2V-PTB-SKIPGRAM-NS": "PTB-SKIPGRAM",
+}
 SIMILARITY_QUERIES = ("you", "year", "car", "toyota")
 ANALOGY_QUERIES = (
     ("king", "man", "queen", "woman"),
@@ -234,16 +238,28 @@ def _candidate_text(candidates: tuple[RankedCandidate, ...]) -> str:
     )
 
 
-def _text(evaluations: list[RunEvaluation], missing: dict[str, int]) -> str:
+def _series_label(series: str, variant: str | None) -> str:
+    if variant == "original" and series in ORIGINAL_NATIVE_IDS:
+        return f"{series} (original: {ORIGINAL_NATIVE_IDS[series]})"
+    return series
+
+
+def _text(
+    evaluations: list[RunEvaluation],
+    missing: dict[str, int],
+    *,
+    variant: str | None = None,
+) -> str:
     lines = ["e02 PTB Word2Vec embedding evaluation (book queries; top 5)"]
     for series in ATOMIC_RUN_IDS:
+        label = _series_label(series, variant)
         selected = [item for item in evaluations if item.series == series]
         if not selected:
-            lines.append(f"[{series}] no completed runs with readable final checkpoints")
+            lines.append(f"[{label}] no completed runs with readable final checkpoints")
             continue
         for evaluation in selected:
             lines.append(
-                f"[{series}] seed={evaluation.seed}, run_id={evaluation.run_id}"
+                f"[{label}] seed={evaluation.seed}, run_id={evaluation.run_id}"
             )
             for result in evaluation.similarities:
                 lines.append(
@@ -260,7 +276,7 @@ def _text(evaluations: list[RunEvaluation], missing: dict[str, int]) -> str:
                 )
         if missing.get(series):
             lines.append(
-                f"[{series}] skipped unreadable checkpoints: {missing[series]}"
+                f"[{label}] skipped unreadable checkpoints: {missing[series]}"
             )
     return "\n".join(lines) + "\n"
 
@@ -438,7 +454,9 @@ def render(client, error_style, output):
                 )
             except (OSError, ValueError):
                 missing[series] = missing.get(series, 0) + 1
-    text = _text(evaluations, missing)
+    variant = getattr(client, "variant", None)
+    variant_name = None if variant is None else variant.value
+    text = _text(evaluations, missing, variant=variant_name)
     text_path, csv_path = _output_paths(output)
     text_path.parent.mkdir(parents=True, exist_ok=True)
     text_path.write_text(text, encoding="utf-8")

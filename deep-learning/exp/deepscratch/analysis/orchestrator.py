@@ -467,7 +467,7 @@ def _render_studies(
                 filename_suffix=filename_suffix,
                 cache_dir=cache_dir,
             )
-            append_markdown = getattr(renderer, "append_markdown_report", None)
+            append_markdown = renderer.MARKDOWN_APPENDERS.get(study_id)
             text_reports = [
                 path for path in cached_rendered if path.suffix.lower() == ".txt"
             ]

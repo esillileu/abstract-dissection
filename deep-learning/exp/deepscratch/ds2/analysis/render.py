@@ -36,6 +36,9 @@ ADDITIONAL_RENDERERS = {
     "e09": e09_addition_seq2seq_150.render_additional_graphs,
 }
 STUDY_SOURCES = {}
+MARKDOWN_APPENDERS = {
+    "e02": e02_ptb_word2vec.append_markdown_report,
+}
 
 
 def render_study(
