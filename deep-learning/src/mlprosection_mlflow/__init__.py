@@ -1,5 +1,15 @@
 """Optional MLflow integration for :mod:`mlprosection` experiments."""
 
+import os
+
+
+# Artifact downloads are often issued one file at a time by analysis and
+# compatibility code. MLflow creates a fresh progress bar for every such
+# call, which overwhelms the operation's own progress output. Keep the
+# setting user-overridable while making the quiet behavior consistent across
+# both the cache and legacy direct-download paths.
+os.environ.setdefault("MLFLOW_ENABLE_ARTIFACTS_PROGRESS_BAR", "false")
+
 from .runtime import (
     ExperimentRun,
     RunIdentity,

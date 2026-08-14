@@ -7,9 +7,28 @@ import os
 import shutil
 import tempfile
 from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Iterator
 from urllib.parse import urlsplit, urlunsplit
+
+from tqdm.auto import tqdm
+
+
+_artifact_progress: ContextVar[object | None] = ContextVar(
+    "mlprosection_artifact_progress", default=None
+)
+
+
+@contextmanager
+def artifact_download_progress() -> Iterator[None]:
+    """Show one aggregate progress bar for cache-backed downloads."""
+    with tqdm(desc="Downloading analysis artifacts", unit="artifact") as progress:
+        token = _artifact_progress.set(progress)
+        try:
+            yield
+        finally:
+            _artifact_progress.reset(token)
 
 
 @contextmanager
@@ -83,6 +102,9 @@ class MlflowArtifactCache:
                 downloaded = Path(
                     self.client.download_artifacts(run_id, artifact_path, str(temporary))
                 ).resolve()
+            progress = _artifact_progress.get()
+            if progress is not None:
+                progress.update(1)
             if downloaded.is_relative_to(temporary.resolve()):
                 return downloaded
             local = temporary / downloaded.name

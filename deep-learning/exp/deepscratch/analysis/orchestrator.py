@@ -12,6 +12,7 @@ import sys
 from mlflow.tracking import MlflowClient
 
 from exp.framework.paths import StateCoordinate, StateOwner, WorkspacePaths
+from mlprosection_mlflow.artifact_cache import artifact_download_progress
 
 from ..identity import DeepScratchCoordinate, Variant, Volume
 from ..execution.selection import CanonicalAttemptSelector
@@ -190,25 +191,26 @@ def write_analysis(
         writer.writeheader()
         writer.writerows(rows)
     output_dir.mkdir(parents=True, exist_ok=True)
-    visible_outputs = _render_studies(
-        client,
-        output_dir,
-        artifact_cache_dir,
-        tracking_uri,
-        studies,
-        sorted(selected),
-        variants,
-        render_inputs,
-        volume,
-        error_style,
-        summary_metrics,
-        print_summary,
-        seed,
-        "" if seed is None and run_id is None else (
-            f"_seed-{seed}" if seed is not None else f"_run-{run_id[:8]}"
-        ),
-        cache_dir,
-    )
+    with artifact_download_progress():
+        visible_outputs = _render_studies(
+            client,
+            output_dir,
+            artifact_cache_dir,
+            tracking_uri,
+            studies,
+            sorted(selected),
+            variants,
+            render_inputs,
+            volume,
+            error_style,
+            summary_metrics,
+            print_summary,
+            seed,
+            "" if seed is None and run_id is None else (
+                f"_seed-{seed}" if seed is not None else f"_run-{run_id[:8]}"
+            ),
+            cache_dir,
+        )
     _write_cache_manifest(
         manifest_path,
         signature,
