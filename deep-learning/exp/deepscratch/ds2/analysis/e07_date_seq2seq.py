@@ -10,9 +10,9 @@ from .common import runs, source_curve
 def render(client, error_style, output):
     del output
     definitions = [
-        ("SEQD-VAN-REV", "vanilla", "o"),
-        ("SEQD-PEEKY-REV", "peeky", "s"),
-        ("SEQD-ATTN-REV", "attention", "D"),
+        ("SEQD-VAN-REV", "Vanilla", "o"),
+        ("SEQD-PEEKY-REV", "Peeky", "s"),
+        ("SEQD-ATTN-REV", "Attention", "D"),
     ]
     grouped = runs(client, "GT07", [item[0] for item in definitions])
     figure, axis = plt.subplots()

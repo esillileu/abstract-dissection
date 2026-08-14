@@ -21,10 +21,10 @@ def render(
     del output
     if definitions is None:
         definitions = (
-            ("SEQA-VAN-FWD", "vanilla / forward", "o"),
-            ("SEQA-VAN-REV", "vanilla / reverse", "s"),
-            ("SEQA-PEEKY-FWD", "peeky / forward", "^"),
-            ("SEQA-PEEKY-REV", "peeky / reverse", "D"),
+            ("SEQA-VAN-FWD", "Vanilla / Forward", "o"),
+            ("SEQA-VAN-REV", "Vanilla / Reverse", "s"),
+            ("SEQA-PEEKY-FWD", "Peeky / Forward", "^"),
+            ("SEQA-PEEKY-REV", "Peeky / Reverse", "D"),
         )
     grouped = runs(client, group_id, [item[0] for item in definitions])
     figure, axis = plt.subplots(figsize=figsize)

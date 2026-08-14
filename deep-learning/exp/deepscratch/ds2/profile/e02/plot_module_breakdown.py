@@ -51,12 +51,12 @@ _FUSED_COMPONENTS = {
     "optimizer_ms": ("optimizer",),
 }
 _OBJECTIVE_METHODS = {
-    "FullSoftmax": "Full softmax",
+    "FullSoftmax": "Full Softmax",
     "NegativeSampling": "Negative Sampling",
     "FusedNegativeSampling": "Fused Negative Sampling",
 }
 _PLOT_METHODS = {
-    "Full softmax": "Full softmax",
+    "Full Softmax": "Full Softmax",
     "Negative Sampling": "Negative Sampling",
     "Fused Negative Sampling": "Fused NS",
 }

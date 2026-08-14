@@ -346,33 +346,33 @@ def _default_vocab_sizes(device: str) -> tuple[int, ...]:
 
 
 _PLOT_STYLES = {
-    "implemented-cbow-fs": ("Full softmax", ACCENT_COLORS[0], "o", "-"),
+    "implemented-cbow-fs": ("Full Softmax", ACCENT_COLORS[0], "o", "-"),
     "implemented-cbow-ns": (
-        "Negative sampling",
+        "Negative Sampling",
         ACCENT_COLORS[1],
         "s",
         "--",
     ),
     "implemented-cbow-fused-ns": (
-        "Fused negative sampling",
+        "Fused Negative Sampling",
         ACCENT_COLORS[3],
         "^",
         "-.",
     ),
     "implemented-skipgram-fs": (
-        "Full softmax",
+        "Full Softmax",
         ACCENT_COLORS[0],
         "o",
         "-",
     ),
     "implemented-skipgram-ns": (
-        "Negative sampling",
+        "Negative Sampling",
         ACCENT_COLORS[1],
         "s",
         "--",
     ),
     "implemented-skipgram-fused-ns": (
-        "Fused negative sampling",
+        "Fused Negative Sampling",
         ACCENT_COLORS[3],
         "^",
         "-.",
