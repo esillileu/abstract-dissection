@@ -8,6 +8,10 @@ from pathlib import Path
 from typing import Any
 
 
+class CheckpointSourceRunNotFound(ValueError):
+    """The declared experiment has no matching checkpoint-producing run."""
+
+
 def resolve_checkpoint_source(
     config: dict[str, object],
     *,
@@ -37,10 +41,37 @@ def resolve_checkpoint_source(
     tracking = config.get("tracking", {})
     if not isinstance(tracking, dict) or not bool(tracking.get("enabled", True)):
         raise ValueError("checkpoint source resolution requires MLflow tracking")
+    experiment_name = str(tracking.get("experiment", "mlprosection"))
+    return resolve_checkpoint_source_in_experiment(
+        config,
+        experiment_name=experiment_name,
+        client=client,
+    )
+
+
+def resolve_checkpoint_source_in_experiment(
+    config: dict[str, object],
+    *,
+    experiment_name: str,
+    client: Any | None = None,
+) -> Path:
+    """Resolve a declared source from one explicit MLflow experiment.
+
+    This lower-level entry point lets migration adapters select a retired
+    namespace without teaching the canonical resolver about legacy names.
+    """
+    checkpoint = config.get("checkpoint")
+    if not isinstance(checkpoint, dict):
+        raise ValueError("checkpoint source resolution requires checkpoint config")
+    source_group = checkpoint.get("source_group_id")
+    source_atomic = checkpoint.get("source_atomic_run_id")
+    if not source_group or not source_atomic:
+        raise ValueError("checkpoint source resolution requires source coordinates")
+
+    tracking = config.get("tracking", {})
     tracking_uri = os.getenv("MLFLOW_TRACKING_URI") or str(
         tracking.get("uri", "http://127.0.0.1:5000")
     )
-    experiment_name = str(tracking.get("experiment", "mlprosection"))
     if client is None:
         from mlflow.tracking import MlflowClient
 
@@ -51,7 +82,7 @@ def resolve_checkpoint_source(
 
     experiment = client.get_experiment_by_name(experiment_name)
     if experiment is None:
-        raise ValueError(
+        raise CheckpointSourceRunNotFound(
             f"checkpoint source experiment does not exist: {experiment_name}"
         )
     candidates = client.search_runs(
@@ -83,7 +114,7 @@ def resolve_checkpoint_source(
         None,
     )
     if source_run is None:
-        raise ValueError(
+        raise CheckpointSourceRunNotFound(
             "matching checkpoint source run is missing: "
             f"{source_group}/{source_atomic} seed={seed}"
         )

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import importlib
 import shutil
 import warnings
 from pathlib import Path
@@ -24,6 +25,11 @@ class Runner:
 
         progress = ProgressManager(mode=options.progress, every=options.progress_every, total_runs=len(plans))
         receipts = []
+        checkpoint_source_resolver = None
+        if self.domain.checkpoint_source_resolver_module is not None:
+            checkpoint_source_resolver = importlib.import_module(
+                self.domain.checkpoint_source_resolver_module
+            ).resolve_checkpoint_source
         try:
             for index, plan in enumerate(plans, start=1):
                 spec = self.domain.load_run_spec(plan.path, atomic_run_id=plan.atomic_run_id, overrides=options.overrides)
@@ -41,6 +47,9 @@ class Runner:
                 reporter = progress.reporter(context)
                 progress.on_run_start(context)
                 try:
+                    run_kwargs = {}
+                    if checkpoint_source_resolver is not None:
+                        run_kwargs["checkpoint_source_resolver"] = checkpoint_source_resolver
                     receipt = run_yaml(
                         plan.path,
                         atomic_run_id=plan.atomic_run_id,
@@ -50,6 +59,7 @@ class Runner:
                         executor_module=self.domain.executor_module,
                         spec_module=self.domain.spec_module,
                         progress_reporter=reporter,
+                        **run_kwargs,
                     )
                     receipts.append(receipt)
                 finally:

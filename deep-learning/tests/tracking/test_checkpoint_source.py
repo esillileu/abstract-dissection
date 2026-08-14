@@ -6,6 +6,10 @@ from types import SimpleNamespace
 import pytest
 
 from mlprosection_mlflow.checkpoint_source import resolve_checkpoint_source
+from exp.deepscratch.legacy import (
+    resolve_checkpoint_source as resolve_deepscratch_checkpoint_source,
+    resolve_legacy_checkpoint_source,
+)
 
 
 class _Client:
@@ -161,3 +165,43 @@ def test_arbitrary_artifact_rejects_parent_traversal(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="invalid checkpoint source artifact"):
         resolve_checkpoint_source(config, client=_Client(tmp_path))
+
+
+def test_legacy_checkpoint_lookup_is_an_explicit_separate_fallback(
+    tmp_path: Path,
+) -> None:
+    config = _config()
+    config["domain"] = "deepscratch.ds2.implemented"
+    config["tracking"] = {"enabled": True, "experiment": "deepscratch.ds2"}
+    client = _Client(tmp_path)
+
+    resolved = resolve_legacy_checkpoint_source(config, client=client)
+
+    assert resolved.is_dir()
+
+
+def test_deepscratch_resolver_falls_back_after_canonical_lookup(
+    tmp_path: Path,
+) -> None:
+    class Client(_Client):
+        def __init__(self, root: Path) -> None:
+            super().__init__(root)
+            self.experiment_names = []
+            self.experiment_id = ""
+
+        def get_experiment_by_name(self, name):
+            self.experiment_names.append(name)
+            self.experiment_id = "13" if name == "deepscratch.ds2" else "10"
+            return SimpleNamespace(experiment_id=self.experiment_id)
+
+        def search_runs(self, **kwargs):
+            return [] if kwargs["experiment_ids"] == ["13"] else [self.run]
+
+    config = _config()
+    config["tracking"] = {"enabled": True, "experiment": "deepscratch.ds2"}
+    client = Client(tmp_path)
+
+    resolved = resolve_deepscratch_checkpoint_source(config, client=client)
+
+    assert resolved.is_dir()
+    assert client.experiment_names == ["deepscratch.ds2", "ds2"]

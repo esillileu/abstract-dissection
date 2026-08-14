@@ -20,6 +20,7 @@ class ExecutionDefinition:
     config_root: Path
     spec_module: str
     executor_module: str
+    checkpoint_source_resolver_module: str | None = None
     default_seed_set: str = "research_v1"
     domain: str | None = None
     suite: str | None = None

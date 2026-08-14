@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import time
 from dataclasses import dataclass
+from typing import Callable
 
 from mlprosection.experiment import ExperimentContext, run_config
 from mlprosection.experiment.progress import ProgressReporter
@@ -33,6 +34,7 @@ def run_yaml(
     executor_module: str | None = None,
     spec_module: str | None = None,
     progress_reporter: ProgressReporter | None = None,
+    checkpoint_source_resolver: Callable[[dict[str, object]], Path | None] = resolve_checkpoint_source,
 ):
     """Run a domain YAML and upload the CSV-backed record to MLflow."""
     if spec_module is None:
@@ -53,7 +55,7 @@ def run_yaml(
         assert isinstance(checkpoint, dict)
         checkpoint["resume"] = resume
     record = SchemaV1Run(config)
-    resolve_checkpoint_source(config)
+    checkpoint_source_resolver(config)
     runtime = record.runtime()
     if progress_reporter is not None:
         runtime.sink.console_writer = progress_reporter.write
