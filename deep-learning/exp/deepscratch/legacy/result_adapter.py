@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 import csv
 from dataclasses import replace
+import os
 import json
 from pathlib import Path
 
@@ -13,6 +14,7 @@ from mlflow.exceptions import MlflowException
 
 from exp.framework.paths import WorkspacePaths
 from exp.framework.results import MetricSeries, MlflowResultStore, NativeRunResult
+from mlprosection_mlflow.artifact_cache import MlflowArtifactCache
 
 from ..identity import Variant
 from ..analysis.declarations import MetricDeclaration
@@ -24,6 +26,7 @@ def load_legacy_result(
     *,
     variant: Variant,
     declarations: Iterable[MetricDeclaration],
+    artifact_cache: MlflowArtifactCache | None = None,
 ) -> NativeRunResult:
     """Project only retired namespace layouts into the native contract."""
     specs = []
@@ -39,15 +42,16 @@ def load_legacy_result(
     missing = [item for item in declarations if not any(
         result.metric(metric_id) is not None for metric_id in item.native_ids(variant)
     )]
-    aliases = _artifact_aliases(client, run_id)
+    artifact_cache = artifact_cache or _artifact_cache(client)
+    aliases = _artifact_aliases(client, run_id, artifact_cache)
     if not missing:
         return replace(result, artifact_aliases=aliases)
-    rows = _raw_rows(client, run_id)
+    rows = _raw_rows(client, run_id, artifact_cache)
     projected = list(result.metrics)
     for declaration in missing:
         values = _project_rows(rows, declaration.metric_id)
         if not values and declaration.metric_id == "training_time_s":
-            runtime = _runtime_projection(client, run_id)
+            runtime = _runtime_projection(client, run_id, artifact_cache)
             values = [] if runtime is None else [(0, runtime)]
         if values:
             native_id = declaration.native_ids(variant)[0]
@@ -66,7 +70,10 @@ def load_legacy_result(
     )
 
 
-def _artifact_aliases(client, run_id: str) -> dict[str, str]:
+def _artifact_aliases(
+    client, run_id: str, artifact_cache: MlflowArtifactCache | None = None
+) -> dict[str, str]:
+    artifact_cache = artifact_cache or _artifact_cache(client)
     root_paths = {item.path for item in client.list_artifacts(run_id, "")}
     observation_paths = (
         {item.path for item in client.list_artifacts(run_id, "observations")}
@@ -87,11 +94,11 @@ def _artifact_aliases(client, run_id: str) -> dict[str, str]:
         if canonical not in inventory:
             aliases[canonical] = legacy
     if "observations/source_curves.csv" in aliases:
-        source_curve = _source_curve_projection(client, run_id)
+        source_curve = _source_curve_projection(client, run_id, artifact_cache)
         if source_curve is not None:
             aliases["observations/source_curves.csv"] = str(source_curve)
     if "evaluations.csv" in aliases:
-        evaluations = _evaluation_projection(client, run_id)
+        evaluations = _evaluation_projection(client, run_id, artifact_cache)
         if evaluations is not None:
             aliases["evaluations.csv"] = str(evaluations)
     run = client.get_run(run_id)
@@ -103,7 +110,7 @@ def _artifact_aliases(client, run_id: str) -> dict[str, str]:
         study_id == "e10"
         and "observations/activation_histogram.csv" not in observation_paths
     ):
-        histogram = _activation_histogram_projection(client, run_id)
+        histogram = _activation_histogram_projection(client, run_id, artifact_cache)
         if histogram is not None:
             aliases["observations/activation_histogram.csv"] = str(histogram)
     raw_paths = (
@@ -120,17 +127,19 @@ def _artifact_aliases(client, run_id: str) -> dict[str, str]:
         "model/parameter_manifest.json" not in model_paths
         and "raw/parameter_manifest.json" in raw_paths
     ):
-        parameter_manifest = _parameter_manifest_projection(client, run_id)
+        parameter_manifest = _parameter_manifest_projection(client, run_id, artifact_cache)
         if parameter_manifest is not None:
             aliases["model/parameter_manifest.json"] = str(parameter_manifest)
     if "checkpoints" in root_paths:
-        aliases.update(_checkpoint_generation_aliases(client, run_id))
+        aliases.update(_checkpoint_generation_aliases(client, run_id, artifact_cache))
     return aliases
 
 
-def _runtime_projection(client, run_id: str) -> float | None:
+def _runtime_projection(
+    client, run_id: str, artifact_cache: MlflowArtifactCache
+) -> float | None:
     try:
-        path = Path(client.download_artifacts(run_id, "raw/timing.json"))
+        path = artifact_cache.get(run_id, "raw/timing.json")
         payload = json.loads(path.read_text(encoding="utf-8"))
         value = float(payload["training_wall_time_s"])
     except Exception:
@@ -138,7 +147,9 @@ def _runtime_projection(client, run_id: str) -> float | None:
     return value if np.isfinite(value) else None
 
 
-def _parameter_manifest_projection(client, run_id: str) -> Path | None:
+def _parameter_manifest_projection(
+    client, run_id: str, artifact_cache: MlflowArtifactCache
+) -> Path | None:
     target = (
         WorkspacePaths.from_environment(Path.cwd()).cache_root
         / "deepscratch"
@@ -149,9 +160,7 @@ def _parameter_manifest_projection(client, run_id: str) -> Path | None:
     if target.is_file():
         return target.resolve()
     try:
-        source = Path(
-            client.download_artifacts(run_id, "raw/parameter_manifest.json")
-        )
+        source = artifact_cache.get(run_id, "raw/parameter_manifest.json")
         payload = json.loads(source.read_text(encoding="utf-8"))
         count = int(payload["parameter_count"])
     except (KeyError, OSError, TypeError, ValueError, json.JSONDecodeError):
@@ -164,7 +173,9 @@ def _parameter_manifest_projection(client, run_id: str) -> Path | None:
     return target.resolve()
 
 
-def _evaluation_projection(client, run_id: str) -> Path | None:
+def _evaluation_projection(
+    client, run_id: str, artifact_cache: MlflowArtifactCache
+) -> Path | None:
     target = (
         WorkspacePaths.from_environment(Path.cwd()).cache_root
         / "deepscratch"
@@ -174,7 +185,7 @@ def _evaluation_projection(client, run_id: str) -> Path | None:
     )
     if target.is_file():
         return target.resolve()
-    rows = _raw_rows(client, run_id)
+    rows = _raw_rows(client, run_id, artifact_cache)
     if not rows or "perplexity" not in rows[0] or "epoch" not in rows[0]:
         return None
     projected = [
@@ -199,7 +210,9 @@ def _evaluation_projection(client, run_id: str) -> Path | None:
     return target.resolve()
 
 
-def _source_curve_projection(client, run_id: str) -> Path | None:
+def _source_curve_projection(
+    client, run_id: str, artifact_cache: MlflowArtifactCache
+) -> Path | None:
     target = (
         WorkspacePaths.from_environment(Path.cwd()).cache_root
         / "deepscratch"
@@ -209,7 +222,7 @@ def _source_curve_projection(client, run_id: str) -> Path | None:
     )
     if target.is_file():
         return target.resolve()
-    rows = _raw_rows(client, run_id)
+    rows = _raw_rows(client, run_id, artifact_cache)
     if not rows:
         return None
     columns = (
@@ -244,7 +257,9 @@ def _source_curve_projection(client, run_id: str) -> Path | None:
     return target.resolve()
 
 
-def _activation_histogram_projection(client, run_id: str) -> Path | None:
+def _activation_histogram_projection(
+    client, run_id: str, artifact_cache: MlflowArtifactCache
+) -> Path | None:
     target = (
         WorkspacePaths.from_environment(Path.cwd()).cache_root
         / "deepscratch"
@@ -255,7 +270,7 @@ def _activation_histogram_projection(client, run_id: str) -> Path | None:
     if target.is_file():
         return target.resolve()
     try:
-        source = Path(client.download_artifacts(run_id, "raw/activations.npz"))
+        source = artifact_cache.get(run_id, "raw/activations.npz")
         with np.load(source, allow_pickle=False) as arrays:
             rows = []
             for layer in range(1, 6):
@@ -287,13 +302,12 @@ def _activation_histogram_projection(client, run_id: str) -> Path | None:
     return target.resolve()
 
 
-def _checkpoint_generation_aliases(client, run_id: str) -> dict[str, str]:
+def _checkpoint_generation_aliases(
+    client, run_id: str, artifact_cache: MlflowArtifactCache
+) -> dict[str, str]:
     try:
-        manifest_path = Path(
-            client.download_artifacts(
-                run_id,
-                "checkpoints/checkpoint_manifest.json",
-            )
+        manifest_path = artifact_cache.get(
+            run_id, "checkpoints/checkpoint_manifest.json"
         )
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         final = manifest.get("final")
@@ -309,16 +323,25 @@ def _checkpoint_generation_aliases(client, run_id: str) -> dict[str, str]:
     }
 
 
-def _raw_rows(client, run_id: str) -> list[dict[str, str]]:
+def _raw_rows(
+    client, run_id: str, artifact_cache: MlflowArtifactCache
+) -> list[dict[str, str]]:
     for artifact in ("raw/metrics.csv", "metrics.csv", "metrics/metrics.csv"):
         try:
-            path = Path(client.download_artifacts(run_id, artifact))
+            path = artifact_cache.get(run_id, artifact)
         except Exception:
             continue
         if path.is_file():
             with path.open(encoding="utf-8", newline="") as stream:
                 return list(csv.DictReader(stream))
     return []
+
+
+def _artifact_cache(client) -> MlflowArtifactCache:
+    tracking_uri = getattr(client, "tracking_uri", None) or os.getenv(
+        "MLFLOW_TRACKING_URI", "http://127.0.0.1:5000"
+    )
+    return MlflowArtifactCache(client, str(tracking_uri))
 
 
 def _project_rows(

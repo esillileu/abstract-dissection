@@ -59,7 +59,7 @@ def write_analysis(
             WorkspacePaths.from_environment(Path.cwd()).cache_root
             / "mlflow_artifact"
         )
-    selector = CanonicalAttemptSelector(client)
+    selector = CanonicalAttemptSelector(client, tracking_uri=tracking_uri)
     studies = importlib.import_module(
         f"exp.deepscratch.{volume.value}.result_schema"
     )

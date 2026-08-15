@@ -2,6 +2,7 @@
 
 import json
 from dataclasses import replace
+import os
 from pathlib import Path
 
 import numpy as np
@@ -9,9 +10,10 @@ import numpy as np
 from exp.deepscratch.identity import Variant
 from exp.framework.paths import WorkspacePaths
 from exp.framework.results import MlflowResultStore
+from mlprosection_mlflow.artifact_cache import MlflowArtifactCache
 
 
-def load_native_result(client, run_id, declarations):
+def load_native_result(client, run_id, declarations, *, artifact_cache=None):
     specs = _metric_specs(declarations)
     result = MlflowResultStore(client).load(
         run_id, metric_specs=specs, include_artifacts=False
@@ -23,13 +25,17 @@ def load_native_result(client, run_id, declarations):
         )
     aliases = dict(result.artifact_aliases)
     if "checkpoints/checkpoint_manifest.json" not in aliases:
-        manifest = _word2vec_checkpoint_projection(client, run_id)
+        manifest = _word2vec_checkpoint_projection(
+            client, run_id, artifact_cache=artifact_cache
+        )
         if manifest is not None:
             aliases["checkpoints/checkpoint_manifest.json"] = str(manifest)
     return replace(result, artifact_aliases=aliases)
 
 
-def _word2vec_checkpoint_projection(client, run_id: str) -> Path | None:
+def _word2vec_checkpoint_projection(
+    client, run_id: str, *, artifact_cache: MlflowArtifactCache | None = None
+) -> Path | None:
     """Expose promoted-original e02 ``word_vectors`` as canonical ``W_in``."""
     root = (
         WorkspacePaths.from_environment(Path.cwd()).cache_root
@@ -43,7 +49,11 @@ def _word2vec_checkpoint_projection(client, run_id: str) -> Path | None:
     if manifest_path.is_file() and weights_path.is_file():
         return manifest_path.resolve()
     try:
-        source = Path(client.download_artifacts(run_id, "raw/checkpoint.npz"))
+        tracking_uri = getattr(client, "tracking_uri", None) or os.getenv(
+            "MLFLOW_TRACKING_URI", "http://127.0.0.1:5000"
+        )
+        cache = artifact_cache or MlflowArtifactCache(client, str(tracking_uri))
+        source = cache.get(run_id, "raw/checkpoint.npz")
         with np.load(source, allow_pickle=False) as archive:
             arrays = {name: np.asarray(archive[name]) for name in archive.files}
         vectors = arrays.get("W_in", arrays.get("word_vectors"))

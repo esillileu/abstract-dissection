@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from exp.framework.results import NativeRunResult
+from mlprosection_mlflow.artifact_cache import MlflowArtifactCache
 
 from ..identity import Variant, Volume
 from ..analysis.declarations import MetricDeclaration
@@ -15,8 +16,9 @@ from .result_adapter import load_legacy_result
 class LegacyCompatibility:
     """Contain every read of retired namespaces and result layouts."""
 
-    def __init__(self, client) -> None:
+    def __init__(self, client, *, artifact_cache: MlflowArtifactCache | None = None) -> None:
         self._client = client
+        self._artifact_cache = artifact_cache
 
     def attempts(
         self,
@@ -37,4 +39,5 @@ class LegacyCompatibility:
             run_id,
             variant=variant,
             declarations=declarations,
+            artifact_cache=self._artifact_cache,
         )

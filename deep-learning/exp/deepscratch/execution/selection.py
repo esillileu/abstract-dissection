@@ -10,6 +10,7 @@ from mlflow.entities import ViewType
 
 from exp.framework.results import NativeRunResult
 from exp.framework.results.selection import attempt_priority
+from mlprosection_mlflow.artifact_cache import MlflowArtifactCache
 
 from ..identity import Variant, Volume
 from ..legacy import LegacyCompatibility
@@ -37,9 +38,14 @@ class AttemptRef:
 class CanonicalAttemptSelector:
     """Apply the documented precedence to immutable MLflow attempts."""
 
-    def __init__(self, client) -> None:
+    def __init__(self, client, *, tracking_uri: str | None = None) -> None:
         self.client = client
-        self._legacy = LegacyCompatibility(client)
+        resolved_tracking_uri = tracking_uri or getattr(client, "tracking_uri", None)
+        self._artifact_cache = MlflowArtifactCache(
+            client,
+            str(resolved_tracking_uri or "http://127.0.0.1:5000"),
+        )
+        self._legacy = LegacyCompatibility(client, artifact_cache=self._artifact_cache)
         self._attempt_cache: dict[
             tuple[Volume, Variant], tuple[AttemptRef, ...]
         ] = {}
@@ -110,6 +116,7 @@ class CanonicalAttemptSelector:
             self.client,
             attempt.run_id,
             declarations,
+            artifact_cache=self._artifact_cache,
         )
 
     def select(
