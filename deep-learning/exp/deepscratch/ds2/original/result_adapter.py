@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 
 import numpy as np
+from mlflow.exceptions import MlflowException
 
 from exp.deepscratch.identity import Variant
 from exp.framework.paths import WorkspacePaths
@@ -59,7 +60,7 @@ def _word2vec_checkpoint_projection(
         vectors = arrays.get("W_in", arrays.get("word_vectors"))
         if vectors is None or vectors.ndim != 2:
             return None
-    except (OSError, ValueError):
+    except (OSError, ValueError, MlflowException):
         return None
     root.mkdir(parents=True, exist_ok=True)
     arrays.setdefault("W_in", vectors)
