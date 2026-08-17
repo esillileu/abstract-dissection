@@ -461,5 +461,4 @@ def render(client, error_style, output):
     text_path.parent.mkdir(parents=True, exist_ok=True)
     text_path.write_text(text, encoding="utf-8")
     _write_csv(csv_path, evaluations)
-    print(text, end="")
     return [text_path, csv_path]

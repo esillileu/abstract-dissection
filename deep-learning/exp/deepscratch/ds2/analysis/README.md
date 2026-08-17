@@ -118,7 +118,8 @@ parameter count를 `timing.json`, `parameter_manifest.json`에서 읽는다.
   붙인 PNG를 생성한다.
 - `GT02`는 그래프를 만들지 않는다. 네 조건의 final `W_in`에 대해 교재의
   `you`, `year`, `car`, `toyota` 유사어 top-5와 네 유추 문제의 top-5,
-  기대 정답 순위 및 hit@5를 터미널과 `e02_word_vectors.txt/.csv`에 출력한다.
+  기대 정답 순위 및 hit@5를 E02 Markdown 보고서에 기록한다. Markdown 조립에 쓰는
+  `e02_word_vectors.txt/.csv`는 분석 캐시에만 보관하며 터미널에는 출력하지 않는다.
 - `GT05`는 validation perplexity만 표시한다. 아래의 확대 축은 LSTM/BetterRNNLM
   최댓값 바로 위에서 끊고, 작은 위쪽 축에는 훨씬 큰 vanilla RNNLM 범위를 표시한다.
 - `e01`–`e09`를 지원한다.

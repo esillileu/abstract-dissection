@@ -120,7 +120,7 @@ def test_render_writes_text_and_csv_without_a_graph(
     text = outputs[0].read_text(encoding="utf-8")
     assert "similarity you:" in text
     assert "expected=woman" in text
-    assert text in capsys.readouterr().out
+    assert capsys.readouterr().out == ""
     with outputs[1].open(encoding="utf-8", newline="") as file:
         rows = list(csv.DictReader(file))
     assert len(rows) == 40
