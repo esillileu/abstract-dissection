@@ -45,6 +45,7 @@ class StudyAnalysisInput:
         *,
         cache_dir: Path,
         tracking_uri: str | None = None,
+        refresh_raw: bool = False,
     ) -> None:
         self._client = client
         self.declaration = declaration
@@ -54,6 +55,8 @@ class StudyAnalysisInput:
         self._artifact_cache = MlflowArtifactCache(
             client, tracking_uri or "default", root=cache_dir
         )
+        self._refresh_raw = refresh_raw
+        self._refreshed_artifacts: set[tuple[str, str]] = set()
 
     def runs(self, condition_ids: Sequence[str]) -> dict[str, list[AnalysisRun]]:
         """Resolve suite-declared aliases to the already selected run set."""
@@ -91,12 +94,22 @@ class StudyAnalysisInput:
             candidate = run.local_artifact_root / native_path
             if candidate.is_file():
                 return candidate
-        # Downloads are keyed only by the MLflow store and run ID.  Analysis
-        # manifests are intentionally more sensitive (renderer options, study
-        # declarations, etc.), but changes to those inputs must not force an
+        # Raw downloads are keyed only by the MLflow store and run ID. Changes
+        # to analysis declarations or renderer options must not force an
         # unchanged run's artifacts to be fetched again.
         try:
-            downloaded = self._artifact_cache.get(run.run_id, native_path)
+            cache_key = (run.run_id, native_path)
+            if self._refresh_raw and cache_key not in self._refreshed_artifacts:
+                staged = self._artifact_cache.fetch(run.run_id, native_path)
+                try:
+                    downloaded = self._artifact_cache.replace(
+                        run.run_id, native_path, staged
+                    )
+                finally:
+                    self._artifact_cache.discard(staged)
+                self._refreshed_artifacts.add(cache_key)
+            else:
+                downloaded = self._artifact_cache.get(run.run_id, native_path)
         except Exception:
             return None
         return downloaded if downloaded.is_file() else None

@@ -208,6 +208,38 @@ def test_analyze_accepts_explicit_errorbar_style(
     assert captured["print_summary"] is True
 
 
+@pytest.mark.parametrize(
+    ("refresh_arguments", "expected"),
+    ((["--refresh"], "all"), (["--refresh", "analysis"], "analysis")),
+)
+def test_analyze_supports_raw_and_analysis_refresh_scopes(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+    refresh_arguments: list[str],
+    expected: str,
+) -> None:
+    captured = {}
+
+    def fake_write_analysis(*args, **kwargs):
+        captured.update(kwargs)
+        return tmp_path
+
+    monkeypatch.setattr(
+        "exp.deepscratch.analysis.orchestrator.write_analysis",
+        fake_write_analysis,
+    )
+    result = runner.invoke(
+        app,
+        [
+            "analyze", "deepscratch", "ds1", "-e", "01",
+            *refresh_arguments,
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert captured["refresh"] == expected
+
+
 def test_only_canonical_domain_is_exposed() -> None:
     for action in ("plan", "run", "analyze"):
         help_result = runner.invoke(app, [action, "--help"])

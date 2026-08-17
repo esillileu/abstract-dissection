@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import importlib
 import json
 from pathlib import Path
@@ -13,7 +14,11 @@ from mlflow.tracking import MlflowClient
 from tqdm.auto import tqdm
 
 from exp.framework.paths import StateCoordinate, StateOwner, WorkspacePaths
-from mlprosection_mlflow.artifact_cache import artifact_download_progress
+from exp.framework.results import ArtifactReference, MetricSeries, NativeRunResult
+from mlprosection_mlflow.artifact_cache import (
+    artifact_download_progress,
+    tracking_uri_key,
+)
 
 from ..identity import DeepScratchCoordinate, Variant, Volume
 from ..execution.selection import CanonicalAttemptSelector
@@ -21,7 +26,6 @@ from .input import AnalysisRun, StudyAnalysisInput, local_artifact_root
 from .normalization import normalize_declared_metric
 from .paths import result_stem
 from .summary import (
-    print_summary_file,
     summary_declarations,
     write_study_summary,
 )
@@ -39,7 +43,7 @@ def write_analysis(
     run_id: str | None = None,
     error_style: str = "band",
     print_summary: bool = False,
-    refresh: bool = False,
+    refresh: str | bool | None = None,
     artifact_cache_dir: Path | None = None,
 ) -> Path:
     if cache_dir is None:
@@ -59,6 +63,18 @@ def write_analysis(
             WorkspacePaths.from_environment(Path.cwd()).cache_root
             / "mlflow_artifact"
         )
+    # Keep direct Python callers using the former boolean API compatible.
+    if refresh is True:
+        refresh = "all"
+    elif refresh is False:
+        refresh = None
+    if refresh not in {None, "analysis", "all"}:
+        raise ValueError("refresh must be None, 'analysis', or 'all'")
+    refresh_analysis = refresh in {"analysis", "all"}
+    refresh_raw = refresh == "all"
+    raw_cache_dir = (
+        WorkspacePaths.from_environment(Path.cwd()).cache_root / "mlflow_raw"
+    )
     selector = CanonicalAttemptSelector(client, tracking_uri=tracking_uri)
     studies = importlib.import_module(
         f"exp.deepscratch.{volume.value}.result_schema"
@@ -124,85 +140,83 @@ def write_analysis(
         summary_metrics=summary_metrics,
         seed=seed,
         run_id=run_id,
-        error_style=error_style,
         selections=selections,
     )
-    manifest_path = cache_dir / "analysis_manifest.json"
-    cached_outputs = _cached_outputs(
-        manifest_path,
-        signature,
-        output_dir,
-        refresh=refresh,
+    analysis_path = cache_dir / "analysis_input.json"
+    cached_analysis = _load_analysis_cache(
+        analysis_path, signature, refresh=refresh_analysis
     )
-    if cached_outputs is not None:
-        print("analysis cache hit", file=sys.stderr)
-        if print_summary:
-            for path in cached_outputs:
-                if path.suffix == ".md":
-                    print_summary_file(path)
-        return output_dir
-
-    print(
-        f"analysis phase: loading metrics for {selected_attempts} run(s)",
-        file=sys.stderr,
-        flush=True,
-    )
-    rows = []
-    render_inputs: dict[tuple[str, Variant], list[AnalysisRun]] = {}
-    with tqdm(
-        total=selected_attempts,
-        desc="Loading MLflow metrics",
-        unit="run",
-        file=sys.stderr,
-    ) as metric_progress:
-        for study_id, condition, selected_seed, attempts in selections:
-            observations = {}
-            for variant in variants:
-                attempt = attempts[variant]
-                if attempt is None:
-                    continue
-                native = selector.load_result(
-                    attempt,
-                    volume=volume,
-                    variant=variant,
-                    declarations=tuple(dict.fromkeys((
+    if cached_analysis is not None:
+        print("analysis cache hit; rendering cached analysis artifacts", file=sys.stderr)
+        rows, render_inputs = cached_analysis
+    else:
+        print(
+            f"analysis phase: loading raw metrics for {selected_attempts} run(s)",
+            file=sys.stderr,
+            flush=True,
+        )
+        rows = []
+        render_inputs: dict[tuple[str, Variant], list[AnalysisRun]] = {}
+        with tqdm(
+            total=selected_attempts,
+            desc="Loading raw metrics",
+            unit="run",
+            file=sys.stderr,
+        ) as metric_progress:
+            for study_id, condition, selected_seed, attempts in selections:
+                observations = {}
+                for variant in variants:
+                    attempt = attempts[variant]
+                    if attempt is None:
+                        continue
+                    declarations = tuple(dict.fromkeys((
                         *condition.metrics,
                         *summary_declarations(study_id, summary_metrics),
-                    ))),
-                )
-                coordinate = DeepScratchCoordinate(
-                    volume, study_id, condition.canonical_id, variant
-                )
-                observations[variant] = {
-                    metric.metric_id: normalize_declared_metric(
-                        coordinate, native, metric
-                    )
-                    for metric in condition.metrics
-                }
-                render_inputs.setdefault((study_id, variant), []).append(
-                    AnalysisRun(
-                        run_id=attempt.run_id,
-                        canonical_condition_id=condition.canonical_id,
-                        native_condition_id=attempt.condition_id,
-                        seed=selected_seed,
+                    )))
+                    native = _load_raw_result(
+                        selector,
+                        attempt,
+                        volume=volume,
                         variant=variant,
-                        result=native,
-                        local_artifact_root=local_artifact_root(
-                            client, attempt.run_id
-                        ),
+                        declarations=declarations,
+                        tracking_uri=tracking_uri,
+                        cache_dir=raw_cache_dir,
+                        refresh=refresh_raw,
                     )
-                )
-                metric_progress.update(1)
-            if study_id in selected:
-                for metric in condition.metrics:
-                    rows.append(_row(
-                        study_id,
-                        condition.canonical_id,
-                        selected_seed,
-                        metric,
-                        attempts,
-                        observations,
-                    ))
+                    coordinate = DeepScratchCoordinate(
+                        volume, study_id, condition.canonical_id, variant
+                    )
+                    observations[variant] = {
+                        metric.metric_id: normalize_declared_metric(
+                            coordinate, native, metric
+                        )
+                        for metric in condition.metrics
+                    }
+                    render_inputs.setdefault((study_id, variant), []).append(
+                        AnalysisRun(
+                            run_id=attempt.run_id,
+                            canonical_condition_id=condition.canonical_id,
+                            native_condition_id=attempt.condition_id,
+                            seed=selected_seed,
+                            variant=variant,
+                            result=native,
+                            local_artifact_root=local_artifact_root(
+                                client, attempt.run_id
+                            ),
+                        )
+                    )
+                    metric_progress.update(1)
+                if study_id in selected:
+                    for metric in condition.metrics:
+                        rows.append(_row(
+                            study_id,
+                            condition.canonical_id,
+                            selected_seed,
+                            metric,
+                            attempts,
+                            observations,
+                        ))
+        _write_analysis_cache(analysis_path, signature, rows, render_inputs)
     cache_dir.mkdir(parents=True, exist_ok=True)
     output = cache_dir / "observations.csv"
     fieldnames = (
@@ -226,7 +240,7 @@ def write_analysis(
         flush=True,
     )
     with artifact_download_progress():
-        visible_outputs = _render_studies(
+        _render_studies(
             client,
             output_dir,
             artifact_cache_dir,
@@ -244,14 +258,8 @@ def write_analysis(
                 f"_seed-{seed}" if seed is not None else f"_run-{run_id[:8]}"
             ),
             cache_dir,
+            refresh_raw,
         )
-    _write_cache_manifest(
-        manifest_path,
-        signature,
-        output_dir,
-        visible_outputs,
-        observations=output,
-    )
     return output_dir
 
 
@@ -264,7 +272,6 @@ def _cache_signature(
     summary_metrics,
     seed,
     run_id,
-    error_style,
     selections,
 ) -> dict[str, object]:
     runs = []
@@ -278,16 +285,26 @@ def _cache_signature(
                 "seed": selected_seed,
                 "variant": variant.value,
                 "run_id": attempt.run_id,
+                "metrics": [
+                    {
+                        "metric_id": metric.metric_id,
+                        "unit": metric.unit,
+                        "split": metric.split,
+                        "axis": metric.axis,
+                        "native_ids": list(metric.native_ids(variant)),
+                        "value_scale": metric.value_scale,
+                    }
+                    for metric in condition.metrics
+                ],
             })
     return {
-        "version": 2,
+        "version": 3,
         "tracking_uri": tracking_uri,
         "volume": volume.value,
         "studies": sorted(selected),
         "variants": [variant.value for variant in variants],
         "seed": seed,
         "run_id": run_id,
-        "error_style": error_style,
         "summary_metrics": {
             study_id: [
                 {
@@ -307,47 +324,46 @@ def _cache_signature(
     }
 
 
-def _cached_outputs(
-    manifest_path: Path,
+def _load_analysis_cache(
+    cache_path: Path,
     signature: dict[str, object],
-    output_dir: Path,
     *,
     refresh: bool,
-) -> list[Path] | None:
+) -> tuple[list[dict[str, object]], dict[tuple[str, Variant], list[AnalysisRun]]] | None:
     if refresh:
         return None
     try:
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        if manifest.get("signature") != signature:
+        payload = json.loads(cache_path.read_text(encoding="utf-8"))
+        if payload.get("signature") != signature:
             return None
-        observations = Path(manifest["observations"])
-        outputs = [output_dir / item for item in manifest["outputs"]]
-    except (KeyError, OSError, TypeError, json.JSONDecodeError):
+        rows = list(payload["observations"])
+        render_inputs: dict[tuple[str, Variant], list[AnalysisRun]] = {}
+        for item in payload["runs"]:
+            run = _analysis_run_from_dict(item)
+            render_inputs.setdefault((str(item["study_id"]), run.variant), []).append(run)
+    except (KeyError, OSError, TypeError, ValueError, json.JSONDecodeError):
         return None
-    if not observations.is_file() or not outputs or not all(
-        path.is_file() for path in outputs
-    ):
-        return None
-    return outputs
+    return rows, render_inputs
 
 
-def _write_cache_manifest(
-    manifest_path: Path,
+def _write_analysis_cache(
+    cache_path: Path,
     signature: dict[str, object],
-    output_dir: Path,
-    outputs: list[Path],
-    *,
-    observations: Path,
+    observations: list[dict[str, object]],
+    render_inputs: dict[tuple[str, Variant], list[AnalysisRun]],
 ) -> None:
-    manifest_path.parent.mkdir(parents=True, exist_ok=True)
-    manifest_path.write_text(
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    cache_path.write_text(
         json.dumps(
             {
                 "signature": signature,
-                "observations": str(observations.resolve()),
-                "outputs": [
-                    str(path.resolve().relative_to(output_dir.resolve()))
-                    for path in outputs
+                "observations": observations,
+                "runs": [
+                    _analysis_run_to_dict(study_id, run)
+                    for (study_id, _variant), runs in sorted(
+                        render_inputs.items(), key=lambda item: (item[0][0], item[0][1].value)
+                    )
+                    for run in runs
                 ],
             },
             indent=2,
@@ -355,6 +371,133 @@ def _write_cache_manifest(
         )
         + "\n",
         encoding="utf-8",
+    )
+
+
+def _load_raw_result(
+    selector,
+    attempt,
+    *,
+    volume,
+    variant,
+    declarations,
+    tracking_uri: str,
+    cache_dir: Path,
+    refresh: bool,
+) -> NativeRunResult:
+    declaration_payload = [
+        {
+            "metric_id": metric.metric_id,
+            "unit": metric.unit,
+            "split": metric.split,
+            "axis": metric.axis,
+            "native_ids": list(metric.native_ids(variant)),
+        }
+        for metric in declarations
+    ]
+    digest = hashlib.sha256(
+        json.dumps(declaration_payload, sort_keys=True).encode("utf-8")
+    ).hexdigest()[:16]
+    path = (
+        cache_dir
+        / tracking_uri_key(tracking_uri)
+        / attempt.run_id
+        / f"native-result-{digest}.json"
+    )
+    if not refresh:
+        try:
+            return _native_result_from_dict(json.loads(path.read_text(encoding="utf-8")))
+        except (KeyError, OSError, TypeError, ValueError, json.JSONDecodeError):
+            pass
+    result = selector.load_result(
+        attempt,
+        volume=volume,
+        variant=variant,
+        declarations=declarations,
+    )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(_native_result_to_dict(result), indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return result
+
+
+def _analysis_run_to_dict(study_id: str, run: AnalysisRun) -> dict[str, object]:
+    return {
+        "study_id": study_id,
+        "run_id": run.run_id,
+        "canonical_condition_id": run.canonical_condition_id,
+        "native_condition_id": run.native_condition_id,
+        "seed": run.seed,
+        "variant": run.variant.value,
+        "result": _native_result_to_dict(run.result),
+        "local_artifact_root": (
+            None if run.local_artifact_root is None else str(run.local_artifact_root)
+        ),
+    }
+
+
+def _analysis_run_from_dict(item: dict[str, object]) -> AnalysisRun:
+    local_root = item.get("local_artifact_root")
+    return AnalysisRun(
+        run_id=str(item["run_id"]),
+        canonical_condition_id=str(item["canonical_condition_id"]),
+        native_condition_id=str(item["native_condition_id"]),
+        seed=str(item["seed"]),
+        variant=Variant(str(item["variant"])),
+        result=_native_result_from_dict(item["result"]),
+        local_artifact_root=None if local_root is None else Path(str(local_root)),
+    )
+
+
+def _native_result_to_dict(result: NativeRunResult) -> dict[str, object]:
+    return {
+        "run_id": result.run_id,
+        "schema_name": result.schema_name,
+        "schema_version": result.schema_version,
+        "protocol_version": result.protocol_version,
+        "metrics": [
+            {
+                "metric_id": metric.metric_id,
+                "unit": metric.unit,
+                "split": metric.split,
+                "axis": metric.axis,
+                "steps": list(metric.steps),
+                "values": list(metric.values),
+            }
+            for metric in result.metrics
+        ],
+        "artifacts": [vars(artifact) for artifact in result.artifacts],
+        "artifact_aliases": dict(result.artifact_aliases),
+        "provenance": dict(result.provenance),
+        "provenance_ref": result.provenance_ref,
+    }
+
+
+def _native_result_from_dict(item: dict[str, object]) -> NativeRunResult:
+    return NativeRunResult(
+        run_id=str(item["run_id"]),
+        schema_name=str(item["schema_name"]),
+        schema_version=int(item["schema_version"]),
+        protocol_version=str(item["protocol_version"]),
+        metrics=tuple(
+            MetricSeries(
+                metric_id=str(metric["metric_id"]),
+                unit=str(metric["unit"]),
+                split=str(metric["split"]),
+                axis=str(metric["axis"]),
+                steps=tuple(metric["steps"]),
+                values=tuple(float(value) for value in metric["values"]),
+            )
+            for metric in item.get("metrics", [])
+        ),
+        artifacts=tuple(
+            ArtifactReference(**artifact) for artifact in item.get("artifacts", [])
+        ),
+        artifact_aliases=dict(item.get("artifact_aliases", {})),
+        provenance=dict(item.get("provenance", {})),
+        provenance_ref=item.get("provenance_ref"),
     )
 
 
@@ -431,6 +574,7 @@ def _render_studies(
     seed: int | None,
     filename_suffix: str,
     cache_dir: Path,
+    refresh_raw: bool = False,
 ) -> list[Path]:
     renderer = importlib.import_module(
         f"exp.deepscratch.{volume.value}.analysis.render"
@@ -472,6 +616,7 @@ def _render_studies(
                 selected_runs,
                 cache_dir=artifact_cache_dir,
                 tracking_uri=tracking_uri,
+                refresh_raw=refresh_raw,
             )
             output_variants = variants if len(variants) == 1 else (variant,)
             output = output_dir / (

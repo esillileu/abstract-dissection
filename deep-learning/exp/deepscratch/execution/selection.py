@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import importlib
+import inspect
 from typing import Any, Iterable
 
 from mlflow.entities import ViewType
@@ -112,11 +113,13 @@ class CanonicalAttemptSelector:
         adapter = importlib.import_module(
             f"exp.deepscratch.{volume.value}.{variant.value}.result_adapter"
         )
+        kwargs = {}
+        if "artifact_cache" in inspect.signature(
+            adapter.load_native_result
+        ).parameters:
+            kwargs["artifact_cache"] = self._artifact_cache
         return adapter.load_native_result(
-            self.client,
-            attempt.run_id,
-            declarations,
-            artifact_cache=self._artifact_cache,
+            self.client, attempt.run_id, declarations, **kwargs
         )
 
     def select(

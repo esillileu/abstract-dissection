@@ -200,6 +200,7 @@ def check(
 @cli_errors
 def analyze(
     volume: Annotated[Volume, typer.Argument()],
+    refresh_scope: Annotated[str | None, typer.Argument(hidden=True)] = None,
     experiment: Experiments = None,
     all_experiments: Annotated[bool, typer.Option("--all")] = False,
     tracking_uri: Annotated[str | None, typer.Option("--tracking-uri")] = None,
@@ -213,7 +214,10 @@ def analyze(
     ] = False,
     refresh: Annotated[
         bool,
-        typer.Option("--refresh", help="Ignore a valid analysis cache."),
+        typer.Option(
+            "--refresh",
+            help="Refresh raw and analysis caches; append 'analysis' to refresh only analysis.",
+        ),
     ] = False,
     run_id: Annotated[str | None, typer.Option("--run-id")] = None,
     error_style: Annotated[
@@ -224,6 +228,11 @@ def analyze(
         ),
     ] = "band",
 ) -> None:
+    if refresh_scope is not None and (not refresh or refresh_scope != "analysis"):
+        raise ValueError("the optional --refresh scope must be 'analysis'")
+    refresh_mode = "analysis" if refresh_scope == "analysis" else (
+        "all" if refresh else None
+    )
     if variant not in {"implemented", "original", "all"}:
         raise ValueError("--variant must be implemented, original, or all")
     if original and variant != "implemented":
@@ -280,7 +289,7 @@ def analyze(
         run_id=run_id,
         error_style=error_style,
         print_summary=summary,
-        refresh=refresh,
+        refresh=refresh_mode,
     )
     typer.echo(f"analysis: {output}")
 
