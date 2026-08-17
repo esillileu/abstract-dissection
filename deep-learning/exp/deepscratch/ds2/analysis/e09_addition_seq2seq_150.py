@@ -27,25 +27,25 @@ ADDITIONAL_GRAPHS = (
         "ds2_e09_11_van_fwd_vs_van_rev.png",
         "Vanilla Seq2seq: Forward vs. Reverse",
         ("SEQA-VAN-FWD", "SEQA-VAN-REV"),
-        "upper left",
+        "lower right",
     ),
     (
         "ds2_e09_12_pky_fwd_vs_pky_rev.png",
         "Peeky Seq2seq: Forward vs. Reverse",
         ("SEQA-PEEKY-FWD", "SEQA-PEEKY-REV"),
-        "upper left",
+        "lower right",
     ),
     (
         "ds2_e09_13_atn_fwd_vs_atn_rev.png",
         "Attention Seq2seq: Forward vs. Reverse",
         ("SEQA-ATTN-FWD", "SEQA-ATTN-REV"),
-        "upper left",
+        "lower right",
     ),
     (
         "ds2_e09_14_atn_pky_fwd_vs_atn_pky_rev.png",
         "Attention + Peeky Seq2seq: Forward vs. Reverse",
         ("SEQA-ATTN-PEEKY-FWD", "SEQA-ATTN-PEEKY-REV"),
-        "upper left",
+        "lower right",
     ),
     (
         "ds2_e09_20_pky_rev_vs_atn_pky_rev.png",
@@ -91,7 +91,15 @@ def render_additional_graphs(client, error_style, output) -> list[Path]:
     output_dir = Path(output).parent
     outputs = []
 
-    def configure_axis(axis, atomic_ids, *, title=None, legend_loc="upper left"):
+    def configure_axis(
+        axis,
+        atomic_ids,
+        *,
+        title=None,
+        legend_loc="lower right",
+        title_fontsize=None,
+        legend_fontsize=None,
+    ):
         for atomic in atomic_ids:
             plot_curve(
                 axis,
@@ -109,10 +117,10 @@ def render_additional_graphs(client, error_style, output) -> list[Path]:
             ylim=(0, 1),
         )
         if title is not None:
-            axis.set_title(title)
+            axis.set_title(title, fontsize=title_fontsize)
         mark_empty(axis)
         if axis.has_data():
-            axis.legend(loc=legend_loc)
+            axis.legend(loc=legend_loc, fontsize=legend_fontsize)
 
     for filename, _title, atomic_ids, legend_loc in ADDITIONAL_GRAPHS:
         figure, axis = plt.subplots()
@@ -126,7 +134,14 @@ def render_additional_graphs(client, error_style, output) -> list[Path]:
     for axis, (_filename, title, atomic_ids, legend_loc) in zip(
         axes.flat, ADDITIONAL_GRAPHS[:4]
     ):
-        configure_axis(axis, atomic_ids, title=title, legend_loc=legend_loc)
+        configure_axis(
+            axis,
+            atomic_ids,
+            title=title,
+            legend_loc=legend_loc,
+            title_fontsize=24,
+            legend_fontsize=20,
+        )
     combined_figure.tight_layout()
     combined_path = output_dir / "ds2_e09_10_fwd_rev.png"
     save_figure(combined_figure, combined_path)
