@@ -1,4 +1,4 @@
-"""Profile implemented e02 Word2Vec modules independently.
+"""Expose independently measurable Word2Vec workload sections.
 
 Preparation needed to populate forward caches is executed outside the measured
 region.  This makes objective/model backward timings independent while keeping
@@ -15,9 +15,9 @@ from pathlib import Path
 import numpy as np
 
 from mlprosection.profiling import BenchmarkRunner
-from exp.deepscratch.ds2.profile.paths import profile_cache
+from exp.deepscratch.ds2.profile.paths import profile_measurements
 
-from .update import (
+from .workloads import (
     CONDITIONS,
     _batch,
     _build_condition,
@@ -48,7 +48,7 @@ ORIGINAL_COMPONENTS = (
     "optimizer",
 )
 COMPONENTS = IMPLEMENTED_COMPONENTS + FUSED_COMPONENTS + ORIGINAL_COMPONENTS
-DEFAULT_OUTPUT = profile_cache("e02") / "modules.json"
+DEFAULT_OUTPUT = profile_measurements("e10") / "modules.json"
 
 
 class ComponentFixture:

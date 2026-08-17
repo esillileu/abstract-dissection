@@ -140,14 +140,7 @@ def test_analyze_original_alias_rejects_explicit_variant() -> None:
     assert "cannot be combined" in result.output
 
 
-def test_declared_tracking_tags_expand_logical_identity(monkeypatch) -> None:
-    class Backend:
-        name = "numpy"
-        is_gpu = False
-
-    monkeypatch.setattr(
-        "mlprosection_mlflow.schema_v1.get_default_backend", lambda: Backend()
-    )
+def test_declared_tracking_tags_expand_logical_identity() -> None:
     identity = RunIdentity(
         schema_version=1,
         project_name="mlprosection",
@@ -331,7 +324,7 @@ def test_deepscratch_root_contains_only_domain_entrypoints_and_owned_packages() 
         "execution",
         "legacy",
         "original_runtime",
-        "results",
+        "profile",
     }
 
 
@@ -417,6 +410,8 @@ def test_suite_declarations_cover_every_catalog_condition() -> None:
             root = Path(f"exp/deepscratch/{volume.value}/config/{variant.value}")
             for path in sorted(root.glob("e[0-9][0-9]_*.yaml")):
                 source = yaml.safe_load(path.read_text(encoding="utf-8"))
+                if source.get("kind") == "performance_profile":
+                    continue
                 catalog = set(source["variants"])
                 study = schema.STUDIES[path.name[:3]]
                 declared = {

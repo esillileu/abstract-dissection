@@ -25,6 +25,7 @@ class ExecutionDefinition:
     domain: str | None = None
     suite: str | None = None
     variant: str | None = None
+    all_excluded_kinds: tuple[str, ...] = ()
 
     def load_run_spec(
         self,

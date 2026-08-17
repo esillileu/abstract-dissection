@@ -9,6 +9,7 @@ from exp.deepscratch.ds2.implemented.executor import (
     LanguageModelExecutor,
     Seq2SeqExecutor,
     Word2VecExecutor,
+    ProfileExecutor,
     _language_model,
     _optimizer,
     _seq_model,
@@ -144,9 +145,12 @@ def test_all_ds2_variants_resolve_and_build_the_declared_components() -> None:
                 objective = TemporalSoftmaxCrossEntropy(backend=backend)
                 _optimizer(config, model, objective)
                 executor = Seq2SeqExecutor()
-            else:
+            elif kind == "observation":
                 executor = get_observation_executor(config)
                 assert isinstance(executor, AttentionAlignmentObservationExecutor)
+            else:
+                assert kind == "performance_profile"
+                executor = ProfileExecutor()
             assert callable(executor.run)
             count += 1
-    assert count == 35
+    assert count == 55

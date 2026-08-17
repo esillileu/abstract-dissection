@@ -45,6 +45,11 @@ class Planner:
             source = yaml.safe_load(path.read_text(encoding="utf-8"))
             if not isinstance(source, dict):
                 raise ValueError(f"invalid YAML object: {path}")
+            if (
+                selection.all_experiments
+                and str(source.get("kind", "")) in self.domain.all_excluded_kinds
+            ):
+                continue
             resolved = deep_merge(source, options.overrides)
             variants = resolved.get("variants")
             if not isinstance(variants, dict) or not variants:

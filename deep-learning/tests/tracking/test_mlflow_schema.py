@@ -37,6 +37,27 @@ def test_build_tags_includes_a_human_readable_model_name() -> None:
     assert tags["model.name"] == "MLP4Hidden"
 
 
+def test_build_tags_uses_declared_device_when_result_has_no_model() -> None:
+    identity = RunIdentity(
+        1, "mlprosection", ("e11",), "PF-VSCALE-CBOW-NS", "PF02",
+        "profile", "profile-v1", "condition", "run", 0,
+    )
+    tags = build_tags(
+        identity,
+        {
+            "kind": "performance_profile",
+            "numerics": {"backend": "cupy", "device": "cuda:1"},
+        },
+        {
+            "commit": "abc", "branch": "main", "dirty": False,
+            "repository": "repo", "entrypoint": "yaml",
+        },
+        None,
+    )
+    assert tags["runtime.backend"] == "cupy"
+    assert tags["runtime.device_type"] == "cuda"
+
+
 def test_parent_group_key_is_stable_across_config_representation_changes() -> None:
     identity = RunIdentity(
         1, "mlprosection", ("e07",), "CNN-DEEP-BOOK", "GT07",

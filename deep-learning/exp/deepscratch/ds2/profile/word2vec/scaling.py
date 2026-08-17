@@ -1,4 +1,4 @@
-"""Sweep vocabulary size for the implemented e02 Word2Vec update paths."""
+"""Construct and render implemented Word2Vec vocabulary-size scaling."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ import numpy as np
 
 from exp.framework.analysis.core import save_figure
 from exp.framework.plotting.theme import ACCENT_COLORS, MUTED
-from exp.deepscratch.ds2.profile.paths import profile_cache
+from exp.deepscratch.ds2.profile.paths import profile_measurements
 from mlprosection import Tensor
 from mlprosection.core.backend import BackendConfig, make_backend
 from mlprosection.nn.model.architecture import (
@@ -33,14 +33,14 @@ from mlprosection.nn.sampling import UnigramSampler
 from mlprosection.optim.SGD import Adam
 from mlprosection.profiling import BenchmarkRunner
 
-from .update import (
+from .workloads import (
     _metadata,
     run_fused_update,
     run_implemented_update,
 )
 
 
-DEFAULT_RESULTS = profile_cache("e02")
+DEFAULT_RESULTS = profile_measurements("e11")
 DEFAULT_VOCAB_SIZES = (
     1_000,
     2_000,
@@ -104,7 +104,7 @@ _T_975 = (
 )
 
 
-class SweepWorkload:
+class ScalingWorkload:
     """One current-implementation Word2Vec condition at a synthetic vocab size."""
 
     def __init__(
@@ -217,18 +217,20 @@ def run(
     reverse_vocab_order: bool = False,
     output_dir: Path = DEFAULT_RESULTS,
 ) -> None:
-    """Measure synchronized update distributions and windows at every sweep point."""
+    """Measure synchronized update distributions at every scaling point."""
     if timing_source not in {"window", "event"}:
         raise ValueError("timing source must be 'window' or 'event'")
     selected_conditions = CONDITIONS if conditions is None else conditions
     unknown = set(selected_conditions) - set(CONDITIONS)
     if unknown:
         raise ValueError(
-            "vocabulary sweep supports implemented conditions only: "
+            "vocabulary-size scaling supports implemented conditions only: "
             f"{sorted(unknown)}"
         )
     if not selected_conditions:
-        raise ValueError("vocabulary sweep requires at least one condition")
+        raise ValueError(
+            "vocabulary-size scaling requires at least one condition"
+        )
     if min(batch_size, measured_updates, repetitions) < 1 or warmup_updates < 0:
         raise ValueError(
             "batch size, measured updates, and repetitions must be positive; "
@@ -293,11 +295,11 @@ def run(
 
         device_dir = output_dir / device.replace(":", "")
         device_dir.mkdir(parents=True, exist_ok=True)
-        output = device_dir / "vsweap.json"
+        output = device_dir / "vocabulary_size_scaling.json"
         payload = {
             "schema_version": 3,
             "metadata": {
-                **_metadata(backend, stage="vsweap"),
+                **_metadata(backend, stage="vocabulary_size_scaling"),
                 "method": (
                     "synthetic uniform vocabulary; current implemented update "
                     "path including dense Adam and post-update loss; device "
@@ -323,14 +325,16 @@ def run(
             encoding="utf-8",
         )
         print(f"saved: {output}", flush=True)
-        figure = render_sweep(payload)
-        figure_output = save_figure(figure, device_dir / "vsweap.png")
+        figure = render_scaling(payload)
+        figure_output = save_figure(
+            figure, device_dir / "vocabulary_size_scaling.png"
+        )
         plt.close(figure)
         print(f"saved: {figure_output}", flush=True)
-        for model, figure in render_individual_sweeps(payload):
+        for model, figure in render_individual_scaling(payload):
             individual_output = save_figure(
                 figure,
-                device_dir / f"vsweap-{model.lower()}.png",
+                device_dir / f"vocabulary_size_scaling-{model.lower()}.png",
             )
             plt.close(figure)
             print(f"saved: {individual_output}", flush=True)
@@ -343,6 +347,11 @@ def _default_vocab_sizes(device: str) -> tuple[int, ...]:
         if not device.startswith("cuda:")
         else DEFAULT_VOCAB_SIZES
     )
+
+
+def default_vocabulary_sizes(device: str) -> tuple[int, ...]:
+    """Return the declared device-specific vocabulary-size schedule."""
+    return _default_vocab_sizes(device)
 
 
 _PLOT_STYLES = {
@@ -380,12 +389,12 @@ _PLOT_STYLES = {
 }
 
 
-def render_sweep(payload: dict[str, object]):
+def render_scaling(payload: dict[str, object]):
     """Render one repository-themed vocabulary/runtime figure per device."""
     rows = payload.get("results")
     metadata = payload.get("metadata")
     if not isinstance(rows, list) or not isinstance(metadata, dict):
-        raise ValueError("invalid vocabulary sweep payload")
+        raise ValueError("invalid vocabulary-size scaling payload")
     selected = [
         row
         for row in rows
@@ -399,7 +408,7 @@ def render_sweep(payload: dict[str, object]):
         if any(row.get("model") == model for row in selected)
     ]
     if not models:
-        raise ValueError("vocabulary sweep has no plottable results")
+        raise ValueError("vocabulary-size scaling has no plottable results")
 
     figure, axes = plt.subplots(
         1,
@@ -427,14 +436,14 @@ def render_sweep(payload: dict[str, object]):
     return figure
 
 
-def render_individual_sweeps(
+def render_individual_scaling(
     payload: dict[str, object],
 ) -> list[tuple[str, plt.Figure]]:
     """Render one untitled figure for each model represented in the payload."""
     rows = payload.get("results")
     metadata = payload.get("metadata")
     if not isinstance(rows, list) or not isinstance(metadata, dict):
-        raise ValueError("invalid vocabulary sweep payload")
+        raise ValueError("invalid vocabulary-size scaling payload")
     selected = [
         row
         for row in rows
@@ -448,7 +457,7 @@ def render_individual_sweeps(
         if any(row.get("model") == model for row in selected)
     ]
     if not models:
-        raise ValueError("vocabulary sweep has no plottable results")
+        raise ValueError("vocabulary-size scaling has no plottable results")
     device = str(metadata.get("device", "unknown device"))
     device_label = (
         "GPU"
@@ -588,7 +597,7 @@ def _measure_condition(
     workload = None
     next_index = 0
     try:
-        workload = SweepWorkload(
+        workload = ScalingWorkload(
             condition,
             vocab_size=vocab_size,
             contexts=contexts,
@@ -602,7 +611,7 @@ def _measure_condition(
             next_index += 1
 
         result = BenchmarkRunner(backend).measure_update_protocol(
-            f"vsweap.v{vocab_size}.{condition}",
+            f"vocabulary_size_scaling.v{vocab_size}.{condition}",
             update_once,
             warmup_iterations=warmup_updates,
             measured_iterations=measured_updates,
@@ -651,6 +660,11 @@ def _measure_condition(
     return row
 
 
+def measure_scaling_condition(*args, **kwargs) -> dict[str, object]:
+    """Public compatibility API for one vocabulary-size scaling point."""
+    return _measure_condition(*args, **kwargs)
+
+
 def _synthetic_batches(
     vocab_size: int,
     *,
@@ -672,6 +686,11 @@ def _synthetic_batches(
         dtype=np.int64,
     )
     return contexts, targets
+
+
+def synthetic_scaling_batches(*args, **kwargs) -> tuple[np.ndarray, np.ndarray]:
+    """Build deterministic synthetic inputs for a scaling point."""
+    return _synthetic_batches(*args, **kwargs)
 
 
 def _mean_confidence_interval_95(timing) -> dict[str, float | None]:
@@ -714,6 +733,13 @@ def _crossovers(rows: list[dict[str, object]]) -> dict[str, dict[str, object]]:
         for key, value in result.items()
         if value["comparisons"]
     }
+
+
+def summarize_crossovers(
+    rows: list[dict[str, object]],
+) -> dict[str, dict[str, object]]:
+    """Summarize full-softmax and sampling crossover observations."""
+    return _crossovers(rows)
 
 
 def _crossover(
@@ -798,7 +824,7 @@ def _render_crossovers(
     crossovers: object,
 ) -> str:
     assert isinstance(crossovers, dict)
-    lines = [f"\n# {device} vocabulary sweep crossover"]
+    lines = [f"\n# {device} vocabulary-size scaling crossover"]
     for model in ("CBOW", "CBOW-Fused", "SkipGram", "SkipGram-Fused"):
         summary = crossovers.get(model)
         if summary is None:

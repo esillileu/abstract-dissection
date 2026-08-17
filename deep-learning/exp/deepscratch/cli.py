@@ -227,6 +227,17 @@ def analyze(
             help="Seed variability display: band (shading) or errorbar.",
         ),
     ] = "band",
+    profile_device: Annotated[
+        str | None,
+        typer.Option("--profile-device", help="Device coordinate for profile studies."),
+    ] = None,
+    profile_timing_source: Annotated[
+        str | None,
+        typer.Option(
+            "--profile-timing-source",
+            help="Timing coordinate for profile studies: window or event.",
+        ),
+    ] = None,
 ) -> None:
     if refresh_scope is not None and (not refresh or refresh_scope != "analysis"):
         raise ValueError("the optional --refresh scope must be 'analysis'")
@@ -243,6 +254,8 @@ def analyze(
         raise ValueError("--run-id requires one explicit variant")
     if error_style not in {"band", "errorbar"}:
         raise ValueError("--error-style must be band or errorbar")
+    if profile_timing_source not in {None, "window", "event"}:
+        raise ValueError("--profile-timing-source must be window or event")
     variants = (
         (Variant.IMPLEMENTED, Variant.ORIGINAL)
         if variant == "all" else (Variant(variant),)
@@ -251,6 +264,31 @@ def analyze(
     from .analysis.paths import default_result_root, selection_directory
 
     selected_experiments = parse_experiment_ids(experiment or [])
+    render_profile = None
+    if volume is Volume.DS2 and len(selected_experiments) == 1:
+        from .ds2.profile.renderers import resolve as resolve_profile_renderer
+
+        render_profile = resolve_profile_renderer(selected_experiments[0])
+    if render_profile is not None:
+        from .analysis.paths import default_result_root
+
+        profile_output = output_dir or default_result_root(
+            volume, selected_experiments, (Variant.IMPLEMENTED,)
+        )
+        outputs = render_profile(
+            tracking_uri
+            or os.getenv("MLFLOW_TRACKING_URI", "http://127.0.0.1:5000"),
+            profile_output,
+            device=profile_device or "cuda:0",
+            timing_source=profile_timing_source or "window",
+        )
+        for path in outputs:
+            typer.echo(f"profile analysis: {path}")
+        return
+    if profile_device is not None or profile_timing_source is not None:
+        raise ValueError(
+            "profile selection options require the e10 or e11 profile study"
+        )
     output_dir = selection_directory(
         output_dir
         or default_result_root(volume, selected_experiments, variants),
@@ -300,18 +338,11 @@ def profile(
     experiment: Experiments = None,
     variant: Annotated[Variant, typer.Option("--variant")] = Variant.IMPLEMENTED,
     device: Annotated[list[str] | None, typer.Option("--device")] = None,
-    mode: Annotated[str, typer.Option("--mode")] = "all",
     output_dir: Annotated[Path | None, typer.Option("--output-dir")] = None,
-    vsweap: Annotated[bool, typer.Option("--vsweap")] = False,
-    vocab_size: Annotated[list[int] | None, typer.Option("--vocab-size")] = None,
     condition: Annotated[list[str] | None, typer.Option("--condition")] = None,
     update_warmup: Annotated[int, typer.Option("--update-warmup")] = 20,
     update_repetitions: Annotated[int, typer.Option("--update-repetitions")] = 5,
     measured_updates: Annotated[int, typer.Option("--measured-updates")] = 50,
-    vsweap_timing: Annotated[str, typer.Option("--vsweap-timing")] = "window",
-    reverse_vocab_order: Annotated[bool, typer.Option("--reverse-vocab-order")] = False,
-    tracking_uri: Annotated[str | None, typer.Option("--tracking-uri")] = None,
-    record: Annotated[bool, typer.Option("--record/--no-record")] = True,
 ) -> None:
     if volume is not Volume.DS2:
         raise ValueError("DeepScratch DS1 has no declared profiles")
@@ -324,50 +355,20 @@ def profile(
         raise ValueError("profile requires exactly one experiment")
     selected_experiment = selected_experiments[0]
     if output_dir is None:
-        output_dir = WorkspacePaths.from_environment(Path.cwd()).resolve(
-            StateOwner.STAGING if record else StateOwner.CACHE,
-            StateCoordinate(
-                "deepscratch",
-                volume.value,
-                selected_experiment,
-                variant.value,
-                "profile",
-            ),
-        )
+        from .ds2.profile.paths import profile_measurements
 
-    if not record:
-        typer.echo(
-            "warning: --no-record writes diagnostic cache only; "
-            "it is not a canonical result",
-            err=True,
-        )
+        output_dir = profile_measurements(selected_experiment)
 
     ds2_profile(
         experiment=experiment,
         device=device,
-        mode=mode,
         output_dir=output_dir,
-        vsweap=vsweap,
-        vocab_size=vocab_size,
         condition=condition,
         update_warmup=update_warmup,
         update_repetitions=update_repetitions,
         measured_updates=measured_updates,
-        vsweap_timing=vsweap_timing,
-        reverse_vocab_order=reverse_vocab_order,
     )
-    if record:
-        from .ds2.profile.result_writer import record_profile_result
-
-        run_id = record_profile_result(
-            tracking_uri
-            or os.getenv("MLFLOW_TRACKING_URI", "http://127.0.0.1:5000"),
-            volume=volume.value,
-            experiment_id=selected_experiment,
-            variant=variant.value,
-            output=output_dir,
-        )
-        typer.echo(f"profile run: {run_id}")
+    typer.echo(f"profile cache: {output_dir}")
 
 
 @cli_errors

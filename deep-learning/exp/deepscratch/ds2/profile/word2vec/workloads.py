@@ -1,4 +1,4 @@
-"""Profile and extrapolate original and implemented DS2 e02 Word2Vec runtimes.
+"""Construct original and implemented Word2Vec profiling workloads.
 
 The benchmark keeps the PTB workload, batch size, embedding size, window size,
 and optimizer aligned with e02.  It runs on either NumPy/CPU or CuPy/CUDA and
@@ -48,13 +48,13 @@ from mlprosection.profiling import (
     estimate_training_time,
 )
 from exp.deepscratch.ds2.original.benchmark import build_word2vec_full_softmax
-from exp.deepscratch.ds2.profile.paths import REPOSITORY_ROOT, profile_cache
+from exp.deepscratch.ds2.profile.paths import REPOSITORY_ROOT, profile_measurements
 
 
 ROOT = REPOSITORY_ROOT
 BOOK_ROOT = ROOT / "exp/deepscratch/ds2/original/source"
 PTB_TRAIN = ROOT / "01_deep-learning-from-base/src/datasets/ptb.train.npy"
-DEFAULT_OUTPUT = profile_cache("e02") / "update.json"
+DEFAULT_OUTPUT = profile_measurements("e10") / "update.json"
 DEFAULT_EPOCHS = 10
 
 CONDITIONS = (
@@ -73,6 +73,26 @@ CONDITIONS = (
     "implemented-skipgram-ns",
     "implemented-skipgram-fused-ns",
 )
+
+
+def load_profile_data(device: str):
+    """Public compatibility API for canonical profile studies."""
+    return _load_data(device)
+
+
+def profile_metadata(backend, *, stage: str) -> dict[str, object]:
+    """Return the stable environment metadata used by profile studies."""
+    return _metadata(backend, stage=stage)
+
+
+def build_profile_condition(*args, **kwargs):
+    """Build one typed Word2Vec workload behind the public adapter API."""
+    return _build_condition(*args, **kwargs)
+
+
+def profile_batch(workload, index: int, batch_size: int):
+    """Return one deterministic cyclic profile minibatch."""
+    return _batch(workload, index, batch_size)
 
 STAGES = {
     # Always measures one cold update before the requested steady-state work.

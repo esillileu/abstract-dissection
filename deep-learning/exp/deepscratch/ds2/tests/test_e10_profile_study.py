@@ -1,0 +1,125 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+from mlflow.tracking import MlflowClient
+
+from exp.deepscratch.ds2.implemented.executor import ProfileExecutor
+from exp.deepscratch.ds2.implemented.spec import parse_run_spec
+from exp.deepscratch.ds2.profile.e10.render import render
+from exp.deepscratch.execution.status import inspect_plan_status
+from exp.deepscratch.identity import Variant, Volume
+from exp.framework.execution import RunOptions, RunSelection
+from exp.framework.execution.planning import Planner
+from exp.deepscratch.ds2.catalog import IMPLEMENTED
+
+
+CONFIG = Path("exp/deepscratch/ds2/config/implemented/e10_ptb_word2vec_profile.yaml")
+
+
+def test_e10_pf01_expands_to_atomic_single_profile_runs() -> None:
+    plans = Planner(IMPLEMENTED).build(
+        RunSelection(experiment_ids=("e10",)), RunOptions(device="cpu")
+    )
+    assert len(plans) == 14
+    assert {plan.seed for plan in plans} == {None}
+    assert {plan.device for plan in plans} == {"cpu"}
+
+    spec = parse_run_spec(
+        CONFIG, atomic_run_id="PF-W2V-CBOW-ORIGINAL-NS"
+    )
+    config = spec.to_executor_config()
+    assert spec.identity.experiment_id == "e10"
+    assert spec.identity.group_id == "PF01"
+    assert spec.kind == "performance_profile"
+    assert config["dataset"]["source_study"] == "e02"
+    assert config["profiling"]["study_kind"] == "update_breakdown"
+    assert config["profiling"]["condition"] == {
+        "subject_variant": "original",
+        "model": "cbow",
+        "objective": "negative_sampling",
+    }
+    assert config["tracking"]["tags"]["run.type"] == "profile"
+    assert config["tracking"]["tags"]["profile.subject_variant"] == "original"
+    assert config["tracking"]["tags"]["result.schema.name"] == "ds2-profile"
+    assert callable(ProfileExecutor().run)
+
+
+def test_profile_studies_require_explicit_selection() -> None:
+    plans = Planner(IMPLEMENTED).build(
+        RunSelection(all_experiments=True), RunOptions(device="cpu")
+    )
+    assert not {"e10", "e11"} & {plan.experiment_id for plan in plans}
+
+
+def test_e10_renderer_selects_durable_profile_runs(tmp_path: Path) -> None:
+    uri = f"sqlite:///{tmp_path / 'mlflow.db'}"
+    client = MlflowClient(uri)
+    experiment_id = client.create_experiment("deepscratch.ds2")
+    for index, subject in enumerate(("original", "implemented"), start=1):
+        condition = f"PF-W2V-CBOW-{subject.upper()}-NS"
+        run = client.create_run(
+            experiment_id,
+            tags={
+                "run.type": "profile",
+                "experiment.id": "e10",
+                "atomic_run.id": condition,
+                "profile.subject_variant": subject,
+                "implementation.variant": "implemented",
+                "protocol.version": "ds2-e10-profile-v1",
+                "result.schema.name": "ds2-profile",
+                "result.durable_complete": "true",
+                "runtime.device_type": "cpu",
+            },
+        )
+        client.log_metric(run.info.run_id, "profile/update/mean_ms", 10.0 + index)
+        client.log_metric(run.info.run_id, "profile/update/stdev_ms", 0.1 * index)
+        client.log_metric(run.info.run_id, "profile/update/cold_ms", 20.0 + index)
+        client.log_metric(run.info.run_id, "profile/epoch/estimated_seconds", 100.0)
+        client.log_metric(run.info.run_id, "profile/total/estimated_seconds", 1000.0)
+        artifact_dir = tmp_path / condition
+        artifact_dir.mkdir()
+        artifact = artifact_dir / "result.json"
+        artifact.write_text(json.dumps({
+            "schema_name": "ds2-profile",
+            "points": [{
+                "condition_id": condition,
+                "sections": {"modules": [{
+                    "component": "model_forward",
+                    "measurement_scope": "separate_model_objective",
+                    "timing": {"mean_ms": 1.5, "stdev_ms": 0.1},
+                }]},
+            }],
+        }), encoding="utf-8")
+        client.log_artifact(run.info.run_id, str(artifact), "profile")
+        client.set_terminated(run.info.run_id, "FINISHED")
+
+    png, csv, markdown, module_png, module_csv = render(
+        uri, tmp_path / "results"
+    )
+    assert all(
+        path.exists()
+        for path in (png, csv, markdown, module_png, module_csv)
+    )
+    assert "PF-W2V-CBOW-ORIGINAL-NS" in csv.read_text(encoding="utf-8")
+    assert "Source study: `e02`" in markdown.read_text(encoding="utf-8")
+    assert "model_forward" in module_csv.read_text(encoding="utf-8")
+
+    plans = Planner(IMPLEMENTED).build(
+        RunSelection(
+            experiment_ids=("e10",),
+            atomic_run_ids=("PF-W2V-CBOW-ORIGINAL-NS",),
+        ),
+        RunOptions(device="cpu"),
+    )
+    report = inspect_plan_status(
+        client,
+        plans,
+        volume=Volume.DS2,
+        variant=Variant.IMPLEMENTED,
+        expected_protocols={
+            ("e10", "PF-W2V-CBOW-ORIGINAL-NS"): "ds2-e10-profile-v1"
+        },
+    )
+    assert report.counts["completed"] == 1

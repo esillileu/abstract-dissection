@@ -112,6 +112,31 @@ def _optimizer(config: dict[str, object], model, objective):
     raise ValueError(f"unsupported sequence optimizer: {name}")
 
 
+@register_executor("performance_profile")
+class ProfileExecutor:
+    """Dispatch canonical profile studies through their shared result contract."""
+
+    def run(
+        self, config: dict[str, object], context: ExperimentContext
+    ) -> ExperimentResult:
+        from exp.deepscratch.profile.result import to_experiment_result
+        from exp.deepscratch.ds2.profile.studies import resolve
+
+        profiling = _mapping(config, "profiling")
+        study = resolve(str(profiling.get("study_kind", "")))
+        result = study.run(config, context)
+        context.metadata["profile"] = {
+            "study_id": result.study_id,
+            "group_id": result.group_id,
+            "study_kind": result.study_kind,
+            "source_study": result.source_study,
+        }
+        return to_experiment_result(
+            result,
+            artifact_root=_artifact_root(config, context),
+        )
+
+
 def _apply_validation_decay(config: dict[str, object], optimizer) -> None:
     scheduler = _mapping(config, "scheduler")
     if str(scheduler.get("name", "constant")) == "validation_decay":

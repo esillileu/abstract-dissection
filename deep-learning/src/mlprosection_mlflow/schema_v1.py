@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from mlprosection.core.backend import get_default_backend
+from mlprosection.core.backend import BackendConfig, make_backend
 from mlprosection.experiment import normalize_config
 
 from .runtime import (
@@ -190,7 +190,15 @@ class SchemaV1Run:
         write_json(
             self.artifact_root / "environment/system.json", environment_artifacts()
         )
-        backend = model.backend if model is not None else get_default_backend()
+        if model is not None:
+            backend = model.backend
+        else:
+            numerics = _section(self.config, "numerics")
+            backend = make_backend(BackendConfig(
+                device=str(numerics.get("device", "cpu")),
+                dtype=str(numerics.get("dtype", "float32")),
+                seed=int(self.config.get("seed", 0)),
+            ))
         write_json(
             self.artifact_root / "environment/backend.json",
             {
@@ -383,7 +391,18 @@ def build_tags(
     git_info: dict[str, object],
     model: Any | None,
 ) -> dict[str, str]:
-    backend = model.backend if model is not None else get_default_backend()
+    backend = model.backend if model is not None else None
+    numerics = _section(config, "numerics")
+    backend_name = (
+        backend.name
+        if backend is not None
+        else str(numerics.get("backend", "numpy"))
+    )
+    is_gpu = (
+        backend.is_gpu
+        if backend is not None
+        else str(numerics.get("device", "cpu")).startswith("cuda:")
+    )
     group_identity = {
         "experiment/ids": identity.experiment_ids,
         "execution_group/id": identity.execution_group_id,
@@ -401,8 +420,8 @@ def build_tags(
         "code.repository": str(git_info["repository"]),
         "code.entrypoint": str(git_info["entrypoint"]),
         "code.runner_version": "1",
-        "runtime.backend": backend.name,
-        "runtime.device_type": "cuda" if backend.is_gpu else "cpu",
+        "runtime.backend": backend_name,
+        "runtime.device_type": "cuda" if is_gpu else "cpu",
         "runtime.platform": os.uname().sysname.lower(),
         "runtime.python_version": sys.version.split()[0],
         "atomic_run.id": identity.atomic_run_id,

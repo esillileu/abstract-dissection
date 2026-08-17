@@ -27,7 +27,10 @@ class EvaluationTrigger:
 
 @dataclass(frozen=True)
 class RunSpec:
-    kind: Literal["word2vec", "language_modeling", "seq2seq", "observation"]
+    kind: Literal[
+        "word2vec", "language_modeling", "seq2seq", "observation",
+        "performance_profile",
+    ]
     identity: RunIdentity
     atomic_run_id: str
     seed_policy: dict[str, object]
@@ -82,6 +85,22 @@ class RunSpec:
                 "reducer": self.source_curve.reducer,
                 "plot_index": self.source_curve.plot_index,
             }
+        tracking = dict(self.tracking)
+        if self.kind == "performance_profile":
+            tags = dict(mapping(tracking, "tags"))
+            tags.update({
+                "run.type": "profile",
+                "profile.study": self.identity.experiment_id,
+                "profile.group": self.identity.group_id,
+                "profile.source_study": str(self.dataset.get("source_study", "")),
+                "profile.study_kind": str(self.profiling.get("study_kind", "")),
+                "profile.timing_source": str(
+                    self.profiling.get("timing_source", "window")
+                ),
+                "result.schema.name": "ds2-profile",
+                "result.schema.version": "1",
+            })
+            tracking["tags"] = tags
         return {
             "kind": self.kind,
             "atomic_run_id": self.atomic_run_id,
@@ -122,7 +141,7 @@ class RunSpec:
                     if key in self.seed_policy
                 },
             },
-            "tracking": dict(self.tracking),
+            "tracking": tracking,
         }
 
 
@@ -139,7 +158,10 @@ def parse_run_spec(
             "DS2 implemented YAML requires domain: "
             f"deepscratch.ds2.implemented: {path}"
         )
-    if raw.get("kind") not in {"word2vec", "language_modeling", "seq2seq", "observation"}:
+    if raw.get("kind") not in {
+        "word2vec", "language_modeling", "seq2seq", "observation",
+        "performance_profile",
+    }:
         raise ValueError(f"DS2 does not support kind: {raw.get('kind')}")
     _reject_old_catalog_keys(raw)
     run = mapping(raw, "run")
@@ -215,6 +237,10 @@ def _validate(spec: RunSpec) -> None:
         raise ValueError("DS2 GO groups must use kind: observation")
     if spec.identity.group_id.startswith("GT") and spec.kind == "observation":
         raise ValueError("DS2 GT groups must not use kind: observation")
+    if spec.identity.group_id.startswith("PF") and spec.kind != "performance_profile":
+        raise ValueError("DS2 PF groups must use kind: performance_profile")
+    if spec.kind == "performance_profile" and not spec.identity.group_id.startswith("PF"):
+        raise ValueError("DS2 performance profiles must use a PF group")
     if spec.source_curve is not None:
         if spec.source_curve.every_updates is not None and spec.source_curve.every_updates < 1:
             raise ValueError("source_curve.every_updates must be positive")

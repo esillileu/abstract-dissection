@@ -17,6 +17,7 @@ IMPLEMENTED = ExecutionDefinition(
     domain="deepscratch",
     suite="ds2",
     variant="implemented",
+    all_excluded_kinds=("performance_profile",),
 )
 
 ORIGINAL = ExecutionDefinition(
