@@ -8,7 +8,11 @@ from __future__ import annotations
 
 import csv
 from dataclasses import dataclass
+import hashlib
+import json
+import marshal
 from pathlib import Path
+import shutil
 from typing import Callable, Mapping, Sequence
 
 import numpy as np
@@ -33,6 +37,84 @@ class AnalysisRun:
     local_artifact_root: Path | None = None
 
 
+class PreparedAnalysisStore:
+    """Materialize and replay the renderer-facing analysis inputs."""
+
+    SCHEMA_VERSION = 1
+
+    def __init__(self, root: Path, *, refresh: bool = False) -> None:
+        self.root = root
+        self.index_path = root / "prepared_analysis.json"
+        self._entries: dict[str, object] = {}
+        self._dirty = False
+        if not refresh:
+            try:
+                payload = json.loads(self.index_path.read_text(encoding="utf-8"))
+                if payload.get("schema_version") == self.SCHEMA_VERSION:
+                    self._entries = dict(payload["entries"])
+            except (KeyError, OSError, TypeError, json.JSONDecodeError):
+                pass
+
+    def key(self, operation: str, payload: object) -> str:
+        encoded = json.dumps(
+            {"operation": operation, "payload": payload},
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        return f"{operation}:{hashlib.sha256(encoded).hexdigest()}"
+
+    def get(self, key: str) -> object | None:
+        return self._entries.get(key)
+
+    def contains(self, key: str) -> bool:
+        return key in self._entries
+
+    def put(self, key: str, value: object) -> None:
+        self._entries[key] = value
+        self._dirty = True
+
+    def materialize_file(self, key: str, source: Path) -> Path:
+        digest = key.rsplit(":", 1)[-1]
+        target = self.root / "files" / digest / source.name
+        if source.is_dir():
+            if target.exists():
+                shutil.rmtree(target)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(source, target)
+        else:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, target)
+        self.put(key, {"path": str(target.relative_to(self.root))})
+        return target
+
+    def cached_file(self, key: str) -> Path | None:
+        entry = self.get(key)
+        if not isinstance(entry, dict) or "path" not in entry:
+            return None
+        path = self.root / str(entry["path"])
+        return path if path.exists() else None
+
+    def commit(self) -> None:
+        if not self._dirty:
+            return
+        self.root.mkdir(parents=True, exist_ok=True)
+        temporary = self.index_path.with_suffix(".json.tmp")
+        temporary.write_text(
+            json.dumps(
+                {
+                    "schema_version": self.SCHEMA_VERSION,
+                    "entries": self._entries,
+                },
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        temporary.replace(self.index_path)
+        self._dirty = False
+
+
 class StudyAnalysisInput:
     """All selected native results for one study and one variant."""
 
@@ -46,6 +128,8 @@ class StudyAnalysisInput:
         cache_dir: Path,
         tracking_uri: str | None = None,
         refresh_raw: bool = False,
+        prepared_cache_dir: Path | None = None,
+        refresh_analysis: bool = False,
     ) -> None:
         self._client = client
         self.declaration = declaration
@@ -57,6 +141,13 @@ class StudyAnalysisInput:
         )
         self._refresh_raw = refresh_raw
         self._refreshed_artifacts: set[tuple[str, str]] = set()
+        self._prepared = (
+            None
+            if prepared_cache_dir is None
+            else PreparedAnalysisStore(
+                prepared_cache_dir, refresh=refresh_analysis
+            )
+        )
 
     def runs(self, condition_ids: Sequence[str]) -> dict[str, list[AnalysisRun]]:
         """Resolve suite-declared aliases to the already selected run set."""
@@ -86,6 +177,27 @@ class StudyAnalysisInput:
         return output
 
     def artifact_file(self, run: AnalysisRun, artifact_path: str) -> Path | None:
+        prepared_key = self._prepared_key(
+            "artifact_file", {"run_id": run.run_id, "path": artifact_path}
+        )
+        if self._prepared is not None:
+            cached = self._prepared.cached_file(prepared_key)
+            if cached is not None:
+                return cached
+            if self._prepared.contains(prepared_key):
+                return None
+        source = self._raw_artifact_file(run, artifact_path)
+        if source is None:
+            if self._prepared is not None:
+                self._prepared.put(prepared_key, {"missing": True})
+            return None
+        if self._prepared is None:
+            return source
+        return self._prepared.materialize_file(prepared_key, source)
+
+    def _raw_artifact_file(
+        self, run: AnalysisRun, artifact_path: str
+    ) -> Path | None:
         native_path = run.result.artifact_aliases.get(artifact_path, artifact_path)
         materialized = Path(native_path)
         if materialized.is_absolute():
@@ -117,11 +229,20 @@ class StudyAnalysisInput:
     def artifact_rows(
         self, run: AnalysisRun, artifact_path: str
     ) -> list[dict[str, str]]:
+        prepared_key = self._prepared_key(
+            "artifact_rows", {"run_id": run.run_id, "path": artifact_path}
+        )
+        cached = None if self._prepared is None else self._prepared.get(prepared_key)
+        if isinstance(cached, list):
+            return [dict(row) for row in cached]
         path = self.artifact_file(run, artifact_path)
         if path is None:
             return []
         with path.open(encoding="utf-8", newline="") as stream:
-            return list(csv.DictReader(stream))
+            rows = list(csv.DictReader(stream))
+        if self._prepared is not None:
+            self._prepared.put(prepared_key, rows)
+        return rows
 
     def histories_from_artifact(
         self,
@@ -134,6 +255,21 @@ class StudyAnalysisInput:
         x_value: Callable[[Mapping[str, str]], float] | None = None,
         y_value: Callable[[Mapping[str, str]], float] | None = None,
     ) -> list[dict[float, float]]:
+        prepared_key = self._prepared_key(
+            "histories_from_artifact",
+            {
+                "run_ids": [run.run_id for run in runs],
+                "artifact_path": artifact_path,
+                "x": x,
+                "y": y,
+                "row_filter": _callable_fingerprint(row_filter),
+                "x_value": _callable_fingerprint(x_value),
+                "y_value": _callable_fingerprint(y_value),
+            },
+        )
+        cached = None if self._prepared is None else self._prepared.get(prepared_key)
+        if isinstance(cached, list):
+            return [_decode_history(history) for history in cached]
         histories = []
         for run in runs:
             history: dict[float, float] = {}
@@ -149,11 +285,22 @@ class StudyAnalysisInput:
                     history[float(step)] = float(value)
             if history:
                 histories.append(history)
+        if self._prepared is not None:
+            self._prepared.put(
+                prepared_key, [_encode_history(history) for history in histories]
+            )
         return histories
 
     def metric_histories(
         self, runs: Sequence[AnalysisRun], metric_id: str
     ) -> list[dict[float, float]]:
+        prepared_key = self._prepared_key(
+            "metric_histories",
+            {"run_ids": [run.run_id for run in runs], "metric_id": metric_id},
+        )
+        cached = None if self._prepared is None else self._prepared.get(prepared_key)
+        if isinstance(cached, list):
+            return [_decode_history(history) for history in cached]
         histories = []
         for run in runs:
             series = run.result.metric(metric_id)
@@ -168,14 +315,38 @@ class StudyAnalysisInput:
                 history = dict(zip(series.steps, series.values, strict=True))
             if history:
                 histories.append(history)
+        if self._prepared is not None:
+            self._prepared.put(
+                prepared_key, [_encode_history(history) for history in histories]
+            )
         return histories
 
     def metric_value(self, run: AnalysisRun, metric_id: str) -> float | None:
+        prepared_key = self._prepared_key(
+            "metric_value", {"run_id": run.run_id, "metric_id": metric_id}
+        )
+        cached = None if self._prepared is None else self._prepared.get(prepared_key)
+        if isinstance(cached, dict) and "value" in cached:
+            value = cached["value"]
+            return None if value is None else float(value)
         series = run.result.metric(metric_id)
         if series is not None and series.values:
-            return float(series.values[-1])
-        history = self._client.get_metric_history(run.run_id, metric_id)
-        return None if not history else float(history[-1].value)
+            value = float(series.values[-1])
+        else:
+            history = self._client.get_metric_history(run.run_id, metric_id)
+            value = None if not history else float(history[-1].value)
+        if self._prepared is not None:
+            self._prepared.put(prepared_key, {"value": value})
+        return value
+
+    def commit_prepared(self) -> None:
+        if self._prepared is not None:
+            self._prepared.commit()
+
+    def _prepared_key(self, operation: str, payload: object) -> str:
+        if self._prepared is None:
+            return operation
+        return self._prepared.key(operation, payload)
 
 
 def artifact_file(data: StudyAnalysisInput, run: AnalysisRun, artifact_path: str):
@@ -224,6 +395,29 @@ def local_artifact_root(client, run_id: str) -> Path | None:
 
 def _seed_key(value: str) -> tuple[int, str]:
     return (0, f"{int(value):020d}") if value.isdigit() else (1, value)
+
+
+def _encode_history(history: Mapping[float, float]) -> list[list[float]]:
+    return [[float(step), float(value)] for step, value in history.items()]
+
+
+def _decode_history(payload: object) -> dict[float, float]:
+    if not isinstance(payload, list):
+        return {}
+    return {float(item[0]): float(item[1]) for item in payload}
+
+
+def _callable_fingerprint(function: Callable | None) -> str | None:
+    if function is None:
+        return None
+    code = getattr(function, "__code__", None)
+    if code is None:
+        return repr(function)
+    closure = tuple(
+        repr(cell.cell_contents) for cell in (getattr(function, "__closure__", None) or ())
+    )
+    payload = marshal.dumps(code) + repr(closure).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
 
 
 __all__ = [

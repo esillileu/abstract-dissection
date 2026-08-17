@@ -3,9 +3,12 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from exp.deepscratch.legacy.result_adapter import _artifact_aliases
+from exp.deepscratch.analysis.declarations import StudyDeclaration
+from exp.deepscratch.analysis.input import AnalysisRun, StudyAnalysisInput
 from exp.deepscratch.analysis.orchestrator import _render_studies
 from exp.deepscratch.identity import Variant, Volume
 from exp.deepscratch.ds1 import result_schema as ds1_result_schema
+from exp.framework.results import NativeRunResult
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -64,6 +67,85 @@ class FakeClient:
 
     def download_artifacts(self, run_id, artifact_path):
         raise FileNotFoundError((run_id, artifact_path))
+
+
+def test_prepared_analysis_replays_without_raw_or_mlflow_access(tmp_path):
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    (raw / "evaluations.csv").write_text(
+        "step,split,value\n0,valid,3.0\n1,train,9.0\n",
+        encoding="utf-8",
+    )
+
+    class Client:
+        def __init__(self):
+            self.metric_reads = 0
+
+        def get_metric_history(self, run_id, metric_id):
+            self.metric_reads += 1
+            return [SimpleNamespace(step=0, value=7.0)]
+
+    client = Client()
+    run = AnalysisRun(
+        run_id="run-1",
+        canonical_condition_id="condition",
+        native_condition_id="condition",
+        seed="1",
+        variant=Variant.IMPLEMENTED,
+        result=NativeRunResult("run-1", "test", 1, "book-source-v1", ()),
+        local_artifact_root=raw,
+    )
+    prepared = tmp_path / "prepared"
+
+    def valid_rows(row):
+        return row["split"] == "valid"
+
+    first = StudyAnalysisInput(
+        client,
+        StudyDeclaration("e01", ()),
+        Variant.IMPLEMENTED,
+        (run,),
+        cache_dir=tmp_path / "artifact-cache",
+        prepared_cache_dir=prepared,
+    )
+    assert first.histories_from_artifact(
+        (run,),
+        artifact_path="evaluations.csv",
+        x="step",
+        y="value",
+        row_filter=valid_rows,
+    ) == [{0.0: 3.0}]
+    assert first.metric_value(run, "final/value") == 7.0
+    prepared_file = first.artifact_file(run, "evaluations.csv")
+    assert prepared_file is not None and prepared_file.is_file()
+    first.commit_prepared()
+    assert client.metric_reads == 1
+
+    (raw / "evaluations.csv").unlink()
+
+    def fail_metric_read(*_args):
+        raise AssertionError("prepared analysis unexpectedly queried MLflow")
+
+    client.get_metric_history = fail_metric_read
+    replay = StudyAnalysisInput(
+        client,
+        StudyDeclaration("e01", ()),
+        Variant.IMPLEMENTED,
+        (run,),
+        cache_dir=tmp_path / "artifact-cache",
+        prepared_cache_dir=prepared,
+    )
+    assert replay.histories_from_artifact(
+        (run,),
+        artifact_path="evaluations.csv",
+        x="step",
+        y="value",
+        row_filter=valid_rows,
+    ) == [{0.0: 3.0}]
+    assert replay.metric_value(run, "final/value") == 7.0
+    replayed_file = replay.artifact_file(run, "evaluations.csv")
+    assert replayed_file is not None
+    assert replayed_file.read_text(encoding="utf-8").startswith("step,split,value")
 
 
 def test_legacy_e10_uses_mlflow_activation_histogram_artifact():

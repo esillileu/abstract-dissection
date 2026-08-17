@@ -259,6 +259,7 @@ def write_analysis(
             ),
             cache_dir,
             refresh_raw,
+            refresh_analysis,
         )
     return output_dir
 
@@ -575,6 +576,7 @@ def _render_studies(
     filename_suffix: str,
     cache_dir: Path,
     refresh_raw: bool = False,
+    refresh_analysis: bool = False,
 ) -> list[Path]:
     renderer = importlib.import_module(
         f"exp.deepscratch.{volume.value}.analysis.render"
@@ -617,6 +619,10 @@ def _render_studies(
                 cache_dir=artifact_cache_dir,
                 tracking_uri=tracking_uri,
                 refresh_raw=refresh_raw,
+                prepared_cache_dir=(
+                    cache_dir / "prepared" / study_id / variant.value
+                ),
+                refresh_analysis=refresh_analysis,
             )
             output_variants = variants if len(variants) == 1 else (variant,)
             output = output_dir / (
@@ -656,5 +662,6 @@ def _render_studies(
             ]
             if append_markdown is not None and text_reports:
                 append_markdown(summary_path, text_reports[0], seed=seed)
+            data.commit_prepared()
             outputs.append(summary_path)
     return outputs
