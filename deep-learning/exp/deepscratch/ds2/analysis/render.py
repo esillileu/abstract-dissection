@@ -18,6 +18,8 @@ from . import (
     e07_date_seq2seq,
     e08_attention,
     e09_addition_seq2seq_150,
+    e10_word2vec_profile,
+    e11_vocabulary_size_scaling,
 )
 
 
@@ -31,6 +33,8 @@ RENDERERS = {
     "e07": e07_date_seq2seq.render,
     "e08": e08_attention.render,
     "e09": e09_addition_seq2seq_150.render,
+    "e10": e10_word2vec_profile.render,
+    "e11": e11_vocabulary_size_scaling.render,
 }
 ADDITIONAL_RENDERERS = {
     "e09": e09_addition_seq2seq_150.render_additional_graphs,

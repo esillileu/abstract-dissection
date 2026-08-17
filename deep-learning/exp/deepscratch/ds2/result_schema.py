@@ -92,6 +92,14 @@ SUMMARY_TEST_ACCURACY = MetricDeclaration(
     protocols=("book-source-v1", "legacy"),
     value_scale=100.0,
 )
+PROFILE_POINTS_OK = MetricDeclaration(
+    "profile_points_ok", "count", "profile", "run",
+    ("profile/points/ok",), (),
+    protocols=(
+        "ds2-e10-profile-v1",
+        "ds2-e11-vocabulary-size-scaling-v1",
+    ),
+)
 
 
 def condition(canonical, implemented, original=(), metric=LOSS):
@@ -182,8 +190,43 @@ E09 = StudyDeclaration("e09", tuple(
         "SEQA-ATTN-PEEKY-REV",
     )
 ))
+E10_NAMES = (
+    "PF-W2V-CBOW-ORIGINAL-ONEHOT-FS",
+    "PF-W2V-CBOW-ORIGINAL-FS",
+    "PF-W2V-CBOW-ORIGINAL-NS",
+    "PF-W2V-SKIPGRAM-ORIGINAL-ONEHOT-FS",
+    "PF-W2V-SKIPGRAM-ORIGINAL-FS",
+    "PF-W2V-SKIPGRAM-ORIGINAL-NS",
+    "PF-W2V-CBOW-IMPLEMENTED-ONEHOT-FS",
+    "PF-W2V-CBOW-IMPLEMENTED-FS",
+    "PF-W2V-CBOW-IMPLEMENTED-NS",
+    "PF-W2V-CBOW-IMPLEMENTED-FUSED-NS",
+    "PF-W2V-SKIPGRAM-IMPLEMENTED-ONEHOT-FS",
+    "PF-W2V-SKIPGRAM-IMPLEMENTED-FS",
+    "PF-W2V-SKIPGRAM-IMPLEMENTED-NS",
+    "PF-W2V-SKIPGRAM-IMPLEMENTED-FUSED-NS",
+)
+E10 = StudyDeclaration("e10", tuple(
+    condition(name.lower(), (name,), metric=PROFILE_POINTS_OK)
+    for name in E10_NAMES
+))
+E11_NAMES = (
+    "PF-VSCALE-CBOW-FS",
+    "PF-VSCALE-CBOW-NS",
+    "PF-VSCALE-CBOW-FUSED-NS",
+    "PF-VSCALE-SKIPGRAM-FS",
+    "PF-VSCALE-SKIPGRAM-NS",
+    "PF-VSCALE-SKIPGRAM-FUSED-NS",
+)
+E11 = StudyDeclaration("e11", tuple(
+    condition(name.lower(), (name,), metric=PROFILE_POINTS_OK)
+    for name in E11_NAMES
+))
 
-STUDIES = {item.study_id: item for item in (E01, E02, E03, E04, E05, E06, E07, E08, E09)}
+STUDIES = {
+    item.study_id: item
+    for item in (E01, E02, E03, E04, E05, E06, E07, E08, E09, E10, E11)
+}
 SUMMARY_METRICS = {
     "e01": (SUMMARY_BOOK_LOSS,),
     "e02": (SUMMARY_BOOK_LOSS,),
@@ -194,6 +237,8 @@ SUMMARY_METRICS = {
     "e07": (SUMMARY_TEST_ACCURACY,),
     "e08": (SUMMARY_TRAIN_EXACT, SUMMARY_TEST_EXACT),
     "e09": (SUMMARY_TRAIN_EXACT, SUMMARY_TEST_EXACT),
+    "e10": (),
+    "e11": (),
 }
 PROTOCOL_EQUIVALENCE = {
     study_id: (("legacy", "book-source-v1"),) for study_id in STUDIES

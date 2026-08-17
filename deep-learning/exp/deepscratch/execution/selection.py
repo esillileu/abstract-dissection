@@ -68,7 +68,10 @@ class CanonicalAttemptSelector:
             )
             for run in runs:
                 tags = run.data.tags
-                if tags.get("run.type") != "seed_trial" or tags.get("implementation.variant") != variant.value:
+                run_type = tags.get("run.type")
+                if run_type not in {"seed_trial", "profile"}:
+                    continue
+                if tags.get("implementation.variant") != variant.value:
                     continue
                 study = _first(tags.get("experiment.id"), tags.get("experiment.ids"), run.data.params.get("experiment_id"), run.data.params.get("run/experiment_id"))
                 condition = _first(tags.get("condition.id"), tags.get("atomic_run.id"), run.data.params.get("atomic_run_id"))

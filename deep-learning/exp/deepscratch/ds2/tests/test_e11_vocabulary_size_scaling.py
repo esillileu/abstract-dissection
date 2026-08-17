@@ -1,14 +1,16 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from mlflow.tracking import MlflowClient
 
 from exp.deepscratch.ds2.catalog import IMPLEMENTED
+from exp.deepscratch.analysis.orchestrator import write_analysis
 from exp.deepscratch.ds2.implemented.spec import parse_run_spec
-from exp.deepscratch.ds2.profile.e11.render import render
 from exp.framework.execution import RunOptions, RunSelection
 from exp.framework.execution.planning import Planner
+from exp.deepscratch.identity import Variant, Volume
 
 
 CONFIG = Path(
@@ -57,8 +59,10 @@ def test_e11_renderer_uses_vocabulary_size_as_x_axis(tmp_path: Path) -> None:
                 "run.type": "profile",
                 "experiment.id": "e11",
                 "atomic_run.id": condition,
+                "implementation.variant": "implemented",
                 "result.durable_complete": "true",
                 "result.schema.name": "ds2-profile",
+                "result.schema.version": "1",
                 "protocol.version": "ds2-e11-vocabulary-size-scaling-v1",
             },
         )
@@ -68,13 +72,46 @@ def test_e11_renderer_uses_vocabulary_size_as_x_axis(tmp_path: Path) -> None:
                 f"profile/vocabulary_size/{vocabulary_size}/update_ms",
                 vocabulary_size / (100.0 if condition.endswith("-FS") else 200.0),
             )
+        client.log_metric(run.info.run_id, "profile/points/ok", 2.0)
+        artifact_dir = tmp_path / condition
+        artifact_dir.mkdir()
+        artifact = artifact_dir / "result.json"
+        artifact.write_text(
+            json.dumps({
+                "schema_name": "ds2-profile",
+                "points": [
+                    {
+                        "condition_id": condition,
+                        "axes": {"vocabulary_size": vocabulary_size},
+                        "status": "ok",
+                        "metrics": {
+                            "update_ms": vocabulary_size
+                            / (100.0 if condition.endswith("-FS") else 200.0),
+                        },
+                    }
+                    for vocabulary_size in (1000, 2000)
+                ],
+            }),
+            encoding="utf-8",
+        )
+        client.log_artifact(run.info.run_id, str(artifact), "profile")
         client.set_terminated(run.info.run_id, "FINISHED")
 
-    png, csv, markdown = render(uri, tmp_path / "results")
-    assert png.exists()
-    assert csv.exists()
-    assert markdown.exists()
-    text = csv.read_text(encoding="utf-8")
-    assert "implemented-cbow-fs" in text
+    canonical_output = tmp_path / "canonical-results"
+    canonical_cache = tmp_path / "canonical-cache"
+    write_analysis(
+        uri,
+        volume=Volume.DS2,
+        experiment_ids=["e11"],
+        variants=(Variant.IMPLEMENTED,),
+        output_dir=canonical_output,
+        cache_dir=canonical_cache,
+    )
+    assert (canonical_output / "ds2_e11_imp.png").exists()
+    assert (canonical_output / "ds2_e11_imp_cbow.png").exists()
+    scaling = canonical_cache / "render" / "ds2_e11_imp_scaling.csv"
+    text = scaling.read_text(encoding="utf-8")
+    assert "PF-VSCALE-CBOW-FS" in text
     assert ",2000," in text
-    assert "vocabulary-size scaling" in markdown.read_text(encoding="utf-8")
+    assert (canonical_cache / "analysis_input.json").exists()
+    assert (canonical_cache / "prepared" / "e11" / "implemented").exists()

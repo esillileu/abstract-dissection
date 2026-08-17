@@ -7,7 +7,7 @@ from mlflow.tracking import MlflowClient
 
 from exp.deepscratch.ds2.implemented.executor import ProfileExecutor
 from exp.deepscratch.ds2.implemented.spec import parse_run_spec
-from exp.deepscratch.ds2.profile.e10.render import render
+from exp.deepscratch.analysis.orchestrator import write_analysis
 from exp.deepscratch.execution.status import inspect_plan_status
 from exp.deepscratch.identity import Variant, Volume
 from exp.framework.execution import RunOptions, RunSelection
@@ -69,11 +69,13 @@ def test_e10_renderer_selects_durable_profile_runs(tmp_path: Path) -> None:
                 "implementation.variant": "implemented",
                 "protocol.version": "ds2-e10-profile-v1",
                 "result.schema.name": "ds2-profile",
+                "result.schema.version": "1",
                 "result.durable_complete": "true",
                 "runtime.device_type": "cpu",
             },
         )
         client.log_metric(run.info.run_id, "profile/update/mean_ms", 10.0 + index)
+        client.log_metric(run.info.run_id, "profile/points/ok", 1.0)
         client.log_metric(run.info.run_id, "profile/update/stdev_ms", 0.1 * index)
         client.log_metric(run.info.run_id, "profile/update/cold_ms", 20.0 + index)
         client.log_metric(run.info.run_id, "profile/epoch/estimated_seconds", 100.0)
@@ -95,16 +97,22 @@ def test_e10_renderer_selects_durable_profile_runs(tmp_path: Path) -> None:
         client.log_artifact(run.info.run_id, str(artifact), "profile")
         client.set_terminated(run.info.run_id, "FINISHED")
 
-    png, csv, markdown, module_png, module_csv = render(
-        uri, tmp_path / "results"
+    canonical_output = tmp_path / "canonical-results"
+    canonical_cache = tmp_path / "canonical-cache"
+    write_analysis(
+        uri,
+        volume=Volume.DS2,
+        experiment_ids=["e10"],
+        variants=(Variant.IMPLEMENTED,),
+        output_dir=canonical_output,
+        cache_dir=canonical_cache,
     )
-    assert all(
-        path.exists()
-        for path in (png, csv, markdown, module_png, module_csv)
-    )
-    assert "PF-W2V-CBOW-ORIGINAL-NS" in csv.read_text(encoding="utf-8")
-    assert "Source study: `e02`" in markdown.read_text(encoding="utf-8")
-    assert "model_forward" in module_csv.read_text(encoding="utf-8")
+    assert (canonical_output / "ds2_e10_imp.png").exists()
+    assert (canonical_output / "ds2_e10_imp_cbow.png").exists()
+    operations = canonical_cache / "render" / "ds2_e10_imp_operations.csv"
+    assert "model_forward" in operations.read_text(encoding="utf-8")
+    assert (canonical_cache / "analysis_input.json").exists()
+    assert (canonical_cache / "prepared" / "e10" / "implemented").exists()
 
     plans = Planner(IMPLEMENTED).build(
         RunSelection(

@@ -227,17 +227,6 @@ def analyze(
             help="Seed variability display: band (shading) or errorbar.",
         ),
     ] = "band",
-    profile_device: Annotated[
-        str | None,
-        typer.Option("--profile-device", help="Device coordinate for profile studies."),
-    ] = None,
-    profile_timing_source: Annotated[
-        str | None,
-        typer.Option(
-            "--profile-timing-source",
-            help="Timing coordinate for profile studies: window or event.",
-        ),
-    ] = None,
 ) -> None:
     if refresh_scope is not None and (not refresh or refresh_scope != "analysis"):
         raise ValueError("the optional --refresh scope must be 'analysis'")
@@ -254,8 +243,6 @@ def analyze(
         raise ValueError("--run-id requires one explicit variant")
     if error_style not in {"band", "errorbar"}:
         raise ValueError("--error-style must be band or errorbar")
-    if profile_timing_source not in {None, "window", "event"}:
-        raise ValueError("--profile-timing-source must be window or event")
     variants = (
         (Variant.IMPLEMENTED, Variant.ORIGINAL)
         if variant == "all" else (Variant(variant),)
@@ -264,31 +251,6 @@ def analyze(
     from .analysis.paths import default_result_root, selection_directory
 
     selected_experiments = parse_experiment_ids(experiment or [])
-    render_profile = None
-    if volume is Volume.DS2 and len(selected_experiments) == 1:
-        from .ds2.profile.renderers import resolve as resolve_profile_renderer
-
-        render_profile = resolve_profile_renderer(selected_experiments[0])
-    if render_profile is not None:
-        from .analysis.paths import default_result_root
-
-        profile_output = output_dir or default_result_root(
-            volume, selected_experiments, (Variant.IMPLEMENTED,)
-        )
-        outputs = render_profile(
-            tracking_uri
-            or os.getenv("MLFLOW_TRACKING_URI", "http://127.0.0.1:5000"),
-            profile_output,
-            device=profile_device or "cuda:0",
-            timing_source=profile_timing_source or "window",
-        )
-        for path in outputs:
-            typer.echo(f"profile analysis: {path}")
-        return
-    if profile_device is not None or profile_timing_source is not None:
-        raise ValueError(
-            "profile selection options require the e10 or e11 profile study"
-        )
     output_dir = selection_directory(
         output_dir
         or default_result_root(volume, selected_experiments, variants),
