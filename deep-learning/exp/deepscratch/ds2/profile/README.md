@@ -1,20 +1,26 @@
-# DS2 profiling
+# DS2 direct profiling
 
-프로파일 코드는 실험별 디렉터리에 둔다.
+`exp profile` is a diagnostic path that does not create MLflow runs. Formal,
+comparable studies use `exp run`; the former e02 profiler was promoted to
+`e10/PF01` and `e11/PF02` and is available only through that formal path.
+
+Direct profiling remains available for custom or exploratory engines:
 
 ```bash
-just exp profile ds2 -e 02
-just exp profile ds2 -e 05
+just exp profile deepscratch ds2 -e 05
+just exp profile deepscratch ds2 -e 06
 ```
 
-- `e02/update.py`: 실제 Word2Vec 1-update 및 학습시간 추정
-- `e02/modules.py`: model/objective/optimizer 구성요소별 측정
-- `e02/analyze.py`: e02 결과 비교와 보고서 생성
-- `e02/README.md`: e02 실행 방법과 측정 계약
-- `e05/benchmark.py`: BetterRnnlm full update 및 TimeLSTM before/after 측정
-- `e05/validation.py`: Phase 1 정확성, lockstep, 재현성 gate
-- `e05/run_nsys.sh`: e05 NVTX/CUDA Nsight trace와 요약
-- `e05/report.md`: 추적되는 Phase 1 결과와 중간 정지점
+Default paths are resolved by `profile/paths.py` beneath `EXP_CACHE_ROOT` (or
+`.cache`) and have distinct ownership:
 
-동기화, 반복 benchmark, 통계, 학습시간 외삽은
-`src/mlprosection/profiling/benchmark.py`의 공통 API를 사용한다.
+- `.../<study>/implemented/profile/measurements`: profiler JSON and measurement payloads
+- `.../<study>/implemented/profile/analysis`: derived tables, reports, and figures
+- `.../<study>/implemented/profile/artifacts`: profiler-native files such as Nsight reports
+
+An explicit `--output-dir` overrides only the measurement path for a one-off
+diagnostic. It does not turn a direct profile into a canonical MLflow result.
+
+The e05 Nsight helper writes reports to `artifacts/nsys` and its summaries to
+`analysis/nsys`. Synchronization and repeated timing use the common profiling
+APIs where the custom engine permits it.

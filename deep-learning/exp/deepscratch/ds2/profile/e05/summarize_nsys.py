@@ -8,10 +8,16 @@ import json
 import sqlite3
 from pathlib import Path
 
-from exp.deepscratch.ds2.profile.paths import profile_cache
+from exp.deepscratch.ds2.profile.paths import (
+    profile_analysis,
+    profile_artifacts,
+    profile_measurements,
+)
 
 
-DEFAULT_INPUT = profile_cache("e05") / "nsys"
+DEFAULT_INPUT = profile_artifacts("e05") / "nsys"
+DEFAULT_OUTPUT = profile_analysis("e05") / "nsys"
+DEFAULT_MEASUREMENTS = profile_measurements("e05")
 
 
 def _has_table(connection: sqlite3.Connection, table: str) -> bool:
@@ -106,7 +112,10 @@ def _kernel_summary(
     }
 
 
-def summarize_database(path: Path) -> dict[str, object]:
+def summarize_database(
+    path: Path,
+    measurement_dir: Path = DEFAULT_MEASUREMENTS,
+) -> dict[str, object]:
     with sqlite3.connect(path) as connection:
         nvtx = dict(
             connection.execute(
@@ -215,10 +224,7 @@ def summarize_database(path: Path) -> dict[str, object]:
             .get("elementwise", {})
             .get("time_ms", 0.0)
         )
-        results_root = path.parent.parent
-        benchmark_path = results_root / "float32" / path.stem / "benchmark.json"
-        if not benchmark_path.exists():
-            benchmark_path = results_root / path.stem / "benchmark.json"
+        benchmark_path = measurement_dir / path.stem / "benchmark.json"
         steady_update_ms = None
         if benchmark_path.exists():
             benchmark = json.loads(benchmark_path.read_text(encoding="utf-8"))
@@ -252,13 +258,21 @@ def summarize_database(path: Path) -> dict[str, object]:
     }
 
 
-def run(input_dir: Path = DEFAULT_INPUT) -> tuple[Path, Path]:
-    rows = [summarize_database(path) for path in sorted(input_dir.glob("*.sqlite"))]
+def run(
+    input_dir: Path = DEFAULT_INPUT,
+    output_dir: Path = DEFAULT_OUTPUT,
+    measurement_dir: Path = DEFAULT_MEASUREMENTS,
+) -> tuple[Path, Path]:
+    rows = [
+        summarize_database(path, measurement_dir)
+        for path in sorted(input_dir.glob("*.sqlite"))
+    ]
     if not rows:
         raise FileNotFoundError(f"no Nsight SQLite exports under {input_dir}")
-    json_path = input_dir / "summary.json"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    json_path = output_dir / "summary.json"
     json_path.write_text(json.dumps(rows, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    csv_path = input_dir / "gemm_counts.csv"
+    csv_path = output_dir / "gemm_counts.csv"
     names = (
         "TimeLSTM/forward_input_gemm",
         "TimeLSTM/backward_dWx_gemm",
@@ -281,4 +295,7 @@ def run(input_dir: Path = DEFAULT_INPUT) -> tuple[Path, Path]:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--input", type=Path, default=DEFAULT_INPUT)
-    run(parser.parse_args().input)
+    parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
+    parser.add_argument("--measurements", type=Path, default=DEFAULT_MEASUREMENTS)
+    arguments = parser.parse_args()
+    run(arguments.input, arguments.output, arguments.measurements)
