@@ -9,7 +9,10 @@ from exp.deepscratch.analysis.declarations import MetricDeclaration
 from exp.deepscratch.analysis.input import AnalysisRun
 from exp.deepscratch.analysis.summary import write_study_summary
 from exp.deepscratch.identity import Variant, Volume
-from exp.deepscratch.ds2.result_schema import SUMMARY_METRICS as DS2_SUMMARY_METRICS
+from exp.deepscratch.ds2.result_schema import (
+    STUDIES as DS2_STUDIES,
+    SUMMARY_METRICS as DS2_SUMMARY_METRICS,
+)
 from exp.framework.results import NativeRunResult
 
 
@@ -21,8 +24,9 @@ def test_ds2_e05_declares_train_validation_and_test_perplexity() -> None:
     ]
 
 
-def test_ds2_e02_summary_reports_book_loss_only() -> None:
-    metrics = DS2_SUMMARY_METRICS["e02"]
+@pytest.mark.parametrize("study_id", ["e01", "e02"])
+def test_ds2_word2vec_summaries_report_book_loss_only(study_id: str) -> None:
+    metrics = DS2_SUMMARY_METRICS[study_id]
 
     assert [metric.metric_id for metric in metrics] == ["book_loss"]
     assert metrics[0].implemented_native_ids == (
@@ -33,6 +37,19 @@ def test_ds2_e02_summary_reports_book_loss_only() -> None:
     assert metrics[0].original_native_ids == (
         "final/train/loss",
         "train/loss",
+    )
+
+
+def test_ds2_e01_toy_conditions_declare_book_loss() -> None:
+    conditions = DS2_STUDIES["e01"].conditions
+
+    assert [condition.canonical_id for condition in conditions] == [
+        "toy-cbow",
+        "toy-skipgram",
+    ]
+    assert all(
+        [metric.metric_id for metric in condition.metrics] == ["book_loss"]
+        for condition in conditions
     )
 
 
