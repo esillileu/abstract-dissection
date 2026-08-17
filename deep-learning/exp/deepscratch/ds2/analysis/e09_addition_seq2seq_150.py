@@ -12,14 +12,14 @@ from .e06_addition_seq2seq import render as _render_e06_style
 
 
 DEFINITIONS = (
-    ("SEQA-VAN-FWD", "Vanilla / Forward", "o"),
-    ("SEQA-VAN-REV", "Vanilla / Reverse", "s"),
-    ("SEQA-PEEKY-FWD", "Peeky / Forward", "^"),
-    ("SEQA-PEEKY-REV", "Peeky / Reverse", "D"),
-    ("SEQA-ATTN-FWD", "Attention / Forward", "v"),
-    ("SEQA-ATTN-REV", "Attention / Reverse", "P"),
-    ("SEQA-ATTN-PEEKY-FWD", "Attention + Peeky / Forward", "<"),
-    ("SEQA-ATTN-PEEKY-REV", "Attention + Peeky / Reverse", ">"),
+    ("SEQA-VAN-FWD", "Vanilla-Forward", "o"),
+    ("SEQA-VAN-REV", "Vanilla-Reverse", "s"),
+    ("SEQA-PEEKY-FWD", "Peeky-Forward", "^"),
+    ("SEQA-PEEKY-REV", "Peeky-Reverse", "D"),
+    ("SEQA-ATTN-FWD", "Attention-Forward", "v"),
+    ("SEQA-ATTN-REV", "Attention-Reverse", "P"),
+    ("SEQA-ATTN-PEEKY-FWD", "Attention-Peeky-Forward", "<"),
+    ("SEQA-ATTN-PEEKY-REV", "Attention-Peeky-Reverse", ">"),
 )
 
 ADDITIONAL_GRAPHS = (

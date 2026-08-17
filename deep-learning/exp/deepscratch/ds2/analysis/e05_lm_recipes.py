@@ -14,7 +14,7 @@ from .common import runs
 DEFINITIONS = [
     ("LM-RNN-RECIPE", "Vanilla RNNLM", "o", ACCENT_COLORS[0]),
     ("LM-LSTM-RECIPE", "LSTM RNNLM", "s", ACCENT_COLORS[1]),
-    ("LM-LSTM-TIED-RECIPE", "LSTM RNNLM + weight tying", "^", ACCENT_COLORS[2]),
+    ("LM-LSTM-TIED-RECIPE", "Tied RNNLM", "^", ACCENT_COLORS[2]),
     ("LM-BETTER-RECIPE", "Better RNNLM", "D", ACCENT_COLORS[3]),
 ]
 
