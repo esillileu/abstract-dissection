@@ -3,8 +3,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import matplotlib.pyplot as plt
 from mlflow.tracking import MlflowClient
 
+from exp.deepscratch.ds2.analysis import e11_vocabulary_size_scaling
 from exp.deepscratch.ds2.catalog import IMPLEMENTED
 from exp.deepscratch.analysis.orchestrator import write_analysis
 from exp.deepscratch.ds2.implemented.spec import parse_run_spec
@@ -46,6 +48,16 @@ def test_e11_pf02_declares_six_atomic_scaling_runs() -> None:
         config["tracking"]["tags"]["profile.study_kind"]
         == "axis_scaling"
     )
+
+
+def test_e11_renderer_uses_a_linear_y_axis() -> None:
+    figure, axis = plt.subplots()
+    try:
+        e11_vocabulary_size_scaling._plot_model(axis, [], "CBOW")
+        assert axis.get_xscale() == "log"
+        assert axis.get_yscale() == "linear"
+    finally:
+        plt.close(figure)
 
 
 def test_e11_renderer_uses_vocabulary_size_as_x_axis(tmp_path: Path) -> None:

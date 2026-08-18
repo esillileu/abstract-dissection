@@ -126,7 +126,7 @@ def _plot_model(
         xlabel="Vocabulary size",
         ylabel="Mean update time (ms)",
         xscale="log",
-        yscale="log",
+        yscale="linear",
     )
     if title is not None:
         axis.set_title(title, fontsize=title_fontsize)

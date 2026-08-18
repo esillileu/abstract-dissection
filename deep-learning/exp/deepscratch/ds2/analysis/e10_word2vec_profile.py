@@ -13,17 +13,9 @@ from exp.framework.plotting.theme import ACCENT_COLORS
 
 
 ATOMIC_IDS = (
-    "PF-W2V-CBOW-ORIGINAL-ONEHOT-FS",
-    "PF-W2V-CBOW-ORIGINAL-FS",
-    "PF-W2V-CBOW-ORIGINAL-NS",
-    "PF-W2V-CBOW-IMPLEMENTED-ONEHOT-FS",
     "PF-W2V-CBOW-IMPLEMENTED-FS",
     "PF-W2V-CBOW-IMPLEMENTED-NS",
     "PF-W2V-CBOW-IMPLEMENTED-FUSED-NS",
-    "PF-W2V-SKIPGRAM-ORIGINAL-ONEHOT-FS",
-    "PF-W2V-SKIPGRAM-ORIGINAL-FS",
-    "PF-W2V-SKIPGRAM-ORIGINAL-NS",
-    "PF-W2V-SKIPGRAM-IMPLEMENTED-ONEHOT-FS",
     "PF-W2V-SKIPGRAM-IMPLEMENTED-FS",
     "PF-W2V-SKIPGRAM-IMPLEMENTED-NS",
     "PF-W2V-SKIPGRAM-IMPLEMENTED-FUSED-NS",
@@ -35,7 +27,7 @@ def render(
     error_style: str,
     output: Path,
     *,
-    title_fontsize: float | None = 18,
+    title_fontsize: float | None = 22,
     legend_fontsize: float | None = 9,
 ) -> list[Path]:
     del error_style
@@ -139,9 +131,12 @@ def _plot_model(
     axis.set_xticks(
         range(len(conditions)),
         [_condition_label(condition) for condition in conditions],
-        rotation=45,
-        ha="right",
+        rotation=0,
+        ha="center",
     )
+    axis.tick_params(axis="x", labelsize=12)
+    for label in axis.get_xticklabels():
+        label.set_fontweight("bold")
     axis.set_ylabel("Operation time (ms)")
     if title is not None:
         axis.set_title(title, fontsize=title_fontsize)
@@ -155,7 +150,11 @@ def _condition_model(condition: object) -> str:
 
 
 def _condition_label(condition: str) -> str:
-    tokens = condition.removeprefix("PF-W2V-").split("-")[1:]
+    tokens = [
+        token
+        for token in condition.removeprefix("PF-W2V-").split("-")[1:]
+        if token != "IMPLEMENTED"
+    ]
     names = {
         "ORIGINAL": "Original",
         "IMPLEMENTED": "Implemented",
@@ -164,7 +163,10 @@ def _condition_label(condition: str) -> str:
         "NS": "Negative Sampling",
         "FUSED": "Fused",
     }
-    return " ".join(names.get(token, token.title()) for token in tokens)
+    label = " ".join(names.get(token, token.title()) for token in tokens)
+    return label.replace("Negative Sampling", "Negative\nSampling").replace(
+        "Fused Negative Sampling", "Fused Negative\nSampling"
+    )
 
 
 def _model_slug(model: str) -> str:

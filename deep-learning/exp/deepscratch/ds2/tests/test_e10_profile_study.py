@@ -7,6 +7,7 @@ from mlflow.tracking import MlflowClient
 
 from exp.deepscratch.ds2.implemented.executor import ProfileExecutor
 from exp.deepscratch.ds2.implemented.spec import parse_run_spec
+from exp.deepscratch.ds2.analysis import e10_word2vec_profile
 from exp.deepscratch.analysis.orchestrator import write_analysis
 from exp.deepscratch.execution.status import inspect_plan_status
 from exp.deepscratch.identity import Variant, Volume
@@ -51,6 +52,18 @@ def test_profile_studies_require_explicit_selection() -> None:
         RunSelection(all_experiments=True), RunOptions(device="cpu")
     )
     assert not {"e10", "e11"} & {plan.experiment_id for plan in plans}
+
+
+def test_e10_analysis_uses_implemented_profiles_and_short_labels() -> None:
+    assert e10_word2vec_profile.ATOMIC_IDS
+    assert all("-IMPLEMENTED-" in atomic_id for atomic_id in e10_word2vec_profile.ATOMIC_IDS)
+    assert all("-ONEHOT-" not in atomic_id for atomic_id in e10_word2vec_profile.ATOMIC_IDS)
+    assert "Implemented" not in e10_word2vec_profile._condition_label(
+        "PF-W2V-CBOW-IMPLEMENTED-NS"
+    )
+    assert e10_word2vec_profile._condition_label(
+        "PF-W2V-CBOW-IMPLEMENTED-NS"
+    ) == "Negative\nSampling"
 
 
 def test_e10_renderer_selects_durable_profile_runs(tmp_path: Path) -> None:
