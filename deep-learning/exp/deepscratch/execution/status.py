@@ -8,8 +8,6 @@ import importlib
 from typing import Any, Literal, Sequence
 
 from mlflow.tracking import MlflowClient
-from mlflow.entities import ViewType
-
 from exp.framework.execution import RunPlan
 
 from ..identity import Variant, Volume
@@ -84,7 +82,7 @@ def inspect_plan_status(
     variant: Variant,
     expected_protocols: dict[tuple[str, str], str] | None = None,
 ) -> PlanStatusReport:
-    """Classify each plan entry across the new and historical namespaces."""
+    """Classify each plan entry in the canonical namespace."""
     attempts = _attempts(client, volume=volume, variant=variant)
     indexed: dict[tuple[str, str, str], list[_Attempt]] = {}
     for attempt in attempts:
@@ -154,30 +152,6 @@ def _attempts(
         for item in selected
         if item.disposition != "imported-alternate"
     ]
-    namespace = f"deepscratch.{volume.value}"
-    experiment = client.get_experiment_by_name(namespace)
-    if experiment is not None:
-        profile_runs = client.search_runs(
-            [experiment.experiment_id],
-            filter_string="tags.`run.type` = 'profile'",
-            run_view_type=ViewType.ACTIVE_ONLY,
-            order_by=["attributes.start_time DESC"],
-            max_results=10_000,
-        )
-        output.extend(
-            _Attempt(
-                run_id=run.info.run_id,
-                namespace=namespace,
-                experiment_id=_experiment_id(run),
-                condition_id=_condition_id(run),
-                seed="single",
-                protocol_version=run.data.tags.get("protocol.version", "legacy"),
-                status=str(run.info.status).upper(),
-                start_time=int(run.info.start_time or 0),
-            )
-            for run in profile_runs
-            if run.data.tags.get("implementation.variant") == variant.value
-        )
     return output
 
 

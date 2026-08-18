@@ -60,7 +60,6 @@ def test_cli_variants_share_the_normalized_analysis_path(tmp_path: Path) -> None
     uri = f"sqlite:///{tmp_path / 'cli-mlflow.db'}"
     client = MlflowClient(uri)
     canonical_id = client.create_experiment("deepscratch.ds2")
-    legacy_id = client.create_experiment("ds2_original")
     common = {
         "run.type": "seed_trial",
         "experiment.id": "e03",
@@ -77,9 +76,12 @@ def test_cli_variants_share_the_normalized_analysis_path(tmp_path: Path) -> None
     })
     client.log_metric(implemented.info.run_id, "final/train/perplexity", 120.0)
     client.set_terminated(implemented.info.run_id)
-    original = client.create_run(legacy_id, tags={
+    original = client.create_run(canonical_id, tags={
         **common,
         "condition.id": "SMALL-RNNLM",
+        "implementation.variant": "original",
+        "result.schema.name": "ds2-original",
+        "result.schema.version": "1",
     })
     client.log_metric(original.info.run_id, "final/train/perplexity", 130.0)
     client.set_terminated(original.info.run_id)

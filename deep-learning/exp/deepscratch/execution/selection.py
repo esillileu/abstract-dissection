@@ -14,7 +14,6 @@ from exp.framework.results.selection import attempt_priority
 from mlprosection_mlflow.artifact_cache import MlflowArtifactCache
 
 from ..identity import Variant, Volume
-from ..legacy import LegacyCompatibility
 from ..analysis.declarations import MetricDeclaration
 
 
@@ -46,7 +45,6 @@ class CanonicalAttemptSelector:
             client,
             str(resolved_tracking_uri or "http://127.0.0.1:5000"),
         )
-        self._legacy = LegacyCompatibility(client, artifact_cache=self._artifact_cache)
         self._attempt_cache: dict[
             tuple[Volume, Variant], tuple[AttemptRef, ...]
         ] = {}
@@ -90,10 +88,6 @@ class CanonicalAttemptSelector:
                     disposition=tags.get("transfer.import.disposition"),
                     durable_complete=None if durable is None else durable.lower() == "true",
                 ))
-        output.extend(
-            AttemptRef(**attempt)
-            for attempt in self._legacy.attempts(volume, variant)
-        )
         attempts = tuple(output)
         self._attempt_cache[coordinate] = attempts
         return attempts
@@ -108,11 +102,7 @@ class CanonicalAttemptSelector:
     ) -> NativeRunResult:
         """Load a selected result without exposing its storage generation."""
         if not attempt.is_canonical_namespace:
-            return self._legacy.load_result(
-                attempt.run_id,
-                variant=variant,
-                declarations=declarations,
-            )
+            raise ValueError("historical MLflow attempts are outside the operational selector")
         adapter = importlib.import_module(
             f"exp.deepscratch.{volume.value}.{variant.value}.result_adapter"
         )

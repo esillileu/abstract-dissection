@@ -57,11 +57,11 @@ def _run(
     return run.info.run_id
 
 
-def test_plan_status_combines_new_and_legacy_attempts(tmp_path: Path) -> None:
+def test_plan_status_uses_canonical_attempts_only(tmp_path: Path) -> None:
     client = MlflowClient(_uri(tmp_path))
     new_id = client.create_experiment("deepscratch.ds2")
     legacy_id = client.create_experiment("ds2")
-    completed_id = _run(
+    _run(
         client,
         legacy_id,
         "COMPLETE",
@@ -84,7 +84,7 @@ def test_plan_status_combines_new_and_legacy_attempts(tmp_path: Path) -> None:
         start_time=30,
         variant="implemented",
     )
-    failed_id = _run(
+    _run(
         client,
         legacy_id,
         "FAILED",
@@ -122,16 +122,16 @@ def test_plan_status_combines_new_and_legacy_attempts(tmp_path: Path) -> None:
     )
 
     assert report.counts == {
-        "completed": 1,
-        "running": 1,
-        "failed": 1,
-        "missing": 2,
+        "completed": 0,
+        "running": 2,
+        "failed": 0,
+        "missing": 3,
     }
     by_condition = {entry.condition_id: entry for entry in report.entries}
-    assert by_condition["COMPLETE"].run_id == completed_id
-    assert by_condition["COMPLETE"].attempt_count == 2
+    assert by_condition["COMPLETE"].run_id is not None
+    assert by_condition["COMPLETE"].attempt_count == 1
     assert by_condition["RUNNING"].run_id == running_id
-    assert by_condition["FAILED"].run_id == failed_id
+    assert by_condition["FAILED"].run_id is None
     assert by_condition["MISSING"].attempt_count == 0
 
 
@@ -188,11 +188,11 @@ def test_plan_status_rejects_attempts_from_another_protocol(
     assert report.counts["missing"] == 1
 
 
-def test_implemented_legacy_protocol_maps_to_declared_book_protocol(
+def test_implemented_canonical_legacy_protocol_maps_to_declared_book_protocol(
     tmp_path: Path,
 ) -> None:
     client = MlflowClient(_uri(tmp_path))
-    experiment_id = client.create_experiment("ds1")
+    experiment_id = client.create_experiment("deepscratch.ds1")
     run_id = _run(
         client,
         experiment_id,
@@ -201,6 +201,7 @@ def test_implemented_legacy_protocol_maps_to_declared_book_protocol(
         start_time=1,
         protocol_version="legacy",
     )
+    client.set_tag(run_id, "implementation.variant", "implemented")
 
     report = inspect_plan_status(
         client,
@@ -212,15 +213,15 @@ def test_implemented_legacy_protocol_maps_to_declared_book_protocol(
 
     assert report.counts["completed"] == 1
     assert report.entries[0].run_id == run_id
-    assert report.entries[0].namespace == "ds1"
+    assert report.entries[0].namespace == "deepscratch.ds1"
 
 
-def test_original_legacy_protocol_maps_to_declared_book_protocol(
+def test_original_canonical_legacy_protocol_maps_to_declared_book_protocol(
     tmp_path: Path,
 ) -> None:
     client = MlflowClient(_uri(tmp_path))
-    experiment_id = client.create_experiment("ds2_original")
-    _run(
+    experiment_id = client.create_experiment("deepscratch.ds2")
+    run_id = _run(
         client,
         experiment_id,
         "RNNLM",
@@ -228,6 +229,7 @@ def test_original_legacy_protocol_maps_to_declared_book_protocol(
         start_time=1,
         protocol_version="legacy",
     )
+    client.set_tag(run_id, "implementation.variant", "original")
 
     report = inspect_plan_status(
         client,

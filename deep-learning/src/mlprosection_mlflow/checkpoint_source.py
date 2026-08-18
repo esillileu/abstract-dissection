@@ -57,8 +57,8 @@ def resolve_checkpoint_source_in_experiment(
 ) -> Path:
     """Resolve a declared source from one explicit MLflow experiment.
 
-    This lower-level entry point lets migration adapters select a retired
-    namespace without teaching the canonical resolver about legacy names.
+    This lower-level entry point lets callers select one explicit experiment
+    without coupling the resolver to a particular namespace.
     """
     checkpoint = config.get("checkpoint")
     if not isinstance(checkpoint, dict):

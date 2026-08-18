@@ -3,7 +3,8 @@
 DS2는 실행 그룹 `GT01`–`GT07`, `GT09`와 성능 프로파일 그룹 `PF01`–`PF02`를
 `e01`–`e11` YAML로 선언한다. `e10/PF01`은 `e02`에서 파생된 PTB Word2Vec
 update profile이고, `e11/PF02`는 synthetic vocabulary-size scaling study다.
-과거 실행은 MLflow의 historical namespace에서만 조회한다.
+과거 실행은 MLflow의 historical namespace에 보존되지만 operational 명령에서는
+canonical `deepscratch.ds2` namespace만 조회한다.
 
 ```bash
 just exp plan deepscratch ds2 -e 02 --seed 1

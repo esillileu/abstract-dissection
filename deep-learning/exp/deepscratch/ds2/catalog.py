@@ -6,7 +6,7 @@ from exp.framework.execution import ExecutionDefinition
 
 
 ROOT = Path("exp/deepscratch/ds2")
-CHECKPOINT_SOURCE_RESOLVER = "exp.deepscratch.legacy"
+CHECKPOINT_SOURCE_RESOLVER = "mlprosection_mlflow.checkpoint_source"
 
 IMPLEMENTED = ExecutionDefinition(
     name="deepscratch.ds2.implemented",
