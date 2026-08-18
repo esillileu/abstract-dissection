@@ -1,77 +1,16 @@
 from __future__ import annotations
 
-import hashlib
-import json
 from pathlib import Path
 
+import pytest
 from mlflow.tracking import MlflowClient
 
 from exp.deepscratch.identity import Variant, Volume
-from exp.deepscratch.legacy.storage_audit import (
-    audit_storage,
-    cleanup_verified_mirrors,
-)
 from exp.deepscratch.execution.selection import CanonicalAttemptSelector
-from exp.framework.paths import WorkspacePaths
-
-
-def _paths(tmp_path: Path) -> WorkspacePaths:
-    return WorkspacePaths(
-        staging_root=tmp_path / "staging",
-        cache_root=tmp_path / "cache",
-        results_root=tmp_path / "results",
-    )
 
 
 def _uri(tmp_path: Path) -> str:
     return f"sqlite:///{tmp_path / 'mlflow.db'}"
-
-
-def _manifest(paths: WorkspacePaths, run_key: str) -> Path:
-    run = paths.run_staging(
-        domain="deepscratch",
-        suite="ds2",
-        study="e05",
-        variant="original",
-        run_key=run_key,
-    )
-    record = run / "record"
-    payload = record / "metrics/final.json"
-    payload.parent.mkdir(parents=True)
-    payload.write_text('{"test": 1}\n', encoding="utf-8")
-    manifest = record / "result_manifest.json"
-    manifest.write_text(json.dumps({
-        "schema_version": 1,
-        "files": [{
-            "path": "metrics/final.json",
-            "size": payload.stat().st_size,
-            "sha256": hashlib.sha256(payload.read_bytes()).hexdigest(),
-        }],
-    }), encoding="utf-8")
-    return run
-
-
-def test_storage_cleanup_only_removes_verified_mirrors(tmp_path: Path) -> None:
-    paths = _paths(tmp_path)
-    run_key = "run-key"
-    local = _manifest(paths, run_key)
-    client = MlflowClient(_uri(tmp_path))
-    experiment = client.create_experiment("deepscratch.ds2")
-    run = client.create_run(experiment, tags={
-        "run.type": "seed_trial",
-        "run.key": run_key,
-        "implementation.variant": "original",
-        "result.durable_complete": "true",
-    })
-    client.set_terminated(run.info.run_id)
-
-    report = audit_storage(client, paths)
-    assert report["counts"]["verified"] == 1
-    dry_run = cleanup_verified_mirrors(client, paths)
-    assert dry_run["candidates"] == [str(local)]
-    assert local.exists()
-    cleanup_verified_mirrors(client, paths, apply=True)
-    assert not local.exists()
 
 
 def test_selector_prefers_canonical_and_excludes_alternate(tmp_path: Path) -> None:
@@ -106,15 +45,15 @@ def test_selector_prefers_canonical_and_excludes_alternate(tmp_path: Path) -> No
         seed=4,
     )
     assert selected is not None and selected.run_id == primary.info.run_id
-    explicit = selector.select(
-        Volume.DS2,
-        Variant.ORIGINAL,
-        study_id="e05",
-        condition_ids=("BETTER-RNNLM",),
-        seed=4,
-        run_id=alternate.info.run_id,
-    )
-    assert explicit is not None and explicit.run_id == alternate.info.run_id
+    with pytest.raises(ValueError, match="not in the requested coordinate"):
+        selector.select(
+            Volume.DS2,
+            Variant.ORIGINAL,
+            study_id="e05",
+            condition_ids=("BETTER-RNNLM",),
+            seed=4,
+            run_id=alternate.info.run_id,
+        )
 
 
 def test_selector_fetches_each_variant_inventory_only_once(tmp_path: Path) -> None:
@@ -140,4 +79,4 @@ def test_selector_fetches_each_variant_inventory_only_once(tmp_path: Path) -> No
     selector.attempts(Volume.DS2, Variant.IMPLEMENTED)
     selector.attempts(Volume.DS2, Variant.IMPLEMENTED)
 
-    assert client.search_count == 2
+    assert client.search_count == 1

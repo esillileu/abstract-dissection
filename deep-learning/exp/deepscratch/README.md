@@ -10,8 +10,8 @@ analysis, profiling, and vendored source now live below
 `exp/deepscratch/ds1` and `exp/deepscratch/ds2`.
 
 The domain root contains only `cli.py`, `definition.py`, `identity.py`, and
-the owned `analysis/`, `execution/`, `legacy/`, `original_runtime/`, `ds1/`,
-and `ds2/` packages. Result payloads never belong under the source tree.
+the owned `analysis/`, `execution/`, `original_runtime/`, `ds1/`, and `ds2/`
+packages. Result payloads never belong under the source tree.
 
 Human-facing analysis output defaults to one flat directory:
 
@@ -39,8 +39,7 @@ checkpoint payloads. Only then is `result.durable_complete=true` written.
 ## Check planned run coverage
 
 `check` expands the same catalog, condition, and seed selection as `plan`, then
-looks for matching runs in both the new writer namespace and its historical
-namespace:
+looks for matching runs in the canonical writer namespace:
 
 ```bash
 just exp check deepscratch ds2 -e 05
@@ -48,7 +47,8 @@ just exp check deepscratch ds2 -e 05 --seed 1-4
 just exp check deepscratch ds2 --all --variant original
 ```
 
-The summary separates:
+Historical namespaces are archive-only and are not part of operational status
+or analysis selection. The summary separates:
 
 - `completed`: a protocol-compatible `FINISHED` attempt exists.
 - `running`: there is no completed attempt, but one is `RUNNING` or `SCHEDULED`.
@@ -84,18 +84,3 @@ when needed:
 ```bash
 just exp analyze deepscratch ds2 -e 03 -o --run-id <mlflow-run-id>
 ```
-
-## Audit and clean local mirrors
-
-Storage cleanup is always a dry run unless `--apply` is present:
-
-```bash
-just exp storage deepscratch audit
-just exp storage deepscratch cleanup --verified-mirrors
-just exp storage deepscratch cleanup --verified-mirrors --apply
-```
-
-Only a locally digest-valid mirror backed by a `FINISHED`, durable MLflow run
-is eligible. Running, failed, incomplete, orphaned, and legacy-quarantined data
-is never selected. The audit also refuses cutover while a historical writer
-namespace contains a running run.

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from exp.deepscratch.legacy.result_adapter import _artifact_aliases
 from exp.deepscratch.analysis.declarations import StudyDeclaration
 from exp.deepscratch.analysis.input import AnalysisRun, StudyAnalysisInput
 from exp.deepscratch.analysis.orchestrator import _render_studies
@@ -13,7 +12,6 @@ from exp.framework.results import NativeRunResult
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib import rcParams
-from mlflow.exceptions import MlflowException
 import pytest
 
 from exp.framework.analysis.core import (
@@ -146,81 +144,6 @@ def test_prepared_analysis_replays_without_raw_or_mlflow_access(tmp_path):
     replayed_file = replay.artifact_file(run, "evaluations.csv")
     assert replayed_file is not None
     assert replayed_file.read_text(encoding="utf-8").startswith("step,split,value")
-
-
-def test_legacy_e10_uses_mlflow_activation_histogram_artifact():
-    class Client:
-        def __init__(self):
-            self.downloads = []
-
-        def list_artifacts(self, run_id, path):
-            if path == "":
-                return [
-                    SimpleNamespace(path="updates.csv"),
-                    SimpleNamespace(path="evaluations.csv"),
-                    SimpleNamespace(path="observations"),
-                ]
-            if path == "raw":
-                return []
-            assert path == "observations"
-            return [
-                SimpleNamespace(path="observations/source_curves.csv"),
-                SimpleNamespace(path="observations/trajectory.csv"),
-                SimpleNamespace(path="observations/attention.csv"),
-                SimpleNamespace(path="observations/attention_render.json"),
-                SimpleNamespace(path="observations/activation_histogram.csv"),
-            ]
-
-        def get_run(self, run_id):
-            return SimpleNamespace(
-                data=SimpleNamespace(tags={"experiment.id": "e10"})
-            )
-
-        def download_artifacts(self, run_id, artifact_path):
-            self.downloads.append(artifact_path)
-            raise MlflowException("artifact does not exist")
-
-    client = Client()
-
-    aliases = _artifact_aliases(client, "run-without-activations")
-
-    assert "observations/activation_histogram.csv" not in aliases
-    assert client.downloads == []
-
-
-def test_legacy_e02_does_not_project_raw_checkpoint():
-    class Client:
-        def __init__(self):
-            self.downloads = []
-
-        def list_artifacts(self, run_id, path):
-            if path == "":
-                return [
-                    SimpleNamespace(path="updates.csv"),
-                    SimpleNamespace(path="evaluations.csv"),
-                    SimpleNamespace(path="observations"),
-                ]
-            assert path == "observations"
-            return [
-                SimpleNamespace(path="observations/source_curves.csv"),
-                SimpleNamespace(path="observations/trajectory.csv"),
-                SimpleNamespace(path="observations/attention.csv"),
-                SimpleNamespace(path="observations/attention_render.json"),
-            ]
-
-        def get_run(self, run_id):
-            return SimpleNamespace(data=SimpleNamespace(tags={"experiment.id": "e02"}))
-
-        def download_artifacts(self, run_id, artifact_path):
-            self.downloads.append(artifact_path)
-            raise AssertionError(f"unexpected artifact download: {artifact_path}")
-
-    client = Client()
-
-    aliases = _artifact_aliases(client, "legacy-e02")
-
-    assert "checkpoints/checkpoint_manifest.json" not in aliases
-    assert client.downloads == []
 
 
 def test_aggregate_uses_only_steps_common_to_every_seed():

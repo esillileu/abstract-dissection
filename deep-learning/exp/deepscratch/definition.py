@@ -37,8 +37,6 @@ class DeepScratchDefinition:
         groups.analyze.command(self.name)(cli.analyze)
         groups.check.command(self.name)(cli.check)
         groups.profile.command(self.name)(cli.profile)
-        groups.storage.command(self.name)(cli.storage)
-        groups.root.command("import-legacy")(cli.import_legacy)
 
 
 DEFINITION = DeepScratchDefinition()

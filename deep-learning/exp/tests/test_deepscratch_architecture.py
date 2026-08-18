@@ -9,7 +9,6 @@ from typer.testing import CliRunner
 from exp.cli import PLUGIN_REGISTRY, app
 from exp.deepscratch.cli import _writer_overrides
 from exp.deepscratch.identity import DeepScratchCoordinate, Variant, Volume
-from exp.deepscratch.legacy.namespaces import legacy_namespace
 from exp.deepscratch.analysis.normalization import ComparableMetric, normalize_metric
 from exp.framework.results import MetricSeries, NativeRunResult
 from exp.framework.paths import StateCoordinate, StateOwner, WorkspacePaths
@@ -23,7 +22,6 @@ runner = CliRunner()
 
 def test_deepscratch_is_the_canonical_domain_plugin() -> None:
     assert PLUGIN_REGISTRY.names() == ("deepscratch",)
-    assert legacy_namespace(Volume.DS2, Variant.ORIGINAL) == "ds2_original"
     coordinate = DeepScratchCoordinate(
         Volume.DS2, "e05", "BETTER-RNNLM", Variant.ORIGINAL
     )
@@ -322,7 +320,6 @@ def test_deepscratch_root_contains_only_domain_entrypoints_and_owned_packages() 
         "ds1",
         "ds2",
         "execution",
-        "legacy",
         "original_runtime",
         "profile",
     }
@@ -346,17 +343,6 @@ def test_runtime_code_does_not_write_under_source_tree() -> None:
     assert violations == []
 
 
-def test_legacy_namespace_access_is_confined_to_legacy_package() -> None:
-    violations = []
-    for path in Path("exp").rglob("*.py"):
-        if Path("exp/deepscratch/legacy") in path.parents or "tests" in path.parts:
-            continue
-        text = path.read_text(encoding="utf-8")
-        if any(name in text for name in ('"ds1_original"', '"ds2_original"')):
-            violations.append(path)
-    assert violations == []
-
-
 def test_retired_short_mlflow_namespaces_are_not_used_by_runtime_code() -> None:
     violations = []
     for path in Path("exp/deepscratch").rglob("*.py"):
@@ -365,17 +351,6 @@ def test_retired_short_mlflow_namespaces_are_not_used_by_runtime_code() -> None:
         text = path.read_text(encoding="utf-8")
         if 'experiment_name="ds1"' in text or 'experiment_name="ds2"' in text:
             violations.append(path)
-    assert violations == []
-
-
-def test_legacy_compatibility_has_one_public_import_boundary() -> None:
-    violations = []
-    for path in Path("exp").rglob("*.py"):
-        if Path("exp/deepscratch/legacy") in path.parents or "tests" in path.parts:
-            continue
-        for name in _imports(path):
-            if ".legacy." in name:
-                violations.append((path, name))
     assert violations == []
 
 
