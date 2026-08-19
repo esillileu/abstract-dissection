@@ -16,6 +16,7 @@ DEFINITIONS = [
     ("LM-LSTM-RECIPE", "LSTM RNNLM", "s", ACCENT_COLORS[1]),
     ("LM-LSTM-TIED-RECIPE", "Tied RNNLM", "^", ACCENT_COLORS[2]),
     ("LM-BETTER-RECIPE", "Better RNNLM", "D", ACCENT_COLORS[3]),
+    ("LM-BETTER-NODROPOUT", "Better RNNLM (no dropout)", "X", ACCENT_COLORS[4]),
 ]
 
 # Manually choose the visible Vanilla RNNLM range here.

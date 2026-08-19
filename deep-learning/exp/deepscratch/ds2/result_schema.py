@@ -148,6 +148,7 @@ E05 = StudyDeclaration("e05", (
     condition("lstm-recipe", ("LM-LSTM-RECIPE",), metric=TEST_PPL),
     condition("lstm-tied-recipe", ("LM-LSTM-TIED-RECIPE",), metric=TEST_PPL),
     condition("better-rnnlm", ("LM-BETTER-RECIPE",), ("BETTER-RNNLM",), TEST_PPL),
+    condition("better-rnnlm-nodropout", ("LM-BETTER-NODROPOUT",), metric=TEST_PPL),
 ))
 E06 = StudyDeclaration("e06", tuple(
     condition(

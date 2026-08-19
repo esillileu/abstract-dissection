@@ -60,6 +60,17 @@ def test_lm_recipe_runspec_declares_valid_selected_checkpoint_inputs() -> None:
     assert spec.evaluations[1].sources == ("test",)
 
 
+def test_better_rnnlm_nodropout_variant_disables_dropout() -> None:
+    spec = parse_run_spec(
+        "exp/deepscratch/ds2/config/implemented/e05_ptb_lm_recipes.yaml",
+        atomic_run_id="LM-BETTER-NODROPOUT",
+    )
+
+    assert spec.model["name"] == "BetterRnnlm"
+    assert spec.model["dropout_ratio"] == 0.0
+    assert spec.identity.structure_signature == "ptb-better-rnnlm-650-nodropout"
+
+
 @pytest.mark.parametrize(
     "atomic_run_id",
     [
@@ -67,6 +78,7 @@ def test_lm_recipe_runspec_declares_valid_selected_checkpoint_inputs() -> None:
         "LM-LSTM-RECIPE",
         "LM-LSTM-TIED-RECIPE",
         "LM-BETTER-RECIPE",
+        "LM-BETTER-NODROPOUT",
     ],
 )
 def test_lm_recipe_validation_decay_applies_to_every_model(
