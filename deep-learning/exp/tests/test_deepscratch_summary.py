@@ -7,12 +7,17 @@ import pytest
 
 from exp.deepscratch.analysis.declarations import MetricDeclaration
 from exp.deepscratch.analysis.input import AnalysisRun
-from exp.deepscratch.analysis.summary import write_study_summary
+from exp.deepscratch.analysis.summary import (
+    _metric_values,
+    _summary_row,
+    write_study_summary,
+)
 from exp.deepscratch.identity import Variant, Volume
 from exp.deepscratch.ds2.result_schema import (
     STUDIES as DS2_STUDIES,
     SUMMARY_METRICS as DS2_SUMMARY_METRICS,
 )
+from exp.deepscratch.ds1.result_schema import SUMMARY_METRICS as DS1_SUMMARY_METRICS
 from exp.framework.results import NativeRunResult
 
 
@@ -51,6 +56,80 @@ def test_ds2_e01_toy_conditions_declare_book_loss() -> None:
         [metric.metric_id for metric in condition.metrics] == ["book_loss"]
         for condition in conditions
     )
+
+
+def test_original_metric_lookup_uses_canonical_storage_key() -> None:
+    metric = DS2_SUMMARY_METRICS["e01"][0]
+
+    assert metric.native_ids(Variant.IMPLEMENTED) == ("final/train/book_loss",)
+    assert metric.native_ids(Variant.ORIGINAL) == ("final/train/book_loss",)
+
+
+@pytest.mark.parametrize("study_id", ["e03", "e04"])
+def test_ds1_weight_decay_and_dropout_accuracy_summaries_use_percent(
+    study_id: str,
+) -> None:
+    metrics = DS1_SUMMARY_METRICS[study_id]
+
+    assert [metric.unit for metric in metrics] == ["percent", "percent"]
+    assert [metric.value_scale for metric in metrics] == [100.0, 100.0]
+
+
+def test_ds1_e13_accuracy_summary_uses_percent() -> None:
+    metrics = DS1_SUMMARY_METRICS["e13"]
+
+    assert [metric.unit for metric in metrics] == ["percent", "percent"]
+    assert [metric.value_scale for metric in metrics] == [100.0, 100.0]
+
+
+def test_ds1_e03_original_summary_falls_back_to_raw_accuracy() -> None:
+    metric = MetricDeclaration(
+        "train_accuracy",
+        "percent",
+        "train",
+        "run",
+        ("final/train/accuracy",),
+        ("final/train/accuracy",),
+        value_scale=100.0,
+    )
+    run = SimpleNamespace(variant=Variant.ORIGINAL)
+
+    class Input:
+        variant = Variant.ORIGINAL
+
+        def metric_value(self, _run, _metric_id):
+            return None
+
+        def artifact_rows(self, _run, _artifact_path):
+            return [
+                {"split": "train", "accuracy": "0.40"},
+                {"split": "train", "accuracy": "0.75"},
+            ]
+
+    assert _metric_values(Input(), "e03", [run], metric) == [75.0]
+
+
+def test_ds1_e14_summary_uses_scientific_notation_for_small_values() -> None:
+    metric = MetricDeclaration(
+        "w1_mean_absolute_difference",
+        "absolute_gradient",
+        "gradient_check",
+        "run",
+        ("gradient_check/W1/mean_absolute_difference",),
+        ("observation/gradient_check/W1/mean_absolute_difference",),
+    )
+
+    row = _summary_row(
+        "e14",
+        "two-layer-net.gradient-check",
+        Variant.IMPLEMENTED,
+        metric,
+        [],
+        [4.983518234633551e-10],
+    )
+
+    assert row["mean"] == "4.98e-10"
+    assert row["sample_standard_deviation"] == "0.00"
 
 
 @pytest.mark.parametrize("study_id", ["e06", "e07"])

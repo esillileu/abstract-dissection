@@ -74,7 +74,7 @@ def write_study_summary(
     )
     for condition_id, runs in conditions.items():
         for metric in metrics:
-            values = _metric_values(data, runs, metric)
+            values = _metric_values(data, study_id, runs, metric)
             rows.append(
                 _summary_row(study_id, condition_id, data.variant, metric, runs, values)
             )
@@ -166,6 +166,7 @@ def _markdown_table(rows: list[dict[str, object]]) -> str:
 
 def _metric_values(
     data: StudyAnalysisInput,
+    study_id: str,
     runs: list[AnalysisRun],
     metric: MetricDeclaration,
 ) -> list[float]:
@@ -176,9 +177,38 @@ def _metric_values(
             value = data.metric_value(run, native_id)
             if value is not None:
                 break
+        if value is None:
+            value = _original_ds1_accuracy_fallback(data, study_id, run, metric)
         if value is not None and np.isfinite(value):
             values.append(float(value) * metric.value_scale)
     return values
+
+
+def _original_ds1_accuracy_fallback(
+    data: StudyAnalysisInput,
+    study_id: str,
+    run: AnalysisRun,
+    metric: MetricDeclaration,
+) -> float | None:
+    """Recover missing e03/e04 original accuracy from the raw evaluation CSV."""
+    if (
+        study_id not in {"e03", "e04"}
+        or run.variant is not Variant.ORIGINAL
+        or metric.metric_id not in {"train_accuracy", "test_accuracy"}
+    ):
+        return None
+    rows = data.artifact_rows(run, "raw/metrics.csv")
+    values = []
+    for row in rows:
+        if row.get("split") != metric.split:
+            continue
+        try:
+            value = float(row["accuracy"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if np.isfinite(value):
+            values.append(value)
+    return values[-1] if values else None
 
 
 def _parameter_count(data: StudyAnalysisInput, run: AnalysisRun) -> int | None:
@@ -226,18 +256,19 @@ def _summary_row(
         }
     stats = summarize_series(values)
     decimals = 0 if metric.metric_id == "parameter_count" else 2
+    formatter = (
+        _format_e14_number
+        if study_id == "e14" and metric.split == "gradient_check"
+        else lambda value: _format_number(value, decimals)
+    )
     return {
         **base,
         "seed_runs": stats.count,
-        "mean": _format_number(stats.mean, decimals),
-        "sample_standard_deviation": _format_number(
-            stats.sample_standard_deviation, decimals
-        ),
-        "variance": _format_number(
-            stats.sample_standard_deviation**2, decimals
-        ),
-        "minimum": _format_number(stats.minimum, decimals),
-        "maximum": _format_number(stats.maximum, decimals),
+        "mean": formatter(stats.mean),
+        "sample_standard_deviation": formatter(stats.sample_standard_deviation),
+        "variance": formatter(stats.sample_standard_deviation**2),
+        "minimum": formatter(stats.minimum),
+        "maximum": formatter(stats.maximum),
         "availability": "available",
         "unavailable_reason": "",
     }
@@ -245,6 +276,12 @@ def _summary_row(
 
 def _format_number(value: float, decimals: int) -> str:
     return f"{value:.{decimals}f}"
+
+
+def _format_e14_number(value: float) -> str:
+    if value != 0.0 and abs(value) < 0.01:
+        return f"{value:.2e}"
+    return f"{value:.2f}"
 
 
 def _print_rows(rows: list[dict[str, object]]) -> None:

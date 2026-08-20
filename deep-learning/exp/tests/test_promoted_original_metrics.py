@@ -22,3 +22,16 @@ def test_promoted_original_accuracy_uses_epoch_axis(tmp_path) -> None:
         (1, "train/accuracy"),
         (3, "train/loss"),
     ]
+
+
+def test_promoted_original_accuracy_accepts_explicit_default_split(tmp_path) -> None:
+    (tmp_path / "metrics.csv").write_text(
+        "update,epoch,accuracy\n1,0,0.10\n11,1,0.20\n",
+        encoding="utf-8",
+    )
+
+    rows, final = _metric_rows(tmp_path, default_accuracy_split="train")
+
+    assert rows == [(0, "train/accuracy", 0.10), (1, "train/accuracy", 0.20)]
+    assert final["final/train/accuracy"] == 0.20
+    assert "final/test/accuracy" not in final

@@ -90,6 +90,28 @@ def write_analysis(
         raise ValueError(
             "unsupported analyses: " + ", ".join(sorted(unsupported))
         )
+    if variants == (Variant.ORIGINAL,):
+        configured = {
+            study_id
+            for study_id in selected
+            if any(
+                studies[source].conditions
+                and any(
+                    condition.aliases(Variant.ORIGINAL)
+                    for condition in studies[source].conditions
+                )
+                for source in renderer.STUDY_SOURCES.get(study_id, (study_id,))
+            )
+        }
+        excluded = sorted(selected - configured)
+        if excluded:
+            print(
+                "analysis phase: excluding studies without original configuration: "
+                + ", ".join(excluded),
+                file=sys.stderr,
+                flush=True,
+            )
+        selected = configured
     source_studies = {
         source
         for study_id in selected

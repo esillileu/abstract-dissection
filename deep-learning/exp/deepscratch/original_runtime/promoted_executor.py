@@ -71,7 +71,14 @@ def execute(config: dict[str, object], context, *, domain: str, source_root: Pat
     finally:
         reset_runtime(tokens)
     wall = perf_counter() - started
-    rows, final = _metric_rows(output)
+    default_accuracy_split = (
+        "train"
+        if domain == "deepscratch.ds1.original" and experiment == "e05"
+        else None
+    )
+    rows, final = _metric_rows(
+        output, default_accuracy_split=default_accuracy_split
+    )
     final.update({
         "runtime/train_total_s": _training_time(output, wall),
         "final/system/total_updates": float(max((row[0] for row in rows), default=0)),
@@ -155,7 +162,9 @@ def _dependency_root(config: dict[str, object], output: Path) -> Path:
     return root
 
 
-def _metric_rows(root: Path) -> tuple[list[tuple[int, str, float]], dict[str, float]]:
+def _metric_rows(
+    root: Path, *, default_accuracy_split: str | None = None
+) -> tuple[list[tuple[int, str, float]], dict[str, float]]:
     path = root / "metrics.csv"
     if not path.is_file():
         return [], {}
@@ -172,7 +181,10 @@ def _metric_rows(root: Path) -> tuple[list[tuple[int, str, float]], dict[str, fl
                     number = float(value)
                 except (TypeError, ValueError):
                     continue
-                metric = _metric_name(key, split=str(row.get("split", "")))
+                split = str(row.get("split", ""))
+                if not split and "accuracy" in key.lower():
+                    split = default_accuracy_split or ""
+                metric = _metric_name(key, split=split)
                 if metric.endswith("/accuracy"):
                     # DS1 original e03/e04 record accuracy once per epoch,
                     # while their update counter advances three times per

@@ -18,8 +18,15 @@ class MetricDeclaration:
     protocols: tuple[str, ...] = ("book-source-v1",)
     value_scale: float = 1.0
 
+    @property
+    def canonical_native_id(self) -> str:
+        """Return the single metric key persisted by the canonical writer."""
+        return self.implemented_native_ids[0]
+
     def native_ids(self, variant: Variant) -> tuple[str, ...]:
-        return self.implemented_native_ids if variant is Variant.IMPLEMENTED else self.original_native_ids
+        """Return canonical storage keys, independent of implementation variant."""
+        del variant
+        return (self.canonical_native_id,)
 
 
 @dataclass(frozen=True)

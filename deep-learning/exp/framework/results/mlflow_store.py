@@ -63,6 +63,7 @@ class MlflowResultStore:
             metrics=tuple(metrics),
             artifacts=artifacts,
             provenance={
+                "experiment_id": tags.get("experiment.id"),
                 "namespace": tags.get("transfer.source.experiment_name"),
                 "source_run_id": tags.get("transfer.source.run_id", run_id),
                 "payload_sha256": tags.get("transfer.payload.sha256"),
