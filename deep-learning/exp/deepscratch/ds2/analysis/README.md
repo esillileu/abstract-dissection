@@ -29,6 +29,7 @@
 | `GT06` | epoch evaluation을 `plot_index=epoch-1` source series로 변환, epoch별 fixed prediction 변화와 exact/token accuracy 시각화 |
 | `GT07` | GT06 처리에 모델별 비교를 추가하고 selected Attention checkpoint를 GO01 run과 연결 |
 | `GO01` | seeded example ID 검증, source/target label 생성, input reversal에 맞춘 encoder 축 변환, attention heatmap과 prediction 표 생성 |
+| `GT10` | 공기행렬·PPMI·분해 wall time을 분리 집계하고 PPMI/full SVD/randomized SVD final vectors에 GT02와 같은 유사어·유추 질의를 적용 |
 
 ## Source Objective Reducer
 
@@ -120,9 +121,12 @@ parameter count를 `timing.json`, `parameter_manifest.json`에서 읽는다.
   `you`, `year`, `car`, `toyota` 유사어 top-5와 네 유추 문제의 top-5,
   기대 정답 순위 및 hit@5를 E02 Markdown 보고서에 기록한다. Markdown 조립에 쓰는
   `e02_word_vectors.txt/.csv`는 분석 캐시에만 보관하며 터미널에는 출력하지 않는다.
+- `GT10`도 그래프를 만들지 않는다. 요약 Markdown에는 기본적으로 seed 1의 단계별
+  시간과 GT02와 동일한 유사어·유추 top-5를 기록한다. 전체 seed 시간 통계는 공통
+  `training_time_s` 요약에 남긴다.
 - `GT05`는 validation perplexity만 표시한다. 아래의 확대 축은 LSTM/BetterRNNLM
   최댓값 바로 위에서 끊고, 작은 위쪽 축에는 훨씬 큰 vanilla RNNLM 범위를 표시한다.
-- `e01`–`e09`를 지원한다.
+- `e01`–`e12`를 지원한다.
 
 각 실험의 reducer 결과 선택, 축과 원본 시각 형식은 `e01_toy_word2vec.py`부터
 `e09_addition_seq2seq_150.py`까지의 개별 모듈이 소유한다. `common.py`에는 완료 run 조회와

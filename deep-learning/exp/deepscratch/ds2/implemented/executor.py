@@ -6,6 +6,7 @@ from dataclasses import asdict
 import hashlib
 import json
 from pathlib import Path
+from time import perf_counter
 
 import numpy as np
 
@@ -61,6 +62,11 @@ from mlprosection.experiment.reproducibility import configure_runtime, seed_batc
 from mlprosection.profiling.backend import create_device_timer
 
 from .records import DS2Records
+from exp.deepscratch.ds2.statistical import (
+    create_cooccurrence_matrix,
+    factorize_ppmi,
+    positive_pmi,
+)
 
 
 def get_observation_executor(config: dict[str, object]):
@@ -82,6 +88,122 @@ def _artifact_root(config: dict[str, object], context: ExperimentContext | None 
     if context is not None and (root := context.metadata.get("artifact_root")) is not None:
         return Path(str(root))
     raise ValueError("experiment context is missing artifact_root")
+
+
+def _publish_array_checkpoint(
+    context: ExperimentContext, **arrays: np.ndarray
+) -> Path:
+    """Publish analysis arrays through the canonical v2 checkpoint pointer."""
+    import os
+
+    root = Path(str(context.metadata["checkpoint_root"]))
+    root.mkdir(parents=True, exist_ok=True)
+    target = root / "final.npz"
+    temporary = root / ".final.npz.tmp"
+    with temporary.open("wb") as stream:
+        np.savez_compressed(stream, **arrays)
+    os.replace(temporary, target)
+    digest = hashlib.sha256(target.read_bytes()).hexdigest()
+    pointer = {
+        "schema_version": 2,
+        "role": "latest",
+        "path": target.name,
+        "sha256": digest,
+        "epoch": 0,
+        "update": 0,
+    }
+    temporary_pointer = root / ".latest.json.tmp"
+    temporary_pointer.write_text(
+        json.dumps(pointer, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    os.replace(temporary_pointer, root / "latest.json")
+    return target
+
+
+@register_executor("count_based_embedding")
+class CountBasedEmbeddingExecutor:
+    """Build and persist PTB PPMI representations and their factorizations."""
+
+    def run(self, config: dict[str, object], context: ExperimentContext) -> ExperimentResult:
+        _backend, streams, runtime = configure_runtime(config)
+        context.metadata.update({"runtime": runtime, "seed_streams": asdict(streams)})
+        dataset = _mapping(config, "dataset")
+        model = _mapping(config, "model")
+        corpus, word_to_id = _word2vec_corpus(dataset)
+        window_size = int(dataset.get("window_size", 2))
+        components = min(int(model.get("embedding_size", 100)), len(word_to_id))
+        method = str(model.get("name", "ppmi")).lower()
+        seed = int(config.get("seed", 1))
+
+        started = perf_counter()
+        cooccurrence = create_cooccurrence_matrix(corpus, len(word_to_id), window_size)
+        cooccurrence_s = perf_counter() - started
+        started = perf_counter()
+        ppmi = positive_pmi(cooccurrence)
+        ppmi_s = perf_counter() - started
+        started = perf_counter()
+        vectors, singular_values, right_factors = factorize_ppmi(
+            ppmi,
+            method=method,
+            components=components,
+            seed=seed,
+            n_iter=int(model.get("n_iter", 5)),
+        )
+        decomposition_s = perf_counter() - started
+        total_s = cooccurrence_s + ppmi_s + decomposition_s
+
+        artifact_root = _artifact_root(config, context)
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        matrix_path = artifact_root / "statistical_matrices.npz"
+        payload = {
+            "cooccurrence": cooccurrence,
+            "ppmi": ppmi,
+            "word_vectors": vectors,
+            "singular_values": singular_values,
+        }
+        if right_factors is not None:
+            payload["right_factors"] = right_factors
+        np.savez_compressed(matrix_path, **payload)
+        timing_path = artifact_root / "timing.json"
+        timing = {
+            "cooccurrence_s": cooccurrence_s,
+            "ppmi_s": ppmi_s,
+            "decomposition_s": decomposition_s,
+            "total_s": total_s,
+            "method": method,
+        }
+        timing_path.write_text(json.dumps(timing, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        checkpoint = _publish_array_checkpoint(
+            context,
+            W_in=vectors,
+            word_vectors=vectors,
+            singular_values=singular_values,
+        )
+        metrics = _final(
+            updates=0,
+            epochs=0,
+            samples=len(corpus),
+            **{
+                "final/runtime/cooccurrence_s": cooccurrence_s,
+                "final/runtime/ppmi_s": ppmi_s,
+                "final/runtime/decomposition_s": decomposition_s,
+                "runtime/train_total_s": total_s,
+            },
+        )
+        return ExperimentResult(
+            metrics=metrics,
+            artifact_root=artifact_root,
+            artifacts=(matrix_path, timing_path, checkpoint),
+            metric_rows=tuple(
+                (0, name, value)
+                for name, value in (
+                    ("runtime/cooccurrence_s", cooccurrence_s),
+                    ("runtime/ppmi_s", ppmi_s),
+                    ("runtime/decomposition_s", decomposition_s),
+                    ("runtime/total_s", total_s),
+                )
+            ),
+        )
 
 
 def _optimizer(config: dict[str, object], model, objective):

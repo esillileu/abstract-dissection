@@ -11,7 +11,7 @@ from exp.deepscratch.original_runtime.summary import (
 )
 
 
-SUPPORTED_EXPERIMENTS = ("e01", "e02", "e03", "e04", "e06", "e07")
+SUPPORTED_EXPERIMENTS = ("e01", "e02", "e03", "e04", "e06", "e07", "e12")
 TRIAL_IDS = {
     "e01": (
         "dlfs2.ch03.toy-cbow-full-softmax",
@@ -49,6 +49,10 @@ TRIAL_IDS = {
             "attention-seq2seq-reverse",
         )
     ),
+    "e12": tuple(
+        f"dlfs2.ch02.ptb-{name}"
+        for name in ("ppmi", "svd", "randomized-svd")
+    ),
 }
 
 
@@ -58,6 +62,20 @@ def _metrics(experiment: str, rows: list[dict[str, str]]) -> list[OriginalMetric
         return [] if value is None else [
             OriginalMetric("final_loss", value, "raw", 3)
         ]
+    if experiment == "e12":
+        metrics = []
+        for name in (
+            "cooccurrence_s", "ppmi_s", "decomposition_s", "total_s"
+        ):
+            values = [
+                float(row["value"])
+                for row in rows
+                if row.get("metric") == name and row.get("value") not in {None, ""}
+            ]
+            value = values[-1] if values else None
+            if value is not None:
+                metrics.append(OriginalMetric(name, value, "seconds", 3))
+        return metrics
     if experiment == "e03":
         value = last_value(rows, "perplexity")
         return [] if value is None else [

@@ -23,6 +23,7 @@
 | `GT05` | PTB LM recipe comparison | PTB train/valid/test, embedding/hidden 650, SGD 20, batch 20, BPTT 35, clip .25, max 40 epochs | architecture × dropout ratio | 5 |
 | `GT06` | addition Seq2seq | addition split, embedding 16, hidden 128, Adam .001, batch 128, clip 5, 25 epochs | architecture × reverse input | 4 |
 | `GT07` | date Seq2seq | date split, reverse input, embedding 16, hidden 256, Adam .001, batch 128, clip 5, 10 epochs | architecture | 3 |
+| `GT10` | PTB count-based embeddings | PTB train, window 2, dense PPMI, seed-paired | representation/factorization | 3 |
 
 ## 원자 시행 ID
 
@@ -35,6 +36,7 @@
 | `GT05` | `LM-RNN-RECIPE`, `LM-LSTM-RECIPE`, `LM-LSTM-TIED-RECIPE`, `LM-BETTER-RECIPE`, `LM-BETTER-NODROPOUT` |
 | `GT06` | `SEQA-VAN-FWD`, `SEQA-VAN-REV`, `SEQA-PEEKY-FWD`, `SEQA-PEEKY-REV` |
 | `GT07` | `SEQD-VAN-REV`, `SEQD-PEEKY-REV`, `SEQD-ATTN-REV` |
+| `GT10` | `COUNT-PTB-PPMI`, `COUNT-PTB-SVD`, `COUNT-PTB-RANDOMIZED-SVD` |
 | `GO01` | `ATTENTION-ALIGNMENT` |
 
 ## Atomic 조건
@@ -63,6 +65,17 @@ negative sampling과 full softmax는 objective 정의가 다르므로 raw loss�
 E02 분석은 loss graph를 만들지 않는다. final `W_in` checkpoint에 교재의
 고정 유사어 질의와 유추 문제를 적용해 seed별 top-5 후보, 기대 정답 순위와
 hit@5를 출력한다.
+
+### GT10 — PTB count-based embeddings
+
+| atomic run ID | representation | saved computation inputs |
+| --- | --- | --- |
+| `COUNT-PTB-PPMI` | dense PPMI rows | cooccurrence, PPMI |
+| `COUNT-PTB-SVD` | full SVD `U[:, :100]` | cooccurrence, PPMI, singular values |
+| `COUNT-PTB-RANDOMIZED-SVD` | seeded randomized SVD `U` | cooccurrence, PPMI, singular values, right factors |
+
+모든 조건은 공기행렬, PPMI, 분해, 전체 wall time을 따로 기록하고 final checkpoint의
+`W_in`에 분석용 벡터를 게시한다.
 
 ### GT03 — small-corpus RNNLM
 
@@ -120,4 +133,5 @@ hit@5를 출력한다.
 | `GT05` | `SRC-B2-CH06-BETTER-RNNLM`; RNN/LSTM recipe 조건은 새 확장 |
 | `GT06` | `SRC-B2-CH07-ADDITION-SEQ2SEQ` |
 | `GT07` | `SRC-B2-CH08-DATE-SEQ2SEQ` |
+| `GT10` | `SRC-B2-CH02-COUNT-METHOD-BIG` |
 | `GO01` | `SRC-B2-CH08-ATTENTION-ALIGNMENT` |

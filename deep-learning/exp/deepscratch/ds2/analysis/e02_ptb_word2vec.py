@@ -249,9 +249,10 @@ def _text(
     missing: dict[str, int],
     *,
     variant: str | None = None,
+    atomic_run_ids: tuple[str, ...] = ATOMIC_RUN_IDS,
 ) -> str:
     lines = ["e02 PTB Word2Vec embedding evaluation (book queries; top 5)"]
-    for series in ATOMIC_RUN_IDS:
+    for series in atomic_run_ids:
         label = _series_label(series, variant)
         selected = [item for item in evaluations if item.series == series]
         if not selected:

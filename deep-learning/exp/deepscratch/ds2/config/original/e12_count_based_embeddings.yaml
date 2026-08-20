@@ -1,0 +1,28 @@
+domain: deepscratch.ds2.original
+kind: deepscratch.ds2.original
+run: {experiment_id: e12, group_id: ORIGINAL-E12, protocol: PTB count-based embeddings, protocol_version: ds2-e12-count-based-v1, recipe_id: ds2-original-e12-count-based-v1, structure_signature: ptb-count-based-w2}
+source_experiment: e12
+trial_id: placeholder
+execution: {mode: seeded, default_device: cpu}
+seed_policy: {seed_set: research_v1, seed_count: 10}
+dataset: {id: ptb-train, source: ptb.load_data(train), window_size: 2}
+model: {embedding_size: 100}
+budget: {max_epochs: 0}
+numerics: {backend: numpy, device: cpu, dtype: float32}
+tracking: {enabled: true, experiment: deepscratch.ds2}
+checkpoint: {save_final: true, format: npz}
+variants:
+  PTB-PPMI:
+    trial_id: dlfs2.ch02.ptb-ppmi
+    seed_policy: {seed_count: 1}
+    model: {name: ppmi}
+    conditions: {method: ppmi, window: 2}
+  PTB-SVD:
+    trial_id: dlfs2.ch02.ptb-svd
+    seed_policy: {seed_count: 1}
+    model: {name: svd}
+    conditions: {method: svd, window: 2, embedding_size: 100}
+  PTB-RANDOMIZED-SVD:
+    trial_id: dlfs2.ch02.ptb-randomized-svd
+    model: {name: randomized_svd, n_iter: 5}
+    conditions: {method: randomized_svd, window: 2, embedding_size: 100, n_iter: 5}

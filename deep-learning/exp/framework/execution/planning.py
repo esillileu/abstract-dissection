@@ -62,27 +62,46 @@ class Planner:
             ]
             if not selected_variants:
                 continue
-            execution = resolved.get("execution", {})
-            if not isinstance(execution, dict):
-                raise ValueError(f"execution must be a mapping: {path}")
-            mode = str(execution.get("mode", "seeded"))
-            if mode not in {"seeded", "single"}:
-                raise ValueError(f"unsupported execution.mode in {path}: {mode}")
-            if mode == "single":
-                if requested_seeds is not None:
-                    raise ValueError(f"{experiment_id} is a single-run experiment and does not accept --seed")
-                run_seeds: list[int | None] = [None]
-            else:
-                policy = resolved.get("seed_policy", {})
-                if not isinstance(policy, dict):
-                    raise ValueError(f"seed_policy must be a mapping: {path}")
-                count = int(policy.get("seed_count", len(seeds)))
-                available_seeds = seeds[:count]
-                run_seeds = requested_seeds if requested_seeds is not None else available_seeds
-                invalid = [seed for seed in run_seeds if seed not in available_seeds]
-                if invalid:
-                    raise ValueError(f"{experiment_id} declares seed values {available_seeds}; invalid values: {invalid}")
             for atomic_run_id in selected_variants:
+                variant = variants[atomic_run_id]
+                if not isinstance(variant, dict):
+                    raise ValueError(
+                        f"experiment variant must be a mapping: "
+                        f"{path}/{atomic_run_id}"
+                    )
+                atomic = deep_merge(resolved, variant)
+                execution = atomic.get("execution", {})
+                if not isinstance(execution, dict):
+                    raise ValueError(f"execution must be a mapping: {path}")
+                mode = str(execution.get("mode", "seeded"))
+                if mode not in {"seeded", "single"}:
+                    raise ValueError(f"unsupported execution.mode in {path}: {mode}")
+                if mode == "single":
+                    if requested_seeds is not None:
+                        raise ValueError(
+                            f"{experiment_id} is a single-run experiment and "
+                            "does not accept --seed"
+                        )
+                    run_seeds: list[int | None] = [None]
+                else:
+                    policy = atomic.get("seed_policy", {})
+                    if not isinstance(policy, dict):
+                        raise ValueError(f"seed_policy must be a mapping: {path}")
+                    count = int(policy.get("seed_count", len(seeds)))
+                    available_seeds = seeds[:count]
+                    run_seeds = (
+                        requested_seeds
+                        if requested_seeds is not None
+                        else available_seeds
+                    )
+                    invalid = [
+                        seed for seed in run_seeds if seed not in available_seeds
+                    ]
+                    if invalid:
+                        raise ValueError(
+                            f"{experiment_id}/{atomic_run_id} declares seed "
+                            f"values {available_seeds}; invalid values: {invalid}"
+                        )
                 for seed in run_seeds:
                     plans.append(RunPlan(
                         self.domain.name, experiment_id, path, atomic_run_id, seed,

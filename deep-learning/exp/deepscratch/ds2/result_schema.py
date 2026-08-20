@@ -100,6 +100,11 @@ PROFILE_POINTS_OK = MetricDeclaration(
         "ds2-e11-vocabulary-size-scaling-v1",
     ),
 )
+COUNT_PIPELINE_TIME = MetricDeclaration(
+    "count_pipeline_time", "seconds", "run", "run",
+    ("runtime/train_total_s",), ("runtime/train_total_s",),
+    protocols=("ds2-e12-count-based-v1", "legacy"),
+)
 
 
 def condition(canonical, implemented, original=(), metric=LOSS):
@@ -223,10 +228,22 @@ E11 = StudyDeclaration("e11", tuple(
     condition(name.lower(), (name,), metric=PROFILE_POINTS_OK)
     for name in E11_NAMES
 ))
+E12 = StudyDeclaration("e12", tuple(
+    condition(canonical, (implemented,), (original,), metric=COUNT_PIPELINE_TIME)
+    for canonical, implemented, original in (
+        ("count-ptb-ppmi", "COUNT-PTB-PPMI", "PTB-PPMI"),
+        ("count-ptb-svd", "COUNT-PTB-SVD", "PTB-SVD"),
+        (
+            "count-ptb-randomized-svd",
+            "COUNT-PTB-RANDOMIZED-SVD",
+            "PTB-RANDOMIZED-SVD",
+        ),
+    )
+))
 
 STUDIES = {
     item.study_id: item
-    for item in (E01, E02, E03, E04, E05, E06, E07, E08, E09, E10, E11)
+    for item in (E01, E02, E03, E04, E05, E06, E07, E08, E09, E10, E11, E12)
 }
 SUMMARY_METRICS = {
     "e01": (SUMMARY_BOOK_LOSS,),
@@ -240,6 +257,7 @@ SUMMARY_METRICS = {
     "e09": (SUMMARY_TRAIN_EXACT, SUMMARY_TEST_EXACT),
     "e10": (),
     "e11": (),
+    "e12": (),
 }
 PROTOCOL_EQUIVALENCE = {
     study_id: (("legacy", "book-source-v1"),) for study_id in STUDIES

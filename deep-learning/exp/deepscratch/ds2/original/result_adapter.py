@@ -25,7 +25,8 @@ def load_native_result(client, run_id, declarations, *, artifact_cache=None):
             f"{result.schema_version}"
         )
     aliases = dict(result.artifact_aliases)
-    if "checkpoints/checkpoint_manifest.json" not in aliases:
+    study_id = result.provenance.get("experiment_id")
+    if study_id in {"e02", "e12"} and "checkpoints/checkpoint_manifest.json" not in aliases:
         manifest = _word2vec_checkpoint_projection(
             client, run_id, artifact_cache=artifact_cache
         )

@@ -6,6 +6,7 @@ import yaml
 
 from exp.deepscratch.ds2.implemented.executor import (
     AttentionAlignmentObservationExecutor,
+    CountBasedEmbeddingExecutor,
     LanguageModelExecutor,
     Seq2SeqExecutor,
     Word2VecExecutor,
@@ -148,9 +149,11 @@ def test_all_ds2_variants_resolve_and_build_the_declared_components() -> None:
             elif kind == "observation":
                 executor = get_observation_executor(config)
                 assert isinstance(executor, AttentionAlignmentObservationExecutor)
+            elif kind == "count_based_embedding":
+                executor = CountBasedEmbeddingExecutor()
             else:
                 assert kind == "performance_profile"
                 executor = ProfileExecutor()
             assert callable(executor.run)
             count += 1
-    assert count == 56
+    assert count == 59

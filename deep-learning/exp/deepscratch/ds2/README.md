@@ -1,7 +1,7 @@
 # DS2 실행 catalog
 
-DS2는 실행 그룹 `GT01`–`GT07`, `GT09`와 성능 프로파일 그룹 `PF01`–`PF02`를
-`e01`–`e11` YAML로 선언한다. `e10/PF01`은 `e02`에서 파생된 PTB Word2Vec
+DS2는 실행 그룹 `GT01`–`GT07`, `GT09`–`GT10`과 성능 프로파일 그룹 `PF01`–`PF02`를
+`e01`–`e12` YAML로 선언한다. `e10/PF01`은 `e02`에서 파생된 PTB Word2Vec
 update profile이고, `e11/PF02`는 synthetic vocabulary-size scaling study다.
 과거 실행은 MLflow의 historical namespace에 보존되지만 operational 명령에서는
 canonical `deepscratch.ds2` namespace만 조회한다.
@@ -83,5 +83,17 @@ just exp run deepscratch ds2 -e 01-02 --seed 1-3 --order seed-first
 | `e09` | `GT09` | `config/e09_addition_seq2seq_150.yaml` |
 | `e10` | `PF01` | `config/implemented/e10_ptb_word2vec_profile.yaml` |
 | `e11` | `PF02` | `config/implemented/e11_word2vec_vocabulary_size_scaling.yaml` |
+| `e12` | `GT10` | `config/implemented/e12_count_based_embeddings.yaml` |
+
+`e12/GT10`은 교재 2장의 PTB window 2 조건으로 PPMI 행, full SVD 100차원,
+randomized SVD 100차원을 비교한다. 공기행렬·PPMI·분해 결과를
+`statistical_matrices.npz`에, 분석용 벡터를 final checkpoint에, 단계별 wall time을
+`timing.json`에 저장한다. full SVD는 PTB 전체 dense 행렬에서 계산량과 메모리 사용량이
+크므로 필요한 조건만 atomic run으로 선택할 수 있다.
+
+```bash
+just exp run deepscratch ds2 -e 12 --seed 1
+just exp analyze deepscratch ds2 -e 12 --seed 1 --summary
+```
 
 `GO01`은 GT07의 완료 checkpoint를 입력으로 받는 관찰 실행이다.

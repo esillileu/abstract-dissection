@@ -29,7 +29,7 @@ class EvaluationTrigger:
 class RunSpec:
     kind: Literal[
         "word2vec", "language_modeling", "seq2seq", "observation",
-        "performance_profile",
+        "performance_profile", "count_based_embedding",
     ]
     identity: RunIdentity
     atomic_run_id: str
@@ -160,7 +160,7 @@ def parse_run_spec(
         )
     if raw.get("kind") not in {
         "word2vec", "language_modeling", "seq2seq", "observation",
-        "performance_profile",
+        "performance_profile", "count_based_embedding",
     }:
         raise ValueError(f"DS2 does not support kind: {raw.get('kind')}")
     _reject_old_catalog_keys(raw)

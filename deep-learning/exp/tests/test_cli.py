@@ -66,16 +66,19 @@ def test_catalog_plan_counts_and_default_devices() -> None:
     ds2 = _plans("ds2", all_experiments=True)
 
     assert len(ds1) == 66
-    assert len(ds2) == 35
+    assert len(ds2) == 39
     assert {
         plan.device
         for plan in ds1
         if plan.experiment_id in {"e06", "e07", "e08", "e12"}
     } == {"cuda:0"}
     assert {
-        plan.device for plan in ds2 if plan.experiment_id != "e08"
+        plan.device for plan in ds2 if plan.experiment_id not in {"e08", "e12"}
     } == {"cuda:0"}
     assert {plan.device for plan in ds2 if plan.experiment_id == "e08"} == {
+        "cpu"
+    }
+    assert {plan.device for plan in ds2 if plan.experiment_id == "e12"} == {
         "cpu"
     }
 
