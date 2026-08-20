@@ -39,6 +39,11 @@ RENDERERS = {
     "e12": e12_count_based_embeddings.render,
 }
 ADDITIONAL_RENDERERS = {
+    "e05": lambda data, error_style, output: [
+        e05_lm_recipes.render_additional_graph(data, error_style, output),
+        e05_lm_recipes.render_additional_better_graph(data, error_style, output),
+        e05_lm_recipes.render_additional_lstm_graph(data, error_style, output),
+    ],
     "e09": e09_addition_seq2seq_150.render_additional_graphs,
 }
 STUDY_SOURCES = {}

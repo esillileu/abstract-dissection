@@ -123,12 +123,22 @@ def _checkpoint_weights_path(client, run) -> Path | None:
         if candidate.is_file():
             return candidate
 
-    remote_path = (
-        "checkpoints/final.npz"
+    remote_paths = (
+        ("checkpoints/final.npz",)
         if final_path.suffix == ".npz"
-        else f"checkpoints/{final_path.name}/model_parameters.npz"
+        else (
+            f"checkpoints/generations/{final_path.name}/model_parameters.npz",
+            f"checkpoints/{final_path.name}/model_parameters.npz",
+        )
     )
-    return artifact_file(client, run, remote_path)
+    return next(
+        (
+            downloaded
+            for remote_path in remote_paths
+            if (downloaded := artifact_file(client, run, remote_path)) is not None
+        ),
+        None,
+    )
 
 
 def _word_vectors(path: Path) -> np.ndarray:

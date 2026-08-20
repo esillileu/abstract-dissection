@@ -12,6 +12,10 @@ from exp.deepscratch.analysis.input import artifact_file, artifact_rows
 from .common import runs
 
 
+def _condition_slug(condition: str) -> str:
+    return condition.lower().replace("-", "_")
+
+
 def _matrices(client, run_refs):
     by_example = defaultdict(list)
     for run in run_refs:
@@ -61,7 +65,29 @@ def _labels(client, run_refs):
         value = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return {}
-    return value.get("examples", value) if isinstance(value, dict) else {}
+    if not isinstance(value, dict):
+        return {}
+    examples = value.get("examples", value)
+    if isinstance(examples, dict):
+        labels = examples
+    elif isinstance(examples, list):
+        labels = {
+            str(example["example_id"]): example
+            for example in examples
+            if isinstance(example, dict) and "example_id" in example
+        }
+    else:
+        return {}
+    if value.get("input_reversal") is not True:
+        return labels
+    return {
+        example_id: {
+            **metadata,
+            "source_labels": list(reversed(metadata.get("source_labels", []))),
+        }
+        for example_id, metadata in labels.items()
+        if isinstance(metadata, dict)
+    }
 
 
 def render(client, error_style, output):
@@ -73,8 +99,11 @@ def render(client, error_style, output):
         run_refs = grouped[condition]
         matrices = _matrices(client, run_refs)
         labels = _labels(client, run_refs)
+        condition_slug = _condition_slug(condition)
         for example, (mean, minimum, maximum, count) in sorted(matrices.items()):
-            example_output = output.with_name(f"{condition}_{example}{output.suffix}")
+            example_output = output.with_name(
+                f"{output.stem}_{condition_slug}_{example}{output.suffix}"
+            )
             figure, axis = plt.subplots(figsize=(7, 4))
             axis.pcolor(mean, cmap=plt.cm.Greys_r, vmin=0.0, vmax=1.0)
             metadata = labels.get(example, {}) if isinstance(labels, dict) else {}
@@ -89,7 +118,7 @@ def render(client, error_style, output):
             save_figure(figure, example_output)
             plt.close(figure)
             outputs.append(example_output)
-        summary = output.with_name(f"{condition}_{output.stem}.csv")
+        summary = output.with_name(f"{output.stem}_{condition_slug}.csv")
         write_summary(
             summary,
             {

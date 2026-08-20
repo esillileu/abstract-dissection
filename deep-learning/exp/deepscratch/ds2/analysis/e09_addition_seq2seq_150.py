@@ -48,8 +48,20 @@ ADDITIONAL_GRAPHS = (
         "lower right",
     ),
     (
+        "ds2_e09_21_van_fwd_vs_atn_fwd.png",
+        "Vanilla + Forward vs. Attention + Forward",
+        ("SEQA-VAN-FWD", "SEQA-ATTN-FWD"),
+        "lower right",
+    ),
+    (
+        "ds2_e09_22_pky_fwd_vs_atn_pky_fwd.png",
+        "Peeky + Forward vs. Attention + Peeky + Forward",
+        ("SEQA-PEEKY-FWD", "SEQA-ATTN-PEEKY-FWD"),
+        "lower right",
+    ),
+    (
         "ds2_e09_20_pky_rev_vs_atn_pky_rev.png",
-        "Does Attention Help on Top of Peeky + Reverse?",
+        "Peeky + Reverse vs. Attention + Peeky + Reverse",
         ("SEQA-PEEKY-REV", "SEQA-ATTN-PEEKY-REV"),
         "lower right",
     ),
@@ -59,6 +71,11 @@ ADDITIONAL_GRAPHS = (
         ("SEQA-VAN-REV", "SEQA-ATTN-REV"),
         "lower right",
     ),
+)
+
+COMBINED_GRAPH_GROUPS = (
+    ("ds2_e09_10_fwd_rev.png", ADDITIONAL_GRAPHS[:4], (2, 2), (12, 10)),
+    ("ds2_e09_20_attention.png", ADDITIONAL_GRAPHS[4:], (2, 2), (12, 10)),
 )
 
 
@@ -130,22 +147,23 @@ def render_additional_graphs(client, error_style, output) -> list[Path]:
         plt.close(figure)
         outputs.append(path)
 
-    combined_figure, axes = plt.subplots(2, 2, figsize=(12, 10), squeeze=False)
-    for axis, (_filename, title, atomic_ids, legend_loc) in zip(
-        axes.flat, ADDITIONAL_GRAPHS[:4]
-    ):
-        configure_axis(
-            axis,
-            atomic_ids,
-            title=title,
-            legend_loc=legend_loc,
-            title_fontsize=24,
-            legend_fontsize=20,
-        )
-    combined_figure.tight_layout()
-    combined_path = output_dir / "ds2_e09_10_fwd_rev.png"
-    save_figure(combined_figure, combined_path)
-    plt.close(combined_figure)
-    outputs.append(combined_path)
+    for filename, graph_group, layout, figsize in COMBINED_GRAPH_GROUPS:
+        combined_figure, axes = plt.subplots(*layout, figsize=figsize, squeeze=False)
+        for axis, (_single_filename, title, atomic_ids, legend_loc) in zip(
+            axes.flat, graph_group
+        ):
+            configure_axis(
+                axis,
+                atomic_ids,
+                title=title,
+                legend_loc=legend_loc,
+                title_fontsize=20,
+                legend_fontsize=20,
+            )
+        combined_figure.tight_layout()
+        combined_path = output_dir / filename
+        save_figure(combined_figure, combined_path)
+        plt.close(combined_figure)
+        outputs.append(combined_path)
 
     return outputs

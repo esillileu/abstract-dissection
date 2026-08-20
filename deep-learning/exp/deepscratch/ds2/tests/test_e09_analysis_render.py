@@ -95,9 +95,12 @@ def test_e09_additional_visualization_writes_standalone_and_combined_graphs(
         "ds2_e09_12_pky_fwd_vs_pky_rev.png",
         "ds2_e09_13_atn_fwd_vs_atn_rev.png",
         "ds2_e09_14_atn_pky_fwd_vs_atn_pky_rev.png",
+        "ds2_e09_21_van_fwd_vs_atn_fwd.png",
+        "ds2_e09_22_pky_fwd_vs_atn_pky_fwd.png",
         "ds2_e09_20_pky_rev_vs_atn_pky_rev.png",
         "ds2_e09_20_van_rev_vs_atn_rev.png",
         "ds2_e09_10_fwd_rev.png",
+        "ds2_e09_20_attention.png",
     ]
     assert all(path.is_file() for path in outputs)
     assert all(path.stat().st_size > 0 for path in outputs)
@@ -134,11 +137,13 @@ def test_e09_additional_graphs_reuse_full_graph_colors_and_standard_size(
         object(), "band", tmp_path / "e09.png"
     )
 
-    assert len(outputs) == len(figures) == 7
-    assert [figure.get_size_inches().tolist() for figure in figures[:6]] == [[6.4, 4.8]] * 6
-    assert figures[6].get_size_inches().tolist() == [12.0, 10.0]
-    assert all(figure.axes[0].get_title() == "" for figure in figures[:6])
-    assert len(figures[6].axes) == 4
+    assert len(outputs) == len(figures) == 10
+    assert [figure.get_size_inches().tolist() for figure in figures[:8]] == [[6.4, 4.8]] * 8
+    assert figures[8].get_size_inches().tolist() == [12.0, 10.0]
+    assert figures[9].get_size_inches().tolist() == [12.0, 10.0]
+    assert all(figure.axes[0].get_title() == "" for figure in figures[:8])
+    assert len(figures[8].axes) == 4
+    assert len(figures[9].axes) == 4
     first_lines = figures[0].axes[0].lines
     assert [line.get_color() for line in first_lines] == [ACCENT_COLORS[0], ACCENT_COLORS[1]]
     for figure in figures:
