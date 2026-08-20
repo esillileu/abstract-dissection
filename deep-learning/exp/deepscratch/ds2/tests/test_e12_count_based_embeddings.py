@@ -33,9 +33,7 @@ def test_e12_declares_ppmi_and_both_svd_methods() -> None:
         assert spec.identity.experiment_id == "e12"
         assert spec.dataset["window_size"] == 2
         assert spec.checkpoint["save_final"] is True
-        assert spec.seed_policy["seed_count"] == (
-            10 if atomic_run_id == "COUNT-PTB-RANDOMIZED-SVD" else 1
-        )
+        assert spec.seed_policy["seed_count"] == 10
 
 
 def test_count_based_pipeline_is_numerically_reusable_and_seeded() -> None:

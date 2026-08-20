@@ -14,12 +14,10 @@ checkpoint: {save_final: true, format: npz}
 variants:
   PTB-PPMI:
     trial_id: dlfs2.ch02.ptb-ppmi
-    seed_policy: {seed_count: 1}
     model: {name: ppmi}
     conditions: {method: ppmi, window: 2}
   PTB-SVD:
     trial_id: dlfs2.ch02.ptb-svd
-    seed_policy: {seed_count: 1}
     model: {name: svd}
     conditions: {method: svd, window: 2, embedding_size: 100}
   PTB-RANDOMIZED-SVD:

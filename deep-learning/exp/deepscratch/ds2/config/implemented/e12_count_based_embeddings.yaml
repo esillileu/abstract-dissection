@@ -12,6 +12,6 @@ checkpoint: {save_final: true, save_best: false, format: npz}
 profiling: {enabled: false}
 tracking: {enabled: true, experiment: deepscratch.ds2}
 variants:
-  COUNT-PTB-PPMI: {seed_policy: {seed_count: 1}, model: {name: ppmi}}
-  COUNT-PTB-SVD: {seed_policy: {seed_count: 1}, model: {name: svd}}
+  COUNT-PTB-PPMI: {model: {name: ppmi}}
+  COUNT-PTB-SVD: {model: {name: svd}}
   COUNT-PTB-RANDOMIZED-SVD: {model: {name: randomized_svd, n_iter: 5}}
