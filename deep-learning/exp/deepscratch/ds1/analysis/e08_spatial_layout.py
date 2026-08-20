@@ -13,7 +13,7 @@ from exp.framework.analysis.core import (
     write_summary,
 )
 from exp.deepscratch.analysis.input import metric_histories
-from exp.framework.plotting.theme import ACCENT_COLORS, SURFACE
+from exp.framework.plotting.theme import ACCENT_COLORS
 
 from .broken_axis import add_wave_break
 from .common import runs
@@ -57,10 +57,9 @@ def _add_permutation_examples(
     normal: np.ndarray,
     permutated: np.ndarray,
 ) -> None:
-    for bounds, image, title in zip(
+    for bounds, image in zip(
         ((0.37, 1.05, 0.14, 0.50), (0.37, 0.45, 0.14, 0.50)),
         (normal, permutated),
-        ("Normal", "Permutated"),
         strict=True,
     ):
         image_axis = axis.inset_axes(bounds)
@@ -71,12 +70,6 @@ def _add_permutation_examples(
             interpolation="nearest",
             vmin=0.0,
             vmax=1.0,
-        )
-        image_axis.set_title(
-            title,
-            fontsize=8,
-            pad=2,
-            bbox={"facecolor": SURFACE, "edgecolor": "none", "pad": 0.5},
         )
         image_axis.set_xticks(())
         image_axis.set_yticks(())

@@ -7,13 +7,14 @@ from dataclasses import asdict
 import csv
 import hashlib
 import json
+from time import perf_counter
 
 import numpy as np
 
 from mlprosection.datasets import load_mnist
 from mlprosection.datasets.mnist import save_file as mnist_cache_path
 from mlprosection.nn.layers import BatchNormalization
-from mlprosection.nn.model.architecture import DeepCNN, MLP, SimpleCNN
+from mlprosection.nn.model.architecture import DeepCNN, MLP, SimpleCNN, TwoLayerNet
 from mlprosection.nn.objective import SoftmaxCrossEntropy
 from mlprosection.optim.SGD import AdaGrad, Adam, Momentum, SGD
 from mlprosection.optim.transform import L2Regularization
@@ -43,6 +44,8 @@ def get_observation_executor(config: dict[str, object]):
         return OptimizerTrajectoryObservationExecutor()
     if group_id == "GO02":
         return ActivationObservationExecutor()
+    if group_id == "GO03":
+        return GradientCheckObservationExecutor()
     raise ValueError(f"unknown DS1 observation group: {group_id}")
 
 
@@ -334,6 +337,91 @@ class ActivationObservationExecutor:
         )
 
 
+class GradientCheckObservationExecutor:
+    """Reproduce ch05/gradient_check.py and retain timing and raw gradients."""
+
+    def run(self, config: dict[str, object], context: ExperimentContext) -> ExperimentResult:
+        artifact_root = _artifact_root(context)
+        observations = artifact_root / "observations"
+        observations.mkdir(parents=True, exist_ok=True)
+        backend, streams, actual_runtime = configure_runtime(config)
+        context.metadata["runtime"] = actual_runtime
+        context.metadata["seed_streams"] = asdict(streams)
+        (x_train, t_train), _ = load_mnist(
+            flatten=True, one_hot_label=True, gpu=backend.is_gpu
+        )
+        sample_count = int(_mapping(config, "dataset").get("sample_count", 3))
+        x_batch, t_batch = x_train[:sample_count], t_train[:sample_count]
+        model = _model(_mapping(config, "model"))
+        objective = _objective(_mapping(config, "objective"), model.backend)
+        progress = context.metadata.get("progress_reporter")
+        if progress is not None:
+            progress.set_total_updates(2)
+
+        backend.synchronize()
+        started = perf_counter()
+        model.numerical_gradient(x_batch, t_batch, objective)
+        backend.synchronize()
+        numerical_s = perf_counter() - started
+        numerical = _book_gradients(model)
+        if progress is not None:
+            progress.advance_to(1)
+
+        model.zero_grad()
+        backend.synchronize()
+        started = perf_counter()
+        objective.forward(model.forward(x_batch), t_batch)
+        model.backward(objective.backward())
+        backend.synchronize()
+        backprop_s = perf_counter() - started
+        backprop = _book_gradients(model)
+        if progress is not None:
+            progress.advance_to(2)
+
+        rows = []
+        arrays = {}
+        for name in ("W1", "b1", "W2", "b2"):
+            numerical_array = numerical[name]
+            backprop_array = backprop[name]
+            difference = np.abs(backprop_array - numerical_array)
+            rows.append({
+                "parameter": name,
+                "mean_absolute_difference": float(difference.mean()),
+                "max_absolute_difference": float(difference.max()),
+                "numerical_mean_absolute_gradient": float(np.abs(numerical_array).mean()),
+                "backprop_mean_absolute_gradient": float(np.abs(backprop_array).mean()),
+            })
+            arrays[f"numerical__{name}"] = numerical_array
+            arrays[f"backprop__{name}"] = backprop_array
+        timing_rows = [
+            {"method": "numerical", "seconds": numerical_s},
+            {"method": "backprop", "seconds": backprop_s},
+            {"method": "speedup", "seconds": numerical_s / backprop_s},
+        ]
+        _write_rows(observations / "gradient_check.csv", rows, list(rows[0]))
+        _write_rows(observations / "gradient_timing.csv", timing_rows, ["method", "seconds"])
+        np.savez_compressed(observations / "gradients.npz", **arrays)
+        metrics = {
+            "final/status/success": 1.0,
+            "final/system/total_updates": 0.0,
+            "final/system/completed_epochs": 0.0,
+            "final/system/samples_seen": float(sample_count),
+            "gradient_check/numerical_s": numerical_s,
+            "gradient_check/backprop_s": backprop_s,
+            "gradient_check/speedup": numerical_s / backprop_s,
+            **{
+                f"gradient_check/{row['parameter']}/mean_absolute_difference": float(row["mean_absolute_difference"])
+                for row in rows
+            },
+        }
+        metric_rows = [
+            (0, f"observation/gradient_check/{row['parameter']}/mean_absolute_difference", float(row["mean_absolute_difference"]))
+            for row in rows
+        ]
+        metric_rows.extend((0, f"observation/gradient_check/{key}", value) for key, value in (("numerical_s", numerical_s), ("backprop_s", backprop_s), ("speedup", numerical_s / backprop_s)))
+        return ExperimentResult(metrics=metrics, artifact_root=artifact_root, model=model, metric_rows=tuple(metric_rows))
+
+
 def _device_timer(config: dict[str, object], backend):
     profiling = _mapping(config, "profiling")
     return create_device_timer(backend, enabled=bool(profiling.get("device_timing", False)))
@@ -342,6 +430,10 @@ def _device_timer(config: dict[str, object], backend):
 def _model(config: dict[str, object], *, dropout_rng=None):
     name = str(config.get("name", "MLP"))
     values = {key: value for key, value in config.items() if key not in {"name", "family", "task_type", "input_shape", "output_shape", "structure_signature", "use_batchnorm", "use_dropout", "num_hidden_layers", "num_conv_layers", "normalization", "model/flops", "model/macs"}}
+    if name == "TwoLayerNet":
+        values.pop("gradient_method", None)
+        values.pop("numerical_step", None)
+        return TwoLayerNet(**values, numerical_step=float(config.get("numerical_step", 1e-4)))
     if name == "MLP":
         if "activation" in values:
             values["activation_name"] = values.pop("activation")
@@ -353,6 +445,20 @@ def _model(config: dict[str, object], *, dropout_rng=None):
     if name == "SimpleCNN": return SimpleCNN(**values)
     if name == "DeepCNN": return DeepCNN(**values, dropout_rng=dropout_rng)
     raise ValueError(f"unknown model name: {name}")
+
+
+def _book_gradients(model) -> dict[str, np.ndarray]:
+    named = dict(model.named_parameters())
+    return {
+        book_name: parameter.backend.to_numpy(parameter.grad).copy()
+        for book_name, parameter_name in (
+            ("W1", "layers.0.W"),
+            ("b1", "layers.0.b"),
+            ("W2", "layers.2.W"),
+            ("b2", "layers.2.b"),
+        )
+        for parameter in (named[parameter_name],)
+    }
 
 
 def _objective(config: dict[str, object], backend):

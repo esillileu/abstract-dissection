@@ -66,10 +66,10 @@ python -m exp analyze deepscratch ds1 -e 06 --seed 1
 - 완료 run이 없으면 `No completed runs` 빈 그래프와 값이 비어 있는 summary CSV를 만든다.
 - 출력 기본 경로는 `results/exp/deepscratch/`이며 PNG와 Markdown만 평탄하게 게시한다.
 - 명시적으로 포함한 spatial-layout 비교 `GT08`은 `e08` 분석으로 제공한다.
-- `e01`–`e12`를 지원한다. `e11`은 checkpoint 필터 분석이며 실행 catalog는 아니다.
+- `e01`–`e14`를 지원한다. `e11`은 checkpoint 필터 분석이며 실행 catalog는 아니다.
 
 각 실험의 artifact 선택, 축 변환, subplot 구성과 원본 시각 형식은
-`e01_optimizer.py`부터 `e12_extended_mlp.py`까지의 개별 모듈이 소유한다.
+`e01_optimizer.py`부터 `e14_gradient_check.py`까지의 개별 모듈이 소유한다.
 `common.py`에는 DS1 CSV를 loss/accuracy curve로 읽는 공통 연산만 둔다.
 
 `e06`은 원본 `train_convnet.py`처럼 단일 축에 SimpleConvNet의 train·test 곡선을
@@ -93,6 +93,8 @@ canvas, epoch 축, `0–1` accuracy 범위, marker와 범례 위치를 사용하
 - `e11`: seed-index 0 final checkpoint의 첫 convolution filter 통계
 - `e12`: extended MLP, SimpleConvNet, DeepConvNet 순서로 final-checkpoint
   full-train accuracy, terminal full-test accuracy, 학습 시간, train-test accuracy gap
+- `e13`: backpropagation two-layer net의 epoch별 train/test accuracy
+- `e14`: numerical/backprop gradient의 파라미터별 평균 절대 차이와 계산 시간
 
 학습 실험 `e01`–`e08`은 평가 시간을 제외한 training wall time과 parameter
 manifest에서 확인한 모델 파라미터 수도 함께 기록한다. 여러 seed가 있는 값은

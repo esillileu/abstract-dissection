@@ -19,6 +19,7 @@ SUPPORTED_EXPERIMENTS = (
     "e05",
     "e06",
     "e07",
+    "e13",
 )
 TRIAL_IDS = {
     "e01": tuple(
@@ -44,6 +45,9 @@ TRIAL_IDS = {
     ),
     "e06": ("dlfs1.ch07.simple-convnet",),
     "e07": ("dlfs1.ch08.deep-convnet",),
+    "e13": (
+        "dlfs1.ch05.two-layer-net.backprop",
+    ),
 }
 
 
@@ -60,7 +64,7 @@ def _metrics(experiment: str, rows: list[dict[str, str]]) -> list[OriginalMetric
         return [] if value is None else [
             OriginalMetric("final_train_accuracy", value, "percent", 2, 100.0)
         ]
-    if experiment in {"e06", "e07"}:
+    if experiment in {"e06", "e07", "e13"}:
         return _split_accuracies(rows, ("train", "test", "test-full"))
     raise ValueError(f"unsupported DS1 original summary: {experiment}")
 

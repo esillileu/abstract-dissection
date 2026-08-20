@@ -45,6 +45,20 @@ SUMMARY_TEST_ACCURACY = MetricDeclaration(
     ("final/test/accuracy", "final/test-full/accuracy", "test/accuracy"),
     protocols=("book-source-v1", "legacy"),
 )
+SUMMARY_TRAIN_ACCURACY_PERCENT = MetricDeclaration(
+    "train_accuracy", "percent", "train", "run",
+    ("final/train-full/accuracy", "final/train/accuracy", "train/accuracy"),
+    ("final/train-full/accuracy", "final/train/accuracy", "train/accuracy"),
+    protocols=("book-source-v1", "legacy"),
+    value_scale=100.0,
+)
+SUMMARY_TEST_ACCURACY_PERCENT = MetricDeclaration(
+    "test_accuracy", "percent", "test", "run",
+    ("final/test/accuracy", "final/test-full/accuracy", "test/accuracy"),
+    ("final/test/accuracy", "final/test-full/accuracy", "test/accuracy"),
+    protocols=("book-source-v1", "legacy"),
+    value_scale=100.0,
+)
 SUMMARY_TRAIN_LOSS = MetricDeclaration(
     "train_loss", "nats", "train", "run",
     ("final/train/loss", "train/loss", "train/objective"),
@@ -56,6 +70,40 @@ SUMMARY_TEST_LOSS = MetricDeclaration(
     ("final/test/loss", "test/loss"),
     ("final/test/loss", "test/loss"),
     protocols=("book-source-v1", "legacy"),
+)
+GRADIENT_CHECK_SUMMARIES = tuple(
+    MetricDeclaration(
+        f"{parameter.lower()}_mean_absolute_difference",
+        "absolute_gradient",
+        "gradient_check",
+        "run",
+        (
+            f"gradient_check/{parameter}/mean_absolute_difference",
+            f"observation/gradient_check/{parameter}/mean_absolute_difference",
+        ),
+        (f"observation/gradient_check/{parameter}/mean_absolute_difference",),
+        protocols=("book-source-v1", "legacy"),
+    )
+    for parameter in ("W1", "b1", "W2", "b2")
+) + (
+    MetricDeclaration(
+        "numerical_gradient_time", "seconds", "gradient_check", "run",
+        ("gradient_check/numerical_s", "observation/gradient_check/numerical_s"),
+        ("observation/gradient_check/numerical_s",),
+        protocols=("book-source-v1", "legacy"),
+    ),
+    MetricDeclaration(
+        "backprop_gradient_time", "seconds", "gradient_check", "run",
+        ("gradient_check/backprop_s", "observation/gradient_check/backprop_s"),
+        ("observation/gradient_check/backprop_s",),
+        protocols=("book-source-v1", "legacy"),
+    ),
+    MetricDeclaration(
+        "gradient_time_speedup", "ratio", "gradient_check", "run",
+        ("gradient_check/speedup", "observation/gradient_check/speedup"),
+        ("observation/gradient_check/speedup",),
+        protocols=("book-source-v1", "legacy"),
+    ),
 )
 
 
@@ -135,17 +183,29 @@ E10 = StudyDeclaration("e10", tuple(
 E12 = StudyDeclaration("e12", (
     condition("extended-mlp", ("MLP-EXT-ALL-BOOK",)),
 ))
+E13 = StudyDeclaration("e13", (
+    condition("two-layer-net.backprop", ("TWO-LAYER-NET-BACKPROP",), ("TWO-LAYER-NET-BACKPROP",), (ACCURACY, TRAIN_ACCURACY_CURVE, TEST_ACCURACY_CURVE)),
+))
+E14 = StudyDeclaration("e14", (
+    condition("two-layer-net.gradient-check", ("TWO-LAYER-GRADIENT-CHECK",), ("TWO-LAYER-GRADIENT-CHECK",), ()),
+))
 
-STUDIES = {item.study_id: item for item in (E01, E02, E03, E04, E05, E06, E07, E08, E09, E10, E12)}
+STUDIES = {item.study_id: item for item in (E01, E02, E03, E04, E05, E06, E07, E08, E09, E10, E12, E13, E14)}
 SUMMARY_METRICS = {
-    study_id: (SUMMARY_TRAIN_ACCURACY, SUMMARY_TEST_ACCURACY)
-    for study_id in ("e03", "e04", "e05", "e06", "e07", "e08", "e12")
+    study_id: (SUMMARY_TRAIN_ACCURACY_PERCENT, SUMMARY_TEST_ACCURACY_PERCENT)
+    for study_id in ("e03", "e04")
 }
+SUMMARY_METRICS.update({
+    study_id: (SUMMARY_TRAIN_ACCURACY, SUMMARY_TEST_ACCURACY)
+    for study_id in ("e05", "e06", "e07", "e08", "e12")
+})
 SUMMARY_METRICS.update({
     "e01": (SUMMARY_TRAIN_LOSS, SUMMARY_TEST_LOSS),
     "e02": (SUMMARY_TRAIN_LOSS, SUMMARY_TEST_LOSS),
     "e09": (SUMMARY_TRAIN_LOSS, SUMMARY_TEST_LOSS),
     "e10": (),
+    "e13": (SUMMARY_TRAIN_ACCURACY_PERCENT, SUMMARY_TEST_ACCURACY_PERCENT),
+    "e14": GRADIENT_CHECK_SUMMARIES,
 })
 PROTOCOL_EQUIVALENCE = {
     study_id: (("legacy", "book-source-v1"),) for study_id in STUDIES

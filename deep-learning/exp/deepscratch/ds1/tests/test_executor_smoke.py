@@ -182,3 +182,39 @@ def test_ds1_activation_observation_config_runs(
     assert result.metrics["final/status/success"] == 1.0
     assert (tmp_path / "observations" / "activation_histogram.csv").is_file()
     assert (tmp_path / "observations" / "activation_summary.csv").is_file()
+
+
+def test_ds1_gradient_check_observation_runs(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    train_x = Tensor(np.zeros((3, 4), dtype=np.float64), backend="cpu")
+    train_t = Tensor(np.eye(2, dtype=np.float64)[[0, 1, 0]], backend="cpu")
+    test_x = Tensor(np.zeros((1, 4), dtype=np.float64), backend="cpu")
+    test_t = Tensor(np.eye(2, dtype=np.float64)[[0]], backend="cpu")
+    monkeypatch.setattr(
+        "exp.deepscratch.ds1.implemented.executor.load_mnist",
+        lambda **_kwargs: ((train_x, train_t), (test_x, test_t)),
+    )
+    spec = parse_run_spec(
+        "exp/deepscratch/ds1/config/implemented/e14_gradient_check.yaml",
+        atomic_run_id="TWO-LAYER-GRADIENT-CHECK",
+        overrides={
+            "model": {"input_size": 4, "hidden_size": 3, "output_size": 2},
+            "tracking": {"enabled": False},
+        },
+    )
+    config = spec.to_executor_config()
+    config["seed"] = 1
+    progress = _ProgressRecorder()
+
+    result = get_observation_executor(config).run(
+        config,
+        _context(tmp_path, progress),
+    )
+
+    assert result.metrics["final/status/success"] == 1.0
+    assert progress.updates == [1, 2]
+    assert (tmp_path / "observations" / "gradient_check.csv").is_file()
+    assert (tmp_path / "observations" / "gradient_timing.csv").is_file()
+    assert (tmp_path / "observations" / "gradients.npz").is_file()

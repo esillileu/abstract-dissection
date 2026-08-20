@@ -12,6 +12,7 @@ from exp.deepscratch.ds1.analysis.e11_cnn_filters import (
     _conv_weights,
     _filter_mosaic,
     _panel_output,
+    _render_panel,
     _shared_weight_limit,
     _visualization_runs,
 )
@@ -88,6 +89,41 @@ def test_filter_mosaic_retains_every_weight() -> None:
 
     finite = mosaic[np.isfinite(mosaic)]
     np.testing.assert_array_equal(np.sort(finite), np.arange(weights.size))
+
+
+def test_implemented_filter_panel_has_no_titles(monkeypatch, tmp_path: Path) -> None:
+    captured = []
+    monkeypatch.setattr(
+        "exp.deepscratch.ds1.analysis.e11_cnn_filters.save_figure",
+        lambda figure, _path: captured.append(figure),
+    )
+
+    _render_panel(
+        ("GT06", "CNN-SIMPLE-BOOK", np.zeros((1, 1, 3, 3))),
+        output=tmp_path / "filters.png",
+        limit=1.0,
+    )
+
+    assert len(captured) == 1
+    assert captured[0]._suptitle is None
+    assert all(axis.get_title() == "" for axis in captured[0].axes)
+    image = captured[0].axes[0].images[0]
+    assert image.get_clim() == (-0.9, 0.9)
+
+
+def test_original_filter_panel_has_no_titles(monkeypatch, tmp_path: Path) -> None:
+    from exp.deepscratch.ds1.original.native_analysis import e11
+
+    captured = []
+    monkeypatch.setattr(e11, "save", lambda _path: captured.append(e11.plt.gcf()))
+
+    e11._filter_show(np.zeros((1, 1, 3, 3)), tmp_path / "filters.png")
+
+    assert len(captured) == 1
+    assert captured[0]._suptitle is None
+    assert all(axis.get_title() == "" for axis in captured[0].axes)
+    assert captured[0].axes[0].images[0].get_clim() == (-0.9, 0.9)
+    e11.plt.close(captured[0])
 
 
 def test_checkpoint_resolver_supports_v2_final_directory(tmp_path: Path) -> None:

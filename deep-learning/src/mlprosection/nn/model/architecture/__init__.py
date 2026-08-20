@@ -1,6 +1,7 @@
 from .deep_cnn import DeepCNN
 from .mlp import MLP
 from .simple_cnn import SimpleCNN
+from .two_layer_net import TwoLayerNet
 from .word2vec import (
     CBOW,
     CBOWBatchAdapter,
@@ -26,7 +27,7 @@ from .recurrent import (
 __all__ = [
     "CBOW", "CBOWBatchAdapter", "DeepCNN", "FusedNegativeSamplingCBOW",
     "FusedNegativeSamplingSkipGram", "MLP", "SimpleCNN",
-    "OneHotCBOW", "OneHotCBOWBatchAdapter",
+    "OneHotCBOW", "OneHotCBOWBatchAdapter", "TwoLayerNet",
     "OneHotSkipGram", "OneHotSkipGramBatchAdapter",
     "SkipGram", "SkipGramBatchAdapter",
     "AttentionPeekySeq2seq", "AttentionSeq2seq", "BetterRnnlm",

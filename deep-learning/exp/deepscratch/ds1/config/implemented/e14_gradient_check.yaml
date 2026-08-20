@@ -1,0 +1,18 @@
+domain: deepscratch.ds1.implemented
+kind: observation
+run: {experiment_id: e14, group_id: GO03, protocol: ch05 two-layer-net gradient check, protocol_version: book-source-v1, recipe_id: ds1-go03-gradient-check, structure_signature: mnist-first3-two-layer-net-784-50-10-affine-relu-affine}
+execution: {mode: seeded, default_device: cpu}
+seed_policy: {seed_set: research_v1, seed_count: 10, paired_execution: true}
+dataset: {id: mnist-train-first-3, source: mnist, flatten: true, sample_count: 3}
+loader: {}
+model: {name: TwoLayerNet, input_size: 784, hidden_size: 50, output_size: 10, initializer: std:0.01, numerical_step: 0.0001}
+optimizer: {}
+objective: {name: SoftmaxCrossEntropy, reduction: mean}
+budget: {}
+recording: {evaluation_sources: [], triggers: [], outputs: [observations/gradient_check.csv, observations/gradient_timing.csv, observations/gradients.npz]}
+numerics: {dtype: float64, backend: numpy, device: cpu}
+checkpoint: {save_final: false, save_on_eval: false, format: none}
+profiling: {enabled: false}
+tracking: {enabled: true, experiment: deepscratch.ds1, upload_checkpoint: false}
+variants:
+  TWO-LAYER-GRADIENT-CHECK: {}

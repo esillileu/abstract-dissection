@@ -25,6 +25,7 @@ RUN_GROUPS = (
 )
 # Index 0 in exp/deepscratch/ds1/config/implemented/seeds.yaml (research_v1).
 VISUALIZATION_SEED = "1"
+FILTER_COLOR_LIMIT = 0.9
 SUMMARY_FIELDS = (
     "group",
     "condition",
@@ -158,7 +159,8 @@ def _render_panel(
     output: Path,
     limit: float,
 ) -> None:
-    group, condition, weights = panel
+    del limit
+    _group, _condition, weights = panel
     figure = plt.figure(figsize=(6.6, 6))
     grid = figure.add_gridspec(1, 2, width_ratios=[1.0, 0.035], wspace=0.08)
     axis = figure.add_subplot(grid[0, 0])
@@ -169,19 +171,15 @@ def _render_panel(
         _filter_mosaic(weights),
         cmap=color_map,
         interpolation="nearest",
-        vmin=-limit,
-        vmax=limit,
+        vmin=-FILTER_COLOR_LIMIT,
+        vmax=FILTER_COLOR_LIMIT,
     )
-    axis.set_title(f"{group} | {condition}\n{tuple(weights.shape)}")
     axis.set_xticks(())
     axis.set_yticks(())
     figure.colorbar(
         image,
         cax=color_axis,
         label="weight (shared scale)",
-    )
-    figure.suptitle(
-        f"SimpleCNN first-layer filters | seed index 0 (master {VISUALIZATION_SEED})"
     )
     figure._analysis_skip_tight_layout = True
     save_figure(figure, output)

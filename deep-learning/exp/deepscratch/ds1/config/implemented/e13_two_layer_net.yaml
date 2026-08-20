@@ -1,0 +1,24 @@
+domain: deepscratch.ds1.implemented
+kind: supervised_classification
+run: {experiment_id: e13, group_id: GT10, protocol: MNIST two-layer net backpropagation training, protocol_version: book-source-v1, recipe_id: ds1-gt10-two-layer-net, structure_signature: mnist-two-layer-net-784-50-10-affine-relu-affine}
+execution: {mode: seeded, default_device: cpu}
+seed_policy: {seed_set: research_v1, seed_count: 10, paired_execution: true}
+dataset: {id: mnist-flat-full, source: mnist, flatten: true, train_limit: 60000, test_limit: 10000}
+loader: {batch_size: 100, drop_last: false, sampling_method: with_replacement}
+model: {name: TwoLayerNet, input_size: 784, hidden_size: 50, output_size: 10, initializer: std:0.01, gradient_method: backprop}
+optimizer: {name: sgd, learning_rate: 0.1}
+objective: {name: SoftmaxCrossEntropy, reduction: mean}
+budget: {max_updates: 10000, max_epochs: 17}
+recording:
+  evaluation_sources:
+    - {id: mnist-train-full, split: train, kind: full}
+    - {id: mnist-test-full, split: test, kind: full}
+  triggers:
+    - {type: epoch_first_update, sources: [mnist-train-full, mnist-test-full]}
+    - {type: terminal, sources: [mnist-test-full]}
+numerics: {dtype: float64, backend: numpy, device: cpu}
+checkpoint: {save_final: true, save_on_eval: false, format: v2}
+profiling: {enabled: false}
+tracking: {enabled: true, experiment: deepscratch.ds1}
+variants:
+  TWO-LAYER-NET-BACKPROP: {}

@@ -21,6 +21,8 @@ from . import (
     e10_activation,
     e11_cnn_filters,
     e12_extended_mlp,
+    e13_two_layer_net,
+    e14_gradient_check,
 )
 
 
@@ -37,6 +39,8 @@ RENDERERS = {
     "e10": e10_activation.render,
     "e11": e11_cnn_filters.render,
     "e12": e12_extended_mlp.render,
+    "e13": e13_two_layer_net.render,
+    "e14": e14_gradient_check.render,
 }
 STUDY_SOURCES = {
     "e07": ("e06", "e07"),

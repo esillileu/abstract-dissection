@@ -39,4 +39,4 @@ def test_all_ds1_variants_resolve_and_build_the_declared_components() -> None:
                 executor = get_observation_executor(config)
             assert callable(executor.run)
             count += 1
-    assert count == 66
+    assert count == 68

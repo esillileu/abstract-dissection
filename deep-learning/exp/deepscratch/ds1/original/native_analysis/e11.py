@@ -4,6 +4,8 @@ from pathlib import Path
 
 from .common import load_npz, np, plt, save, trial
 
+FILTER_COLOR_LIMIT = 0.9
+
 
 def _filter_show(filters, path: Path) -> None:
     count = filters.shape[0]
@@ -12,13 +14,14 @@ def _filter_show(filters, path: Path) -> None:
     figure.subplots_adjust(
         left=0, right=1, bottom=0, top=0.9, hspace=0.05, wspace=0.05
     )
-    figure.suptitle("Original SimpleCNN first-layer filters")
     for index in range(count):
         axis = figure.add_subplot(rows, 8, index + 1, xticks=[], yticks=[])
         axis.imshow(
             filters[index, 0],
             cmap=plt.cm.gray_r,
             interpolation="nearest",
+            vmin=-FILTER_COLOR_LIMIT,
+            vmax=FILTER_COLOR_LIMIT,
         )
     save(path)
 
