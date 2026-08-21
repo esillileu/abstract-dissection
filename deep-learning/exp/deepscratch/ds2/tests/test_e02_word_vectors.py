@@ -7,6 +7,7 @@ from pathlib import Path
 import numpy as np
 
 from exp.framework.analysis.core import RunRef
+from exp.framework.analysis.core import aggregate
 from exp.deepscratch.ds2.analysis import e02_ptb_word2vec as analysis
 
 
@@ -60,7 +61,7 @@ def test_analogy_reports_expected_rank_and_top_five_hit() -> None:
     assert result.candidates[0].word == "woman"
 
 
-def test_render_writes_text_and_csv_without_a_graph(
+def test_render_writes_ns_graphs_text_and_csv(
     tmp_path: Path,
     monkeypatch,
     capsys,
@@ -105,6 +106,11 @@ def test_render_writes_text_and_csv_without_a_graph(
         "load_ptb",
         lambda: {"word_to_id": word_to_id, "id_to_word": id_to_word},
     )
+    monkeypatch.setattr(
+        analysis,
+        "source_curve",
+        lambda *_args: aggregate([{0.0: 2.0, 1.0: 1.0}]),
+    )
 
     outputs = analysis.render(
         AnalysisInput(),
@@ -113,15 +119,18 @@ def test_render_writes_text_and_csv_without_a_graph(
     )
 
     assert outputs == [
+        tmp_path / "e02_band_ns_cbow.png",
+        tmp_path / "e02_band_ns_skipgram.png",
+        tmp_path / "e02_band_ns_curves.csv",
         tmp_path / "e02_word_vectors.txt",
         tmp_path / "e02_word_vectors.csv",
     ]
-    assert not (tmp_path / "e02_band.png").exists()
-    text = outputs[0].read_text(encoding="utf-8")
+    assert all(path.is_file() for path in outputs)
+    text = outputs[3].read_text(encoding="utf-8")
     assert "similarity you:" in text
     assert "expected=woman" in text
     assert capsys.readouterr().out == ""
-    with outputs[1].open(encoding="utf-8", newline="") as file:
+    with outputs[4].open(encoding="utf-8", newline="") as file:
         rows = list(csv.DictReader(file))
     assert len(rows) == 40
     assert {row["task"] for row in rows} == {"similarity", "analogy"}

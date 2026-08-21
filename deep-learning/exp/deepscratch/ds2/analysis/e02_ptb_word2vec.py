@@ -8,12 +8,15 @@ import json
 from pathlib import Path
 import re
 
+import matplotlib.pyplot as plt
 import numpy as np
 
 from exp.deepscratch.analysis.input import artifact_file
+from exp.framework.analysis.core import mark_empty, plot_curve, save_figure, write_summary
+from exp.framework.plotting.theme import ACCENT_COLORS
 from mlprosection.datasets import load_ptb
 
-from .common import runs
+from .common import runs, source_curve
 
 
 ATOMIC_RUN_IDS = (
@@ -23,6 +26,10 @@ ATOMIC_RUN_IDS = (
     "W2V-PTB-SKIPGRAM-FULL",
     "W2V-PTB-CBOW-ONEHOT-FULL",
     "W2V-PTB-SKIPGRAM-ONEHOT-FULL",
+)
+CURVE_ATOMIC_RUN_IDS = (
+    "W2V-PTB-CBOW-NS",
+    "W2V-PTB-SKIPGRAM-NS",
 )
 ORIGINAL_NATIVE_IDS = {
     "W2V-PTB-CBOW-NS": "PTB-CBOW",
@@ -341,6 +348,55 @@ def _output_paths(output: Path) -> tuple[Path, Path]:
     return output.with_name(stem).with_suffix(".txt"), output.with_name(stem).with_suffix(".csv")
 
 
+def _curve_output_paths(output: Path) -> tuple[Path, Path, Path]:
+    """Use the same per-condition graph layout as e01."""
+    stem = output.stem
+    graph_stem = f"{stem}_ns"
+    return (
+        output.with_name(f"{graph_stem}_cbow{output.suffix}"),
+        output.with_name(f"{graph_stem}_skipgram{output.suffix}"),
+        output.with_name(f"{graph_stem}_curves.csv"),
+    )
+
+
+def _render_ns_curves(client, error_style, output: Path) -> list[Path]:
+    definitions = {
+        "W2V-PTB-CBOW-NS": ("CBOW", ACCENT_COLORS[0], "-", "o"),
+        "W2V-PTB-SKIPGRAM-NS": ("Skip-gram", ACCENT_COLORS[1], "--", "s"),
+    }
+    grouped = runs(client, "GT02", list(CURVE_ATOMIC_RUN_IDS))
+    curves = {}
+    outputs = []
+    graph_paths = _curve_output_paths(output)
+    for (atomic, (label, color, linestyle, marker)), graph_path in zip(
+        definitions.items(), graph_paths[:2]
+    ):
+        curve = source_curve(client, grouped[atomic], "book_loss")
+        curves[label] = curve
+        figure, axis = plt.subplots()
+        figure._analysis_match_original_canvas = True
+        plot_curve(
+            axis,
+            curve,
+            label=label,
+            color=color,
+            linestyle=linestyle,
+            marker=marker,
+            error_style=error_style,
+            error_every=5,
+        )
+        axis.set(xlabel="iterations (x20)", ylabel="book loss")
+        mark_empty(axis)
+        if axis.has_data():
+            axis.legend()
+        save_figure(figure, graph_path)
+        plt.close(figure)
+        outputs.append(graph_path)
+    summary = graph_paths[2]
+    write_summary(summary, curves)
+    return [*outputs, summary]
+
+
 def _write_csv(path: Path, evaluations: list[RunEvaluation]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8", newline="") as file:
@@ -438,7 +494,6 @@ def _markdown_tables(text: str, *, selected_seed: str | None = None) -> str:
 
 
 def render(client, error_style, output):
-    del error_style
     grouped = runs(client, "GT02", list(ATOMIC_RUN_IDS))
     ptb = load_ptb()
     word_to_id = ptb["word_to_id"]
@@ -472,4 +527,4 @@ def render(client, error_style, output):
     text_path.parent.mkdir(parents=True, exist_ok=True)
     text_path.write_text(text, encoding="utf-8")
     _write_csv(csv_path, evaluations)
-    return [text_path, csv_path]
+    return [*_render_ns_curves(client, error_style, output), text_path, csv_path]
