@@ -32,6 +32,7 @@
 | `GT07` | MNIST DeepConvNet               | MNIST image full train/test, DeepConvNet, Adam `.001`, batch 100, 20 epochs                    | 없음                                  |            1 |
 | `GT08` | MNIST spatial-layout comparison | MNIST full train/test, Adam `.001`, batch 100, replacement sampling, 2 epochs, 10 paired seeds | architecture × input transform        |            4 |
 | `GT09` | MNIST extended MLP comparison   | MNIST full train/test, MLP `784-[100×6]-10`, Adam `.001`, batch 100, 20 epochs               | 없음                                  |            1 |
+| `GT11` | MNIST CNN-protocol model comparison | MNIST full train/test, batch 100, Adam `.001`, 20 epochs, GT07 evaluation cadence             | model architecture / regularization   |            2 |
 
 ## 현재 executor 재현 상태
 
@@ -157,6 +158,17 @@ GT09는 GT07의 기존 `CNN-DEEP-BOOK` run을 다시 실행하지 않는다. 데
 sampling, Adam `.001`, 20-epoch budget, seed set과 evaluation cadence를 GT07과 동일하게
 두고, `e12` 분석에서 두 실행 그룹을 함께 읽어 비교한다. MLP 입력만 모델 요구사항에
 따라 `(N, 784)`로 flatten한다.
+
+## GT11 — CNN-protocol model comparison
+
+GT11은 GT07의 데이터 크기, batch sampling, Adam `.001`, 20-epoch budget, seed set,
+evaluation cadence를 재사용한다. 기존 GT07 run은 다시 실행하지 않고 비교 대상으로 읽는다.
+모든 비교 모델은 He 초기화를 사용한다. 새로 실행하는 조건은 다음 두 가지다.
+
+| atomic run ID | model |
+| --- | --- |
+| `TWO-LAYER-NET-ADAM` | TwoLayerNet `784-50-10`, ReLU, He |
+| `MLP-EXT-NO-REG` | MLP `784-[100×6]-10`, ReLU, He, BatchNorm, dropout off, weight decay off |
 
 ## 원본 시행 ID
 

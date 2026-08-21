@@ -96,6 +96,43 @@ def test_gt09_extended_mlp_reuses_deepcnn_training_protocol() -> None:
     assert mlp.numerics == cnn.numerics
 
 
+def test_gt11_reuses_gt07_protocol_for_two_model_variants() -> None:
+    cnn = parse_run_spec(
+        "exp/deepscratch/ds1/config/implemented/e07_mnist_deep_cnn.yaml",
+        atomic_run_id="CNN-DEEP-BOOK",
+    )
+    for atomic_run_id in ("TWO-LAYER-NET-ADAM", "MLP-EXT-NO-REG"):
+        spec = parse_run_spec(
+            "exp/deepscratch/ds1/config/implemented/e15_mnist_model_comparison.yaml",
+            atomic_run_id=atomic_run_id,
+        )
+        assert spec.identity.group_id == "GT11"
+        assert spec.optimizer == {"name": "adam", "learning_rate": 0.001}
+        assert spec.loader == cnn.loader
+        assert spec.budget == cnn.budget
+        assert spec.seed_policy == cnn.seed_policy
+        assert spec.evaluation_sources == cnn.evaluation_sources
+        assert spec.triggers == cnn.triggers
+        assert spec.numerics == cnn.numerics
+
+    two_layer = parse_run_spec(
+        "exp/deepscratch/ds1/config/implemented/e15_mnist_model_comparison.yaml",
+        atomic_run_id="TWO-LAYER-NET-ADAM",
+    )
+    assert two_layer.model["name"] == "TwoLayerNet"
+    assert two_layer.model["hidden_size"] == 50
+    assert two_layer.model["initializer"] == "he"
+
+    extended = parse_run_spec(
+        "exp/deepscratch/ds1/config/implemented/e15_mnist_model_comparison.yaml",
+        atomic_run_id="MLP-EXT-NO-REG",
+    )
+    assert extended.model["name"] == "MLP"
+    assert extended.model["use_batchnorm"] is True
+    assert extended.model["dropout_ratio"] == 0.0
+    assert "weight_decay" not in extended.optimizer
+
+
 def test_go01_runspec_declares_optimizer_specific_learning_rates() -> None:
     expected = {
         "TOY-SGD": ("toy_sgd", 0.95),

@@ -6,7 +6,7 @@ from exp.framework.analysis.core import mark_empty, plot_curve
 from exp.framework.plotting.theme import ACCENT_COLORS
 
 from .broken_axis import add_wave_break
-from .common import accuracy_curve, runs
+from .common import accuracy_percent_curve, runs
 
 
 DEFINITIONS = [
@@ -23,7 +23,7 @@ def _curves(client):
     result = {}
     for _group, atomic, label, _color in DEFINITIONS:
         for split in ("train", "test"):
-            result[f"{label}/{split}"] = accuracy_curve(
+            result[f"{label}/{split}"] = accuracy_percent_curve(
                 client,
                 grouped[atomic],
                 split=split,
@@ -65,11 +65,11 @@ def render_compare(client, error_style, output):
                 color=color,
             )
         mark_empty(axis)
-    upper.set_ylim(0.95, 1.00)
-    lower.set_ylim(0.0, 0.23)
-    upper.set_yticks((0.96, 0.98, 1.0))
-    lower.set_yticks((0.0, 0.1, 0.2))
-    figure.text(0.02, 0.5, "accuracy", va="center", rotation="vertical")
+    upper.set_ylim(95.0, 100.0)
+    lower.set_ylim(0.0, 23.0)
+    upper.set_yticks((96.0, 98.0, 100.0))
+    lower.set_yticks((0.0, 10.0, 20.0))
+    figure.text(0.02, 0.5, "accuracy (%)", va="center", rotation="vertical")
     lower.set_xlabel("epochs")
     add_wave_break(figure, upper, lower)
     if upper.has_data():

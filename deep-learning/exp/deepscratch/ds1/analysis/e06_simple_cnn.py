@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 
 from exp.framework.analysis.core import mark_empty, plot_curve
 
-from .common import accuracy_curve, runs
+from .common import accuracy_percent_curve, runs
 
 
 ATOMIC_RUN_ID = "CNN-SIMPLE-BOOK"
@@ -13,7 +13,7 @@ ATOMIC_RUN_ID = "CNN-SIMPLE-BOOK"
 def render_cnn(client, error_style, *, group_id, atomic_run_id):
     grouped = runs(client, group_id, [atomic_run_id])
     curves = {
-        split: accuracy_curve(
+        split: accuracy_percent_curve(
             client,
             grouped[atomic_run_id],
             split=split,
@@ -36,8 +36,8 @@ def render_cnn(client, error_style, *, group_id, atomic_run_id):
         )
     axis.set(
         xlabel="epochs",
-        ylabel="accuracy",
-        ylim=(0, 1.0),
+        ylabel="accuracy (%)",
+        ylim=(0, 100.0),
     )
     mark_empty(axis)
     if axis.has_data():

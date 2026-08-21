@@ -178,10 +178,33 @@ def _metric_values(
             if value is not None:
                 break
         if value is None:
+            value = _curve_summary_fallback(data, study_id, run, metric)
+        if value is None:
             value = _original_ds1_accuracy_fallback(data, study_id, run, metric)
         if value is not None and np.isfinite(value):
             values.append(float(value) * metric.value_scale)
     return values
+
+
+def _curve_summary_fallback(
+    data: StudyAnalysisInput,
+    study_id: str,
+    run: AnalysisRun,
+    metric: MetricDeclaration,
+) -> float | None:
+    """Use the last recorded evaluation for studies without a final scalar."""
+    if study_id not in {"e08", "e15"} or metric.metric_id != "train_accuracy":
+        return None
+    try:
+        histories = data.metric_histories(
+            [run], "update/eval_train/accuracy"
+        )
+    except (AttributeError, KeyError, OSError, TypeError, ValueError):
+        return None
+    if not histories or not histories[0]:
+        return None
+    history = histories[0]
+    return float(history[max(history)])
 
 
 def _original_ds1_accuracy_fallback(
@@ -190,25 +213,31 @@ def _original_ds1_accuracy_fallback(
     run: AnalysisRun,
     metric: MetricDeclaration,
 ) -> float | None:
-    """Recover missing e03/e04 original accuracy from the raw evaluation CSV."""
+    """Recover missing original accuracy from the raw evaluation CSV."""
     if (
-        study_id not in {"e03", "e04"}
+        study_id not in {"e03", "e04", "e06", "e07"}
         or run.variant is not Variant.ORIGINAL
         or metric.metric_id not in {"train_accuracy", "test_accuracy"}
     ):
         return None
     rows = data.artifact_rows(run, "raw/metrics.csv")
-    values = []
-    for row in rows:
-        if row.get("split") != metric.split:
-            continue
-        try:
-            value = float(row["accuracy"])
-        except (KeyError, TypeError, ValueError):
-            continue
-        if np.isfinite(value):
-            values.append(value)
-    return values[-1] if values else None
+    candidate_splits = (metric.split,)
+    if metric.metric_id == "test_accuracy":
+        candidate_splits = ("test-full", "test")
+    for split in candidate_splits:
+        values = []
+        for row in rows:
+            if row.get("split") != split:
+                continue
+            try:
+                value = float(row["accuracy"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            if np.isfinite(value):
+                values.append(value)
+        if values:
+            return values[-1]
+    return None
 
 
 def _parameter_count(data: StudyAnalysisInput, run: AnalysisRun) -> int | None:
@@ -256,6 +285,11 @@ def _summary_row(
         }
     stats = summarize_series(values)
     decimals = 0 if metric.metric_id == "parameter_count" else 2
+    if study_id == "e08" and metric.metric_id in {
+        "train_accuracy",
+        "test_accuracy",
+    }:
+        decimals = 3
     formatter = (
         _format_e14_number
         if study_id == "e14" and metric.split == "gradient_check"

@@ -24,6 +24,7 @@ from . import (
     e12_extended_mlp,
     e13_two_layer_net,
     e14_gradient_check,
+    e15_model_comparison,
 )
 
 
@@ -42,6 +43,7 @@ RENDERERS = {
     "e12": e12_extended_mlp.render,
     "e13": e13_two_layer_net.render,
     "e14": e14_gradient_check.render,
+    "e15": e15_model_comparison.render,
 }
 ADDITIONAL_RENDERERS = {
     "e07": e06_e07_cnn.render_compare,

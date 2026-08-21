@@ -66,7 +66,7 @@ python -m exp analyze deepscratch ds1 -e 06 --seed 1
 - 완료 run이 없으면 `No completed runs` 빈 그래프와 값이 비어 있는 summary CSV를 만든다.
 - 출력 기본 경로는 `results/exp/deepscratch/`이며 PNG와 Markdown만 평탄하게 게시한다.
 - 명시적으로 포함한 spatial-layout 비교 `GT08`은 `e08` 분석으로 제공한다.
-- `e01`–`e14`를 지원한다. `e11`은 checkpoint 필터 분석이며 실행 catalog는 아니다.
+- `e01`–`e15`를 지원한다. `e11`은 checkpoint 필터 분석이며 실행 catalog는 아니다.
 
 각 실험의 artifact 선택, 축 변환, subplot 구성과 원본 시각 형식은
 `e01_optimizer.py`부터 `e14_gradient_check.py`까지의 개별 모듈이 소유한다.
@@ -74,10 +74,11 @@ python -m exp analyze deepscratch ds1 -e 06 --seed 1
 
 `e06`은 원본 `train_convnet.py`처럼 단일 축에 SimpleConvNet의 train·test 곡선을
 그리고, 10회 seed 평균 주변의 ±1 표본 표준편차 범위를 표시한다. 원본과 같은 `6.4 × 4.8`
-canvas, epoch 축, `0–1` accuracy 범위, marker와 범례 위치를 사용하되 저장소 테마를
+canvas, epoch 축, `0–100%` accuracy 범위, marker와 범례 위치를 사용하되 저장소 테마를
 적용한다. 출력은 `e06_{band,errorbar}.png`이다.
 
-`e07`은 `e06`과 같은 단일 축·train/test 형식으로 DeepCNN 곡선을 그린다. 기본
+`e07`은 `e06`과 같은 단일 축·train/test 형식으로 DeepCNN 곡선을 그린다. 정확도는
+`e06`과 동일하게 백분율로 표시한다. 기본
 출력은 `e07_{band,errorbar}.png`이며, 기존 SimpleCNN/DeepCNN 비교 그래프는
 `ds1_e07_{org|imp}_compare.png`로 별도 생성한다.
 
@@ -96,6 +97,7 @@ canvas, epoch 축, `0–1` accuracy 범위, marker와 범례 위치를 사용하
   full-train accuracy, terminal full-test accuracy, 학습 시간, train-test accuracy gap
 - `e13`: backpropagation two-layer net의 epoch별 train/test accuracy
 - `e14`: numerical/backprop gradient의 파라미터별 평균 절대 차이와 계산 시간
+- `e15`: 재활용한 SimpleCNN/DeepCNN과 새 TwoLayerNet/정규화 없는 extended MLP의 epoch별 정확도
 
 학습 실험 `e01`–`e08`은 평가 시간을 제외한 training wall time과 parameter
 manifest에서 확인한 모델 파라미터 수도 함께 기록한다. 여러 seed가 있는 값은

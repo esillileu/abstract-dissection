@@ -75,6 +75,14 @@ def test_ds1_weight_decay_and_dropout_accuracy_summaries_use_percent(
     assert [metric.value_scale for metric in metrics] == [100.0, 100.0]
 
 
+@pytest.mark.parametrize("study_id", ["e06", "e07", "e15"])
+def test_ds1_cnn_and_mlp_accuracy_summaries_use_percent(study_id: str) -> None:
+    metrics = DS1_SUMMARY_METRICS[study_id]
+
+    assert [metric.unit for metric in metrics] == ["percent", "percent"]
+    assert [metric.value_scale for metric in metrics] == [100.0, 100.0]
+
+
 def test_ds1_e13_accuracy_summary_uses_percent() -> None:
     metrics = DS1_SUMMARY_METRICS["e13"]
 
@@ -107,6 +115,75 @@ def test_ds1_e03_original_summary_falls_back_to_raw_accuracy() -> None:
             ]
 
     assert _metric_values(Input(), "e03", [run], metric) == [75.0]
+
+
+def test_ds1_e06_original_summary_falls_back_to_train_accuracy() -> None:
+    metric = MetricDeclaration(
+        "train_accuracy",
+        "percent",
+        "train",
+        "run",
+        ("final/train-full/accuracy",),
+        ("final/train-full/accuracy",),
+        value_scale=100.0,
+    )
+    run = SimpleNamespace(variant=Variant.ORIGINAL)
+
+    class Input:
+        variant = Variant.ORIGINAL
+
+        def metric_value(self, _run, _metric_id):
+            return None
+
+        def artifact_rows(self, _run, path):
+            assert path == "raw/metrics.csv"
+            return [
+                {"split": "train", "accuracy": "0.81"},
+                {"split": "test", "accuracy": "0.79"},
+            ]
+
+    assert _metric_values(Input(), "e06", [run], metric) == [81.0]
+
+
+def test_ds1_e08_summary_uses_last_train_accuracy_curve_value() -> None:
+    metric = MetricDeclaration(
+        "train_accuracy",
+        "fraction",
+        "train",
+        "run",
+        ("final/train-full/accuracy",),
+        ("final/train-full/accuracy",),
+    )
+    run = SimpleNamespace(variant=Variant.IMPLEMENTED)
+
+    class Input:
+        variant = Variant.IMPLEMENTED
+
+        def metric_value(self, _run, _metric_id):
+            return None
+
+        def metric_histories(self, _runs, metric_id):
+            assert metric_id == "update/eval_train/accuracy"
+            return [{20.0: 0.61, 40.0: 0.74, 60.0: 0.83}]
+
+    assert _metric_values(Input(), "e08", [run], metric) == [0.83]
+
+
+def test_ds1_e08_accuracy_summary_uses_three_decimal_places() -> None:
+    metric = MetricDeclaration(
+        "test_accuracy",
+        "fraction",
+        "test",
+        "run",
+        ("final/test/accuracy",),
+        ("final/test/accuracy",),
+    )
+
+    row = _summary_row(
+        "e08", "nn-matched", Variant.IMPLEMENTED, metric, [], [0.9745, 0.9700]
+    )
+
+    assert row["mean"] == "0.972"
 
 
 def test_ds1_e14_summary_uses_scientific_notation_for_small_values() -> None:

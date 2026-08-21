@@ -189,15 +189,23 @@ E13 = StudyDeclaration("e13", (
 E14 = StudyDeclaration("e14", (
     condition("two-layer-net.gradient-check", ("TWO-LAYER-GRADIENT-CHECK",), ("TWO-LAYER-GRADIENT-CHECK",), ()),
 ))
+E15 = StudyDeclaration("e15", (
+    condition("two-layer-net.adam", ("TWO-LAYER-NET-ADAM",), (), (ACCURACY, TRAIN_ACCURACY_CURVE, TEST_ACCURACY_CURVE)),
+    condition("extended-mlp.no-regularization", ("MLP-EXT-NO-REG",), (), (ACCURACY, TRAIN_ACCURACY_CURVE, TEST_ACCURACY_CURVE)),
+))
 
-STUDIES = {item.study_id: item for item in (E01, E02, E03, E04, E05, E06, E07, E08, E09, E10, E12, E13, E14)}
+STUDIES = {item.study_id: item for item in (E01, E02, E03, E04, E05, E06, E07, E08, E09, E10, E12, E13, E14, E15)}
 SUMMARY_METRICS = {
     study_id: (SUMMARY_TRAIN_ACCURACY_PERCENT, SUMMARY_TEST_ACCURACY_PERCENT)
     for study_id in ("e03", "e04")
 }
 SUMMARY_METRICS.update({
     study_id: (SUMMARY_TRAIN_ACCURACY, SUMMARY_TEST_ACCURACY)
-    for study_id in ("e05", "e06", "e07", "e08", "e12")
+    for study_id in ("e05", "e08", "e12")
+})
+SUMMARY_METRICS.update({
+    study_id: (SUMMARY_TRAIN_ACCURACY_PERCENT, SUMMARY_TEST_ACCURACY_PERCENT)
+    for study_id in ("e06", "e07")
 })
 SUMMARY_METRICS.update({
     "e01": (SUMMARY_TRAIN_LOSS, SUMMARY_TEST_LOSS),
@@ -206,6 +214,7 @@ SUMMARY_METRICS.update({
     "e10": (),
     "e13": (SUMMARY_TRAIN_ACCURACY_PERCENT, SUMMARY_TEST_ACCURACY_PERCENT),
     "e14": GRADIENT_CHECK_SUMMARIES,
+    "e15": (SUMMARY_TRAIN_ACCURACY_PERCENT, SUMMARY_TEST_ACCURACY_PERCENT),
 })
 PROTOCOL_EQUIVALENCE = {
     study_id: (("legacy", "book-source-v1"),) for study_id in STUDIES

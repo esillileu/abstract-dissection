@@ -30,7 +30,7 @@ def test_e06_reproduces_simple_convnet_plot_with_ten_seed_minmax(monkeypatch):
     )
     monkeypatch.setattr(
         e06_simple_cnn,
-        "accuracy_curve",
+        "accuracy_percent_curve",
         lambda _client, _runs, *, split, axis, x_value: (
             train if split == "train" else test
         ),
@@ -43,8 +43,8 @@ def test_e06_reproduces_simple_convnet_plot_with_ten_seed_minmax(monkeypatch):
     assert figure._analysis_match_original_canvas is True
     assert axis.get_title() == ""
     assert axis.get_xlabel() == "epochs"
-    assert axis.get_ylabel() == "accuracy"
-    np.testing.assert_allclose(axis.get_ylim(), (0.0, 1.0))
+    assert axis.get_ylabel() == "accuracy (%)"
+    np.testing.assert_allclose(axis.get_ylim(), (0.0, 100.0))
     assert [line.get_marker() for line in axis.lines] == ["o", "s"]
     assert [line.get_label() for line in axis.lines] == [
         "train (n=10)",

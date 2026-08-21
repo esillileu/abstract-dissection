@@ -7,7 +7,7 @@ just exp plan deepscratch ds1 -e 01 --seed 1,2,3,4
 just exp run deepscratch ds1 -e 01 --seed 1,2,3,4
 ```
 
-`-e`는 `e01`–`e10`과 확장 실험 `e12`–`e14`의 catalog experiment ID를 선택한다. `--seed`는
+`-e`는 `e01`–`e10`과 확장 실험 `e12`–`e15`의 catalog experiment ID를 선택한다. `--seed`는
 `config/seeds.yaml`에 등록된 **실제 master seed 값**이다. 기본 `research_v1`에서는
 `1`부터 `10`까지를 사용한다.
 
@@ -31,8 +31,9 @@ just exp run deepscratch ds1 -e 01-02 --seed 1-3 --order seed-first
 ```
 
 Catalog mapping은 `e01=GT01`부터 `e08=GT08`까지이며, `e12=GT09`, `e13=GT10`,
-`e14=GO03`이다. e13은 교재의 two-layer net backprop 학습이고 e14는 교재의
+`e14=GO03`, `e15=GT11`이다. e13은 교재의 two-layer net backprop 학습이고 e14는 교재의
 numerical/backprop gradient check다. e12는 교재 옵션을
-모두 적용한 MLP와 기존 GT07 DeepConvNet을 비교하는 확장 실험이다. 각 YAML의 `variants`가 실행할
+모두 적용한 MLP와 기존 GT07 DeepConvNet을 비교하는 확장 실험이다. e15는 GT07의 학습
+protocol을 공유하는 He 초기화 TwoLayerNet/정규화 없는 extended MLP 비교다. 각 YAML의 `variants`가 실행할
 atomic trial을, `policy.seed_count`가 사용할 registry seed 수를 결정한다. 따라서
 `just exp plan deepscratch ds1 --all --seed 1`은 master seed 1의 68개 atomic trial을 보인다.

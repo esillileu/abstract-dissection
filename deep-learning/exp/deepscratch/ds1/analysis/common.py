@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from exp.framework.analysis.core import aggregate, smooth_histories
+from exp.framework.analysis.core import Curve, aggregate, smooth_histories
 
 
 def runs(data, group: str, atomic_ids: list[str]):
@@ -68,3 +68,19 @@ def accuracy_curve(client, run_refs, *, split: str, x_value, axis: str | None = 
             if series is not None:
                 histories.append(dict(zip(series.steps, series.values, strict=True)))
     return aggregate(histories)
+
+
+def accuracy_percent_curve(client, run_refs, *, split: str, x_value, axis: str | None = None):
+    curve = accuracy_curve(
+        client, run_refs, split=split, x_value=x_value, axis=axis
+    )
+    return Curve(
+        steps=curve.steps,
+        mean=curve.mean * 100.0,
+        minimum=curve.minimum * 100.0,
+        maximum=curve.maximum * 100.0,
+        run_count=curve.run_count,
+        standard_deviation=None
+        if curve.standard_deviation is None
+        else curve.standard_deviation * 100.0,
+    )
