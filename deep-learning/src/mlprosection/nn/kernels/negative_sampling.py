@@ -90,10 +90,10 @@ def negative_sampling_loss_gradient(
                 contiguous_labels,
                 losses,
                 gradients,
-                term_count,
-                candidates_per_example,
-                hidden.shape[-1],
-                1.0 / divisor,
+                xp.int64(term_count),
+                xp.int32(candidates_per_example),
+                xp.int32(hidden.shape[-1]),
+                xp.float32(1.0 / divisor),
             ),
         )
     else:
