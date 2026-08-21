@@ -101,7 +101,7 @@ def test_gt11_reuses_gt07_protocol_for_two_model_variants() -> None:
         "exp/deepscratch/ds1/config/implemented/e07_mnist_deep_cnn.yaml",
         atomic_run_id="CNN-DEEP-BOOK",
     )
-    for atomic_run_id in ("TWO-LAYER-NET-ADAM", "MLP-EXT-NO-REG"):
+    for atomic_run_id in ("SIMPLE-CNN-HE", "TWO-LAYER-NET-ADAM", "MLP-EXT-NO-REG"):
         spec = parse_run_spec(
             "exp/deepscratch/ds1/config/implemented/e15_mnist_model_comparison.yaml",
             atomic_run_id=atomic_run_id,
@@ -122,6 +122,13 @@ def test_gt11_reuses_gt07_protocol_for_two_model_variants() -> None:
     assert two_layer.model["name"] == "TwoLayerNet"
     assert two_layer.model["hidden_size"] == 50
     assert two_layer.model["initializer"] == "he"
+
+    simple = parse_run_spec(
+        "exp/deepscratch/ds1/config/implemented/e15_mnist_model_comparison.yaml",
+        atomic_run_id="SIMPLE-CNN-HE",
+    )
+    assert simple.model["name"] == "SimpleCNN"
+    assert simple.model["initializer"] == "he"
 
     extended = parse_run_spec(
         "exp/deepscratch/ds1/config/implemented/e15_mnist_model_comparison.yaml",

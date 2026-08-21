@@ -163,10 +163,11 @@ sampling, Adam `.001`, 20-epoch budget, seed set과 evaluation cadence를 GT07�
 
 GT11은 GT07의 데이터 크기, batch sampling, Adam `.001`, 20-epoch budget, seed set,
 evaluation cadence를 재사용한다. 기존 GT07 run은 다시 실행하지 않고 비교 대상으로 읽는다.
-모든 비교 모델은 He 초기화를 사용한다. 새로 실행하는 조건은 다음 두 가지다.
+모든 비교 모델은 He 초기화를 사용한다. 새로 실행하는 조건은 다음 세 가지다.
 
 | atomic run ID | model |
 | --- | --- |
+| `SIMPLE-CNN-HE` | SimpleConvNet, Conv30 5×5 → FC100, He |
 | `TWO-LAYER-NET-ADAM` | TwoLayerNet `784-50-10`, ReLU, He |
 | `MLP-EXT-NO-REG` | MLP `784-[100×6]-10`, ReLU, He, BatchNorm, dropout off, weight decay off |
 

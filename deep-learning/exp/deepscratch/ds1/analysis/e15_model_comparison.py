@@ -10,8 +10,9 @@ from .common import accuracy_percent_curve, runs
 
 DEFINITIONS = (
     ("GT07", "CNN-DEEP-BOOK", "DeepCNN", ACCENT_COLORS[0]),
-    ("GT11", "TWO-LAYER-NET-ADAM", "TwoLayerNet", ACCENT_COLORS[1]),
-    ("GT11", "MLP-EXT-NO-REG", "ExtendedMLP-NoReg", ACCENT_COLORS[2]),
+    ("GT11", "SIMPLE-CNN-HE", "SimpleCNN-He", ACCENT_COLORS[1]),
+    ("GT11", "TWO-LAYER-NET-ADAM", "TwoLayerNet", ACCENT_COLORS[2]),
+    ("GT11", "MLP-EXT-NO-REG", "ExtendedMLP-NoReg", ACCENT_COLORS[3]),
 )
 
 

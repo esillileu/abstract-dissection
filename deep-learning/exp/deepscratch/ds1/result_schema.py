@@ -190,6 +190,7 @@ E14 = StudyDeclaration("e14", (
     condition("two-layer-net.gradient-check", ("TWO-LAYER-GRADIENT-CHECK",), ("TWO-LAYER-GRADIENT-CHECK",), ()),
 ))
 E15 = StudyDeclaration("e15", (
+    condition("simple-cnn.he", ("SIMPLE-CNN-HE",), (), (ACCURACY, TRAIN_ACCURACY_CURVE, TEST_ACCURACY_CURVE)),
     condition("two-layer-net.adam", ("TWO-LAYER-NET-ADAM",), (), (ACCURACY, TRAIN_ACCURACY_CURVE, TEST_ACCURACY_CURVE)),
     condition("extended-mlp.no-regularization", ("MLP-EXT-NO-REG",), (), (ACCURACY, TRAIN_ACCURACY_CURVE, TEST_ACCURACY_CURVE)),
 ))
