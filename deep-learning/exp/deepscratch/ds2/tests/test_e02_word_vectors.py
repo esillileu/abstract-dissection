@@ -121,16 +121,17 @@ def test_render_writes_ns_graphs_text_and_csv(
     assert outputs == [
         tmp_path / "e02_band_ns_cbow.png",
         tmp_path / "e02_band_ns_skipgram.png",
+        tmp_path / "e02_band_ns_combined.png",
         tmp_path / "e02_band_ns_curves.csv",
         tmp_path / "e02_word_vectors.txt",
         tmp_path / "e02_word_vectors.csv",
     ]
     assert all(path.is_file() for path in outputs)
-    text = outputs[3].read_text(encoding="utf-8")
+    text = outputs[4].read_text(encoding="utf-8")
     assert "similarity you:" in text
     assert "expected=woman" in text
     assert capsys.readouterr().out == ""
-    with outputs[4].open(encoding="utf-8", newline="") as file:
+    with outputs[5].open(encoding="utf-8", newline="") as file:
         rows = list(csv.DictReader(file))
     assert len(rows) == 40
     assert {row["task"] for row in rows} == {"similarity", "analogy"}

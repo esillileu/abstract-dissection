@@ -9,6 +9,7 @@ from .common import runs, source_curve
 
 
 def render(client, error_style, output):
+    metric = "loss" if getattr(getattr(client, "variant", None), "value", None) == "original" else "book_loss"
     definitions = {
         "W2V-TOY-CBOW-FULL": ("CBOW", ACCENT_COLORS[0], "-", "o"),
         "W2V-TOY-SKIPGRAM-FULL": ("Skip-gram", ACCENT_COLORS[1], "--", "s"),
@@ -17,7 +18,7 @@ def render(client, error_style, output):
     curves = {}
     outputs = []
     for atomic, (label, color, linestyle, marker) in definitions.items():
-        curve = source_curve(client, grouped[atomic], "book_loss")
+        curve = source_curve(client, grouped[atomic], metric)
         curves[label] = curve
         figure, axis = plt.subplots()
         figure._analysis_match_original_canvas = True
@@ -33,7 +34,7 @@ def render(client, error_style, output):
         )
         axis.set(
             xlabel="iterations (x20)",
-            ylabel="book loss",
+            ylabel="loss",
         )
         mark_empty(axis)
         if axis.has_data():
