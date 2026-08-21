@@ -7,6 +7,7 @@ import numpy as np
 
 from exp.framework.analysis.core import Curve, aggregate, mark_empty, plot_curve, save_figure
 from exp.deepscratch.analysis.input import histories_from_artifact
+from exp.deepscratch.identity import Variant
 from exp.framework.plotting.theme import ACCENT_COLORS
 
 from .broken_axis import add_wave_break
@@ -34,6 +35,9 @@ ADDITIONAL_RNNLM_GRAPH = (
 ADDITIONAL_BETTER_GRAPH = (
     ("LM-BETTER-RECIPE", "Better RNNLM", "D", ACCENT_COLORS[3]),
     ("LM-BETTER-NODROPOUT", "Better RNNLM (no dropout)", "X", ACCENT_COLORS[4]),
+)
+ADDITIONAL_BETTER_VALIDATION_GRAPH = (
+    ("LM-BETTER-RECIPE", "Better RNNLM", "D", ACCENT_COLORS[3]),
 )
 ADDITIONAL_LSTM_GRAPH = (
     ("LM-LSTM-RECIPE", "RNNLM", "s", ACCENT_COLORS[1]),
@@ -125,20 +129,28 @@ def _train_curves(client, atomic_ids):
 
 def _train_ppl_by_epoch(client, run):
     by_epoch = {}
-    for row in client.artifact_rows(run, "observations/source_curves.csv"):
-        if row.get("metric") != "perplexity":
-            continue
+    rows = client.artifact_rows(run, "observations/source_curves.csv")
+    if rows:
+        rows = [row for row in rows if row.get("metric") == "perplexity"]
+        epoch_key = "epoch_end"
+    else:
+        rows = [
+            row
+            for row in client.artifact_rows(run, "raw/metrics.csv")
+            if row.get("split") == "train" and row.get("perplexity")
+        ]
+        epoch_key = "epoch"
+    for row in rows:
         try:
-            epoch = float(row["epoch_end"])
-            value = float(row["value"])
+            epoch = float(row[epoch_key])
+            value = float(row["value"] if "value" in row else row["perplexity"])
         except (KeyError, TypeError, ValueError):
             continue
         by_epoch.setdefault(epoch, []).append(value)
     return by_epoch
 
 
-def render(client, error_style, output):
-    del output
+def _render_all_recipes(client, error_style):
     atomic_ids = [item[0] for item in DEFINITIONS]
     curves = _valid_curves(client, atomic_ids)
 
@@ -186,19 +198,17 @@ def render(client, error_style, output):
     return figure, curves
 
 
-def _render_single_axis_graph(
+def _single_axis_figure(
     client,
     error_style,
-    output,
     definitions,
-    filename,
     *,
     include_train=False,
     evaluation_split="valid",
     evaluation_axis="epoch",
     y_min=None,
     y_max=None,
-) -> Path:
+):
     atomic_ids = [item[0] for item in definitions]
     if evaluation_split == "valid" and evaluation_axis == "epoch":
         curves = _valid_curves(client, atomic_ids)
@@ -208,8 +218,9 @@ def _render_single_axis_graph(
         )
     train_curves = _train_curves(client, atomic_ids) if include_train else {}
     figure, axis = plt.subplots()
+    figure._analysis_match_original_canvas = True
     for atomic, label, marker, color in definitions:
-        evaluation_curve = curves[f"{atomic}/valid"]
+        evaluation_curve = curves[f"{atomic}/{evaluation_split}"]
         if evaluation_axis == "terminal" and include_train and len(evaluation_curve.steps):
             final_step = train_curves[f"{atomic}/train"].steps.max()
             evaluation_curve = Curve(
@@ -227,7 +238,7 @@ def _render_single_axis_graph(
             marker=marker,
             color=color,
             error_style=error_style,
-            error_every=1,
+            error_every=5,
         )
         if include_train:
             plot_curve(
@@ -237,18 +248,65 @@ def _render_single_axis_graph(
                 color=color,
                 linestyle=":",
                 error_style=error_style,
-                error_every=1,
+                error_every=5,
             )
     mark_empty(axis)
     axis.set(xlabel="epochs", ylabel="perplexity")
     if y_min is not None or y_max is not None:
         axis.set_ylim(bottom=y_min, top=y_max)
     if axis.has_data():
-        axis.legend(loc="upper right")
-    path = Path(output).with_name(filename)
+        axis.legend()
+    return figure, {**curves, **train_curves}
+
+
+def render(client, error_style, output):
+    del output
+    include_train = getattr(client, "variant", None) is not Variant.ORIGINAL
+    return _single_axis_figure(
+        client,
+        error_style,
+        ADDITIONAL_BETTER_VALIDATION_GRAPH,
+        include_train=include_train,
+        evaluation_split="valid",
+        evaluation_axis="epoch",
+        y_min=0,
+        y_max=250,
+    )
+
+
+def _render_single_axis_graph(
+    client,
+    error_style,
+    output,
+    definitions,
+    filename,
+    *,
+    include_train=False,
+    evaluation_split="valid",
+    evaluation_axis="epoch",
+    y_min=None,
+    y_max=None,
+) -> Path:
+    figure, _curves = _single_axis_figure(
+        client,
+        error_style,
+        definitions,
+        include_train=include_train,
+        evaluation_split=evaluation_split,
+        evaluation_axis=evaluation_axis,
+        y_min=y_min,
+        y_max=y_max,
+    )
+    path = _additional_output_path(output, filename.removesuffix(Path(filename).suffix))
     save_figure(figure, path)
     plt.close(figure)
     return path
+
+
+def _additional_output_path(output, graph_name: str) -> Path:
+    """Keep additional graphs in the same org/imp namespace as the main one."""
+    output = Path(output)
+    return output.with_name(f"{output.stem}_{graph_name}{output.suffix}")
 
 
 def _render_broken_axis_graph(client, error_style, output, definitions, filename) -> Path:
@@ -291,21 +349,19 @@ def _render_broken_axis_graph(client, error_style, output, definitions, filename
     add_wave_break(figure, upper, lower)
     if lines:
         upper.legend(handles=lines, loc="upper right")
-    path = Path(output).with_name(filename)
+    path = _additional_output_path(output, filename.removesuffix(Path(filename).suffix))
     save_figure(figure, path)
     plt.close(figure)
     return path
 
 
 def render_additional_graph(client, error_style, output) -> Path:
-    """Render a focused validation-PPL comparison of the two RNNLM models."""
-    return _render_broken_axis_graph(
-        client,
-        error_style,
-        output,
-        ADDITIONAL_RNNLM_GRAPH,
-        "ds2_e05_rnn_lstm.png",
-    )
+    """Render the previous all-recipe validation comparison separately."""
+    figure, _curves = _render_all_recipes(client, error_style)
+    path = _additional_output_path(output, "all_rnnlm")
+    save_figure(figure, path)
+    plt.close(figure)
+    return path
 
 
 def render_additional_better_graph(client, error_style, output) -> Path:
@@ -315,8 +371,23 @@ def render_additional_better_graph(client, error_style, output) -> Path:
         error_style,
         output,
         ADDITIONAL_BETTER_GRAPH,
-        "ds2_e05_better_rnnlm_dropout.png",
+        "better_rnnlm_dropout.png",
         include_train=True,
+        evaluation_split="valid",
+        evaluation_axis="epoch",
+        y_min=0,
+        y_max=500,
+    )
+
+
+def render_additional_better_validation_graph(client, error_style, output) -> Path:
+    """Render Better RNNLM validation perplexity as a standalone graph."""
+    return _render_single_axis_graph(
+        client,
+        error_style,
+        output,
+        ADDITIONAL_BETTER_VALIDATION_GRAPH,
+        "better_rnnlm_validation.png",
         evaluation_split="valid",
         evaluation_axis="epoch",
         y_min=0,
@@ -331,5 +402,5 @@ def render_additional_lstm_graph(client, error_style, output) -> Path:
         error_style,
         output,
         ADDITIONAL_LSTM_GRAPH,
-        "ds2_e05_lstm_vs_tied_rnnlm.png",
+        "lstm_vs_tied_rnnlm.png",
     )

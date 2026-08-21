@@ -7,6 +7,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 
 from exp.framework.analysis.core import save_figure, write_summary
+from exp.deepscratch.identity import Variant
 
 from . import (
     e01_toy_word2vec,
@@ -42,6 +43,9 @@ ADDITIONAL_RENDERERS = {
     "e05": lambda data, error_style, output: [
         e05_lm_recipes.render_additional_graph(data, error_style, output),
         e05_lm_recipes.render_additional_better_graph(data, error_style, output),
+        e05_lm_recipes.render_additional_better_validation_graph(
+            data, error_style, output
+        ),
         e05_lm_recipes.render_additional_lstm_graph(data, error_style, output),
     ],
     "e09": e09_addition_seq2seq_150.render_additional_graphs,
@@ -68,7 +72,7 @@ def render_study(
     save_figure(figure, output)
     outputs = [output]
     additional_renderer = ADDITIONAL_RENDERERS.get(study_id)
-    if additional_renderer is not None:
+    if additional_renderer is not None and data.variant is Variant.IMPLEMENTED:
         outputs.extend(additional_renderer(data, error_style, output))
     summary = output.with_name(f"{output.stem}_curves.csv")
     write_summary(summary, curves)
