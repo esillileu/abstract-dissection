@@ -90,6 +90,8 @@ randomized SVD 100차원을 비교한다. 공기행렬·PPMI·분해 결과를
 `statistical_matrices.npz`에, 분석용 벡터를 final checkpoint에, 단계별 wall time을
 `timing.json`에 저장한다. full SVD는 PTB 전체 dense 행렬에서 계산량과 메모리 사용량이
 크므로 필요한 조건만 atomic run으로 선택할 수 있다.
+원본/구현의 seed별 저장 행렬 동등성 검증 결과는
+[`docs/e12_matrix_equivalence.md`](docs/e12_matrix_equivalence.md)에 기록한다.
 
 ```bash
 just exp run deepscratch ds2 -e 12 --seed 1
