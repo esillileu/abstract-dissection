@@ -77,8 +77,9 @@ python -m exp analyze deepscratch ds1 -e 06 --seed 1
 canvas, epoch 축, `0–1` accuracy 범위, marker와 범례 위치를 사용하되 저장소 테마를
 적용한다. 출력은 `e06_{band,errorbar}.png`이다.
 
-`e07`은 SimpleCNN/DeepCNN의 train·test 네 곡선을 비교하고 y축 `0.25–0.9`를
-생략한다. 출력은 `e07_{band,errorbar}.png`이다.
+`e07`은 `e06`과 같은 단일 축·train/test 형식으로 DeepCNN 곡선을 그린다. 기본
+출력은 `e07_{band,errorbar}.png`이며, 기존 SimpleCNN/DeepCNN 비교 그래프는
+`ds1_e07_{org|imp}_compare.png`로 별도 생성한다.
 
 `-s`/`--summary`는 `e01`–`e12`에서 그림을 만들지 않고 실험별 핵심 값을
 터미널과 `eNN_summary.csv`에 출력한다.

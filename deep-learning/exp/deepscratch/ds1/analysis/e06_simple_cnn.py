@@ -10,13 +10,12 @@ from .common import accuracy_curve, runs
 ATOMIC_RUN_ID = "CNN-SIMPLE-BOOK"
 
 
-def render(client, error_style, output):
-    del output
-    grouped = runs(client, "GT06", [ATOMIC_RUN_ID])
+def render_cnn(client, error_style, *, group_id, atomic_run_id):
+    grouped = runs(client, group_id, [atomic_run_id])
     curves = {
         split: accuracy_curve(
             client,
-            grouped[ATOMIC_RUN_ID],
+            grouped[atomic_run_id],
             split=split,
             axis="update",
             x_value=lambda row: float(row["epoch"]) - 1,
@@ -44,3 +43,13 @@ def render(client, error_style, output):
     if axis.has_data():
         axis.legend(loc="lower right")
     return figure, curves
+
+
+def render(client, error_style, output):
+    del output
+    return render_cnn(
+        client,
+        error_style,
+        group_id="GT06",
+        atomic_run_id=ATOMIC_RUN_ID,
+    )

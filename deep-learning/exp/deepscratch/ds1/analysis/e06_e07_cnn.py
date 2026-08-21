@@ -33,7 +33,7 @@ def _curves(client):
     return result
 
 
-def render(client, error_style, output):
+def render_compare(client, error_style, output):
     del output
     curves = _curves(client)
     figure, (upper, lower) = plt.subplots(
@@ -75,3 +75,6 @@ def render(client, error_style, output):
     if upper.has_data():
         upper.legend(loc="lower right")
     return figure, curves
+
+
+__all__ = ["render_compare"]

@@ -15,6 +15,7 @@ from . import (
     e04_dropout,
     e05_batchnorm,
     e06_simple_cnn,
+    e06_e07_cnn,
     e07_deep_cnn,
     e08_spatial_layout,
     e09_optimizer_trajectory,
@@ -42,6 +43,9 @@ RENDERERS = {
     "e13": e13_two_layer_net.render,
     "e14": e14_gradient_check.render,
 }
+ADDITIONAL_RENDERERS = {
+    "e07": e06_e07_cnn.render_compare,
+}
 STUDY_SOURCES = {
     "e07": ("e06", "e07"),
     "e11": ("e06", "e08"),
@@ -61,10 +65,22 @@ def render_study(
         return result
     figure, curves = result
     save_figure(figure, output)
+    outputs = [output]
+    additional_renderer = ADDITIONAL_RENDERERS.get(study_id)
+    if additional_renderer is not None:
+        compare_output = output.with_name(
+            f"{output.stem}_compare{output.suffix}"
+        )
+        compare_figure, _compare_curves = additional_renderer(
+            data, error_style, compare_output
+        )
+        save_figure(compare_figure, compare_output)
+        plt.close(compare_figure)
+        outputs.append(compare_output)
     summary = output.with_name(f"{output.stem}_curves.csv")
     write_summary(summary, curves)
     plt.close(figure)
-    return [output, summary]
+    return [*outputs, summary]
 
 
-__all__ = ["RENDERERS", "STUDY_SOURCES", "render_study"]
+__all__ = ["ADDITIONAL_RENDERERS", "RENDERERS", "STUDY_SOURCES", "render_study"]
