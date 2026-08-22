@@ -21,12 +21,15 @@ from mlprosection.core.backend import BackendConfig, make_backend
 from mlprosection.nn.model.architecture import (
     CBOW,
     CBOWBatchAdapter,
+    DumbCBOW,
+    DumbSkipGram,
     FusedNegativeSamplingCBOW,
     FusedNegativeSamplingSkipGram,
     OneHotCBOW,
     OneHotCBOWBatchAdapter,
     OneHotSkipGram,
     OneHotSkipGramBatchAdapter,
+    PairExpandedSkipGramBatchAdapter,
     SkipGram,
     SkipGramBatchAdapter,
 )
@@ -40,27 +43,22 @@ from mlprosection.nn.objective import (
 CONFIG_ROOT = Path("exp/deepscratch/ds2/config/implemented")
 
 
-def test_e02_fused_variant_is_separate_and_uses_dense_adam() -> None:
+def test_e02_declares_gpu_dumb_word2vec_conditions() -> None:
     path = CONFIG_ROOT / "e02_ptb_word2vec.yaml"
-    existing = parse_run_spec(path, atomic_run_id="W2V-PTB-CBOW-NS")
-    fused = parse_run_spec(
-        path,
-        atomic_run_id="W2V-PTB-CBOW-FUSED-NS",
-    )
-    fused_skipgram = parse_run_spec(
-        path,
-        atomic_run_id="W2V-PTB-SKIPGRAM-FUSED-NS",
-    )
-
-    assert existing.model["name"] == "CBOW"
-    assert existing.objective["name"] == "NegativeSampling"
-    assert existing.optimizer["name"] == "adam"
-    assert fused.model["name"] == "FusedNegativeSamplingCBOW"
-    assert fused.objective["name"] == "FusedNegativeSampling"
-    assert fused.optimizer["name"] == "adam"
-    assert fused_skipgram.model["name"] == "FusedNegativeSamplingSkipGram"
-    assert fused_skipgram.objective["name"] == "FusedNegativeSampling"
-    assert fused_skipgram.optimizer["name"] == "adam"
+    source = yaml.safe_load(path.read_text(encoding="utf-8"))
+    assert set(source["variants"]) == {
+        "W2V-PTB-CBOW-NS", "W2V-PTB-SKIPGRAM-NS",
+        "W2V-PTB-CBOW-FULL", "W2V-PTB-SKIPGRAM-FULL",
+    }
+    spec = parse_run_spec(path, atomic_run_id="W2V-PTB-SKIPGRAM-FULL")
+    assert {
+        variant["model"]["name"]
+        for variant in source["variants"].values()
+    } == {"DumbCBOW", "DumbSkipGram"}
+    assert spec.model["name"] == "DumbSkipGram"
+    assert source["execution"]["default_device"] == "cuda:0"
+    assert spec.numerics["backend"] == "cupy"
+    assert spec.numerics["device"] == "cuda:0"
 
 
 def test_all_ds2_variants_resolve_and_build_the_declared_components() -> None:
@@ -89,6 +87,14 @@ def test_all_ds2_variants_resolve_and_build_the_declared_components() -> None:
                 )
                 model_type, _adapter = {
                     ("CBOW", "embedding"): (CBOW, CBOWBatchAdapter()),
+                    ("DumbCBOW", "embedding"): (
+                        DumbCBOW,
+                        CBOWBatchAdapter(),
+                    ),
+                    ("DumbSkipGram", "embedding"): (
+                        DumbSkipGram,
+                        PairExpandedSkipGramBatchAdapter(),
+                    ),
                     ("FusedNegativeSamplingCBOW", "embedding"): (
                         FusedNegativeSamplingCBOW,
                         CBOWBatchAdapter(),
@@ -156,4 +162,4 @@ def test_all_ds2_variants_resolve_and_build_the_declared_components() -> None:
                 executor = ProfileExecutor()
             assert callable(executor.run)
             count += 1
-    assert count == 59
+    assert count == 55

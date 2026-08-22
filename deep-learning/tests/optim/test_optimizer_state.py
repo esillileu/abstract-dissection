@@ -4,7 +4,7 @@ import numpy as np
 
 from mlprosection import Tensor
 from mlprosection.nn.types import Parameter
-from mlprosection.optim.SGD import AdaGrad, Adam, Momentum, RMSprop
+from mlprosection.optim.SGD import AdaGrad, Adam, Momentum, RMSprop, SparseAdam
 from mlprosection.optim.transform import ClipGradNorm
 
 
@@ -52,6 +52,24 @@ def test_adam_advances_bias_correction_step() -> None:
     assert optimizer.lr_t != optimizer.lr
     assert np.any(optimizer.m["w"])
     assert np.any(optimizer.v["w"])
+
+
+def test_sparse_adam_updates_only_active_rows() -> None:
+    param = Parameter(Tensor(np.ones((4, 2)), backend="cpu"))
+    param.grad[...] = np.arange(8).reshape(4, 2)
+    active_rows = np.array([1, 1, 3], dtype=np.int64)
+    optimizer = SparseAdam(
+        [("w", param)],
+        row_indices={"w": lambda: active_rows},
+        lr=0.1,
+    )
+
+    optimizer.update()
+
+    np.testing.assert_array_equal(param.data[[0, 2]], np.ones((2, 2)))
+    assert np.any(param.data[[1, 3]] != 1)
+    np.testing.assert_array_equal(optimizer.m["w"][[0, 2]], 0)
+    np.testing.assert_array_equal(optimizer.v["w"][[0, 2]], 0)
 
 
 def test_clip_grad_norm_hook_clips_global_norm_before_update() -> None:

@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Iterable, Dict, TYPE_CHECKING
+from typing import Callable, Iterable, Dict, TYPE_CHECKING
 
 from mlprosection.nn.types import Parameter
 from .base import Optimizer
@@ -183,6 +183,56 @@ class Adam(SGD):
         v += (1.0 - self.beta2) * (grad * grad - v)
 
         param.data -= self.lr_t * m / (xp.sqrt(v) + self.eps)
+
+
+class SparseAdam(Adam):
+    """Adam that updates only explicitly active rows of matrix parameters.
+
+    Untouched rows keep their parameters and moment state unchanged, matching
+    the conventional sparse-embedding Adam update rather than dense Adam's
+    global per-step moment decay.
+    """
+
+    def __init__(
+        self,
+        named_params: NamedParameters,
+        row_indices: dict[str, Callable[[], Array]],
+        lr: float = 0.001,
+        beta1: float = 0.9,
+        beta2: float = 0.999,
+        *,
+        eps: float = 1e-7,
+    ) -> None:
+        super().__init__(
+            named_params,
+            lr=lr,
+            beta1=beta1,
+            beta2=beta2,
+            eps=eps,
+        )
+        known = {name for name, _parameter in self.params}
+        unknown = set(row_indices) - known
+        if unknown:
+            raise ValueError(f"sparse Adam row providers have unknown parameters: {sorted(unknown)}")
+        self._row_indices = dict(row_indices)
+
+    def update_one(self, name: str, param: Parameter) -> None:
+        provider = self._row_indices.get(name)
+        if provider is None:
+            super().update_one(name, param)
+            return
+        xp = param.backend.xp
+        rows = xp.unique(provider().reshape(-1))
+        if rows.size == 0:
+            return
+        grad = param.grad[rows]
+        moment = self.m[name][rows]
+        variance = self.v[name][rows]
+        moment += (1.0 - self.beta1) * (grad - moment)
+        variance += (1.0 - self.beta2) * (grad * grad - variance)
+        self.m[name][rows] = moment
+        self.v[name][rows] = variance
+        param.data[rows] -= self.lr_t * moment / (xp.sqrt(variance) + self.eps)
 
 
 def zero_arrays_like_named_params(

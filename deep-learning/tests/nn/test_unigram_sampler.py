@@ -7,12 +7,15 @@ from mlprosection.nn import UnigramSampler
 from mlprosection.nn.model.architecture import (
     CBOW,
     CBOWBatchAdapter,
+    DumbCBOW,
+    DumbSkipGram,
     FusedNegativeSamplingCBOW,
     FusedNegativeSamplingSkipGram,
     OneHotCBOW,
     OneHotCBOWBatchAdapter,
     OneHotSkipGram,
     OneHotSkipGramBatchAdapter,
+    PairExpandedSkipGramBatchAdapter,
     SkipGram,
     SkipGramBatchAdapter,
 )
@@ -164,6 +167,27 @@ def test_skipgram_samples_all_context_targets_in_one_call() -> None:
     assert result.replay_context.shape == (2, 3, 2)
 
 
+def test_dumb_word2vec_keeps_classic_non_fused_execution_shapes() -> None:
+    contexts = Tensor(
+        np.array([[0, 2, 3], [1, 3, 4]], dtype=np.int64),
+        backend="cpu",
+    )
+    centers = Tensor(np.array([1, 2], dtype=np.int64), backend="cpu")
+
+    cbow_x, cbow_t = CBOWBatchAdapter().prepare(contexts, centers)
+    skipgram_x, skipgram_t = PairExpandedSkipGramBatchAdapter().prepare(
+        contexts,
+        centers,
+    )
+
+    assert isinstance(DumbCBOW(8, 3, backend="cpu"), CBOW)
+    assert isinstance(DumbSkipGram(8, 3, backend="cpu"), SkipGram)
+    assert cbow_x.shape == (2, 3)
+    assert cbow_t.shape == (2,)
+    assert skipgram_x.shape == (6,)
+    assert skipgram_t.shape == (6,)
+
+
 def test_grouped_skipgram_matches_pair_expansion_loss_and_gradients() -> None:
     centers = Tensor(np.array([1, 2], dtype=np.int64), backend="cpu")
     contexts = Tensor(
@@ -185,11 +209,9 @@ def test_grouped_skipgram_matches_pair_expansion_loss_and_gradients() -> None:
     grouped_objective = NegativeSampling(
         8, negative_samples=2, backend="cpu"
     )
-    expanded_x = Tensor(
-        np.repeat(centers.data, contexts.shape[1]),
-        backend="cpu",
+    expanded_x, expanded_t = PairExpandedSkipGramBatchAdapter().prepare(
+        contexts, centers
     )
-    expanded_t = contexts.reshape(-1)
     grouped_x, grouped_t = SkipGramBatchAdapter().prepare(contexts, centers)
 
     expanded = _word2vec_forward(

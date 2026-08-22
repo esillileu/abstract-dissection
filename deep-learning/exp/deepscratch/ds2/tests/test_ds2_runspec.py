@@ -24,8 +24,9 @@ def test_word2vec_runspec_connects_source_curve_contract() -> None:
     assert spec.source_curve is not None
     assert spec.source_curve.kind == "interval_mean_loss"
     assert spec.source_curve.every_updates == 20
-    assert spec.model["name"] == "CBOW"
+    assert spec.model["name"] == "DumbCBOW"
     assert spec.objective["name"] == "NegativeSampling"
+    assert spec.optimizer["name"] == "adam"
     assert spec.objective["book_reduction"] == "sum_terms_mean_examples"
 
 

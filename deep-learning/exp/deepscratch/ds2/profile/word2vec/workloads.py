@@ -23,15 +23,16 @@ import numpy as np
 from mlprosection import Tensor
 from mlprosection.core.backend import BackendConfig, make_backend
 from mlprosection.nn.model.architecture import (
-    CBOW,
     CBOWBatchAdapter,
+    DumbCBOW,
+    DumbSkipGram,
     FusedNegativeSamplingCBOW,
     FusedNegativeSamplingSkipGram,
     OneHotCBOW,
     OneHotCBOWBatchAdapter,
     OneHotSkipGram,
     OneHotSkipGramBatchAdapter,
-    SkipGram,
+    PairExpandedSkipGramBatchAdapter,
     SkipGramBatchAdapter,
 )
 from mlprosection.nn.objective import (
@@ -402,21 +403,25 @@ def _implemented_components(
         )
     else:
         model_class = {
-            ("CBOW", False): CBOW,
-            ("SkipGram", False): SkipGram,
+            ("CBOW", False): DumbCBOW,
+            ("SkipGram", False): DumbSkipGram,
             ("CBOW", True): OneHotCBOW,
             ("SkipGram", True): OneHotSkipGram,
         }[(model_name, one_hot)]
     adapter = {
         ("CBOW", False): CBOWBatchAdapter(),
-        ("SkipGram", False): SkipGramBatchAdapter(),
+        ("SkipGram", False): (
+            PairExpandedSkipGramBatchAdapter()
+            if objective_name == "FullSoftmax"
+            else SkipGramBatchAdapter()
+        ),
         ("CBOW", True): OneHotCBOWBatchAdapter(vocab_size),
         ("SkipGram", True): OneHotSkipGramBatchAdapter(vocab_size),
     }[(model_name, one_hot)]
     return (
         model_class,
         adapter,
-        (model_name == "SkipGram" and objective_name == "FullSoftmax"),
+        False,
     )
 
 

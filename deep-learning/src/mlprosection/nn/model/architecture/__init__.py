@@ -5,12 +5,15 @@ from .two_layer_net import TwoLayerNet
 from .word2vec import (
     CBOW,
     CBOWBatchAdapter,
+    DumbCBOW,
+    DumbSkipGram,
     FusedNegativeSamplingCBOW,
     FusedNegativeSamplingSkipGram,
     OneHotCBOW,
     OneHotCBOWBatchAdapter,
     OneHotSkipGram,
     OneHotSkipGramBatchAdapter,
+    PairExpandedSkipGramBatchAdapter,
     SkipGram,
     SkipGramBatchAdapter,
 )
@@ -25,10 +28,12 @@ from .recurrent import (
 )
 
 __all__ = [
-    "CBOW", "CBOWBatchAdapter", "DeepCNN", "FusedNegativeSamplingCBOW",
+    "CBOW", "CBOWBatchAdapter", "DeepCNN", "DumbCBOW", "DumbSkipGram",
+    "FusedNegativeSamplingCBOW",
     "FusedNegativeSamplingSkipGram", "MLP", "SimpleCNN",
     "OneHotCBOW", "OneHotCBOWBatchAdapter", "TwoLayerNet",
     "OneHotSkipGram", "OneHotSkipGramBatchAdapter",
+    "PairExpandedSkipGramBatchAdapter",
     "SkipGram", "SkipGramBatchAdapter",
     "AttentionPeekySeq2seq", "AttentionSeq2seq", "BetterRnnlm",
     "PeekySeq2seq", "Rnnlm", "Seq2seq", "TiedRnnlm", "VanillaRnnlm",

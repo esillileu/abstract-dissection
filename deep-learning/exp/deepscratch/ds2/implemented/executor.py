@@ -19,12 +19,15 @@ from mlprosection.nn.model.architecture import (
     BetterRnnlm,
     CBOW,
     CBOWBatchAdapter,
+    DumbCBOW,
+    DumbSkipGram,
     FusedNegativeSamplingCBOW,
     FusedNegativeSamplingSkipGram,
     OneHotCBOW,
     OneHotCBOWBatchAdapter,
     OneHotSkipGram,
     OneHotSkipGramBatchAdapter,
+    PairExpandedSkipGramBatchAdapter,
     PeekySeq2seq,
     Rnnlm,
     Seq2seq,
@@ -39,7 +42,7 @@ from mlprosection.nn.objective import (
     SoftmaxWithLoss,
     TemporalSoftmaxCrossEntropy,
 )
-from mlprosection.optim.SGD import Adam, SGD
+from mlprosection.optim.SGD import Adam, SGD, SparseAdam
 from mlprosection.optim.transform import ClipGradNorm
 from mlprosection.trainer import (
     FusedNegativeSamplingTrainer,
@@ -225,6 +228,17 @@ def _optimizer(config: dict[str, object], model, objective):
             lr=float(values.get("learning_rate", 0.001)),
             pre_step_hooks=hooks,
         )
+    if name == "sparse_adam":
+        if not hasattr(model, "sparse_parameter_rows"):
+            raise ValueError("sparse_adam requires a sparse-row model")
+        return SparseAdam(
+            params,
+            row_indices={
+                "model.W_in": lambda: model.sparse_parameter_rows()["W_in"],
+                "model.W_out": lambda: model.sparse_parameter_rows()["W_out"],
+            },
+            lr=float(values.get("learning_rate", 0.001)),
+        )
     if name == "sgd":
         return SGD(
             params,
@@ -406,6 +420,8 @@ class Word2VecExecutor:
         )
         model_type = {
             ("CBOW", "embedding"): CBOW,
+            ("DumbCBOW", "embedding"): DumbCBOW,
+            ("DumbSkipGram", "embedding"): DumbSkipGram,
             ("FusedNegativeSamplingCBOW", "embedding"):
                 FusedNegativeSamplingCBOW,
             ("FusedNegativeSamplingSkipGram", "embedding"):
@@ -428,6 +444,8 @@ class Word2VecExecutor:
             )
         adapter = {
             ("CBOW", "embedding"): CBOWBatchAdapter(),
+            ("DumbCBOW", "embedding"): CBOWBatchAdapter(),
+            ("DumbSkipGram", "embedding"): SkipGramBatchAdapter(),
             ("FusedNegativeSamplingCBOW", "embedding"): CBOWBatchAdapter(),
             ("FusedNegativeSamplingSkipGram", "embedding"):
                 SkipGramBatchAdapter(),
@@ -437,6 +455,12 @@ class Word2VecExecutor:
                 len(word_to_id)
             ),
         }[(architecture, input_representation)]
+        pair_expanded_skipgram = (
+            architecture == "DumbSkipGram"
+            and objective_name == "SoftmaxWithLoss"
+        )
+        if pair_expanded_skipgram:
+            adapter = PairExpandedSkipGramBatchAdapter()
         embedding_size = int(model_config.get("embedding_size", 100))
         model = model_type(
             len(word_to_id), embedding_size, backend=backend
