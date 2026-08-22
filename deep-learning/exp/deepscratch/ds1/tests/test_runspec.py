@@ -129,6 +129,8 @@ def test_gt11_reuses_gt07_protocol_for_two_model_variants() -> None:
     )
     assert simple.model["name"] == "SimpleCNN"
     assert simple.model["initializer"] == "he"
+    assert simple.dataset["id"] == "mnist-image-full"
+    assert simple.dataset["flatten"] is False
 
     extended = parse_run_spec(
         "exp/deepscratch/ds1/config/implemented/e15_mnist_model_comparison.yaml",

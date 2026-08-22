@@ -26,6 +26,7 @@ class AttemptRef:
     seed: str
     protocol_version: str
     status: str
+    run_type: str
     start_time: int
     disposition: str | None
     durable_complete: bool | None
@@ -38,8 +39,15 @@ class AttemptRef:
 class CanonicalAttemptSelector:
     """Apply the documented precedence to immutable MLflow attempts."""
 
-    def __init__(self, client, *, tracking_uri: str | None = None) -> None:
+    def __init__(
+        self,
+        client,
+        *,
+        tracking_uri: str | None = None,
+        default_device: str | None = None,
+    ) -> None:
         self.client = client
+        self.default_device = default_device
         resolved_tracking_uri = tracking_uri or getattr(client, "tracking_uri", None)
         self._artifact_cache = MlflowArtifactCache(
             client,
@@ -84,6 +92,7 @@ class CanonicalAttemptSelector:
                     seed=_first(tags.get("seed"), tags.get("master_seed"), run.data.params.get("seed/master"), run.data.params.get("seed")) or "single",
                     protocol_version=tags.get("protocol.version", "legacy"),
                     status=str(run.info.status).upper(),
+                    run_type=run_type,
                     start_time=int(run.info.start_time or 0),
                     disposition=tags.get("transfer.import.disposition"),
                     durable_complete=None if durable is None else durable.lower() == "true",
@@ -125,6 +134,7 @@ class CanonicalAttemptSelector:
         seed: str | int,
         run_id: str | None = None,
         statuses: tuple[str, ...] = ("FINISHED",),
+        device: str | None = None,
     ) -> AttemptRef | None:
         aliases = set(condition_ids)
         candidates = [
@@ -134,6 +144,13 @@ class CanonicalAttemptSelector:
             and item.seed == str(seed)
             and item.status in statuses
         ]
+        selected_device = self.default_device if device is None else device
+        if selected_device is not None and run_id is None:
+            candidates = [
+                item for item in candidates
+                if item.run_type != "seed_trial"
+                or self._run_device(item.run_id) == selected_device
+            ]
         if run_id is not None:
             selected = next((item for item in candidates if item.run_id == run_id), None)
             if selected is None:
@@ -143,6 +160,16 @@ class CanonicalAttemptSelector:
         if not eligible:
             return None
         return min(eligible, key=_priority)
+
+    def _run_device(self, run_id: str) -> str | None:
+        run = self.client.get_run(run_id)
+        params = run.data.params
+        return (
+            params.get("numerics/device")
+            or params.get("numerics.device")
+            or run.data.tags.get("runtime.device")
+            or run.data.tags.get("runtime.device_type")
+        )
 
 
 def _priority(item: AttemptRef) -> tuple[int, int]:
