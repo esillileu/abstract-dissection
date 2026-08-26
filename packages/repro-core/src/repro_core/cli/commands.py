@@ -89,17 +89,23 @@ def run_command(
     print_plans(plans)
     if dry_run:
         return
-    previous_uri = os.environ.get("MLFLOW_TRACKING_URI")
+    previous_uri = os.environ.get("REPRO_TRACKING_URI")
+    previous_mlflow_uri = os.environ.get("MLFLOW_TRACKING_URI")
     if tracking_uri is not None:
+        os.environ["REPRO_TRACKING_URI"] = tracking_uri
         os.environ["MLFLOW_TRACKING_URI"] = tracking_uri
     try:
         Runner(domain, run_fn=run_fn).run(plans, options)
     finally:
         if tracking_uri is not None:
             if previous_uri is None:
+                os.environ.pop("REPRO_TRACKING_URI", None)
+            else:
+                os.environ["REPRO_TRACKING_URI"] = previous_uri
+            if previous_mlflow_uri is None:
                 os.environ.pop("MLFLOW_TRACKING_URI", None)
             else:
-                os.environ["MLFLOW_TRACKING_URI"] = previous_uri
+                os.environ["MLFLOW_TRACKING_URI"] = previous_mlflow_uri
 
 
 def _validate_device(device: str | None) -> None:

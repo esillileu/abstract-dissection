@@ -35,7 +35,7 @@ class Runner:
             raise ValueError(
                 "Runner requires an execution runner function (e.g. run_yaml)"
             )
-        self._require_mlflow_server(plans, options.overrides)
+        self._require_tracking_server(plans, options.overrides)
         self._require_devices(plans)
         from repro_core.context.progress import ProgressManager, RunProgressContext
 
@@ -101,7 +101,7 @@ class Runner:
                 if staging_root is not None:
                     _remove_durable_staging(staging_root)
 
-    def _require_mlflow_server(
+    def _require_tracking_server(
         self, plans: list[RunPlan], overrides: dict[str, object]
     ) -> None:
         uris = set()
@@ -112,7 +112,8 @@ class Runner:
             tracking = config.get("tracking", {})
             if isinstance(tracking, dict) and tracking.get("enabled", True):
                 uris.add(
-                    os.getenv("MLFLOW_TRACKING_URI")
+                    os.getenv("REPRO_TRACKING_URI")
+                    or os.getenv("MLFLOW_TRACKING_URI")
                     or str(tracking.get("uri", "http://127.0.0.1:5000"))
                 )
         for uri in sorted(uris):
@@ -120,11 +121,11 @@ class Runner:
                 with urlopen(f"{uri.rstrip('/')}/health", timeout=5) as response:
                     if response.status != 200:
                         raise RuntimeError(
-                            f"MLflow health check returned HTTP {response.status}"
+                            f"Tracking server health check returned HTTP {response.status}"
                         )
             except (OSError, URLError) as exc:
                 raise RuntimeError(
-                    f"MLflow server is unavailable at {uri}. Start it before running plans."
+                    f"Tracking server is unavailable at {uri}. Start it before running plans."
                 ) from exc
 
     @staticmethod
