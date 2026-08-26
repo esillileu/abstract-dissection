@@ -361,3 +361,46 @@ def test_deepscratch_package_has_zero_dependencies_on_repro_core() -> None:
             or name.startswith("dlfs")
         )
     assert violations == []
+
+
+def test_repro_core_has_zero_dependencies_on_deepscratch_or_dlfs() -> None:
+    violations = []
+    root = Path("packages/repro-core/src")
+    for path in root.rglob("*.py"):
+        violations.extend(
+            (path, name)
+            for name in _imports(path)
+            if name.startswith("deepscratch") or name.startswith("dlfs")
+        )
+    assert violations == []
+
+
+def test_repro_core_checkpoint_has_zero_deep_learning_coupling() -> None:
+    path = Path("packages/repro-core/src/repro_core/context/checkpoint.py")
+    text = path.read_text(encoding="utf-8")
+    forbidden = (
+        "named_parameters",
+        "named_buffers",
+        "save_params_npz",
+        "load_params_npz",
+        "random_stream_states",
+        "restore_random_stream_states",
+        "import pickle",
+        "import numpy",
+    )
+    for token in forbidden:
+        assert token not in text, (
+            f"repro_core/context/checkpoint.py contains forbidden token: {token}"
+        )
+
+
+def test_repro_mlflow_has_zero_dependencies_on_deepscratch_or_dlfs() -> None:
+    violations = []
+    root = Path("packages/repro-mlflow/src")
+    for path in root.rglob("*.py"):
+        violations.extend(
+            (path, name)
+            for name in _imports(path)
+            if name.startswith("deepscratch") or name.startswith("dlfs")
+        )
+    assert violations == []
