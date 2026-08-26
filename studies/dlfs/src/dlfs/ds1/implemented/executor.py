@@ -9,27 +9,34 @@ from time import perf_counter
 
 import numpy as np
 from deepscratch.core import configure_runtime, seed_batch_order
-from deepscratch.datasets import load_mnist
 from deepscratch.datasets.mnist import save_file as mnist_cache_path
 from deepscratch.nn.layers import BatchNormalization
-from deepscratch.nn.model.architecture import MLP, DeepCNN, SimpleCNN, TwoLayerNet
-from deepscratch.nn.objective import SoftmaxCrossEntropy
-from deepscratch.optim.SGD import SGD, AdaGrad, Adam, Momentum
-from deepscratch.optim.transform import L2Regularization
 from deepscratch.profiling import create_runtime_monitor, training_summary
 from deepscratch.profiling.backend import create_device_timer
 from deepscratch.trainer import ForwardTrainer
 
+from dlfs.adapters.checkpoint import (
+    create_deepscratch_checkpoint_manager,
+    load_deepscratch_checkpoint,
+)
+from dlfs.ds1.implemented.adapters import (
+    activation_fn,
+    book_gradients,
+    build_ds1_model,
+    build_ds1_objective,
+    build_ds1_optimizer,
+    initializer_scale,
+    load_ds1_mnist,
+    training_parameters,
+)
 from repro_core.context import ExperimentContext
 from repro_core.context.checkpoint import (
     CheckpointManager,
     CheckpointRetentionPolicy,
-    load_epoch_checkpoint,
 )
 from repro_core.context.contracts import ExperimentResult
 from repro_core.context.event_executor import EvaluationRequest, EventExperimentExecutor
 from repro_core.context.metrics import build_final_metrics
-from repro_core.context.paths import RuntimePaths
 from repro_core.registry import register_executor
 
 from .final_gap import evaluate_checkpoint_gap, is_target_run
@@ -75,10 +82,7 @@ class SupervisedClassificationExecutor:
         context.metadata["seed_streams"] = asdict(streams)
         flatten = bool(dataset.get("flatten", True))
         gpu = backend.is_gpu
-        mnist_dir = RuntimePaths.from_environment().dataset("mnist")
-        (x_train, t_train), (x_test, t_test) = load_mnist(
-            flatten=flatten, gpu=gpu, data_dir=mnist_dir
-        )
+        (x_train, t_train), (x_test, t_test) = load_ds1_mnist(flatten=flatten, gpu=gpu)
         if (limit := dataset.get("train_limit")) is not None:
             x_train, t_train = x_train[: int(limit)], t_train[: int(limit)]
         if (limit := dataset.get("test_limit")) is not None:
@@ -113,16 +117,16 @@ class SupervisedClassificationExecutor:
             "validation": validation_metadata,
             "evaluation_sources": _mapping(config, "evaluation").get("sources", ()),
         }
-        model = _model(
+        model = build_ds1_model(
             model_config,
             dropout_rng=backend.random_stream("dropout"),
         )
-        objective = _objective(objective_config, model.backend)
+        objective = build_ds1_objective(objective_config, model.backend)
         if any(isinstance(layer, BatchNormalization) for layer in model.children()):
             model.forward(x_train[:1])
-        optimizer = _optimizer(
+        optimizer = build_ds1_optimizer(
             optimizer_config,
-            _training_parameters(model, objective),
+            training_parameters(model, objective),
         )
         checkpoint_config = _mapping(config, "checkpoint")
         checkpoint_identity = dict(config)
@@ -239,7 +243,7 @@ class SupervisedClassificationExecutor:
             batch_rng=backend.random_stream("batch_order"),
         )
         trainer_holder["trainer"] = trainer
-        checkpoint_manager = CheckpointManager(
+        checkpoint_manager = create_deepscratch_checkpoint_manager(
             root=Path(str(context.metadata["checkpoint_root"])),
             model=model,
             objective=objective,
@@ -250,7 +254,7 @@ class SupervisedClassificationExecutor:
         )
         checkpoint_manager_holder["manager"] = checkpoint_manager
         if resume := checkpoint_config.get("resume"):
-            load_epoch_checkpoint(
+            load_deepscratch_checkpoint(
                 path=str(resume),
                 model=model,
                 objective=objective,
@@ -443,10 +447,10 @@ class ActivationObservationExecutor:
         summary_rows = []
         for layer in range(1, int(model_config.get("depth", 5)) + 1):
             w = weight_rng.normal(
-                scale=_initializer_scale(initializer, x.shape[1]),
+                scale=initializer_scale(initializer, x.shape[1]),
                 size=(x.shape[1], int(model_config.get("width", 100))),
             )
-            x = _activation(x @ w, activation)
+            x = activation_fn(x @ w, activation)
             hist, edges = np.histogram(x, bins=50)
             for index, count in enumerate(hist):
                 hist_rows.append(
@@ -515,14 +519,13 @@ class GradientCheckObservationExecutor:
         backend, streams, actual_runtime = configure_runtime(config)
         context.metadata["runtime"] = actual_runtime
         context.metadata["seed_streams"] = asdict(streams)
-        mnist_dir = RuntimePaths.from_environment().dataset("mnist")
-        (x_train, t_train), _ = load_mnist(
-            flatten=True, one_hot_label=True, gpu=backend.is_gpu, data_dir=mnist_dir
+        (x_train, t_train), _ = load_ds1_mnist(
+            flatten=True, one_hot_label=True, gpu=backend.is_gpu
         )
         sample_count = int(_mapping(config, "dataset").get("sample_count", 3))
         x_batch, t_batch = x_train[:sample_count], t_train[:sample_count]
-        model = _model(_mapping(config, "model"))
-        objective = _objective(_mapping(config, "objective"), model.backend)
+        model = build_ds1_model(_mapping(config, "model"))
+        objective = build_ds1_objective(_mapping(config, "objective"), model.backend)
         progress = context.metadata.get("progress_reporter")
         if progress is not None:
             progress.set_total_updates(2)
@@ -532,7 +535,7 @@ class GradientCheckObservationExecutor:
         model.numerical_gradient(x_batch, t_batch, objective)
         backend.synchronize()
         numerical_s = perf_counter() - started
-        numerical = _book_gradients(model)
+        numerical = book_gradients(model)
         if progress is not None:
             progress.advance_to(1)
 
@@ -543,7 +546,7 @@ class GradientCheckObservationExecutor:
         model.backward(objective.backward())
         backend.synchronize()
         backprop_s = perf_counter() - started
-        backprop = _book_gradients(model)
+        backprop = book_gradients(model)
         if progress is not None:
             progress.advance_to(2)
 
@@ -624,117 +627,6 @@ def _device_timer(config: dict[str, object], backend):
     )
 
 
-def _model(config: dict[str, object], *, dropout_rng=None):
-    name = str(config.get("name", "MLP"))
-    values = {
-        key: value
-        for key, value in config.items()
-        if key
-        not in {
-            "name",
-            "family",
-            "task_type",
-            "input_shape",
-            "output_shape",
-            "structure_signature",
-            "use_batchnorm",
-            "use_dropout",
-            "num_hidden_layers",
-            "num_conv_layers",
-            "normalization",
-            "model/flops",
-            "model/macs",
-        }
-    }
-    if name == "TwoLayerNet":
-        values.pop("gradient_method", None)
-        values.pop("numerical_step", None)
-        return TwoLayerNet(
-            **values, numerical_step=float(config.get("numerical_step", 1e-4))
-        )
-    if name == "MLP":
-        if "activation" in values:
-            values["activation_name"] = values.pop("activation")
-        if "use_batchnorm" in config:
-            values["batchnorm"] = bool(config["use_batchnorm"])
-    else:
-        values.pop("activation", None)
-    if name == "MLP":
-        return MLP(**values, dropout_rng=dropout_rng)
-    if name == "SimpleCNN":
-        return SimpleCNN(**values)
-    if name == "DeepCNN":
-        return DeepCNN(**values, dropout_rng=dropout_rng)
-    raise ValueError(f"unknown model name: {name}")
-
-
-def _book_gradients(model) -> dict[str, np.ndarray]:
-    named = dict(model.named_parameters())
-    return {
-        book_name: parameter.backend.to_numpy(parameter.grad).copy()
-        for book_name, parameter_name in (
-            ("W1", "layers.0.W"),
-            ("b1", "layers.0.b"),
-            ("W2", "layers.2.W"),
-            ("b2", "layers.2.b"),
-        )
-        for parameter in (named[parameter_name],)
-    }
-
-
-def _objective(config: dict[str, object], backend):
-    name = str(config.get("name", "SoftmaxCrossEntropy"))
-    if name == "SoftmaxCrossEntropy":
-        return SoftmaxCrossEntropy(
-            reduction=str(config.get("reduction", "mean")),
-            backend=backend,
-        )
-    raise ValueError(f"unknown objective name: {name}")
-
-
-def _training_parameters(model, objective):
-    return [
-        *((f"model.{name}", parameter) for name, parameter in model.named_parameters()),
-        *(
-            (f"objective.{name}", parameter)
-            for name, parameter in objective.named_parameters()
-        ),
-    ]
-
-
-def _optimizer(config: dict[str, object], params):
-    name = str(config.get("name", "sgd"))
-    learning_rate = float(config.get("learning_rate", 0.01))
-    weight_decay = float(config.get("weight_decay", 0.0))
-    hooks = [L2Regularization(weight_decay)] if weight_decay else None
-    if name == "sgd":
-        return SGD(params, lr=learning_rate, pre_step_hooks=hooks)
-    if name == "momentum":
-        return Momentum(
-            params,
-            lr=learning_rate,
-            momentum=float(config.get("momentum", 0.9)),
-            pre_step_hooks=hooks,
-        )
-    if name == "adagrad":
-        return AdaGrad(
-            params,
-            lr=learning_rate,
-            eps=float(config.get("eps", 1e-7)),
-            pre_step_hooks=hooks,
-        )
-    if name == "adam":
-        return Adam(
-            params,
-            lr=learning_rate,
-            beta1=float(config.get("beta1", 0.9)),
-            beta2=float(config.get("beta2", 0.999)),
-            eps=float(config.get("eps", 1e-7)),
-            pre_step_hooks=hooks,
-        )
-    raise ValueError(f"unknown optimizer: {name}")
-
-
 def _mapping(config: dict[str, object], key: str) -> dict[str, object]:
     value = config.get(key, {})
     if not isinstance(value, dict):
@@ -809,26 +701,6 @@ def _write_rows(path: Path, rows: list[dict[str, object]], columns: list[str]) -
         writer = csv.DictWriter(file, fieldnames=columns)
         writer.writeheader()
         writer.writerows(rows)
-
-
-def _initializer_scale(initializer: str, fan_in: int) -> float:
-    if initializer == "he":
-        return float(np.sqrt(2.0 / fan_in))
-    if initializer == "xavier":
-        return float(np.sqrt(1.0 / fan_in))
-    if initializer.startswith("std:"):
-        return float(initializer.split(":", 1)[1])
-    return 1.0
-
-
-def _activation(value: np.ndarray, name: str) -> np.ndarray:
-    if name == "relu":
-        return np.maximum(0.0, value)
-    if name == "sigmoid":
-        return 1.0 / (1.0 + np.exp(-value))
-    if name == "tanh":
-        return np.tanh(value)
-    raise ValueError(f"unknown activation: {name}")
 
 
 def _apply_input_transform(

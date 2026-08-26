@@ -54,8 +54,11 @@ def test_ds1_supervised_config_runs_one_update(
     test_x = Tensor(np.zeros((2, 784), dtype=np.float64), backend="cpu")
     test_t = Tensor(np.array([0, 1]), backend="cpu")
     monkeypatch.setattr(
-        "dlfs.ds1.implemented.executor.load_mnist",
-        lambda *, flatten, gpu, **kwargs: ((train_x, train_t), (test_x, test_t)),
+        "dlfs.ds1.implemented.executor.load_ds1_mnist",
+        lambda *, flatten=True, gpu=False, **kwargs: (
+            (train_x, train_t),
+            (test_x, test_t),
+        ),
     )
     spec = parse_run_spec(
         "studies/dlfs/src/dlfs/ds1/config/implemented/e01_mnist_optimizer.yaml",
@@ -97,8 +100,11 @@ def test_extended_mlp_with_batchnorm_dropout_and_weight_decay_runs_one_update(
     test_x = Tensor(np.zeros((2, 784), dtype=np.float64), backend="cpu")
     test_t = Tensor(np.array([0, 1]), backend="cpu")
     monkeypatch.setattr(
-        "dlfs.ds1.implemented.executor.load_mnist",
-        lambda *, flatten, gpu, **kwargs: ((train_x, train_t), (test_x, test_t)),
+        "dlfs.ds1.implemented.executor.load_ds1_mnist",
+        lambda *, flatten=True, gpu=False, **kwargs: (
+            (train_x, train_t),
+            (test_x, test_t),
+        ),
     )
     spec = parse_run_spec(
         "studies/dlfs/src/dlfs/ds1/config/implemented/e12_mnist_extended_mlp.yaml",
@@ -193,7 +199,7 @@ def test_ds1_gradient_check_observation_runs(
     test_x = Tensor(np.zeros((1, 4), dtype=np.float64), backend="cpu")
     test_t = Tensor(np.eye(2, dtype=np.float64)[[0]], backend="cpu")
     monkeypatch.setattr(
-        "dlfs.ds1.implemented.executor.load_mnist",
+        "dlfs.ds1.implemented.executor.load_ds1_mnist",
         lambda **_kwargs: ((train_x, train_t), (test_x, test_t)),
     )
     spec = parse_run_spec(

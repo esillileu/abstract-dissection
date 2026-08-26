@@ -20,7 +20,7 @@ def test_supervised_executor_consumes_forward_events_for_updates_evaluation_and_
     test_x = Tensor([[1.0, 0.0], [0.0, 1.0]], backend="cpu")
     test_t = Tensor([0, 1], backend="cpu")
     monkeypatch.setattr(
-        "dlfs.ds1.implemented.executor.load_mnist",
+        "dlfs.ds1.implemented.executor.load_ds1_mnist",
         lambda *, flatten, gpu, **kwargs: ((train_x, train_t), (test_x, test_t)),
     )
 

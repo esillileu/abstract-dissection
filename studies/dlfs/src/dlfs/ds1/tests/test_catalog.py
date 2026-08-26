@@ -4,12 +4,14 @@ from pathlib import Path
 
 import yaml
 
+from dlfs.ds1.implemented.adapters import (
+    build_ds1_model,
+    build_ds1_objective,
+    build_ds1_optimizer,
+    training_parameters,
+)
 from dlfs.ds1.implemented.executor import (
     SupervisedClassificationExecutor,
-    _model,
-    _objective,
-    _optimizer,
-    _training_parameters,
     get_observation_executor,
 )
 from dlfs.ds1.implemented.spec import parse_run_spec
@@ -29,11 +31,11 @@ def test_all_ds1_variants_resolve_and_build_the_declared_components() -> None:
                 path, atomic_run_id=atomic_run_id
             ).to_executor_config()
             if config["kind"] == "supervised_classification":
-                model = _model(config["model"])
-                objective = _objective(config["objective"], model.backend)
-                _optimizer(
+                model = build_ds1_model(config["model"])
+                objective = build_ds1_objective(config["objective"], model.backend)
+                build_ds1_optimizer(
                     config["optimizer"],
-                    _training_parameters(model, objective),
+                    training_parameters(model, objective),
                 )
                 executor = SupervisedClassificationExecutor()
             else:

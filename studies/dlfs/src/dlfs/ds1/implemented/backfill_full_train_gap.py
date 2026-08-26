@@ -17,11 +17,11 @@ from deepscratch.datasets import load_mnist
 from deepscratch.nn.layers import BatchNormalization
 from deepscratch.trainer import ForwardTrainer
 
-from dlfs.ds1.implemented.executor import (
-    _model,
-    _objective,
-    _optimizer,
-    _training_parameters,
+from dlfs.ds1.implemented.adapters import (
+    build_ds1_model,
+    build_ds1_objective,
+    build_ds1_optimizer,
+    training_parameters,
 )
 from dlfs.ds1.implemented.final_gap import (
     TARGET_RUNS,
@@ -128,16 +128,16 @@ def evaluate_run(client, run, *, device: str) -> dict[str, float]:
         x_train, t_train = x_train[: int(limit)], t_train[: int(limit)]
     if (limit := dataset.get("test_limit")) is not None:
         x_test, t_test = x_test[: int(limit)], t_test[: int(limit)]
-    model = _model(
+    model = build_ds1_model(
         _mapping(config, "model"),
         dropout_rng=backend.random_stream("dropout"),
     )
     if any(isinstance(layer, BatchNormalization) for layer in model.children()):
         model.forward(x_train[:1])
-    objective = _objective(_mapping(config, "objective"), model.backend)
-    optimizer = _optimizer(
+    objective = build_ds1_objective(_mapping(config, "objective"), model.backend)
+    optimizer = build_ds1_optimizer(
         _mapping(config, "optimizer"),
-        _training_parameters(model, objective),
+        training_parameters(model, objective),
     )
     loader = _mapping(config, "loader")
     trainer = ForwardTrainer(

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from repro_core.context.checkpoint import load_model_checkpoint
+from dlfs.adapters.checkpoint import load_deepscratch_model_parameters
 
 from ..result_schema import TRAIN_FULL_ACCURACY, TRAIN_TEST_ACCURACY_GAP
 
@@ -33,7 +33,7 @@ def evaluate_checkpoint_gap(
     t_test,
 ) -> tuple[object, object, dict[str, float]]:
     """Reload a final checkpoint and evaluate full train and test datasets."""
-    load_model_checkpoint(checkpoint, model)
+    load_deepscratch_model_parameters(checkpoint, model)
     train = trainer.evaluate(x_train, t_train)
     test = trainer.evaluate(x_test, t_test)
     if train.accuracy is None or test.accuracy is None:

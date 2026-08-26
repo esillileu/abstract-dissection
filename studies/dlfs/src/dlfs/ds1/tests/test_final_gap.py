@@ -44,7 +44,7 @@ def test_checkpoint_gap_loads_checkpoint_and_subtracts_full_test(
     loaded = []
     monkeypatch.setattr(
         final_gap,
-        "load_model_checkpoint",
+        "load_deepscratch_model_parameters",
         lambda path, model: loaded.append((path, model)),
     )
     model = object()
