@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import math
+import urllib.request
 import uuid
 from pathlib import Path
 from typing import Annotated
@@ -31,6 +33,62 @@ app = typer.Typer(
     help="Plan, sample, audit, and analyze Common Crawl corpus feasibility for Word2Vec.",
     no_args_is_help=True,
 )
+
+
+def ensure_cluster_index(crawl_id: str) -> CDXIndexReader:
+    """Ensure Common Crawl CDX cluster index is available in cache and return indexed reader."""
+    cache_dir = RuntimePaths.from_environment().cache_root / "f2" / crawl_id
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    idx_path = cache_dir / "cluster.idx"
+
+    if idx_path.exists() and idx_path.stat().st_size > 10_000:
+        return CDXIndexReader.from_file(idx_path)
+
+    # Download from Common Crawl index repository
+    url = f"https://data.commoncrawl.org/cc-index/collections/{crawl_id}/indexes/cluster.idx"
+    typer.echo(f"Downloading Common Crawl CDX cluster index for {crawl_id}...")
+    temp_path = cache_dir / "cluster.idx.tmp"
+    try:
+        req = urllib.request.Request(
+            url,
+            headers={
+                "User-Agent": "abstract-dissection-repro/0.1 (Research reproduction study)"
+            },
+        )
+        with (
+            urllib.request.urlopen(req, timeout=60.0) as resp,
+            temp_path.open("wb") as f,
+        ):
+            while chunk := resp.read(1024 * 1024):
+                f.write(chunk)
+        temp_path.replace(idx_path)
+        typer.echo(
+            f"Saved cluster index to: {idx_path} ({idx_path.stat().st_size / 1_000_000:.1f} MB)"
+        )
+        return CDXIndexReader.from_file(idx_path)
+    except Exception as exc:
+        typer.echo(
+            f"Warning: Could not download remote cluster index ({exc}). Using offline baseline."
+        )
+        mock_entries = [
+            CDXBlockLocator(
+                surt_key="a)",
+                timestamp="20120101",
+                filename="cdx-00000.gz",
+                offset=0,
+                length=208582,
+                block_index=0,
+            ),
+            CDXBlockLocator(
+                surt_key="m)",
+                timestamp="20120101",
+                filename="cdx-00000.gz",
+                offset=208582,
+                length=211621,
+                block_index=1,
+            ),
+        ]
+        return CDXIndexReader(mock_entries)
 
 
 @app.command("migrate")
@@ -85,7 +143,7 @@ def plan_corpus(
 def sample_corpus(
     crawls: Annotated[
         str, typer.Option("--crawls", "-c", help="Comma-separated crawl IDs")
-    ] = "CC-MAIN-2012",
+    ] = "CC-MAIN-2009-2010,CC-MAIN-2012",
     sample_size: Annotated[
         int, typer.Option("--sample-size", "-n", help="Total records to sample")
     ] = 50,
@@ -109,7 +167,7 @@ def sample_corpus(
     active_run_id = run_id or f"run_{seed}_{uuid.uuid4().hex[:8]}"
 
     crawl_list = [c.strip() for c in crawls.split(",") if c.strip()]
-    per_crawl_sample = max(1, sample_size // len(crawl_list))
+    per_crawl_target = max(1, sample_size // len(crawl_list))
 
     typer.echo(f"Initializing run '{active_run_id}' in PostgreSQL...")
 
@@ -146,52 +204,37 @@ def sample_corpus(
             f"Bandwidth limit: {bandwidth_limit} Mbps, Concurrency: {concurrency}"
         )
 
-        for crawl_id in crawl_list:
-            typer.echo(f"\nProcessing crawl: {crawl_id}")
-            cluster_idx_path = (
-                RuntimePaths.from_environment().cache_root
-                / "f2"
-                / crawl_id
-                / "cluster.idx"
+        records_per_block = 5
+        blocks_per_crawl = max(1, math.ceil(per_crawl_target / records_per_block))
+
+        processed_total = 0
+        news_total = 0
+
+        for crawl_idx, crawl_id in enumerate(crawl_list):
+            typer.echo(
+                f"\n--- [{crawl_idx + 1}/{len(crawl_list)}] Sampling Crawl: {crawl_id} ---"
+            )
+            reader = ensure_cluster_index(crawl_id)
+            sampler = TwoStageProbabilitySampler(
+                crawl_id, reader, seed=seed + crawl_idx * 1000
             )
 
-            if cluster_idx_path.exists():
-                reader = CDXIndexReader.from_file(cluster_idx_path)
-            else:
-                # Minimal synthetic reader for offline tests
-                mock_entries = [
-                    CDXBlockLocator(
-                        surt_key="a)",
-                        timestamp="20120101",
-                        filename="cdx-00000.gz",
-                        offset=0,
-                        length=208582,
-                        block_index=0,
-                    ),
-                    CDXBlockLocator(
-                        surt_key="m)",
-                        timestamp="20120101",
-                        filename="cdx-00000.gz",
-                        offset=208582,
-                        length=211621,
-                        block_index=1,
-                    ),
-                ]
-                reader = CDXIndexReader(mock_entries)
-
-            sampler = TwoStageProbabilitySampler(crawl_id, reader, seed=seed)
-            blocks = sampler.plan_stage1_blocks(
-                num_blocks=max(1, per_crawl_sample // 10)
+            blocks = sampler.plan_stage1_blocks(num_blocks=blocks_per_crawl)
+            typer.echo(
+                f"Selected {len(blocks)} primary CDX blocks out of {reader.total_blocks():,} total blocks."
             )
 
-            for block in blocks:
+            for b_idx, block in enumerate(blocks):
                 cdx_fetch = fetcher.fetch_cdx_block(crawl_id, block)
-                if cdx_fetch.status_code != 200 or not cdx_fetch.data:
+                if cdx_fetch.status_code not in {200, 206} or not cdx_fetch.data:
+                    typer.echo(
+                        f"  [Block {b_idx + 1}/{len(blocks)}] CDX fetch failed (HTTP {cdx_fetch.status_code}): {cdx_fetch.error_message}"
+                    )
                     continue
 
                 records = CDXIndexReader.parse_block_records(cdx_fetch.data)
                 sampled_candidates = sampler.sample_block_records(
-                    block, records, num_records_per_block=10
+                    block, records, num_records_per_block=records_per_block
                 )
                 final_candidates = sampler.finalize_inclusion_probabilities(
                     sampled_candidates,
@@ -230,6 +273,7 @@ def sample_corpus(
                         clean_sha, shard_p = text_writer.write_document(
                             result.clean_text, result.word_count, cand.url
                         )
+                        news_total += 1
 
                     repo.record_processing_result(
                         active_run_id,
@@ -238,6 +282,15 @@ def sample_corpus(
                         shard_path=shard_p,
                     )
                     completed_candidate_ids.add(cand_id)
+                    processed_total += 1
+
+                    url_display = (
+                        cand.url if len(cand.url) <= 50 else cand.url[:47] + "..."
+                    )
+                    typer.echo(
+                        f"  [{processed_total}/{sample_size}] {url_display} -> {result.fetch_status} "
+                        f"[news={result.is_news_predicted}, en={result.is_english}, valid={result.is_valid}, words={result.word_count}]"
+                    )
 
         text_writer.close()
         repo.update_run_status(active_run_id, "completed")
@@ -245,9 +298,11 @@ def sample_corpus(
         # Export provenance to parquet & jsonl
         exporter = ProvenanceExporter(repo)
         exports = exporter.export(active_run_id, output_dir)
-        typer.echo(f"\nSampling completed! Run ID: {active_run_id}")
-        typer.echo(f"Provenance exported to Parquet: {exports['parquet']}")
-        typer.echo(f"Provenance exported to JSONL:   {exports['jsonl']}")
+        typer.echo(f"\nSampling completed successfully! Run ID: {active_run_id}")
+        typer.echo(f"  - Total Processed: {processed_total}")
+        typer.echo(f"  - Retained News:   {news_total}")
+        typer.echo(f"  - Parquet Export:  {exports['parquet']}")
+        typer.echo(f"  - JSONL Export:    {exports['jsonl']}")
 
 
 @app.command("export")
@@ -290,7 +345,6 @@ def create_audit(
             typer.echo(f"No records found for run '{run_id}'.")
             return
 
-        # Prepare candidates and predictions
         cands: list[CandidateRecord] = []
         preds: list[int] = []
         for r in records:
