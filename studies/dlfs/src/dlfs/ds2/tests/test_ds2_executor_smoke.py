@@ -118,7 +118,7 @@ def test_ds2_skipgram_runs_pair_expanded_contexts(
 ) -> None:
     corpus = np.array([0, 1, 2, 3] * 6, dtype=np.int64)
     monkeypatch.setattr(
-        "dlfs.ds2.implemented.executor.load_ptb",
+        "dlfs.ds2.implemented.executor.load_ds2_ptb",
         lambda: {
             "train": corpus,
             "valid": corpus[:8],
@@ -153,7 +153,7 @@ def test_ds2_language_model_config_runs_one_epoch(
 ) -> None:
     corpus = np.array([0, 1, 2, 3] * 4, dtype=np.int64)
     monkeypatch.setattr(
-        "dlfs.ds2.implemented.executor.load_ptb",
+        "dlfs.ds2.implemented.executor.load_ds2_ptb",
         lambda: {
             "train": corpus,
             "valid": corpus[:8],
@@ -201,7 +201,7 @@ def test_ds2_seq2seq_config_runs_one_epoch(
     tmp_path: Path,
 ) -> None:
     monkeypatch.setattr(
-        "dlfs.ds2.implemented.executor.load_sequence",
+        "dlfs.ds2.implemented.executor.load_ds2_sequence",
         lambda *_args, **_kwargs: _sequence_data(),
     )
     spec = parse_run_spec(
@@ -237,7 +237,7 @@ def test_ds2_attention_observation_loads_checkpoint_and_runs(
     tmp_path: Path,
 ) -> None:
     monkeypatch.setattr(
-        "dlfs.ds2.implemented.executor.load_sequence",
+        "dlfs.ds2.implemented.executor.load_ds2_sequence",
         lambda *_args, **_kwargs: _sequence_data(),
     )
     checkpoint = tmp_path / "source-checkpoint"

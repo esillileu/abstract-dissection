@@ -10,39 +10,7 @@ from time import perf_counter
 
 import numpy as np
 from deepscratch.core import Tensor, configure_runtime, seed_batch_order
-from deepscratch.datasets import load_ptb, load_sequence
-from deepscratch.nn.model.architecture import (
-    CBOW,
-    AttentionPeekySeq2seq,
-    AttentionSeq2seq,
-    BetterRnnlm,
-    CBOWBatchAdapter,
-    DumbCBOW,
-    DumbSkipGram,
-    FusedNegativeSamplingCBOW,
-    FusedNegativeSamplingSkipGram,
-    OneHotCBOW,
-    OneHotCBOWBatchAdapter,
-    OneHotSkipGram,
-    OneHotSkipGramBatchAdapter,
-    PairExpandedSkipGramBatchAdapter,
-    PeekySeq2seq,
-    Rnnlm,
-    Seq2seq,
-    SkipGram,
-    SkipGramBatchAdapter,
-    TiedRnnlm,
-    VanillaRnnlm,
-)
-from deepscratch.nn.objective import (
-    FusedNegativeSampling,
-    NegativeSampling,
-    SoftmaxWithLoss,
-    TemporalSoftmaxCrossEntropy,
-)
-from deepscratch.nn.sampling import UnigramSampler
-from deepscratch.optim.SGD import SGD, Adam, SparseAdam
-from deepscratch.optim.transform import ClipGradNorm
+from deepscratch.nn.model.architecture import AttentionSeq2seq
 from deepscratch.profiling import create_runtime_monitor, training_summary
 from deepscratch.profiling.backend import create_device_timer
 from deepscratch.trainer import (
@@ -52,6 +20,25 @@ from deepscratch.trainer import (
     Word2VecTrainer,
 )
 
+from dlfs.adapters.checkpoint import (
+    create_deepscratch_checkpoint_manager,
+    load_deepscratch_model_parameters,
+)
+from dlfs.ds2.implemented.adapters import (
+    build_language_model,
+    build_seq2seq_model,
+    build_sequence_objective,
+    build_sequence_optimizer,
+    build_unigram_sampler,
+    build_word2vec_batch_adapter,
+    build_word2vec_model,
+    build_word2vec_objective,
+    contexts_targets,
+    language_model_training_corpus,
+    load_ds2_ptb,
+    load_ds2_sequence,
+    load_ds2_word2vec_corpus,
+)
 from dlfs.ds2.statistical import (
     create_cooccurrence_matrix,
     factorize_ppmi,
@@ -65,7 +52,6 @@ from repro_core.context.checkpoint import (
 )
 from repro_core.context.contracts import ExperimentResult
 from repro_core.context.event_executor import EvaluationRequest, EventExperimentExecutor
-from repro_core.context.paths import RuntimePaths
 from repro_core.registry import register_executor
 
 from .records import DS2Records
@@ -136,7 +122,7 @@ class CountBasedEmbeddingExecutor:
         context.metadata.update({"runtime": runtime, "seed_streams": asdict(streams)})
         dataset = _mapping(config, "dataset")
         model = _mapping(config, "model")
-        corpus, word_to_id = _word2vec_corpus(dataset)
+        corpus, word_to_id = load_ds2_word2vec_corpus(dataset)
         window_size = int(dataset.get("window_size", 2))
         components = min(int(model.get("embedding_size", 100)), len(word_to_id))
         method = str(model.get("name", "ppmi")).lower()
@@ -213,48 +199,6 @@ class CountBasedEmbeddingExecutor:
                 )
             ),
         )
-
-
-def _optimizer(config: dict[str, object], model, objective):
-    values = _mapping(config, "optimizer")
-    name = str(values.get("name", "adam"))
-    params = [
-        *((f"model.{name}", parameter) for name, parameter in model.named_parameters()),
-        *(
-            (f"objective.{name}", parameter)
-            for name, parameter in objective.named_parameters()
-        ),
-    ]
-    default_max_grad = {
-        "language_modeling": 0.25,
-        "seq2seq": 5.0,
-    }.get(str(config.get("kind")))
-    max_grad = _optional_max_grad(config, default=default_max_grad)
-    hooks = None if max_grad is None else [ClipGradNorm(max_grad)]
-    if name == "adam":
-        return Adam(
-            params,
-            lr=float(values.get("learning_rate", 0.001)),
-            pre_step_hooks=hooks,
-        )
-    if name == "sparse_adam":
-        if not hasattr(model, "sparse_parameter_rows"):
-            raise ValueError("sparse_adam requires a sparse-row model")
-        return SparseAdam(
-            params,
-            row_indices={
-                "model.W_in": lambda: model.sparse_parameter_rows()["W_in"],
-                "model.W_out": lambda: model.sparse_parameter_rows()["W_out"],
-            },
-            lr=float(values.get("learning_rate", 0.001)),
-        )
-    if name == "sgd":
-        return SGD(
-            params,
-            lr=float(values.get("learning_rate", 1.0)),
-            pre_step_hooks=hooks,
-        )
-    raise ValueError(f"unsupported sequence optimizer: {name}")
 
 
 @register_executor("performance_profile")
@@ -427,9 +371,9 @@ class Word2VecExecutor:
             _mapping(config, key)
             for key in ("dataset", "model", "objective", "training")
         )
-        corpus, word_to_id = _word2vec_corpus(_mapping(config, "dataset"))
+        corpus, word_to_id = load_ds2_word2vec_corpus(_mapping(config, "dataset"))
         window = int(dataset.get("window_size", 5))
-        contexts, targets = _contexts_targets(corpus, window)
+        contexts, targets = contexts_targets(corpus, window)
         context.metadata["data"] = {
             "dataset_checksum": _array_digest(corpus),
             "split_checksum": _array_digest(contexts, targets),
@@ -438,15 +382,11 @@ class Word2VecExecutor:
         sampler = None
         if objective_name in {"NegativeSampling", "FusedNegativeSampling"}:
             sampler_values = _mapping(objective_config, "sampler")
-            sampler = UnigramSampler.from_corpus(
+            sampler = build_unigram_sampler(
+                sampler_values,
                 corpus,
                 vocab_size=len(word_to_id),
                 backend=backend,
-                power=float(sampler_values.get("power", 0.75)),
-                rejection_rounds=int(sampler_values.get("rejection_rounds", 4)),
-                algorithm=str(
-                    sampler_values.get("algorithm", UnigramSampler.ALIAS_REJECTION)
-                ),
                 rng=backend.random_stream("negative_sampling"),
             )
             context.metadata["negative_sampler"] = sampler.metadata
@@ -454,67 +394,29 @@ class Word2VecExecutor:
         input_representation = str(
             model_config.get("input_representation", "embedding")
         )
-        model_type = {
-            ("CBOW", "embedding"): CBOW,
-            ("DumbCBOW", "embedding"): DumbCBOW,
-            ("DumbSkipGram", "embedding"): DumbSkipGram,
-            ("FusedNegativeSamplingCBOW", "embedding"): FusedNegativeSamplingCBOW,
-            (
-                "FusedNegativeSamplingSkipGram",
-                "embedding",
-            ): FusedNegativeSamplingSkipGram,
-            ("SkipGram", "embedding"): SkipGram,
-            ("CBOW", "one_hot"): OneHotCBOW,
-            ("SkipGram", "one_hot"): OneHotSkipGram,
-        }.get((architecture, input_representation))
-        if model_type is None:
-            raise ValueError(
-                "unknown Word2Vec architecture/input representation: "
-                f"{architecture}/{input_representation}"
-            )
-        if input_representation == "one_hot" and objective_name != "SoftmaxWithLoss":
-            raise ValueError(
-                "one-hot Word2Vec input is only supported with SoftmaxWithLoss"
-            )
-        adapter = {
-            ("CBOW", "embedding"): CBOWBatchAdapter(),
-            ("DumbCBOW", "embedding"): CBOWBatchAdapter(),
-            ("DumbSkipGram", "embedding"): SkipGramBatchAdapter(),
-            ("FusedNegativeSamplingCBOW", "embedding"): CBOWBatchAdapter(),
-            ("FusedNegativeSamplingSkipGram", "embedding"): SkipGramBatchAdapter(),
-            ("SkipGram", "embedding"): SkipGramBatchAdapter(),
-            ("CBOW", "one_hot"): OneHotCBOWBatchAdapter(len(word_to_id)),
-            ("SkipGram", "one_hot"): OneHotSkipGramBatchAdapter(len(word_to_id)),
-        }[(architecture, input_representation)]
-        pair_expanded_skipgram = (
-            architecture == "DumbSkipGram" and objective_name == "SoftmaxWithLoss"
-        )
-        if pair_expanded_skipgram:
-            adapter = PairExpandedSkipGramBatchAdapter()
         embedding_size = int(model_config.get("embedding_size", 100))
-        model = model_type(len(word_to_id), embedding_size, backend=backend)
-        if objective_name == "SoftmaxWithLoss":
-            objective = SoftmaxWithLoss(
-                reduction=str(objective_config.get("reduction", "mean")),
-                grouped_targets=architecture == "SkipGram",
-                backend=backend,
-            )
-        elif objective_name in {"NegativeSampling", "FusedNegativeSampling"}:
-            objective_type = (
-                FusedNegativeSampling
-                if objective_name == "FusedNegativeSampling"
-                else NegativeSampling
-            )
-            objective = objective_type(
-                len(word_to_id),
-                negative_samples=int(objective_config.get("negative_samples", 5)),
-                reduction=str(objective_config.get("reduction", "mean")),
-                sampler=sampler,
-                backend=backend,
-            )
-        else:
-            raise ValueError(f"unknown Word2Vec objective name: {objective_name}")
-        optimizer = _optimizer(config, model, objective)
+        model = build_word2vec_model(
+            architecture,
+            input_representation,
+            len(word_to_id),
+            embedding_size,
+            backend=backend,
+        )
+        adapter = build_word2vec_batch_adapter(
+            architecture,
+            input_representation,
+            len(word_to_id),
+            objective_name,
+        )
+        objective = build_word2vec_objective(
+            objective_name,
+            objective_config,
+            len(word_to_id),
+            sampler,
+            backend=backend,
+            is_skipgram=architecture == "SkipGram",
+        )
+        optimizer = build_sequence_optimizer(config, model, objective)
         seed_batch_order(backend, streams)
         loader = _mapping(config, "loader")
         batch_size, epochs = (
@@ -545,13 +447,16 @@ class Word2VecExecutor:
             event_receivers=[],
             batch_rng=backend.random_stream("batch_order"),
         )
-        checkpoint_manager = _checkpoint_manager(
-            config,
-            context,
+        checkpoint_manager = create_deepscratch_checkpoint_manager(
+            Path(str(context.metadata["checkpoint_root"])),
             model=model,
             objective=objective,
             optimizer=optimizer,
             trainer=trainer,
+            config_digest=_config_digest(config),
+            policy=CheckpointRetentionPolicy.from_mapping(
+                _mapping(config, "checkpoint")
+            ),
         )
         controller = EventExperimentExecutor(
             records=records_sink,
@@ -615,7 +520,7 @@ class LanguageModelExecutor:
     ) -> ExperimentResult:
         backend, streams, runtime = configure_runtime(config)
         context.metadata.update({"runtime": runtime, "seed_streams": asdict(streams)})
-        ptb = load_ptb()
+        ptb = load_ds2_ptb()
         model_config, loader, training = (
             _mapping(config, key) for key in ("model", "loader", "training")
         )
@@ -623,21 +528,16 @@ class LanguageModelExecutor:
             _mapping(config, "dataset"),
             _mapping(config, "evaluation"),
         )
-        train_corpus, vocab_size = _language_model_training_corpus(
-            ptb["train"], dataset
-        )
-        model = _language_model(
+        train_corpus, vocab_size = language_model_training_corpus(ptb["train"], dataset)
+        model = build_language_model(
             str(model_config.get("name")),
             vocab_size,
             model_config,
             backend,
             dropout_rng=backend.random_stream("dropout"),
         )
-        objective = TemporalSoftmaxCrossEntropy(
-            reduction=str(_mapping(config, "objective").get("reduction", "mean")),
-            backend=backend,
-        )
-        optimizer = _optimizer(config, model, objective)
+        objective = build_sequence_objective(_mapping(config, "objective"), backend)
+        optimizer = build_sequence_optimizer(config, model, objective)
         seed_batch_order(backend, streams)
         train = Tensor(
             backend.xp.asarray(train_corpus[:-1], dtype=backend.xp.int64),
@@ -707,13 +607,16 @@ class LanguageModelExecutor:
                 _mapping(config, "evaluation").get("drop_remainder", True)
             ),
         )
-        checkpoint_manager = _checkpoint_manager(
-            config,
-            context,
+        checkpoint_manager = create_deepscratch_checkpoint_manager(
+            Path(str(context.metadata["checkpoint_root"])),
             model=model,
             objective=objective,
             optimizer=optimizer,
             trainer=trainer,
+            config_digest=_config_digest(config),
+            policy=CheckpointRetentionPolicy.from_mapping(
+                _mapping(config, "checkpoint")
+            ),
         )
 
         def evaluate_request(request):
@@ -827,7 +730,7 @@ class Seq2SeqExecutor:
         )
         split_seed = int(dataset.get("split_seed", streams.dataset_split))
         split_algorithm = str(dataset.get("split_algorithm", "default_rng"))
-        data = load_sequence(
+        data = load_ds2_sequence(
             str(dataset["file"]),
             seed=split_seed,
             split_algorithm=split_algorithm,
@@ -844,17 +747,14 @@ class Seq2SeqExecutor:
             ),
             "split_checksum": _array_digest(x_train, t_train, x_test, t_test),
         }
-        model = _seq_model(
+        model = build_seq2seq_model(
             str(model_config.get("name")),
             len(data["char_to_id"]),
             model_config,
             backend,
         )
-        objective = TemporalSoftmaxCrossEntropy(
-            reduction=str(_mapping(config, "objective").get("reduction", "mean")),
-            backend=backend,
-        )
-        optimizer = _optimizer(config, model, objective)
+        objective = build_sequence_objective(_mapping(config, "objective"), backend)
+        optimizer = build_sequence_optimizer(config, model, objective)
         seed_batch_order(backend, streams)
         batch_size, epochs = (
             int(loader.get("batch_size", 128)),
@@ -900,13 +800,14 @@ class Seq2SeqExecutor:
         records.bind_artifact_root(artifact_root)
         monitor = create_runtime_monitor(backend, _mapping(config, "profiling"))
         checkpoint_config = _mapping(config, "checkpoint")
-        checkpoint_manager = _checkpoint_manager(
-            config,
-            context,
+        checkpoint_manager = create_deepscratch_checkpoint_manager(
+            Path(str(context.metadata["checkpoint_root"])),
             model=model,
             objective=objective,
             optimizer=optimizer,
             trainer=trainer,
+            config_digest=_config_digest(config),
+            policy=CheckpointRetentionPolicy.from_mapping(checkpoint_config),
         )
         best_exact = -1.0
 
@@ -1024,7 +925,7 @@ class AttentionAlignmentObservationExecutor:
         if checkpoint_path is None:
             raise ValueError("DS2 GO01 requires checkpoint.source_path")
         checkpoint_path = resolve_checkpoint_path(Path(str(checkpoint_path)))
-        data = load_sequence(
+        data = load_ds2_sequence(
             str(dataset["file"]),
             seed=int(dataset.get("split_seed", 1984)),
             split_algorithm=str(
@@ -1044,7 +945,7 @@ class AttentionAlignmentObservationExecutor:
             ),
             "observation_split_checksum": _array_digest(x_test, t_test),
         }
-        model = _seq_model(
+        model = build_seq2seq_model(
             str(model_config.get("name", "AttentionSeq2seq")),
             len(data["char_to_id"]),
             model_config,
@@ -1052,7 +953,7 @@ class AttentionAlignmentObservationExecutor:
         )
         if not isinstance(model, AttentionSeq2seq):
             raise ValueError("DS2 GO01 requires AttentionSeq2seq model")
-        _load_model_checkpoint(model, Path(str(checkpoint_path)))
+        load_deepscratch_model_parameters(Path(str(checkpoint_path)), model)
         artifact_root = _artifact_root(config, context)
         records = DS2Records()
         records.bind_artifact_root(artifact_root)
@@ -1178,21 +1079,6 @@ def _device_timer(config: dict[str, object], backend):
     )
 
 
-def _checkpoint_manager(
-    config, context, *, model, objective, optimizer, trainer
-) -> CheckpointManager:
-    checkpoint = _mapping(config, "checkpoint")
-    return CheckpointManager(
-        root=Path(str(context.metadata["checkpoint_root"])),
-        model=model,
-        objective=objective,
-        optimizer=optimizer,
-        trainer=trainer,
-        config_digest=_config_digest(config),
-        policy=CheckpointRetentionPolicy.from_mapping(checkpoint),
-    )
-
-
 def _save_epoch_roles(manager: CheckpointManager) -> None:
     if manager.policy.save_latest:
         manager.save_latest()
@@ -1247,40 +1133,6 @@ def _record_retained_checkpoints(
             sha256=periodic.sha256,
             checkpoint_id=f"periodic-epoch-{periodic.epoch:04d}",
         )
-
-
-def _contexts_targets(corpus, window: int):
-    width = 2 * window + 1
-    windows = np.lib.stride_tricks.sliding_window_view(corpus, width)
-    contexts = np.concatenate((windows[:, :window], windows[:, window + 1 :]), axis=1)
-    return contexts, corpus[window:-window]
-
-
-def _language_model_training_corpus(corpus, dataset: dict[str, object]):
-    """Resolve the training slice and its source-compatible vocabulary size."""
-    train_limit = int(dataset.get("train_limit", len(corpus)))
-    train_corpus = corpus[:train_limit]
-    if len(train_corpus) < 2:
-        raise ValueError("language-model corpus must contain at least two tokens")
-    return train_corpus, int(np.max(train_corpus)) + 1
-
-
-def _word2vec_corpus(dataset: dict[str, object]):
-    """Load PTB or the book's fixed toy sentence for Word2Vec experiments."""
-    if str(dataset.get("id")) != "DS-TOY-W2V":
-        ptb = load_ptb()
-        return ptb["train"], ptb["word_to_id"]
-    text = str(dataset.get("text", "You say goodbye and I say hello."))
-    words = text.lower().replace(".", " .").split()
-    word_to_id = {word: index for index, word in enumerate(dict.fromkeys(words))}
-    return np.asarray([word_to_id[word] for word in words], dtype=np.int64), word_to_id
-
-
-def _optional_max_grad(
-    config: dict[str, object], *, default: float | None = None
-) -> float | None:
-    value = _mapping(config, "policy").get("max_grad", default)
-    return None if value is None else float(value)
 
 
 def _record_seq_predictions(
@@ -1391,8 +1243,6 @@ def _teacher_forced_attention_with_weights(
             backend.xp.asarray(target[:-1][None, :], dtype=backend.xp.int64),
             backend=backend,
         )
-        # Attention weights are an observation buffer and are only retained
-        # when the decoder forward uses its normal cached path.
         scores = model.forward(question, decoder_x, cache=True)
         weights = backend.to_numpy(model.decoder.attention.weights[0])
         predicted = backend.to_numpy(scores.data[0].argmax(axis=1))
@@ -1424,6 +1274,8 @@ def _attention_example_ids(*, size: int, count: int, seed: int) -> list[int]:
 
 
 def _sequence_dataset_path(file_name: str) -> Path:
+    from repro_core.context.paths import RuntimePaths
+
     return RuntimePaths.from_environment().dataset("sequence") / file_name
 
 
@@ -1435,16 +1287,6 @@ def _array_digest(*arrays) -> str:
         digest.update(str(value.shape).encode())
         digest.update(value.tobytes(order="C"))
     return digest.hexdigest()
-
-
-def _load_model_checkpoint(model, path: Path) -> None:
-    path = resolve_checkpoint_path(path)
-    if not path.is_dir():
-        raise FileNotFoundError(path)
-    manifest = json.loads((path / "manifest.json").read_text(encoding="utf-8"))
-    if manifest.get("schema_version") != 2:
-        raise ValueError("only checkpoint schema version 2 is supported")
-    model.load_params_npz(path / "model_parameters.npz")
 
 
 def _path_digest(path: Path) -> str:
@@ -1463,100 +1305,3 @@ def _file_digest(path: Path) -> str:
         for chunk in iter(lambda: file.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
-
-
-def _language_model(
-    name: str, vocab_size: int, values: dict[str, object], backend, *, dropout_rng=None
-):
-    kwargs = {
-        "vocab_size": vocab_size,
-        "wordvec_size": int(values.get("wordvec_size", 100)),
-        "hidden_size": int(values.get("hidden_size", 100)),
-        "backend": backend,
-    }
-    if name == "VanillaRnnlm":
-        return VanillaRnnlm(**kwargs)
-    if name == "Rnnlm":
-        return Rnnlm(**kwargs)
-    if name == "TiedRnnlm":
-        return TiedRnnlm(**kwargs)
-    if name == "BetterRnnlm":
-        return BetterRnnlm(
-            **kwargs,
-            dropout_ratio=float(values.get("dropout_ratio", 0.5)),
-            dropout_rng=dropout_rng,
-        )
-    raise ValueError(f"unknown language-model name: {name}")
-
-
-def _seq_model(name: str, vocab_size: int, values: dict[str, object], backend):
-    kwargs = {
-        "vocab_size": vocab_size,
-        "wordvec_size": int(values.get("wordvec_size", 16)),
-        "hidden_size": int(values.get("hidden_size", 128)),
-        "backend": backend,
-    }
-    if name == "Seq2seq":
-        return Seq2seq(**kwargs)
-    if name == "PeekySeq2seq":
-        return PeekySeq2seq(**kwargs)
-    if name == "AttentionSeq2seq":
-        return AttentionSeq2seq(**kwargs)
-    if name == "AttentionPeekySeq2seq":
-        return AttentionPeekySeq2seq(**kwargs)
-    raise ValueError(f"unknown seq2seq name: {name}")
-
-
-def _seq_accuracy(
-    model, questions, answers, char_to_id, backend
-) -> tuple[float, float]:
-    start_id = char_to_id["_"]
-    exact = 0
-    token_correct = 0
-    token_total = 0
-    model.eval()
-    for question, answer in zip(questions, answers, strict=True):
-        predicted = model.generate(
-            Tensor(
-                backend.xp.asarray(question[None, :], dtype=backend.xp.int64),
-                backend=backend,
-            ),
-            start_id,
-            len(answer) - 1,
-        )
-        expected = [int(value) for value in answer[1:]]
-        exact += int(predicted == expected)
-        token_correct += sum(
-            left == right for left, right in zip(predicted, expected, strict=True)
-        )
-        token_total += len(expected)
-    model.train(True)
-    return exact / len(questions), token_correct / max(token_total, 1)
-
-
-def _save_attention_artifact(
-    model, questions, answers, backend, context: ExperimentContext
-) -> float | None:
-    attention = getattr(getattr(model, "decoder", None), "attention", None)
-    if attention is None:
-        return None
-    model.eval()
-    question = Tensor(
-        backend.xp.asarray(questions[:1], dtype=backend.xp.int64), backend=backend
-    )
-    answer = Tensor(
-        backend.xp.asarray(answers[:1, :-1], dtype=backend.xp.int64), backend=backend
-    )
-    encoder_states = model.encoder.forward(question)
-    model.decoder.forward(answer, encoder_states)
-    weights = attention.weights
-    if weights is None:
-        return None
-    values = backend.to_numpy(weights[0])
-    entropy = float(-(values * np.log(values + 1e-12)).sum(axis=1).mean())
-    root = _artifact_root({}, context)
-    path = root / "analysis" / "attention_map.npz"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    np.savez(path, attention=values, entropy=entropy)
-    model.train(True)
-    return entropy

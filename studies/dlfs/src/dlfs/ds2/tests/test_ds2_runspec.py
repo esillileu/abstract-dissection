@@ -5,7 +5,8 @@ from deepscratch.core import Tensor
 from deepscratch.nn.types import Parameter
 from deepscratch.optim.transform import ClipGradNorm
 
-from dlfs.ds2.implemented.executor import _apply_validation_decay, _optimizer
+from dlfs.ds2.implemented.adapters import build_sequence_optimizer
+from dlfs.ds2.implemented.executor import _apply_validation_decay
 from dlfs.ds2.implemented.spec import parse_run_spec
 
 
@@ -95,7 +96,7 @@ def test_lm_recipe_validation_decay_applies_to_every_model(
         "studies/dlfs/src/dlfs/ds2/config/implemented/e05_ptb_lm_recipes.yaml",
         atomic_run_id=atomic_run_id,
     )
-    optimizer = _optimizer(
+    optimizer = build_sequence_optimizer(
         spec.config, _SingleParameterModel(), _SingleParameterModel()
     )
 
@@ -210,7 +211,7 @@ def test_ds2_optimizer_owns_group_gradient_clipping(
 ) -> None:
     spec = parse_run_spec(config_path, atomic_run_id=atomic_run_id)
 
-    optimizer = _optimizer(
+    optimizer = build_sequence_optimizer(
         spec.config, _SingleParameterModel(), _SingleParameterModel()
     )
     clipping = [

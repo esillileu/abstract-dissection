@@ -5,10 +5,12 @@ import csv
 import numpy as np
 from deepscratch.core import Backend, Tensor
 
+from dlfs.ds2.implemented.adapters import (
+    contexts_targets,
+    language_model_training_corpus,
+)
 from dlfs.ds2.implemented.executor import (
     _attention_example_ids,
-    _contexts_targets,
-    _language_model_training_corpus,
     _source_curve_from_objective,
 )
 from dlfs.ds2.implemented.records import DS2Records
@@ -334,7 +336,7 @@ def test_ds2_record_flush_appends_only_new_rows_without_duplicates(tmp_path) -> 
 def test_word2vec_contexts_are_built_with_the_expected_window_order() -> None:
     corpus = np.arange(8, dtype=np.int64)
 
-    contexts, targets = _contexts_targets(corpus, 2)
+    contexts, targets = contexts_targets(corpus, 2)
 
     assert np.array_equal(targets, [2, 3, 4, 5])
     assert np.array_equal(
@@ -351,10 +353,10 @@ def test_word2vec_contexts_are_built_with_the_expected_window_order() -> None:
 def test_language_model_vocabulary_is_derived_from_the_training_slice() -> None:
     corpus = np.array([0, 4, 1, 3, 9, 8], dtype=np.int64)
 
-    limited, limited_vocab_size = _language_model_training_corpus(
+    limited, limited_vocab_size = language_model_training_corpus(
         corpus, {"train_limit": 4}
     )
-    full, full_vocab_size = _language_model_training_corpus(corpus, {})
+    full, full_vocab_size = language_model_training_corpus(corpus, {})
 
     assert np.array_equal(limited, [0, 4, 1, 3])
     assert limited_vocab_size == 5

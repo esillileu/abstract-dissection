@@ -26,6 +26,11 @@ from deepscratch.nn.objective import (
     TemporalSoftmaxCrossEntropy,
 )
 
+from dlfs.ds2.implemented.adapters import (
+    build_language_model,
+    build_seq2seq_model,
+    build_sequence_optimizer,
+)
 from dlfs.ds2.implemented.executor import (
     AttentionAlignmentObservationExecutor,
     CountBasedEmbeddingExecutor,
@@ -33,9 +38,6 @@ from dlfs.ds2.implemented.executor import (
     ProfileExecutor,
     Seq2SeqExecutor,
     Word2VecExecutor,
-    _language_model,
-    _optimizer,
-    _seq_model,
     get_observation_executor,
 )
 from dlfs.ds2.implemented.spec import parse_run_spec
@@ -133,27 +135,27 @@ def test_all_ds2_variants_resolve_and_build_the_declared_components() -> None:
                     }
                     else objective_type(backend=backend)
                 )
-                _optimizer(config, model, objective)
+                build_sequence_optimizer(config, model, objective)
                 executor = Word2VecExecutor()
             elif kind == "language_modeling":
-                model = _language_model(
+                model = build_language_model(
                     str(model_values["name"]),
                     11,
                     model_values,
                     backend,
                 )
                 objective = TemporalSoftmaxCrossEntropy(backend=backend)
-                _optimizer(config, model, objective)
+                build_sequence_optimizer(config, model, objective)
                 executor = LanguageModelExecutor()
             elif kind == "seq2seq":
-                model = _seq_model(
+                model = build_seq2seq_model(
                     str(model_values["name"]),
                     11,
                     model_values,
                     backend,
                 )
                 objective = TemporalSoftmaxCrossEntropy(backend=backend)
-                _optimizer(config, model, objective)
+                build_sequence_optimizer(config, model, objective)
                 executor = Seq2SeqExecutor()
             elif kind == "observation":
                 executor = get_observation_executor(config)
