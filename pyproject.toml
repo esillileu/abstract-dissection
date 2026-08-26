@@ -16,6 +16,7 @@ repro-core = { workspace = true }
 repro-mlflow = { workspace = true }
 dlfs = { workspace = true }
 deepscratch = { workspace = true }
+f2 = { workspace = true }
 
 [dependency-groups]
 dev = [
@@ -47,6 +48,9 @@ norecursedirs = [
     "**/source",
     "**/source/**",
 ]
+markers = [
+    "network: marks tests as requiring external network access",
+]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "RUF"]
@@ -69,7 +73,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["repro_core", "repro_mlflow", "dlfs"]
+known-first-party = ["repro_core", "repro_mlflow", "dlfs", "f2"]
 
 [tool.mypy]
 explicit_package_bases = true
