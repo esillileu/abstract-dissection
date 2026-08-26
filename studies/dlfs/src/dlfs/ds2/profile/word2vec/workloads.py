@@ -55,7 +55,7 @@ ROOT = REPOSITORY_ROOT
 BOOK_ROOT = ROOT / str(
     RuntimePaths.from_environment().reference("dlfs2-book") / "source"
 )
-PTB_TRAIN = ROOT / "01_deep-learning-from-base/src/datasets/ptb.train.npy"
+PTB_TRAIN = RuntimePaths.from_environment().dataset("ptb") / "ptb.train.npy"
 DEFAULT_OUTPUT = profile_measurements("e10") / "update.json"
 DEFAULT_EPOCHS = 10
 

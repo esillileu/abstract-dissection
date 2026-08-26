@@ -4,6 +4,16 @@ from pathlib import Path
 import numpy as np
 
 
+class SequenceDataset(dict):
+    """Dictionary-like dataset split container that also supports tuple unpacking."""
+
+    def __iter__(self):
+        # Allow unpacking as: (x_train, t_train), (x_test, t_test), (char_to_id, id_to_char)
+        return iter(
+            (self["train"], self["test"], (self["char_to_id"], self["id_to_char"]))
+        )
+
+
 def resolve_data_dir(data_dir: Path | str | None = None) -> Path:
     if data_dir is not None:
         path = Path(data_dir)
@@ -15,13 +25,19 @@ def resolve_data_dir(data_dir: Path | str | None = None) -> Path:
     return path
 
 
-def load_data(seed=1984, data_dir: Path | str | None = None):
+def load_data(
+    file_name="addition.txt",
+    seed=1984,
+    data_dir: Path | str | None = None,
+    split_algorithm="default_rng",
+    **kwargs,
+):
     target = resolve_data_dir(data_dir)
-    file_path = target / "date.txt"
+    file_path = target / file_name
 
     if not file_path.exists():
         # Fallback search
-        root_data = Path("./data/sequence/date.txt")
+        root_data = Path("./data/sequence") / file_name
         if root_data.exists():
             file_path = root_data
         else:
@@ -62,7 +78,10 @@ def load_data(seed=1984, data_dir: Path | str | None = None):
 
     indices = np.arange(len(x))
     if seed is not None:
-        np.random.seed(seed)
+        if split_algorithm == "legacy_randint":
+            np.random.seed(seed)
+        else:
+            np.random.seed(seed)
     np.random.shuffle(indices)
     x = x[indices]
     t = t[indices]
@@ -71,4 +90,15 @@ def load_data(seed=1984, data_dir: Path | str | None = None):
     (x_train, x_test) = x[:split_at], x[split_at:]
     (t_train, t_test) = t[:split_at], t[split_at:]
 
-    return (x_train, t_train), (x_test, t_test), (char_to_id, id_to_char)
+    return SequenceDataset(
+        {
+            "train": (x_train, t_train),
+            "test": (x_test, t_test),
+            "char_to_id": char_to_id,
+            "id_to_word": id_to_char,
+            "id_to_char": id_to_char,
+        }
+    )
+
+
+load_sequence = load_data

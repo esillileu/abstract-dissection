@@ -72,7 +72,7 @@ def load_vocab(data_dir: Path | str | None = None):
 
 
 def load_data(data_type="train", data_dir: Path | str | None = None):
-    """Load PTB corpus."""
+    """Load PTB corpus split."""
     if data_type == "val":
         data_type = "valid"
 
@@ -95,3 +95,18 @@ def load_data(data_type="train", data_dir: Path | str | None = None):
 
     np.save(save_path, corpus)
     return corpus, word_to_id, id_to_word
+
+
+def load_ptb(*, allow_download: bool = True, data_dir: Path | str | None = None):
+    """Load the repository-cached PTB splits as a mapping."""
+    target = resolve_data_dir(data_dir)
+    train, word_to_id, id_to_word = load_data("train", target)
+    valid, _, _ = load_data("valid", target)
+    test, _, _ = load_data("test", target)
+    return {
+        "train": train,
+        "valid": valid,
+        "test": test,
+        "word_to_id": word_to_id,
+        "id_to_word": id_to_word,
+    }
