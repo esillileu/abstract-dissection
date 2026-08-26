@@ -1,8 +1,0 @@
-exp *args:
-    MLFLOW_SUPPRESS_PRINTING_URL_TO_STDOUT=true uv run python -m exp {{args}}
-
-mlflow *args:
-    uv run python infra/mlflow/transfer.py {{args}}
-
-cf:
-    cloudflared tunnel --url http://127.0.0.1:5000

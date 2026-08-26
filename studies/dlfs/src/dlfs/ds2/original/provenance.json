@@ -1,0 +1,12 @@
+{
+  "adaptations": [
+    "master seed is injected by the domain executor into model initialization and batch sampling",
+    "dataset split and attention example selection retain upstream seed 1984",
+    "NumPy or CuPy is selected from --device by the isolated import adapter",
+    "dataset/ptb.py uses the canonical repository dataset cache",
+    "NumPy integer aliases and CuPy scatter-add compatibility remain in the adapter"
+  ],
+  "source": "01_deep-learning-from-base/deep-learning-from-scratch-2",
+  "upstream_commit": "07299f337014a5a9058a5c236856d66f58919e42",
+  "vendoring": "git archive HEAD; dirty ch05 changes, caches, and nested .git excluded"
+}

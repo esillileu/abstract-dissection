@@ -1,100 +1,53 @@
-# 가상환경
-**/.venv/
-**/venv/
-**/env/
+# Virtual environments
+.venv/
+venv/
+env/
 
-# Python 캐시/빌드
-**/__pycache__/
+# Python cache & build
+__pycache__/
 *.py[cod]
-*.pyo
-*.pyd
 *.so
-*.egg-info/
-.eggs/
 build/
 dist/
+*.egg-info/
 
-# 비밀정보
-.env
-.env.*
-!.env.example
-*.pem
-*.key
-*.p12
-*.pfx
-*.crt
-credentials.json
-service-account*.json
-secrets.*
-**/.secrets/
+# Repository-wide data & artifacts
+/data/
+/artifacts/
+/.cache/
+/.staging/
 
-# 데이터
-**/.data/
-**/data/raw/
-**/data/interim/
-**/data/processed/
-*.csv
-*.parquet
-*.feather
-*.arrow
-*.h5
-*.hdf5
-*.npy
-*.npz
+# Local MLflow server data & exports
+infra/mlflow/data/
+infra/mlflow/data-next/
+infra/mlflow/archive/
+infra/mlflow/migration-work/
+infra/mlflow/exports/
 
-# 모델/체크포인트
+# Binary data & caches
 *.pkl
 *.pickle
-*.pt
-*.pth
-*.ckpt
-*.onnx
-*.safetensors
-*.joblib
-checkpoints/
-weights/
-models/
+*.npy
+*.npz
+*-ubyte.gz
+*.zip
+*.tar.gz
 
-# 실험 결과
-runs/
-outputs/
-artifacts/
-experiments/results/
-mlruns/
-wandb/
-lightning_logs/
-tensorboard/
-*.tfevents.*
-
-# 로그/임시 파일
-*.log
-logs/
-tmp/
-temp/
-.cache/
-**/.cache/
-
-# 테스트/정적 분석 캐시
+# Static analysis & test caches
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
 .coverage
-coverage.xml
 htmlcov/
-.hypothesis/
-
-# Jupyter
-.ipynb_checkpoints/
 
 # IDE
 .vscode/
 .idea/
-*.code-workspace
+*.swp
+*.swo
 
 # OS
 .DS_Store
 Thumbs.db
-desktop.ini
-
-# 패키지 관리자
-pip-wheel-metadata/
+mlruns/
+mlruns

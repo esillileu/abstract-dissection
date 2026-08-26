@@ -1,0 +1,10 @@
+{
+  "adaptations": [
+    "master seed is injected by the domain executor into model initialization and batch sampling",
+    "NumPy or CuPy is selected from --device by the isolated import adapter",
+    "dataset/mnist.py uses the canonical repository dataset cache"
+  ],
+  "source": "01_deep-learning-from-base/WegraLee-deep-learning-from-scratch",
+  "upstream_commit": "c05f6bcd9d403811307c15f2002c302a454759a1",
+  "vendoring": "git archive HEAD; untracked files and nested .git excluded"
+}
