@@ -145,3 +145,30 @@ def print_plans(plans: list[RunPlan]) -> None:
         print(
             f"{plan.experiment_id} {plan.path.name} {plan.atomic_run_id} seed={seed} device={plan.device}"
         )
+
+
+def run_config(
+    config: dict[str, object],
+    context: object | None = None,
+    *,
+    executor_module: str | None = None,
+) -> object:
+    """Run through an optional explicitly selected experiment-domain adapter."""
+    from repro_core.context import ExperimentContext
+    from repro_core.registry import get_executor
+
+    module = (
+        importlib.import_module(executor_module)
+        if executor_module is not None
+        else None
+    )
+    ctx = (
+        context
+        if isinstance(context, ExperimentContext)
+        else (ExperimentContext() if context is None else context)
+    )
+    if str(config.get("kind")) == "observation" and module is not None:
+        resolver = getattr(module, "get_observation_executor", None)
+        if callable(resolver):
+            return resolver(config).run(config, ctx)
+    return get_executor(str(config["kind"])).run(config, ctx)

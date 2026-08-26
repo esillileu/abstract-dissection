@@ -70,9 +70,6 @@ def run_yaml(
         evaluation_checkpoints.append(path)
 
     context = ExperimentContext(
-        emit_metric=lambda step, metrics: runtime.emit_metric(
-            step=step, metrics=metrics
-        ),
         metadata={
             "checkpoint_root": record.local_checkpoint_root,
             "artifact_root": record.artifact_root,

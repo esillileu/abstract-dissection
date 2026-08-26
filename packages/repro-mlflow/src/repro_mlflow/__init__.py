@@ -18,10 +18,12 @@ from .schema_v1 import (
     seed_config,
     write_result_manifest,
 )
+from .yaml_runner import RunYamlReceipt, run_yaml
 
 __all__ = [
     "ExperimentRun",
     "RunIdentity",
+    "RunYamlReceipt",
     "RuntimeOptions",
     "SchemaV1Run",
     "build_condition_config",
@@ -32,6 +34,7 @@ __all__ = [
     "flatten_dict",
     "make_condition_key",
     "make_run_key",
+    "run_yaml",
     "seed_config",
     "write_result_manifest",
 ]

@@ -184,8 +184,21 @@ class SchemaV1Run:
             self.artifact_root / "config/profiling.json",
             _section(self.config, "profiling"),
         )
+        serializable_reproducibility = {
+            key: value
+            for key, value in (reproducibility or {}).items()
+            if not callable(value)
+            and key
+            not in {
+                "progress_reporter",
+                "record_eval_checkpoint",
+                "checkpoint_root",
+                "artifact_root",
+            }
+        }
         write_json(
-            self.artifact_root / "reproducibility/runtime.json", reproducibility or {}
+            self.artifact_root / "reproducibility/runtime.json",
+            serializable_reproducibility,
         )
         write_json(self.artifact_root / "code/git.json", self.git_info)
         if self.git_info["dirty"]:
