@@ -1,0 +1,25 @@
+domain: deepscratch.ds1.implemented
+kind: supervised_classification
+run: {experiment_id: e06, group_id: GT06, protocol: MNIST SimpleConvNet, protocol_version: book-source-v1, recipe_id: ds1-gt06-simple-cnn, structure_signature: mnist-simplecnn-c30-fc100}
+execution: {mode: seeded, default_device: cuda:0}
+seed_policy: {seed_set: research_v1, seed_count: 10, paired_execution: true}
+dataset: {id: mnist-image-full, source: mnist, flatten: false, train_limit: 60000, test_limit: 10000}
+loader: {batch_size: 100, drop_last: false, sampling_method: with_replacement}
+model: {name: SimpleCNN, input_channels: 1, image_size: 28, num_classes: 10, conv_channels: 30, kernel_size: 5, hidden_size: 100, initializer: 'std:0.01'}
+optimizer: {name: adam, learning_rate: 0.001}
+objective: {name: SoftmaxCrossEntropy, reduction: mean}
+budget: {max_epochs: 20}
+recording:
+  evaluation_sources:
+    - {id: mnist-train-first-1000, split: train, kind: first_n, count: 1000}
+    - {id: mnist-test-first-1000, split: test, kind: first_n, count: 1000}
+    - {id: mnist-test-full, split: test, kind: full}
+  triggers:
+    - {type: epoch_first_update, sources: [mnist-train-first-1000, mnist-test-first-1000]}
+    - {type: terminal, sources: [mnist-test-full]}
+numerics: {dtype: float64, backend: cupy, device: cuda:0}
+checkpoint: {save_final: true, save_on_eval: false, format: v2}
+profiling: {enabled: false}
+tracking: {enabled: true, experiment: deepscratch.ds1}
+variants:
+  CNN-SIMPLE-BOOK: {}

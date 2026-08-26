@@ -1,0 +1,25 @@
+domain: deepscratch.ds2.original
+kind: deepscratch.ds2.original
+run: {experiment_id: e02, group_id: ORIGINAL-E02, protocol: PTB Word2Vec, recipe_id: ds2-original-e02-ptb-word2vec, structure_signature: ptb-word2vec-w5-e100}
+source_experiment: e02
+trial_id: placeholder
+execution: {mode: seeded, default_device: cuda:0}
+seed_policy: {seed_set: research_v1, seed_count: 10}
+dataset: {id: ptb-train, source: ptb.load_data(train), window_size: 5}
+loader: {batch_size: 100, drop_last: false}
+model: {embedding_size: 100}
+objective: {name: NegativeSampling, negative_samples: 5, sampler: {power: 0.75, target_exclusion: true}}
+optimizer: {name: Adam, learning_rate: 0.001}
+budget: {max_epochs: 10}
+numerics: {backend: cupy, device: cuda:0, dtype: float32}
+tracking: {enabled: true, experiment: deepscratch.ds2}
+checkpoint: {save_final: true, format: npz}
+variants:
+  PTB-CBOW:
+    trial_id: dlfs2.ch04.ptb-cbow-negative-sampling
+    model: {name: CBOW}
+    conditions: {model: CBOW, epochs: 10, batch_size: 100, window: 5}
+  PTB-SKIPGRAM:
+    trial_id: dlfs2.ch04.ptb-skipgram-negative-sampling
+    model: {name: SkipGram}
+    conditions: {model: SkipGram, epochs: 10, batch_size: 100, window: 5}

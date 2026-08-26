@@ -1,4 +1,53 @@
-**/.venv/
-**/.data/
-**/__pycache__/
-*.pyc
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Python cache & build
+__pycache__/
+*.py[cod]
+*.so
+build/
+dist/
+*.egg-info/
+
+# Repository-wide data & artifacts
+/data/
+/artifacts/
+/.cache/
+/.staging/
+
+# Local MLflow server data & exports
+infra/mlflow/data/
+infra/mlflow/data-next/
+infra/mlflow/archive/
+infra/mlflow/migration-work/
+infra/mlflow/exports/
+
+# Binary data & caches
+*.pkl
+*.pickle
+*.npy
+*.npz
+*-ubyte.gz
+*.zip
+*.tar.gz
+
+# Static analysis & test caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+mlruns/
+mlruns

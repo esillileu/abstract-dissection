@@ -1,0 +1,21 @@
+domain: deepscratch.ds2.implemented
+kind: word2vec
+run: {experiment_id: e01, group_id: GT01, protocol: toy Word2Vec, recipe_id: ds2-gt01-toy-cbow, structure_signature: toy-cbow-full-softmax-w1-e5}
+execution: {mode: seeded, default_device: cuda:0}
+seed_policy: {seed_set: research_v1, seed_count: 10, paired_execution: true}
+dataset: {id: DS-TOY-W2V, source: toy_sentence, text: "You say goodbye and I say hello.", window_size: 1}
+loader: {batch_size: 3, drop_last: true}
+model: {name: CBOW, embedding_size: 5}
+objective: {name: SoftmaxWithLoss, reduction: mean, book_reduction: sum_terms_mean_examples}
+optimizer: {name: adam, learning_rate: 0.001}
+budget: {max_epochs: 1000}
+recording:
+  source_curve: {kind: interval_mean_loss, every_updates: 20, reducer: mean, plot_index: zero_based_append}
+  evaluations: []
+numerics: {dtype: float32, backend: cupy, device: cuda:0, deterministic: true}
+checkpoint: {save_final: true, save_best: false, format: v2}
+profiling: {enabled: false}
+tracking: {enabled: true, experiment: deepscratch.ds2}
+variants:
+  W2V-TOY-CBOW-FULL: {}
+  W2V-TOY-SKIPGRAM-FULL: {run: {recipe_id: ds2-gt01-toy-skipgram, structure_signature: toy-skipgram-full-softmax-w1-e5}, model: {name: SkipGram}}

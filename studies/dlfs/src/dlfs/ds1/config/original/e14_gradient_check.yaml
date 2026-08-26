@@ -1,0 +1,13 @@
+domain: deepscratch.ds1.original
+kind: deepscratch.ds1.original
+run: {experiment_id: e14, group_id: ORIGINAL-E14, protocol_version: book-source-v1}
+source_experiment: e14
+trial_id: dlfs1.ch05.gradient-check
+execution: {mode: seeded, default_device: cpu}
+seed_policy: {seed_set: research_v1, seed_count: 10, paired_execution: true}
+dataset: {id: mnist-train-first-3}
+numerics: {backend: numpy, device: cpu, dtype: float64}
+tracking: {enabled: true, experiment: deepscratch.ds1}
+checkpoint: {save_final: false}
+variants:
+  TWO-LAYER-GRADIENT-CHECK: {}

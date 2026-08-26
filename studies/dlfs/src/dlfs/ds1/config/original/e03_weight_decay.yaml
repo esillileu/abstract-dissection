@@ -1,0 +1,14 @@
+domain: deepscratch.ds1.original
+kind: deepscratch.ds1.original
+run: {experiment_id: e03, group_id: ORIGINAL-E03}
+source_experiment: e03
+trial_id: dlfs1.ch06.weight-decay.lambda-01
+execution: {mode: seeded, default_device: cpu}
+seed_policy: {seed_set: research_v1, seed_count: 10}
+dataset: {id: mnist, split_seed: 1984}
+numerics: {backend: numpy, device: cpu}
+tracking: {enabled: true, experiment: deepscratch.ds1}
+checkpoint: {save_final: false}
+variants:
+  WEIGHT-DECAY-OFF: {trial_id: dlfs1.ch06.weight-decay.off}
+  WEIGHT-DECAY-01: {trial_id: dlfs1.ch06.weight-decay.lambda-01}

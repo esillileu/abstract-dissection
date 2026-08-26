@@ -1,0 +1,68 @@
+domain: deepscratch.ds2.implemented
+kind: performance_profile
+run: {experiment_id: e10, group_id: PF01, protocol: PTB Word2Vec performance profile, protocol_version: ds2-e10-profile-v1, recipe_id: ds2-pf01-ptb-word2vec-profile-v1, structure_signature: ptb-word2vec-profile}
+execution: {mode: single, default_device: cuda:0}
+seed_policy: {seed_set: research_v1, seed_count: 1, paired_execution: false}
+dataset: {id: DS-PTB, source_study: e02}
+loader: {batch_size: 100}
+optimizer: {}
+scheduler: {}
+objective: {}
+budget: {max_epochs: 10}
+recording: {}
+numerics: {dtype: float32, backend: cupy, device: cuda:0, deterministic: true}
+checkpoint: {save_final: false, save_best: false, save_latest: false}
+profiling: {study_kind: update_breakdown, warmup_updates: 20, measured_updates: 50, repetitions: 5, timing_source: window, measure_modules: true, module_warmup: 5, module_iterations: 20}
+tracking:
+  enabled: true
+  experiment: deepscratch.ds2
+  tags:
+    run.type: profile
+    profile.study: e10
+    profile.group: PF01
+    profile.source_study: e02
+    result.schema.name: ds2-profile
+    result.schema.version: "1"
+variants:
+  PF-W2V-CBOW-ORIGINAL-ONEHOT-FS:
+    profiling: {condition: {subject_variant: original, model: cbow, objective: full_softmax, input_representation: one_hot}}
+    tracking: {tags: {profile.subject_variant: original}}
+  PF-W2V-CBOW-ORIGINAL-FS:
+    profiling: {condition: {subject_variant: original, model: cbow, objective: full_softmax, input_representation: embedding}}
+    tracking: {tags: {profile.subject_variant: original}}
+  PF-W2V-CBOW-ORIGINAL-NS:
+    profiling: {condition: {subject_variant: original, model: cbow, objective: negative_sampling}}
+    tracking: {tags: {profile.subject_variant: original}}
+  PF-W2V-SKIPGRAM-ORIGINAL-ONEHOT-FS:
+    profiling: {condition: {subject_variant: original, model: skipgram, objective: full_softmax, input_representation: one_hot}}
+    tracking: {tags: {profile.subject_variant: original}}
+  PF-W2V-SKIPGRAM-ORIGINAL-FS:
+    profiling: {condition: {subject_variant: original, model: skipgram, objective: full_softmax, input_representation: embedding}}
+    tracking: {tags: {profile.subject_variant: original}}
+  PF-W2V-SKIPGRAM-ORIGINAL-NS:
+    profiling: {condition: {subject_variant: original, model: skipgram, objective: negative_sampling}}
+    tracking: {tags: {profile.subject_variant: original}}
+  PF-W2V-CBOW-IMPLEMENTED-ONEHOT-FS:
+    profiling: {condition: {subject_variant: implemented, model: cbow, objective: full_softmax, input_representation: one_hot}}
+    tracking: {tags: {profile.subject_variant: implemented}}
+  PF-W2V-CBOW-IMPLEMENTED-FS:
+    profiling: {condition: {subject_variant: implemented, model: cbow, objective: full_softmax, input_representation: embedding}}
+    tracking: {tags: {profile.subject_variant: implemented}}
+  PF-W2V-CBOW-IMPLEMENTED-NS:
+    profiling: {condition: {subject_variant: implemented, model: cbow, objective: negative_sampling}}
+    tracking: {tags: {profile.subject_variant: implemented}}
+  PF-W2V-CBOW-IMPLEMENTED-FUSED-NS:
+    profiling: {condition: {subject_variant: implemented, model: cbow, objective: fused_negative_sampling}}
+    tracking: {tags: {profile.subject_variant: implemented}}
+  PF-W2V-SKIPGRAM-IMPLEMENTED-ONEHOT-FS:
+    profiling: {condition: {subject_variant: implemented, model: skipgram, objective: full_softmax, input_representation: one_hot}}
+    tracking: {tags: {profile.subject_variant: implemented}}
+  PF-W2V-SKIPGRAM-IMPLEMENTED-FS:
+    profiling: {condition: {subject_variant: implemented, model: skipgram, objective: full_softmax, input_representation: embedding}}
+    tracking: {tags: {profile.subject_variant: implemented}}
+  PF-W2V-SKIPGRAM-IMPLEMENTED-NS:
+    profiling: {condition: {subject_variant: implemented, model: skipgram, objective: negative_sampling}}
+    tracking: {tags: {profile.subject_variant: implemented}}
+  PF-W2V-SKIPGRAM-IMPLEMENTED-FUSED-NS:
+    profiling: {condition: {subject_variant: implemented, model: skipgram, objective: fused_negative_sampling}}
+    tracking: {tags: {profile.subject_variant: implemented}}

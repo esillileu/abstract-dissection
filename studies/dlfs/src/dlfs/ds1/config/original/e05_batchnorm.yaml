@@ -1,0 +1,44 @@
+domain: deepscratch.ds1.original
+kind: deepscratch.ds1.original
+run: {experiment_id: e05, group_id: ORIGINAL-E05}
+source_experiment: e05
+trial_id: placeholder
+execution: {mode: seeded, default_device: cpu}
+seed_policy: {seed_set: research_v1, seed_count: 10}
+dataset: {id: mnist, split_seed: 1984}
+numerics: {backend: numpy, device: cpu}
+tracking: {enabled: true, experiment: deepscratch.ds1}
+checkpoint: {save_final: false}
+variants:
+  BN-01-OFF: {trial_id: dlfs1.ch06.batchnorm.scale-01.bn-off}
+  BN-01-ON: {trial_id: dlfs1.ch06.batchnorm.scale-01.bn-on}
+  BN-02-OFF: {trial_id: dlfs1.ch06.batchnorm.scale-02.bn-off}
+  BN-02-ON: {trial_id: dlfs1.ch06.batchnorm.scale-02.bn-on}
+  BN-03-OFF: {trial_id: dlfs1.ch06.batchnorm.scale-03.bn-off}
+  BN-03-ON: {trial_id: dlfs1.ch06.batchnorm.scale-03.bn-on}
+  BN-04-OFF: {trial_id: dlfs1.ch06.batchnorm.scale-04.bn-off}
+  BN-04-ON: {trial_id: dlfs1.ch06.batchnorm.scale-04.bn-on}
+  BN-05-OFF: {trial_id: dlfs1.ch06.batchnorm.scale-05.bn-off}
+  BN-05-ON: {trial_id: dlfs1.ch06.batchnorm.scale-05.bn-on}
+  BN-06-OFF: {trial_id: dlfs1.ch06.batchnorm.scale-06.bn-off}
+  BN-06-ON: {trial_id: dlfs1.ch06.batchnorm.scale-06.bn-on}
+  BN-07-OFF: {trial_id: dlfs1.ch06.batchnorm.scale-07.bn-off}
+  BN-07-ON: {trial_id: dlfs1.ch06.batchnorm.scale-07.bn-on}
+  BN-08-OFF: {trial_id: dlfs1.ch06.batchnorm.scale-08.bn-off}
+  BN-08-ON: {trial_id: dlfs1.ch06.batchnorm.scale-08.bn-on}
+  BN-09-OFF: {trial_id: dlfs1.ch06.batchnorm.scale-09.bn-off}
+  BN-09-ON: {trial_id: dlfs1.ch06.batchnorm.scale-09.bn-on}
+  BN-10-OFF: {trial_id: dlfs1.ch06.batchnorm.scale-10.bn-off}
+  BN-10-ON: {trial_id: dlfs1.ch06.batchnorm.scale-10.bn-on}
+  BN-11-OFF: {trial_id: dlfs1.ch06.batchnorm.scale-11.bn-off}
+  BN-11-ON: {trial_id: dlfs1.ch06.batchnorm.scale-11.bn-on}
+  BN-12-OFF: {trial_id: dlfs1.ch06.batchnorm.scale-12.bn-off}
+  BN-12-ON: {trial_id: dlfs1.ch06.batchnorm.scale-12.bn-on}
+  BN-13-OFF: {trial_id: dlfs1.ch06.batchnorm.scale-13.bn-off}
+  BN-13-ON: {trial_id: dlfs1.ch06.batchnorm.scale-13.bn-on}
+  BN-14-OFF: {trial_id: dlfs1.ch06.batchnorm.scale-14.bn-off}
+  BN-14-ON: {trial_id: dlfs1.ch06.batchnorm.scale-14.bn-on}
+  BN-15-OFF: {trial_id: dlfs1.ch06.batchnorm.scale-15.bn-off}
+  BN-15-ON: {trial_id: dlfs1.ch06.batchnorm.scale-15.bn-on}
+  BN-16-OFF: {trial_id: dlfs1.ch06.batchnorm.scale-16.bn-off}
+  BN-16-ON: {trial_id: dlfs1.ch06.batchnorm.scale-16.bn-on}

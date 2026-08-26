@@ -1,0 +1,17 @@
+domain: deepscratch.ds2.implemented
+kind: count_based_embedding
+run: {experiment_id: e12, group_id: GT10, protocol: PTB count-based embeddings, protocol_version: ds2-e12-count-based-v1, recipe_id: ds2-gt10-count-based-v1, structure_signature: ptb-count-based-w2}
+execution: {mode: seeded, default_device: cpu}
+seed_policy: {seed_set: research_v1, seed_count: 10, paired_execution: true}
+dataset: {id: DS-PTB-TRAIN, source: ptb_train, window_size: 2}
+model: {embedding_size: 100}
+budget: {max_epochs: 0}
+recording: {evaluations: []}
+numerics: {dtype: float32, backend: numpy, device: cpu, deterministic: true}
+checkpoint: {save_final: true, save_best: false, format: npz}
+profiling: {enabled: false}
+tracking: {enabled: true, experiment: deepscratch.ds2}
+variants:
+  COUNT-PTB-PPMI: {model: {name: ppmi}}
+  COUNT-PTB-SVD: {model: {name: svd}}
+  COUNT-PTB-RANDOMIZED-SVD: {model: {name: randomized_svd, n_iter: 5}}

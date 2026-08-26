@@ -1,0 +1,16 @@
+domain: deepscratch.ds1.original
+kind: deepscratch.ds1.original
+run: {experiment_id: e09, group_id: ORIGINAL-E09}
+source_experiment: e09
+trial_id: placeholder
+execution: {mode: seeded, default_device: cpu}
+seed_policy: {seed_set: research_v1, seed_count: 10}
+dataset: {id: synthetic-optimizer-surface}
+numerics: {backend: numpy, device: cpu}
+tracking: {enabled: true, experiment: deepscratch.ds1}
+checkpoint: {save_final: false}
+variants:
+  PATH-SGD: {trial_id: dlfs1.ch06.optimizer-path.sgd}
+  PATH-MOMENTUM: {trial_id: dlfs1.ch06.optimizer-path.momentum}
+  PATH-ADAGRAD: {trial_id: dlfs1.ch06.optimizer-path.adagrad}
+  PATH-ADAM: {trial_id: dlfs1.ch06.optimizer-path.adam}

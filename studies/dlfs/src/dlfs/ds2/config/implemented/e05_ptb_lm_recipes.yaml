@@ -1,0 +1,26 @@
+domain: deepscratch.ds2.implemented
+kind: language_modeling
+run: {experiment_id: e05, group_id: GT05, protocol: PTB LM recipe comparison, protocol_version: book-source-v1, recipe_id: ds2-gt05-ptb-lm-book-v1, structure_signature: ptb-lm-650}
+execution: {mode: seeded, default_device: cuda:0}
+seed_policy: {seed_set: research_v1, seed_count: 10, paired_execution: true, max_grad: 0.25, loss_timing: pre_update, epoch_cursor: reset, epoch_recurrent_state: reset, source_curve_reset_each_epoch: true}
+dataset: {id: DS-PTB, source: ptb}
+loader: {batch_size: 20, time_size: 35}
+optimizer: {name: sgd, learning_rate: 20.0}
+scheduler: {name: validation_decay, factor: 4.0}
+objective: {name: TemporalSoftmaxCrossEntropy, reduction: mean}
+budget: {max_epochs: 40}
+recording:
+  source_curve: {kind: train_perplexity, every_updates: 20, reducer: exp_token_weighted_mean, plot_index: zero_based_append}
+  evaluations:
+    - {axis: epoch, every: 1, sources: [valid]}
+    - {axis: terminal, sources: [test]}
+numerics: {dtype: float32, backend: cupy, device: cuda:0, deterministic: true}
+checkpoint: {save_final: true, save_best: true, save_latest: false, best_payload: model_only, final_payload: full, format: v2}
+profiling: {enabled: false}
+tracking: {enabled: true, experiment: deepscratch.ds2}
+variants:
+  LM-RNN-RECIPE: {run: {structure_signature: ptb-rnn-650}, model: {name: VanillaRnnlm, wordvec_size: 650, hidden_size: 650}}
+  LM-LSTM-RECIPE: {run: {structure_signature: ptb-lstm-650}, model: {name: Rnnlm, wordvec_size: 650, hidden_size: 650}}
+  LM-LSTM-TIED-RECIPE: {run: {structure_signature: ptb-lstm-tied-650}, model: {name: TiedRnnlm, wordvec_size: 650, hidden_size: 650}}
+  LM-BETTER-RECIPE: {run: {structure_signature: ptb-better-rnnlm-650}, model: {name: BetterRnnlm, wordvec_size: 650, hidden_size: 650, dropout_ratio: 0.5}}
+  LM-BETTER-NODROPOUT: {run: {structure_signature: ptb-better-rnnlm-650-nodropout}, model: {name: BetterRnnlm, wordvec_size: 650, hidden_size: 650, dropout_ratio: 0.0}}

@@ -1,0 +1,12 @@
+domain: deepscratch.ds1.original
+kind: deepscratch.ds1.original
+run: {experiment_id: e07, group_id: ORIGINAL-E07}
+source_experiment: e07
+trial_id: dlfs1.ch08.deep-convnet
+execution: {mode: seeded, default_device: cuda:0}
+seed_policy: {seed_set: research_v1, seed_count: 10}
+dataset: {id: mnist, split_seed: 1984}
+numerics: {backend: cupy, device: cuda:0}
+tracking: {enabled: true, experiment: deepscratch.ds1}
+checkpoint: {save_final: false}
+variants: {DEEP-CONVNET: {}}

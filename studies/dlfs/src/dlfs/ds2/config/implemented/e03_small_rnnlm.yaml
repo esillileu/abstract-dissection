@@ -1,0 +1,21 @@
+domain: deepscratch.ds2.implemented
+kind: language_modeling
+run: {experiment_id: e03, group_id: GT03, protocol: small-corpus RNNLM, protocol_version: book-source-v1, recipe_id: ds2-gt03-small-rnnlm-book-v1, structure_signature: ptb1000-vanilla-rnn-100}
+execution: {mode: seeded, default_device: cuda:0}
+seed_policy: {seed_set: research_v1, seed_count: 10, paired_execution: true, max_grad: null, loss_timing: pre_update, epoch_cursor: continuous, epoch_recurrent_state: continuous, source_curve_reset_each_epoch: false}
+dataset: {id: DS-PTB-TRAIN-1000, source: ptb, train_limit: 1000}
+loader: {batch_size: 10, time_size: 5}
+model: {name: VanillaRnnlm, wordvec_size: 100, hidden_size: 100}
+optimizer: {name: sgd, learning_rate: 0.1}
+scheduler: {name: constant}
+objective: {name: TemporalSoftmaxCrossEntropy, reduction: mean}
+budget: {max_epochs: 100}
+recording:
+  source_curve: {kind: train_perplexity, every_updates: 20, reducer: exp_token_weighted_mean, plot_index: zero_based_append}
+  evaluations: []
+numerics: {dtype: float32, backend: cupy, device: cuda:0, deterministic: true}
+checkpoint: {save_final: true, save_best: false, save_latest: false, final_payload: full, format: v2}
+profiling: {enabled: false}
+tracking: {enabled: true, experiment: deepscratch.ds2}
+variants:
+  LM-SMALL-RNN: {}

@@ -1,0 +1,23 @@
+domain: deepscratch.ds2.implemented
+kind: seq2seq
+run: {experiment_id: e07, group_id: GT07, protocol: date Seq2seq, protocol_version: book-source-v1, recipe_id: ds2-gt07-date-book-v1, structure_signature: date-seq2seq}
+execution: {mode: seeded, default_device: cuda:0}
+seed_policy: {seed_set: research_v1, seed_count: 10, paired_execution: true, max_grad: 5.0, loss_timing: pre_update}
+dataset: {id: DS-SEQ-DATE, source: sequence, file: date.txt, reverse: true, split_seed: 1984, split_algorithm: legacy_numpy_randomstate}
+loader: {batch_size: 128, eval_batch_size: 128, drop_last: true}
+optimizer: {name: adam, learning_rate: 0.001}
+objective: {name: TemporalSoftmaxCrossEntropy, reduction: mean}
+budget: {max_epochs: 10}
+recording:
+  source_curve: {kind: full_test_exact_match, every_epochs: 1, reducer: identity, plot_index: epoch_minus_one}
+  evaluations: [{axis: epoch, every: 1, sources: [test]}]
+  predictions: {split: test, count: 10, decode: greedy}
+  attention: {selection_seed: 1984, count: 5}
+numerics: {dtype: float32, backend: cupy, device: cuda:0, deterministic: true}
+checkpoint: {save_final: true, save_best: true, format: v2}
+profiling: {enabled: false}
+tracking: {enabled: true, experiment: deepscratch.ds2, upload_eval_checkpoints: true}
+variants:
+  SEQD-VAN-REV: {run: {structure_signature: date-seq2seq-16-256}, model: {name: Seq2seq, wordvec_size: 16, hidden_size: 256}}
+  SEQD-PEEKY-REV: {run: {structure_signature: date-peeky-16-256}, model: {name: PeekySeq2seq, wordvec_size: 16, hidden_size: 256}}
+  SEQD-ATTN-REV: {run: {structure_signature: date-attention-16-256}, model: {name: AttentionSeq2seq, wordvec_size: 16, hidden_size: 256}}

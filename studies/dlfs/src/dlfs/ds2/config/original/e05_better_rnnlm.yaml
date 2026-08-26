@@ -1,0 +1,17 @@
+domain: deepscratch.ds2.original
+kind: deepscratch.ds2.original
+run: {experiment_id: e05, group_id: ORIGINAL-E05}
+source_experiment: e05
+trial_id: dlfs2.ch06.ptb-better-rnnlm
+execution: {mode: seeded, default_device: cuda:0}
+seed_policy: {seed_set: research_v1, seed_count: 10}
+dataset: {id: ptb, cache: canonical, split_seed: 1984}
+budget: {max_epochs: 40}
+loader: {batch_size: 20, time_size: 35}
+model: {name: BetterRnnlm, wordvec_size: 650, hidden_size: 650, dropout_ratio: 0.5}
+optimizer: {name: sgd, learning_rate: 20.0, validation_decay: 4.0, max_grad: 0.25}
+evaluation: {valid_every_epochs: 1, test_at_end: true}
+numerics: {backend: cupy, device: cuda:0}
+tracking: {enabled: true, experiment: deepscratch.ds2}
+checkpoint: {save_final: false}
+variants: {BETTER-RNNLM: {}}

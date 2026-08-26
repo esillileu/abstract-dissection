@@ -1,0 +1,168 @@
+"""DS2 GT09: addition Seq2seq accuracy graphs with a 150-epoch budget."""
+
+from pathlib import Path
+
+import matplotlib.pyplot as plt
+
+from repro_core.analysis.core import mark_empty, plot_curve, save_figure
+from repro_core.plotting.theme import ACCENT_COLORS
+
+from . import e06_addition_seq2seq as _e06
+from .e06_addition_seq2seq import render as _render_e06_style
+
+DEFINITIONS = (
+    ("SEQA-VAN-FWD", "Vanilla-Forward", "o"),
+    ("SEQA-VAN-REV", "Vanilla-Reverse", "s"),
+    ("SEQA-PEEKY-FWD", "Peeky-Forward", "^"),
+    ("SEQA-PEEKY-REV", "Peeky-Reverse", "D"),
+    ("SEQA-ATTN-FWD", "Attention-Forward", "v"),
+    ("SEQA-ATTN-REV", "Attention-Reverse", "P"),
+    ("SEQA-ATTN-PEEKY-FWD", "Attention-Peeky-Forward", "<"),
+    ("SEQA-ATTN-PEEKY-REV", "Attention-Peeky-Reverse", ">"),
+)
+
+ADDITIONAL_GRAPHS = (
+    (
+        "ds2_e09_11_van_fwd_vs_van_rev.png",
+        "Vanilla Seq2seq: Forward vs. Reverse",
+        ("SEQA-VAN-FWD", "SEQA-VAN-REV"),
+        "lower right",
+    ),
+    (
+        "ds2_e09_12_pky_fwd_vs_pky_rev.png",
+        "Peeky Seq2seq: Forward vs. Reverse",
+        ("SEQA-PEEKY-FWD", "SEQA-PEEKY-REV"),
+        "lower right",
+    ),
+    (
+        "ds2_e09_13_atn_fwd_vs_atn_rev.png",
+        "Attention Seq2seq: Forward vs. Reverse",
+        ("SEQA-ATTN-FWD", "SEQA-ATTN-REV"),
+        "lower right",
+    ),
+    (
+        "ds2_e09_14_atn_pky_fwd_vs_atn_pky_rev.png",
+        "Attention + Peeky Seq2seq: Forward vs. Reverse",
+        ("SEQA-ATTN-PEEKY-FWD", "SEQA-ATTN-PEEKY-REV"),
+        "lower right",
+    ),
+    (
+        "ds2_e09_21_van_fwd_vs_atn_fwd.png",
+        "Vanilla + Forward vs. Attention + Forward",
+        ("SEQA-VAN-FWD", "SEQA-ATTN-FWD"),
+        "lower right",
+    ),
+    (
+        "ds2_e09_22_pky_fwd_vs_atn_pky_fwd.png",
+        "Peeky + Forward vs. Attention + Peeky + Forward",
+        ("SEQA-PEEKY-FWD", "SEQA-ATTN-PEEKY-FWD"),
+        "lower right",
+    ),
+    (
+        "ds2_e09_20_pky_rev_vs_atn_pky_rev.png",
+        "Peeky + Reverse vs. Attention + Peeky + Reverse",
+        ("SEQA-PEEKY-REV", "SEQA-ATTN-PEEKY-REV"),
+        "lower right",
+    ),
+    (
+        "ds2_e09_20_van_rev_vs_atn_rev.png",
+        "Vanilla + Reverse vs. Attention + Reverse",
+        ("SEQA-VAN-REV", "SEQA-ATTN-REV"),
+        "lower right",
+    ),
+)
+
+COMBINED_GRAPH_GROUPS = (
+    ("ds2_e09_10_fwd_rev.png", ADDITIONAL_GRAPHS[:4], (2, 2), (12, 10)),
+    ("ds2_e09_20_attention.png", ADDITIONAL_GRAPHS[4:], (2, 2), (12, 10)),
+)
+
+
+def render(client, error_style, output):
+    del output
+    return _render_e06_style(
+        client,
+        error_style,
+        group_id="GT09",
+        max_epoch_index=149,
+        definitions=DEFINITIONS,
+        figsize=(10, 5),
+        legend_loc="lower right",
+    )
+
+
+def render_additional_graphs(client, error_style, output) -> list[Path]:
+    """Render GT09 comparison figures beside the main figure."""
+    grouped = _e06.runs(client, "GT09", [item[0] for item in DEFINITIONS])
+    curves = {
+        atomic: _e06.source_curve(client, grouped[atomic], "exact_match_accuracy")
+        for atomic, _label, _marker in DEFINITIONS
+    }
+    labels = {atomic: label for atomic, label, _marker in DEFINITIONS}
+    markers = {atomic: marker for atomic, _label, marker in DEFINITIONS}
+    colors = {
+        atomic: ACCENT_COLORS[index]
+        for index, (atomic, _label, _marker) in enumerate(DEFINITIONS)
+    }
+    output_dir = Path(output).parent
+    outputs = []
+
+    def configure_axis(
+        axis,
+        atomic_ids,
+        *,
+        title=None,
+        legend_loc="lower right",
+        title_fontsize=None,
+        legend_fontsize=None,
+    ):
+        for atomic in atomic_ids:
+            plot_curve(
+                axis,
+                curves[atomic],
+                label=labels[atomic],
+                marker=markers[atomic],
+                error_style=error_style,
+                error_every=5,
+                color=colors[atomic],
+            )
+        axis.set(
+            xlabel="epochs",
+            ylabel="accuracy",
+            xlim=(0, 149),
+            ylim=(0, 1),
+        )
+        if title is not None:
+            axis.set_title(title, fontsize=title_fontsize)
+        mark_empty(axis)
+        if axis.has_data():
+            axis.legend(loc=legend_loc, fontsize=legend_fontsize)
+
+    for filename, _title, atomic_ids, legend_loc in ADDITIONAL_GRAPHS:
+        figure, axis = plt.subplots()
+        configure_axis(axis, atomic_ids, legend_loc=legend_loc)
+        path = output_dir / filename
+        save_figure(figure, path)
+        plt.close(figure)
+        outputs.append(path)
+
+    for filename, graph_group, layout, figsize in COMBINED_GRAPH_GROUPS:
+        combined_figure, axes = plt.subplots(*layout, figsize=figsize, squeeze=False)
+        for axis, (_single_filename, title, atomic_ids, legend_loc) in zip(
+            axes.flat, graph_group, strict=False
+        ):
+            configure_axis(
+                axis,
+                atomic_ids,
+                title=title,
+                legend_loc=legend_loc,
+                title_fontsize=20,
+                legend_fontsize=20,
+            )
+        combined_figure.tight_layout()
+        combined_path = output_dir / filename
+        save_figure(combined_figure, combined_path)
+        plt.close(combined_figure)
+        outputs.append(combined_path)
+
+    return outputs

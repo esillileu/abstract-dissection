@@ -1,0 +1,20 @@
+domain: deepscratch.ds1.implemented
+kind: supervised_classification
+run: {experiment_id: e02, group_id: GT02, protocol: MNIST MLP initialization, protocol_version: book-source-v1, recipe_id: ds1-gt02-initializer, structure_signature: mnist-mlp-784-100x4-10-relu}
+execution: {mode: seeded, default_device: cpu}
+seed_policy: {seed_set: research_v1, seed_count: 10, paired_execution: true}
+dataset: {id: mnist-train-full, source: mnist, flatten: true, train_limit: 60000, test_limit: 10000}
+loader: {batch_size: 128, drop_last: false, sampling_method: with_replacement}
+model: {name: MLP, input_size: 784, hidden_sizes: [100, 100, 100, 100], output_size: 10, activation: relu}
+optimizer: {name: sgd, learning_rate: 0.01}
+objective: {name: SoftmaxCrossEntropy, reduction: mean}
+budget: {max_epochs: 5, max_updates: 2000}
+recording: {evaluation_sources: [], triggers: []}
+numerics: {dtype: float64, backend: numpy, device: cpu}
+checkpoint: {save_final: true, save_on_eval: false, format: v2}
+profiling: {enabled: false}
+tracking: {enabled: true, experiment: deepscratch.ds1}
+variants:
+  MLP-INIT-STD001: {model: {initializer: 'std:0.01'}}
+  MLP-INIT-XAVIER: {model: {initializer: xavier}}
+  MLP-INIT-HE: {model: {initializer: he}}

@@ -1,0 +1,76 @@
+[project]
+name = "abstract-dissection-workspace"
+version = "0.1.0"
+description = "Monorepo for deep learning and NLP paper reproductions"
+requires-python = ">=3.11, <3.12"
+dependencies = []
+
+[tool.uv.workspace]
+members = [
+    "packages/*",
+    "studies/*",
+]
+
+[tool.uv.sources]
+repro-core = { workspace = true }
+repro-mlflow = { workspace = true }
+dlfs = { workspace = true }
+deepscratch = { workspace = true }
+
+[dependency-groups]
+dev = [
+    "mypy>=1.20.0",
+    "pydeps>=3.0.6",
+    "pytest>=9.1.1",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.15.8",
+]
+
+[tool.ruff]
+extend-exclude = [
+    "references",
+    "data",
+    "artifacts",
+    ".cache",
+    ".staging",
+    "**/source/**",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["packages", "studies", "tests"]
+norecursedirs = [
+    "references",
+    "data",
+    "artifacts",
+    ".cache",
+    ".staging",
+    "**/source",
+    "**/source/**",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "RUF"]
+ignore = [
+    "E501",
+    "RUF012",
+    "RUF059",
+    "RUF046",
+    "B008",
+    "B039",
+    "B024",
+    "B027",
+    "UP022",
+    "UP006",
+    "UP035",
+    "E701",
+    "E741",
+    "F841",
+    "E402",
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["repro_core", "repro_mlflow", "dlfs"]
+
+[tool.mypy]
+explicit_package_bases = true
+ignore_missing_imports = true

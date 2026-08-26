@@ -1,0 +1,53 @@
+domain: deepscratch.ds1.implemented
+kind: supervised_classification
+run: {experiment_id: e05, group_id: GT05, protocol: MNIST MLP BatchNorm scale, protocol_version: book-source-v1, recipe_id: ds1-gt05-batchnorm-scale, structure_signature: mnist-mlp-100x5}
+execution: {mode: seeded, default_device: cpu}
+seed_policy: {seed_set: research_v1, seed_count: 10, paired_execution: true}
+dataset: {id: mnist-train-first-1000, source: mnist, flatten: true, train_limit: 1000, test_limit: 10000}
+loader: {batch_size: 100, drop_last: false, sampling_method: with_replacement}
+model: {name: MLP, input_size: 784, hidden_sizes: [100, 100, 100, 100, 100], output_size: 10, activation: relu}
+optimizer: {name: sgd, learning_rate: 0.01}
+objective: {name: SoftmaxCrossEntropy, reduction: mean}
+budget: {max_epochs: 20}
+recording:
+  evaluation_sources:
+    - {id: mnist-train-first-1000, split: train, kind: first_n, count: 1000}
+  triggers:
+    - {type: updates, start: 1, every: 10, stop: 191, sources: [mnist-train-first-1000]}
+numerics: {dtype: float64, backend: numpy, device: cpu}
+checkpoint: {save_final: true, save_on_eval: false, format: v2}
+profiling: {enabled: false}
+tracking: {enabled: true, experiment: deepscratch.ds1}
+variants:
+  BN-SCALE-01-OFF: {run: {structure_signature: mnist-mlp-100x5-no-bn}, model: {initializer: 'std:1.0', use_batchnorm: false}}
+  BN-SCALE-01-ON: {run: {structure_signature: mnist-mlp-100x5-bn}, model: {initializer: 'std:1.0', use_batchnorm: true}}
+  BN-SCALE-02-OFF: {run: {structure_signature: mnist-mlp-100x5-no-bn}, model: {initializer: 'std:0.541169526', use_batchnorm: false}}
+  BN-SCALE-02-ON: {run: {structure_signature: mnist-mlp-100x5-bn}, model: {initializer: 'std:0.541169526', use_batchnorm: true}}
+  BN-SCALE-03-OFF: {run: {structure_signature: mnist-mlp-100x5-no-bn}, model: {initializer: 'std:0.292864456', use_batchnorm: false}}
+  BN-SCALE-03-ON: {run: {structure_signature: mnist-mlp-100x5-bn}, model: {initializer: 'std:0.292864456', use_batchnorm: true}}
+  BN-SCALE-04-OFF: {run: {structure_signature: mnist-mlp-100x5-no-bn}, model: {initializer: 'std:0.158489319', use_batchnorm: false}}
+  BN-SCALE-04-ON: {run: {structure_signature: mnist-mlp-100x5-bn}, model: {initializer: 'std:0.158489319', use_batchnorm: true}}
+  BN-SCALE-05-OFF: {run: {structure_signature: mnist-mlp-100x5-no-bn}, model: {initializer: 'std:0.085769590', use_batchnorm: false}}
+  BN-SCALE-05-ON: {run: {structure_signature: mnist-mlp-100x5-bn}, model: {initializer: 'std:0.085769590', use_batchnorm: true}}
+  BN-SCALE-06-OFF: {run: {structure_signature: mnist-mlp-100x5-no-bn}, model: {initializer: 'std:0.046415888', use_batchnorm: false}}
+  BN-SCALE-06-ON: {run: {structure_signature: mnist-mlp-100x5-bn}, model: {initializer: 'std:0.046415888', use_batchnorm: true}}
+  BN-SCALE-07-OFF: {run: {structure_signature: mnist-mlp-100x5-no-bn}, model: {initializer: 'std:0.025118864', use_batchnorm: false}}
+  BN-SCALE-07-ON: {run: {structure_signature: mnist-mlp-100x5-bn}, model: {initializer: 'std:0.025118864', use_batchnorm: true}}
+  BN-SCALE-08-OFF: {run: {structure_signature: mnist-mlp-100x5-no-bn}, model: {initializer: 'std:0.013593564', use_batchnorm: false}}
+  BN-SCALE-08-ON: {run: {structure_signature: mnist-mlp-100x5-bn}, model: {initializer: 'std:0.013593564', use_batchnorm: true}}
+  BN-SCALE-09-OFF: {run: {structure_signature: mnist-mlp-100x5-no-bn}, model: {initializer: 'std:0.007356423', use_batchnorm: false}}
+  BN-SCALE-09-ON: {run: {structure_signature: mnist-mlp-100x5-bn}, model: {initializer: 'std:0.007356423', use_batchnorm: true}}
+  BN-SCALE-10-OFF: {run: {structure_signature: mnist-mlp-100x5-no-bn}, model: {initializer: 'std:0.003981072', use_batchnorm: false}}
+  BN-SCALE-10-ON: {run: {structure_signature: mnist-mlp-100x5-bn}, model: {initializer: 'std:0.003981072', use_batchnorm: true}}
+  BN-SCALE-11-OFF: {run: {structure_signature: mnist-mlp-100x5-no-bn}, model: {initializer: 'std:0.002154435', use_batchnorm: false}}
+  BN-SCALE-11-ON: {run: {structure_signature: mnist-mlp-100x5-bn}, model: {initializer: 'std:0.002154435', use_batchnorm: true}}
+  BN-SCALE-12-OFF: {run: {structure_signature: mnist-mlp-100x5-no-bn}, model: {initializer: 'std:0.001165914', use_batchnorm: false}}
+  BN-SCALE-12-ON: {run: {structure_signature: mnist-mlp-100x5-bn}, model: {initializer: 'std:0.001165914', use_batchnorm: true}}
+  BN-SCALE-13-OFF: {run: {structure_signature: mnist-mlp-100x5-no-bn}, model: {initializer: 'std:0.000630957', use_batchnorm: false}}
+  BN-SCALE-13-ON: {run: {structure_signature: mnist-mlp-100x5-bn}, model: {initializer: 'std:0.000630957', use_batchnorm: true}}
+  BN-SCALE-14-OFF: {run: {structure_signature: mnist-mlp-100x5-no-bn}, model: {initializer: 'std:0.000341455', use_batchnorm: false}}
+  BN-SCALE-14-ON: {run: {structure_signature: mnist-mlp-100x5-bn}, model: {initializer: 'std:0.000341455', use_batchnorm: true}}
+  BN-SCALE-15-OFF: {run: {structure_signature: mnist-mlp-100x5-no-bn}, model: {initializer: 'std:0.000184785', use_batchnorm: false}}
+  BN-SCALE-15-ON: {run: {structure_signature: mnist-mlp-100x5-bn}, model: {initializer: 'std:0.000184785', use_batchnorm: true}}
+  BN-SCALE-16-OFF: {run: {structure_signature: mnist-mlp-100x5-no-bn}, model: {initializer: 'std:0.0001', use_batchnorm: false}}
+  BN-SCALE-16-ON: {run: {structure_signature: mnist-mlp-100x5-bn}, model: {initializer: 'std:0.0001', use_batchnorm: true}}

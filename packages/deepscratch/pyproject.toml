@@ -1,0 +1,16 @@
+[project]
+name = "deepscratch"
+version = "0.1.0"
+description = "Scratch-built deep learning engine and neural network library"
+requires-python = ">=3.11, <3.12"
+dependencies = [
+    "numpy>=1.26.0",
+    "psutil>=5.9.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/deepscratch"]
