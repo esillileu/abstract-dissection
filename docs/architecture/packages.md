@@ -30,9 +30,10 @@ The `packages/` directory houses independent, reusable Python libraries. Each pa
 * **Responsibilities:**
   * **Unified CLI Engine:** Dynamic discovery and registration of study plugins (`repro_core.cli`).
   * **Central Path Resolution:** `RuntimePaths` workspace management (`.staging`, `.cache`, `artifacts`, `data`, `references`).
-  * **Execution Protocol:** Spec parser interfaces, experiment context (`ExperimentContext`), progress reporting, checkpoint retention policies (`CheckpointRetentionPolicy`).
+  * **Pure Checkpoint Lifecycle:** `CheckpointManager` handles retention policy (`CheckpointRetentionPolicy`), generational naming, atomic staging, and pointer JSONs (`latest.json`, `best.json`, `final.json`) via minimal callable delegation (`save_fn`, `epoch_fn`, `step_fn`).
+  * **Execution Protocol:** Spec parser interfaces, experiment context (`ExperimentContext`), progress reporting, execution runners (`Runner`, `run_config`).
   * **Analysis Foundations:** Cross-run metrics aggregation, confidence interval estimators, publication-grade plotting styles.
-* **Non-Goals:** Does NOT know anything about deep learning models, layers, or neural network architectures.
+* **Non-Goals:** Does NOT know anything about deep learning models, autograd parameters, layers, or neural network architectures.
 
 ---
 
@@ -44,6 +45,7 @@ The `packages/` directory houses independent, reusable Python libraries. Each pa
   * **Durable Uploads:** Synchronous/asynchronous artifact and metric batching (`client.log_batch`, `client.log_artifact`).
   * **Verification:** Integrity checksum verification (`_verify_uploaded_manifest`) before marking runs as durable.
   * **Artifact Caching:** Transparent local caching of remote checkpoints and metric payloads (`.cache/mlflow_artifact/`).
+  * **YAML Runner:** CLI run orchestration with metadata validation (`run_yaml`).
 
 ---
 
@@ -60,11 +62,13 @@ The `packages/` directory houses independent, reusable Python libraries. Each pa
 
 ## 3. Automated Boundary Enforcement
 
-Architecture boundaries are strictly tested in the test suite:
+Architecture boundaries are strictly tested across all packages in [`tests/test_deepscratch_architecture.py`](file:///home/esillileu/abstract-dissection/tests/test_deepscratch_architecture.py):
 
-```python
-# tests/test_deepscratch_architecture.py
-def test_deepscratch_package_has_zero_dependencies_on_repro_core():
-    # Recursively scans all .py files in packages/deepscratch/src
-    # Asserts 0 occurrences of 'repro_core', 'repro_mlflow', or 'dlfs'
-```
+1. **`deepscratch` Zero-Dependency Check:**
+   Scans all Python files in `packages/deepscratch/src` and asserts **0 occurrences** of `repro_core`, `repro_mlflow`, or `dlfs`.
+2. **`repro-core` Engine Independence Check:**
+   Scans all Python files in `packages/repro-core/src` and asserts **0 occurrences** of `deepscratch` or `dlfs`.
+3. **`repro-core/context/checkpoint.py` Decoupling Check:**
+   Scans `checkpoint.py` and asserts **0 occurrences** of deep learning parameter or buffer manipulation tokens (`named_parameters`, `named_buffers`, `save_params_npz`, `load_params_npz`).
+4. **`repro-mlflow` Independence Check:**
+   Scans all Python files in `packages/repro-mlflow/src` and asserts **0 occurrences** of `deepscratch` or `dlfs`.

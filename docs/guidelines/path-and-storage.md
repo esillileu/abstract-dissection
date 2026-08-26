@@ -66,8 +66,18 @@ flowchart TD
 * MLflow stores:
   * Full run configurations and parameter hashes
   * Time-series metrics (loss, accuracy, perplexity, elapsed times)
-  * Checkpoints (`latest.pkl`, `best.pkl`, evaluation snapshots)
-  * Lineage manifests (`manifest.json`)
+  * Generational checkpoints:
+    * `checkpoints/generations/<role>-epoch-<E>-update-<U>-<digest>/`:
+      * `model_parameters.npz`
+      * `model_buffers.npz`
+      * `objective_parameters.npz`
+      * `objective_buffers.npz`
+      * `optimizer_state.pkl`
+      * `trainer_state.pkl`
+      * `rng_state.pkl`
+      * `manifest.json`
+    * Pointers: `latest.json`, `best.json`, `final.json`
+  * Lineage manifests (`result_manifest.json`, `checkpoint_manifest.json`)
 * Upload verification (`_verify_uploaded_manifest`) ensures that runs are only marked `result.durable_complete = true` when all artifacts are durable in MLflow.
 
 ---
@@ -87,14 +97,14 @@ Tier 3: Default Local Fallback (./data/<dataset>)
 ```
 
 ### Study-Level Path Injection (Dependency Injection)
-Inside `studies/dlfs`, explicit dataset paths are injected from `repro-core`'s central resolver:
+Inside `studies/dlfs`, explicit dataset paths are injected from `repro-core`'s central resolver via translation adapters:
 
 ```python
-# In studies/dlfs/src/dlfs/ds1/implemented/executor.py
-mnist_dir = RuntimePaths.from_environment().dataset("mnist")
-(x_train, t_train), (x_test, t_test) = load_mnist(
-    flatten=flatten, gpu=gpu, data_dir=mnist_dir
-)
+# In studies/dlfs/src/dlfs/ds1/implemented/adapters/data.py
+def load_ds1_mnist(*, flatten: bool = True, gpu: bool = False, paths=None):
+    runtime_paths = paths or RuntimePaths.from_environment()
+    data_dir = runtime_paths.dataset("mnist")
+    return load_mnist(flatten=flatten, gpu=gpu, data_dir=data_dir)
 ```
 
 ---
