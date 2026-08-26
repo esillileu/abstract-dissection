@@ -404,3 +404,13 @@ def test_repro_mlflow_has_zero_dependencies_on_deepscratch_or_dlfs() -> None:
             if name.startswith("deepscratch") or name.startswith("dlfs")
         )
     assert violations == []
+
+
+def test_repro_core_has_zero_dependencies_on_repro_mlflow() -> None:
+    violations = []
+    root = Path("packages/repro-core/src")
+    for path in root.rglob("*.py"):
+        violations.extend(
+            (path, name) for name in _imports(path) if name.startswith("repro_mlflow")
+        )
+    assert violations == []

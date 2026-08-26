@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.metadata
+import warnings
 from collections.abc import Sequence
 
 import typer
@@ -43,27 +44,26 @@ PLUGIN_REGISTRY = DomainRegistry()
 
 
 def discover_and_register_plugins() -> None:
-    """Discover study plugins via entry points or direct imports."""
-    # 1. Entry points
+    """Discover study plugins via entry points."""
     try:
         eps = importlib.metadata.entry_points(group="repro.studies")
-        for ep in eps:
-            try:
-                plugin = ep.load()
-                if plugin.name not in PLUGIN_REGISTRY.names():
-                    PLUGIN_REGISTRY.register(plugin, COMMAND_GROUPS)
-            except Exception:
-                pass
-    except Exception:
-        pass
+    except Exception as exc:
+        warnings.warn(
+            f"Failed to query entry points for 'repro.studies': {exc}",
+            stacklevel=2,
+        )
+        return
 
-    # 2. Fallback import for dlfs
-    if "dlfs" not in PLUGIN_REGISTRY.names():
+    for ep in eps:
         try:
-            DLFS_PLUGIN = importlib.import_module("dlfs.plugin").PLUGIN
-            PLUGIN_REGISTRY.register(DLFS_PLUGIN, COMMAND_GROUPS)
-        except Exception:
-            pass
+            plugin = ep.load()
+            if plugin.name not in PLUGIN_REGISTRY.names():
+                PLUGIN_REGISTRY.register(plugin, COMMAND_GROUPS)
+        except Exception as exc:
+            warnings.warn(
+                f"Failed to load study plugin '{ep.name}' ({ep.value}): {exc}",
+                stacklevel=2,
+            )
 
 
 @app.command("list")

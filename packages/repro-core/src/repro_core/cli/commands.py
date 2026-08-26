@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import re
+from collections.abc import Callable
 
 from repro_core.execution.definition import (
     ExecutionDefinition,
@@ -60,6 +61,7 @@ def run_command(
     progress: str,
     progress_every: int,
     tracking_uri: str | None,
+    run_fn: Callable[..., object] | None = None,
 ) -> None:
     _validate_device(device)
     if progress not in {"auto", "none", "line", "tqdm"}:
@@ -91,7 +93,7 @@ def run_command(
     if tracking_uri is not None:
         os.environ["MLFLOW_TRACKING_URI"] = tracking_uri
     try:
-        Runner(domain).run(plans, options)
+        Runner(domain, run_fn=run_fn).run(plans, options)
     finally:
         if tracking_uri is not None:
             if previous_uri is None:

@@ -6,6 +6,7 @@ import importlib
 import os
 import shutil
 import warnings
+from collections.abc import Callable
 from pathlib import Path
 from urllib.error import URLError
 from urllib.request import urlopen
@@ -14,14 +15,29 @@ from .definition import ExecutionDefinition, RunOptions, RunPlan
 
 
 class Runner:
-    def __init__(self, domain: ExecutionDefinition) -> None:
+    def __init__(
+        self,
+        domain: ExecutionDefinition,
+        run_fn: Callable[..., object] | None = None,
+    ) -> None:
         self.domain = domain
+        self._run_fn = run_fn
 
-    def run(self, plans: list[RunPlan], options: RunOptions) -> None:
+    def run(
+        self,
+        plans: list[RunPlan],
+        options: RunOptions,
+        *,
+        run_fn: Callable[..., object] | None = None,
+    ) -> None:
+        runner_fn = run_fn or self._run_fn
+        if runner_fn is None:
+            raise ValueError(
+                "Runner requires an execution runner function (e.g. run_yaml)"
+            )
         self._require_mlflow_server(plans, options.overrides)
         self._require_devices(plans)
         from repro_core.context.progress import ProgressManager, RunProgressContext
-        from repro_mlflow import run_yaml
 
         progress = ProgressManager(
             mode=options.progress, every=options.progress_every, total_runs=len(plans)
@@ -61,7 +77,7 @@ class Runner:
                         run_kwargs["checkpoint_source_resolver"] = (
                             checkpoint_source_resolver
                         )
-                    receipt = run_yaml(
+                    receipt = runner_fn(
                         plan.path,
                         atomic_run_id=plan.atomic_run_id,
                         seed=plan.seed,
@@ -79,9 +95,11 @@ class Runner:
         finally:
             progress.close()
             for receipt in receipts:
-                if not receipt.durable_complete:
+                if not getattr(receipt, "durable_complete", False):
                     continue
-                _remove_durable_staging(receipt.staging_root)
+                staging_root = getattr(receipt, "staging_root", None)
+                if staging_root is not None:
+                    _remove_durable_staging(staging_root)
 
     def _require_mlflow_server(
         self, plans: list[RunPlan], overrides: dict[str, object]
@@ -153,22 +171,35 @@ def run_config(
     *,
     executor_module: str | None = None,
 ) -> object:
-    """Run through an optional explicitly selected experiment-domain adapter."""
+    """Run through an explicitly selected experiment-domain adapter."""
     from repro_core.context import ExperimentContext
-    from repro_core.registry import get_executor
 
-    module = (
-        importlib.import_module(executor_module)
-        if executor_module is not None
-        else None
-    )
+    if executor_module is None:
+        raise ValueError("run_config requires an executor_module")
+    module = importlib.import_module(executor_module)
     ctx = (
         context
         if isinstance(context, ExperimentContext)
         else (ExperimentContext() if context is None else context)
     )
-    if str(config.get("kind")) == "observation" and module is not None:
+    kind = str(config["kind"])
+    if kind == "observation":
         resolver = getattr(module, "get_observation_executor", None)
         if callable(resolver):
             return resolver(config).run(config, ctx)
-    return get_executor(str(config["kind"])).run(config, ctx)
+        raise ValueError(
+            f"executor module '{executor_module}' does not support kind 'observation'"
+        )
+
+    resolver = getattr(module, "get_executor", None)
+    if callable(resolver):
+        return resolver(kind).run(config, ctx)
+
+    executors = getattr(module, "EXECUTORS", None)
+    if isinstance(executors, dict) and kind in executors:
+        executor = executors[kind]
+        return (executor() if isinstance(executor, type) else executor).run(config, ctx)
+
+    raise ValueError(
+        f"unknown experiment kind '{kind}' in executor module '{executor_module}'"
+    )

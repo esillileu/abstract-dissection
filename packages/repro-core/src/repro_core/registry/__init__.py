@@ -3,8 +3,6 @@ from .plugin import (
     DomainPlugin,
     DomainRegistry,
     StudyPlugin,
-    get_executor,
-    register_executor,
 )
 
 __all__ = [
@@ -12,6 +10,4 @@ __all__ = [
     "DomainPlugin",
     "DomainRegistry",
     "StudyPlugin",
-    "get_executor",
-    "register_executor",
 ]

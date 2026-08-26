@@ -56,31 +56,9 @@ class DomainRegistry:
         return tuple(self._plugins)
 
 
-_EXECUTORS: dict[str, Any] = {}
-
-
-def register_executor(kind: str):
-    def decorator(executor: Any) -> Any:
-        if kind in _EXECUTORS:
-            raise ValueError(f"executor already registered: {kind}")
-        _EXECUTORS[kind] = executor() if isinstance(executor, type) else executor
-        return executor
-
-    return decorator
-
-
-def get_executor(kind: str) -> Any:
-    try:
-        return _EXECUTORS[kind]
-    except KeyError as exc:
-        raise ValueError(f"unknown experiment kind: {kind}") from exc
-
-
 __all__ = [
     "CommandGroups",
     "DomainPlugin",
     "DomainRegistry",
     "StudyPlugin",
-    "get_executor",
-    "register_executor",
 ]

@@ -10,6 +10,12 @@ check:
     uv run ruff format --check .
     uv run pytest -q
 
+# Fix linting and formatting errors
+lint:
+    uv run ruff check --fix .
+    uv run ruff format .
+
+
 # Run test suite
 test *args:
     uv run pytest {{args}}

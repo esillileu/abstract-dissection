@@ -37,7 +37,6 @@ from repro_core.context.checkpoint import (
 from repro_core.context.contracts import ExperimentResult
 from repro_core.context.event_executor import EvaluationRequest, EventExperimentExecutor
 from repro_core.context.metrics import build_final_metrics
-from repro_core.registry import register_executor
 
 from .final_gap import evaluate_checkpoint_gap, is_target_run
 from .records import DS1Records
@@ -54,7 +53,6 @@ def get_observation_executor(config: dict[str, object]):
     raise ValueError(f"unknown DS1 observation group: {group_id}")
 
 
-@register_executor("supervised_classification")
 class SupervisedClassificationExecutor:
     def run(
         self, config: dict[str, object], context: ExperimentContext
@@ -770,3 +768,15 @@ def _validation_probe(
             "sha256": hashlib.sha256(valid_indices.tobytes()).hexdigest(),
         },
     )
+
+
+_EXECUTORS = {
+    "supervised_classification": SupervisedClassificationExecutor(),
+}
+
+
+def get_executor(kind: str):
+    try:
+        return _EXECUTORS[kind]
+    except KeyError as exc:
+        raise ValueError(f"unknown DS1 implemented experiment kind: {kind}") from exc

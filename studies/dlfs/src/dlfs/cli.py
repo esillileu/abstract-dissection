@@ -21,6 +21,7 @@ from repro_core.context.paths import StateCoordinate, StateOwner, WorkspacePaths
 from repro_core.execution import RunOptions, RunOrder, RunSelection
 from repro_core.execution.parsing import parse_experiment_ids, parse_overrides
 from repro_core.execution.planning import Planner
+from repro_mlflow import run_yaml
 
 from .definition import DEFINITION
 from .identity import Variant, Volume
@@ -120,6 +121,7 @@ def run(
         progress=progress,
         progress_every=progress_every,
         tracking_uri=tracking_uri,
+        run_fn=run_yaml,
     )
 
 

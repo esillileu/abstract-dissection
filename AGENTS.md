@@ -13,10 +13,11 @@ All AI agents working in this repository MUST adhere to the following 6 golden r
 * **Standard:** ALWAYS prefix Python executions and tools with `uv run` (e.g., `uv run pytest`, `uv run repro ...`, `uv run python -c "..."`).
 * **Environment:** Python 3.11.11 managed via root [`pyproject.toml`](file:///home/esillileu/abstract-dissection/pyproject.toml) and [`uv.lock`](file:///home/esillileu/abstract-dissection/uv.lock).
 
-### 2) Zero-Dependency Invariant on `deepscratch`
-* **Rule:** [`packages/deepscratch`](file:///home/esillileu/abstract-dissection/packages/deepscratch) is a 100% standalone deep learning library.
-* **Prohibition:** NEVER add imports of `repro_core`, `repro_mlflow`, or study packages (`dlfs`) inside `packages/deepscratch`.
-* **Allowed Dependencies:** `numpy`, `psutil`, (optional: `cupy`).
+### 2) Zero-Dependency Invariants & Package Isolation
+* **`deepscratch`:** 100% standalone deep learning library. NEVER import `repro_core`, `repro_mlflow`, or studies (`dlfs`). Allowed: `numpy`, `psutil`, (optional: `cupy`).
+* **`repro-core`:** Tracking-neutral experiment orchestration library. NEVER import `repro_mlflow`, `deepscratch`, or studies. Orchestrates executions via injected delegates and module-scoped executor dispatch (`ExecutionDefinition.executor_module`).
+* **Directionality:** Unidirectional dependency flow: $\text{studies} \rightarrow \text{repro-mlflow} \rightarrow \text{repro-core} \rightarrow \text{standard library / third-party}$.
+
 
 ### 3) 3-Tier Dataset Resolution & Path Injection
 * **Rule:** NEVER hardcode paths to dataset files (e.g. `./mnist`, `/tmp/data`).

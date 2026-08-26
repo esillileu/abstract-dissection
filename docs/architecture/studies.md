@@ -61,19 +61,62 @@ See [`docs/architecture/adapters.md`](file:///home/esillileu/abstract-dissection
 
 ## 4. Dynamic Plugin Discovery Interface
 
-`repro-core` discovers studies dynamically at runtime through a standardized plugin contract in [`studies/*/src/*/plugin.py`](file:///home/esillileu/abstract-dissection/studies/dlfs/src/dlfs/plugin.py):
+`repro-core` discovers studies dynamically at runtime through a standardized plugin contract declared as an entry point in `studies/*/pyproject.toml`:
+
+```toml
+[project.entry-points."repro.studies"]
+dlfs = "dlfs.plugin:PLUGIN"
+```
+
+The plugin entrypoint implements the `StudyPlugin` protocol:
 
 ```python
 # plugin.py
-class StudyPlugin:
-    @property
-    def name(self) -> str:
-        """Name of the study as invoked via CLI (e.g., 'dlfs')."""
-        return "dlfs"
+@dataclass(frozen=True)
+class DLFSStudyPlugin:
+    name: str = "dlfs"
 
-    def register_commands(self, group: click.Group) -> None:
+    def register_commands(self, groups: CommandGroups) -> None:
         """Attach study-specific command groups to the central `repro` CLI."""
-        group.add_command(dlfs_group)
+        from . import cli
+
+        groups.plan.command(self.name, help="Inspect run plans.")(cli.plan)
+        groups.run.command(self.name, help="Execute experiments.")(cli.run)
+        groups.analyze.command(self.name, help="Render results.")(cli.analyze)
+        groups.check.command(self.name, help="Compare recorded run state.")(cli.check)
+        groups.profile.command(self.name, help="Profile runtimes.")(cli.profile)
+
+        # Also register study-first CLI subcommand group: repro dlfs ...
+        dlfs_app = typer.Typer(name=self.name, no_args_is_help=True)
+        ...
+        groups.root.add_typer(dlfs_app, name=self.name)
 ```
 
-This allows adding new studies (e.g., `studies/transformer`, `studies/diffusion`) without modifying a single line of code in `repro-core`.
+Plugin discovery reports visible diagnostic warnings if a third-party study entry point fails to load, while preserving full functionality for healthy studies.
+
+---
+
+## 5. Module-Scoped Executor Resolution & Isolation
+
+To support multiple independent studies in the monorepo (e.g. `dlfs`, `f2`, `transformer`) without naming collisions:
+
+1. **No Process-Global Registry:** Experiment kinds (such as `"word2vec"` or `"supervised_classification"`) are **not** registered in a global singleton registry.
+2. **Explicit Module Scoping:** Each study catalog declares its execution adapter module via `ExecutionDefinition(executor_module="...")`.
+3. **Module Dispatch Contract:** The study's executor module provides a `get_executor(kind: str)` function or `EXECUTORS` mapping:
+
+```python
+# In studies/f2/src/f2/executor.py
+_EXECUTORS = {
+    "word2vec": F2Word2VecExecutor(),
+}
+
+
+def get_executor(kind: str):
+    try:
+        return _EXECUTORS[kind]
+    except KeyError as exc:
+        raise ValueError(f"unknown F2 experiment kind: {kind}") from exc
+```
+
+When `run_config` or `run_yaml` executes, it dynamically dispatches to the specified `executor_module`, ensuring complete isolation across studies.
+

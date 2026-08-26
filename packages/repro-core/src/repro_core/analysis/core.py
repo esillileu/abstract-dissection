@@ -304,21 +304,34 @@ def _local_artifact_root(
 
 
 def artifact_file(client, run: RunRef, artifact_path: str) -> Path | None:
-    """Resolve the local schema-v1 mirror, then fall back to MLflow download."""
+    """Resolve the local schema-v1 mirror, then fall back to client download."""
     if run.local_artifact_root is not None:
         local_path = run.local_artifact_root / artifact_path
         if local_path.is_file():
             return local_path
+    if client is None:
+        return None
     try:
-        from repro_mlflow.artifact_cache import MlflowArtifactCache
+        if hasattr(client, "artifact_file") and callable(client.artifact_file):
+            result = client.artifact_file(run, artifact_path)
+            if result is not None and Path(result).is_file():
+                return Path(result)
+        if hasattr(client, "get") and callable(client.get):
+            result = client.get(run.run_id, artifact_path)
+            if result is not None and Path(result).is_file():
+                return Path(result)
+        if hasattr(client, "download_artifacts") and callable(
+            client.download_artifacts
+        ):
+            import tempfile
 
-        tracking_uri = str(getattr(client, "tracking_uri", DEFAULT_TRACKING_URI))
-        downloaded = MlflowArtifactCache(client, tracking_uri).get(
-            run.run_id, artifact_path
-        )
+            temp_dir = tempfile.mkdtemp(prefix="repro_artifact_")
+            result = client.download_artifacts(run.run_id, artifact_path, temp_dir)
+            if result is not None and Path(result).is_file():
+                return Path(result)
     except Exception:
         return None
-    return downloaded if downloaded.is_file() else None
+    return None
 
 
 def artifact_rows(client, run: RunRef, artifact_path: str) -> list[dict[str, str]]:

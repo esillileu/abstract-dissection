@@ -52,7 +52,6 @@ from repro_core.context.checkpoint import (
 )
 from repro_core.context.contracts import ExperimentResult
 from repro_core.context.event_executor import EvaluationRequest, EventExperimentExecutor
-from repro_core.registry import register_executor
 
 from .records import DS2Records
 
@@ -111,7 +110,6 @@ def _publish_array_checkpoint(context: ExperimentContext, **arrays: np.ndarray) 
     return target
 
 
-@register_executor("count_based_embedding")
 class CountBasedEmbeddingExecutor:
     """Build and persist PTB PPMI representations and their factorizations."""
 
@@ -201,7 +199,6 @@ class CountBasedEmbeddingExecutor:
         )
 
 
-@register_executor("performance_profile")
 class ProfileExecutor:
     """Dispatch canonical profile studies through their shared result contract."""
 
@@ -360,7 +357,6 @@ def _source_curve_from_objective(config: dict[str, object]):
     return reduce
 
 
-@register_executor("word2vec")
 class Word2VecExecutor:
     def run(
         self, config: dict[str, object], context: ExperimentContext
@@ -513,7 +509,6 @@ class Word2VecExecutor:
         )
 
 
-@register_executor("language_modeling")
 class LanguageModelExecutor:
     def run(
         self, config: dict[str, object], context: ExperimentContext
@@ -718,7 +713,6 @@ class LanguageModelExecutor:
         )
 
 
-@register_executor("seq2seq")
 class Seq2SeqExecutor:
     def run(
         self, config: dict[str, object], context: ExperimentContext
@@ -1305,3 +1299,19 @@ def _file_digest(path: Path) -> str:
         for chunk in iter(lambda: file.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+_EXECUTORS = {
+    "count_based_embedding": CountBasedEmbeddingExecutor(),
+    "performance_profile": ProfileExecutor(),
+    "word2vec": Word2VecExecutor(),
+    "language_modeling": LanguageModelExecutor(),
+    "seq2seq": Seq2SeqExecutor(),
+}
+
+
+def get_executor(kind: str):
+    try:
+        return _EXECUTORS[kind]
+    except KeyError as exc:
+        raise ValueError(f"unknown DS2 implemented experiment kind: {kind}") from exc
