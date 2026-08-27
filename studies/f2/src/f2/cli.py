@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
+import subprocess
+import urllib.parse
 import urllib.request
 import uuid
 from pathlib import Path
@@ -112,7 +115,7 @@ def plan_corpus(
     sample_size: Annotated[
         int, typer.Option("--sample-size", "-n", help="Target sample size")
     ] = 100,
-    seed: Annotated[int, typer.Option("--seed", "-s", help="Random seed")] = 42,
+    seed: Annotated[int, typer.Option("--seed", "-s", help="Random seed")] = 20260227,
 ) -> None:
     """Inspect sampling plan, strata parameters, and design inclusion probabilities."""
     typer.echo(f"=== F2 Corpus Sampling Plan ({crawl}) ===")
@@ -132,10 +135,8 @@ def plan_corpus(
     typer.echo(
         "  Stage 2: SRS of n_k records per block (pi_within = n_k / M_k, where M_k = 3,000)"
     )
-    typer.echo("  Prevalence Filter: None (Unbiased ground truth)")
-    typer.echo(
-        "  Classification Correction: Two-phase residual difference estimator (e_i = y_gold - y_proxy)"
-    )
+    typer.echo("  Pre-Fetch Filter: Rule 1 Only (32 binary media extensions)")
+    typer.echo("  Reject Exploration Rate: 5% (pi_explore = 0.05)")
     typer.echo("  State Store: PostgreSQL operational control plane")
 
 
@@ -146,14 +147,23 @@ def sample_corpus(
     ] = "CC-MAIN-2009-2010,CC-MAIN-2012",
     sample_size: Annotated[
         int, typer.Option("--sample-size", "-n", help="Total records to sample")
-    ] = 50,
-    seed: Annotated[int, typer.Option("--seed", "-s", help="Random seed")] = 42,
+    ] = 50000,
+    seed: Annotated[int, typer.Option("--seed", "-s", help="Random seed")] = 20260227,
+    prefetch_rule: Annotated[
+        str, typer.Option("--prefetch-rule", help="Pre-fetch rule ('rule1' or 'none')")
+    ] = "rule1",
+    reject_exploration_rate: Annotated[
+        float,
+        typer.Option(
+            "--reject-exploration-rate", help="Sampling rate for rejected records"
+        ),
+    ] = 0.05,
     bandwidth_limit: Annotated[
         float, typer.Option("--bandwidth-limit", "-b", help="Bandwidth limit in Mbps")
     ] = 20.0,
     concurrency: Annotated[
         int, typer.Option("--concurrency", "-j", help="Concurrent fetch workers")
-    ] = 2,
+    ] = 4,
     output_dir: Annotated[
         Path, typer.Option("--output-dir", "-o", help="Output directory")
     ] = Path(".staging/exp/f2/sample"),
@@ -169,7 +179,37 @@ def sample_corpus(
     crawl_list = [c.strip() for c in crawls.split(",") if c.strip()]
     per_crawl_target = max(1, sample_size // len(crawl_list))
 
+    try:
+        exec_sha = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], text=True
+        ).strip()
+    except Exception:
+        exec_sha = "unknown"
+
+    config_dict = {
+        "seed": seed,
+        "sample_size": sample_size,
+        "crawls": crawl_list,
+        "prefetch_rule": prefetch_rule,
+        "reject_exploration_rate": reject_exploration_rate,
+        "concurrency": concurrency,
+        "bandwidth_limit": bandwidth_limit,
+    }
+    config_hash = hashlib.sha256(
+        json.dumps(config_dict, sort_keys=True).encode()
+    ).hexdigest()[:16]
+
+    run_meta = {
+        "baseline_10k_commit_sha": "f3dee9676517d9a7506b162aff83a111f45209dc",
+        "execution_50k_commit_sha": exec_sha,
+        "config_hash": config_hash,
+        "frozen_parameters": config_dict,
+    }
+
     typer.echo(f"Initializing run '{active_run_id}' in PostgreSQL...")
+    typer.echo(f"  - Baseline SHA: {run_meta['baseline_10k_commit_sha']}")
+    typer.echo(f"  - Execution SHA: {run_meta['execution_50k_commit_sha']}")
+    typer.echo(f"  - Config Hash: {config_hash}")
 
     with get_connection() as conn:
         run_migrations(conn)
@@ -183,6 +223,7 @@ def sample_corpus(
             bandwidth_mbps=bandwidth_limit,
             concurrency=concurrency,
             output_dir=output_dir.as_posix(),
+            metadata=run_meta,
         )
 
         completed_candidate_ids = repo.get_completed_candidate_ids(active_run_id)
@@ -201,13 +242,15 @@ def sample_corpus(
             f"Starting feasibility sampling across {len(crawl_list)} crawls (Target: {sample_size} records)..."
         )
         typer.echo(
-            f"Bandwidth limit: {bandwidth_limit} Mbps, Concurrency: {concurrency}"
+            f"Prefetch Rule: {prefetch_rule}, Reject Rate: {reject_exploration_rate}, Concurrency: {concurrency}, Limit: {bandwidth_limit} Mbps"
         )
 
         records_per_block = 5
         blocks_per_crawl = max(1, math.ceil(per_crawl_target / records_per_block))
 
         processed_total = 0
+        fetched_total = 0
+        skipped_total = 0
         news_total = 0
 
         for crawl_idx, crawl_id in enumerate(crawl_list):
@@ -240,6 +283,8 @@ def sample_corpus(
                     sampled_candidates,
                     num_selected_blocks=len(blocks),
                     total_crawl_blocks=reader.total_blocks(),
+                    prefetch_rule=prefetch_rule,
+                    reject_exploration_rate=reject_exploration_rate,
                 )
 
                 repo.insert_candidates(active_run_id, final_candidates)
@@ -249,9 +294,33 @@ def sample_corpus(
                     if cand_id in completed_candidate_ids:
                         continue
 
+                    if not cand.is_selected_for_fetch:
+                        # Record skipped reject without issuing network request
+                        skipped_res = runner.process(
+                            record_id=cand_id,
+                            crawl_id=cand.crawl_id,
+                            url=cand.url,
+                            raw_arc_compressed=b"",
+                            inclusion_probability=cand.inclusion_probability,
+                            design_weight=cand.design_weight,
+                            downloaded_bytes=0,
+                        )
+                        repo.record_processing_result(
+                            active_run_id,
+                            skipped_res,
+                            prefilter_status="reject",
+                            is_reject_exploration=False,
+                        )
+                        completed_candidate_ids.add(cand_id)
+                        skipped_total += 1
+                        processed_total += 1
+                        continue
+
+                    # Fetch payload for pass stream or sampled reject exploration
                     arc_fetch = fetcher.fetch_range(
                         cand.filename, cand.offset, cand.length
                     )
+                    is_rej_explore = cand.prefilter_status == "reject"
                     result = runner.process(
                         record_id=cand_id,
                         crawl_id=cand.crawl_id,
@@ -280,17 +349,17 @@ def sample_corpus(
                         result,
                         clean_text_sha256=clean_sha,
                         shard_path=shard_p,
+                        prefilter_status=cand.prefilter_status,
+                        is_reject_exploration=is_rej_explore,
                     )
                     completed_candidate_ids.add(cand_id)
+                    fetched_total += 1
                     processed_total += 1
 
-                    url_display = (
-                        cand.url if len(cand.url) <= 50 else cand.url[:47] + "..."
-                    )
-                    typer.echo(
-                        f"  [{processed_total}/{sample_size}] {url_display} -> {result.fetch_status} "
-                        f"[news={result.is_news_predicted}, en={result.is_english}, valid={result.is_valid}, words={result.word_count}]"
-                    )
+                    if processed_total % 250 == 0 or processed_total == sample_size:
+                        typer.echo(
+                            f"  [Progress: {processed_total}/{sample_size}] Fetched: {fetched_total}, Skipped Rejects: {skipped_total}, Retained News: {news_total}"
+                        )
 
         text_writer.close()
         repo.update_run_status(active_run_id, "completed")
@@ -299,10 +368,14 @@ def sample_corpus(
         exporter = ProvenanceExporter(repo)
         exports = exporter.export(active_run_id, output_dir)
         typer.echo(f"\nSampling completed successfully! Run ID: {active_run_id}")
-        typer.echo(f"  - Total Processed: {processed_total}")
-        typer.echo(f"  - Retained News:   {news_total}")
-        typer.echo(f"  - Parquet Export:  {exports['parquet']}")
-        typer.echo(f"  - JSONL Export:    {exports['jsonl']}")
+        typer.echo(f"  - Total Candidates: {processed_total}")
+        typer.echo(f"  - Fetched Payloads: {fetched_total}")
+        typer.echo(
+            f"  - Avoided Rejects:  {skipped_total} ({skipped_total / max(1, processed_total) * 100:.1f}%)"
+        )
+        typer.echo(f"  - Retained News:    {news_total}")
+        typer.echo(f"  - Parquet Export:   {exports['parquet']}")
+        typer.echo(f"  - JSONL Export:     {exports['jsonl']}")
 
 
 @app.command("export")
@@ -332,12 +405,12 @@ def create_audit(
     ],
     budget: Annotated[
         int, typer.Option("--budget", "-b", help="Total audit sample size")
-    ] = 200,
+    ] = 400,
     seed: Annotated[
         int, typer.Option("--seed", "-s", help="Random seed for audit priority")
-    ] = 1337,
+    ] = 20260227,
 ) -> None:
-    """Generate pre-specified sequential audit assignments and store in PostgreSQL."""
+    """Generate pre-specified 8-stratum sequential audit assignments and store in PostgreSQL."""
     with get_connection() as conn:
         repo = CorpusStateRepository(conn)
         records = repo.get_provenance_records(run_id)
@@ -345,15 +418,15 @@ def create_audit(
             typer.echo(f"No records found for run '{run_id}'.")
             return
 
-        preds = [int(r["is_news_predicted"]) for r in records]
+        # Use only records that were actually fetched
+        fetched_records = [r for r in records if r.get("fetch_status") == "success"]
         sampler = SequentialAuditSampler(seed=seed)
-        schedule = sampler.generate_audit_schedule(records, preds)
-        per_stratum = {0: budget // 2, 1: budget // 2}
-        assignments = sampler.select_audit_wave(schedule, per_stratum)
+        schedule = sampler.generate_8_stratum_audit_schedule(fetched_records)
+        assignments = sampler.select_8_stratum_audit_wave(schedule, total_budget=budget)
 
         count = repo.insert_audit_assignments(run_id, assignments)
         typer.echo(
-            f"Created {count} audit assignments for run '{run_id}' with pre-specified priority."
+            f"Created {count} audit assignments across 8 design strata for run '{run_id}'."
         )
 
 
@@ -365,9 +438,16 @@ def review_audit(
     output_file: Annotated[
         Path,
         typer.Option("--output-file", "-o", help="Audit review JSONL output path"),
-    ] = Path(".staging/exp/f2/audit_set_200.jsonl"),
+    ] = Path(".staging/exp/f2/audit_set_50k_400_blind.jsonl"),
+    blind: Annotated[
+        bool,
+        typer.Option(
+            "--blind/--no-blind",
+            help="Mask model predictions & scores for double-blind auditing",
+        ),
+    ] = True,
 ) -> None:
-    """Export the 200 audit assignments with complete metadata, weights, and text for manual labeling."""
+    """Export the audit assignments with text for manual labeling (supports double-blind mode)."""
     output_file.parent.mkdir(parents=True, exist_ok=True)
     with get_connection() as conn:
         repo = CorpusStateRepository(conn)
@@ -379,7 +459,10 @@ def review_audit(
             return
 
         # Map URLs to clean text snippet if shards exist
-        shard_dir = Path(".staging/exp/f2/sample_10k/clean_shards")
+        shard_dir = Path(".staging/exp/f2/confirmatory_50k/clean_shards")
+        if not shard_dir.exists():
+            shard_dir = Path(".staging/exp/f2/sample_10k/clean_shards")
+
         url_to_text: dict[str, str] = {}
         if shard_dir.exists():
             import re
@@ -402,88 +485,105 @@ def review_audit(
                 if snippet and len(snippet) > 800:
                     snippet = snippet[:800] + "..."
 
-                review_entry = {
-                    "audit_id": item["audit_id"],
-                    "candidate_id": item["candidate_id"],
-                    "priority_order": item["priority_order"],
-                    "audit_stratum": item["audit_stratum"],
-                    "audit_stratum_label": "News (Stratum 1)"
-                    if item["audit_stratum"] == 1
-                    else "Non-News (Stratum 0)",
-                    "wave": item.get("wave", 1),
-                    "crawl_id": item["crawl_id"],
-                    "url": u,
-                    "domain": domain,
-                    "first_stage_inclusion_probability": item["first_stage_pi"],
-                    "first_stage_design_weight": item["first_stage_weight"],
-                    "audit_inclusion_probability": item["audit_inclusion_probability"],
-                    "audit_design_weight": item["audit_design_weight"],
-                    "news_score": item["news_score"],
-                    "is_news_predicted": item["is_news_predicted"],
-                    "is_english": item["is_english"],
-                    "is_valid": item["is_valid"],
-                    "word_count": item["word_count"],
-                    "word_count_proxy": item["word_count_proxy"],
-                    "diagnostics": item["diagnostics"],
-                    "text_snippet": snippet,
-                    # Fields for manual labeler:
-                    "gold_class": item["gold_class"] if item["is_audited"] else None,
-                    "word_count_gold": item["word_count_gold"]
-                    if item["is_audited"]
-                    else None,
-                    "auditor_id": item.get("auditor_id"),
-                    "notes": item.get("notes"),
-                }
+                if blind:
+                    review_entry = {
+                        "audit_id": item["audit_id"],
+                        "candidate_id": item["candidate_id"],
+                        "priority_order": item["priority_order"],
+                        "wave": item.get("wave", 1),
+                        "crawl_id": item["crawl_id"],
+                        "url": u,
+                        "domain": domain,
+                        "word_count": item["word_count"],
+                        "text_snippet": snippet,
+                        "gold_class": item["gold_class"]
+                        if item["is_audited"]
+                        else None,
+                        "word_count_gold": item["word_count_gold"]
+                        if item["is_audited"]
+                        else None,
+                        "auditor_id": item.get("auditor_id"),
+                        "notes": item.get("notes"),
+                    }
+                else:
+                    review_entry = {
+                        "audit_id": item["audit_id"],
+                        "candidate_id": item["candidate_id"],
+                        "priority_order": item["priority_order"],
+                        "design_stratum": item.get("design_stratum"),
+                        "audit_stratum": item["audit_stratum"],
+                        "wave": item.get("wave", 1),
+                        "crawl_id": item["crawl_id"],
+                        "url": u,
+                        "domain": domain,
+                        "first_stage_inclusion_probability": item["first_stage_pi"],
+                        "first_stage_design_weight": item["first_stage_weight"],
+                        "audit_inclusion_probability": item[
+                            "audit_inclusion_probability"
+                        ],
+                        "audit_design_weight": item["audit_design_weight"],
+                        "news_score": item["news_score"],
+                        "is_news_predicted": item["is_news_predicted"],
+                        "is_english": item["is_english"],
+                        "is_valid": item["is_valid"],
+                        "word_count": item["word_count"],
+                        "word_count_proxy": item["word_count_proxy"],
+                        "diagnostics": item["diagnostics"],
+                        "text_snippet": snippet,
+                        "gold_class": item["gold_class"]
+                        if item["is_audited"]
+                        else None,
+                        "word_count_gold": item["word_count_gold"]
+                        if item["is_audited"]
+                        else None,
+                        "auditor_id": item.get("auditor_id"),
+                        "notes": item.get("notes"),
+                    }
                 exported_items.append(review_entry)
                 f.write(json.dumps(review_entry, default=str) + "\n")
 
         # Also write Markdown Review Dossier
-        md_file = output_file.parent / "audit_set_200_review.md"
+        md_file = output_file.parent / "audit_set_50k_400_review.md"
+        mode_tag = "Double-Blind Mode" if blind else "Unblinded Control Mode"
         md_lines = [
-            f"# Phase-2 Probability Audit Set (200 Documents) — Run `{run_id}`",
+            f"# Phase-2 8-Stratum Gold Audit Set ({len(audit_items)} Documents) — Run `{run_id}` ({mode_tag})",
             "",
-            "> **Pre-specified Sequential Probability Sampling Design**",
-            "> * Stratum 1 (Predicted News): 100 documents",
-            "> * Stratum 0 (Predicted Non-News): 100 documents",
+            "> **Pre-specified 8-Stratum Factorial Audit Design (Crawl x Prefilter x Postfilter)**",
             "",
             "---",
             "",
         ]
         for entry in exported_items:
+            strat_display = (
+                f"Stratum `{entry.get('design_stratum', 'N/A')}`"
+                if not blind
+                else "Blinded Unit"
+            )
             md_lines.extend(
                 [
-                    f"### #{entry['priority_order']:03d} [{entry['audit_stratum_label']}] `{entry['audit_id']}`",
+                    f"### #{entry['priority_order']:03d} [{strat_display}] `{entry['audit_id']}`",
                     f"- **URL:** [{entry['url']}]({entry['url']})",
                     f"- **Crawl:** `{entry['crawl_id']}` | **Domain:** `{entry['domain']}`",
-                    f"- **Classifier Score:** `{entry['news_score']:.1f}` | **Proxy Words:** `{entry['word_count_proxy']:,}`",
-                    f"- **Weights:** $\\pi_1 = {entry['first_stage_inclusion_probability']:.2e}, w_1 = {entry['first_stage_design_weight']:,.1f}$ | $\\pi_2 = {entry['audit_inclusion_probability']:.4f}, w_2 = {entry['audit_design_weight']:.1f}$",
-                    f"- **Diagnostics:** `{json.dumps(entry['diagnostics'])}`",
+                    f"- **Document Length:** `{entry.get('word_count', 0):,} words`",
                 ]
             )
+            if not blind:
+                md_lines.extend(
+                    [
+                        f"- **Classifier Score:** `{entry.get('news_score', 0.0):.1f}` | **Proxy Words:** `{entry.get('word_count_proxy', 0):,}`",
+                        f"- **Weights:** $\\pi_1 = {entry.get('first_stage_inclusion_probability', 0.0):.2e}$ | $\\pi_2 = {entry.get('audit_inclusion_probability', 0.0):.4f}$",
+                    ]
+                )
             if entry["text_snippet"]:
                 md_lines.extend(["", "```text", entry["text_snippet"], "```", ""])
             else:
-                md_lines.extend(
-                    ["", "*(No clean text snippet retained in Phase 1)*", ""]
-                )
+                md_lines.extend(["", "*(No clean text snippet retained)*", ""])
             md_lines.extend(["---", ""])
 
         md_file.write_text("\n".join(md_lines), encoding="utf-8")
-
-        # Also copy to artifacts/analysis/f2/
-        art_dir = Path("artifacts/analysis/f2")
-        art_dir.mkdir(parents=True, exist_ok=True)
-        (art_dir / "audit_set_200.jsonl").write_text(
-            output_file.read_text(encoding="utf-8"), encoding="utf-8"
-        )
-        (art_dir / "audit_set_200_review.md").write_text(
-            md_file.read_text(encoding="utf-8"), encoding="utf-8"
-        )
-
         typer.echo(f"Exported {len(audit_items)} audit review documents to:")
         typer.echo(f"  - JSONL: {output_file}")
         typer.echo(f"  - Markdown Dossier: {md_file}")
-        typer.echo(f"  - Artifacts Dossier: {art_dir / 'audit_set_200_review.md'}")
 
 
 @app.command("audit-record")
@@ -493,7 +593,7 @@ def record_audit(
     ],
     audit_file: Annotated[
         Path, typer.Option("--audit-file", "-a", help="Path to annotated audit JSONL")
-    ] = Path(".staging/exp/f2/audit_review_200.jsonl"),
+    ] = Path(".staging/exp/f2/audit_set_50k_400_annotated.jsonl"),
 ) -> None:
     """Record completed audit gold labels into PostgreSQL from an annotated JSONL file."""
     if not audit_file.exists():
@@ -509,13 +609,14 @@ def record_audit(
         repo = CorpusStateRepository(conn)
         recorded = 0
         for r in annotated_records:
+            cand_id = r.get("candidate_id") or r.get("record_id")
             if r.get("gold_class") is not None and r.get("word_count_gold") is not None:
                 repo.record_audit_gold_label(
                     run_id=run_id,
-                    candidate_id=r["candidate_id"],
+                    candidate_id=cand_id,
                     gold_class=int(r["gold_class"]),
                     word_count_gold=int(r["word_count_gold"]),
-                    auditor_id=r.get("auditor_id", "human_expert"),
+                    auditor_id=r.get("auditor_id", "blind_expert"),
                     notes=r.get("notes"),
                 )
                 recorded += 1
@@ -539,6 +640,7 @@ def analyze_corpus(
         Path, typer.Option("--output-dir", "-o", help="Analysis report output dir")
     ] = Path("artifacts/analysis/f2"),
 ) -> None:
+    """Run Two-Phase 8-Stratum Estimation, Two-Stage Cluster Bootstrap, & Feasibility Verification."""
     output_dir.mkdir(parents=True, exist_ok=True)
     manifest_path = manifest
     if not manifest_path.exists():
@@ -558,13 +660,11 @@ def analyze_corpus(
             if line.strip()
         ]
     elif audit_file is None:
-        # Check standard annotated audit file locations
         default_audit_paths = [
+            Path(".staging/exp/f2/audit_set_50k_400_annotated.jsonl"),
+            Path("artifacts/analysis/f2/audit_set_50k_400_annotated.jsonl"),
             Path(".staging/exp/f2/audit_review_400_annotated.jsonl"),
             Path("artifacts/analysis/f2/audit_set_400_annotated.jsonl"),
-            Path(".staging/exp/f2/audit_review_200_annotated.jsonl"),
-            Path("artifacts/analysis/f2/audit_set_200_annotated.jsonl"),
-            Path(".staging/exp/f2/audit_set_200.jsonl"),
         ]
         for p in default_audit_paths:
             if p.exists():
@@ -575,25 +675,16 @@ def analyze_corpus(
                 ]
                 break
 
-        if not audit_records:
-            try:
-                with get_connection() as conn:
-                    repo = CorpusStateRepository(conn)
-                    all_audits = repo.get_audit_assignments("run_42_a1d3745e")
-                    audited_items = [a for a in all_audits if a.get("is_audited")]
-                    if audited_items:
-                        audit_records = audited_items
-            except Exception:
-                pass
-
-    report_data = analyzer.compute_two_phase_yield(audit_records=audit_records)
+    report_data = analyzer.compute_two_phase_yield(
+        audit_records=audit_records, bootstrap_reps=1000
+    )
     md_content = analyzer.generate_report_markdown(report_data)
 
-    report_file = output_dir / "feasibility_report.md"
+    report_file = output_dir / "confirmatory_50k_report.md"
     report_file.write_text(md_content, encoding="utf-8")
 
-    # Also export summary.csv
-    csv_file = output_dir / "feasibility_summary.csv"
+    # Also export confirmatory_50k_summary.csv
+    csv_file = output_dir / "confirmatory_50k_summary.csv"
     csv_lines = [
         "crawl_id,sample_size,retained_news_docs,proxy_words,residual_error,true_total_words,ci_lower_95,ci_upper_95,weighted_ppv,weighted_tpr"
     ]
@@ -608,14 +699,8 @@ def analyze_corpus(
     )
     csv_file.write_text("\n".join(csv_lines) + "\n", encoding="utf-8")
 
-    funnel_list = analyzer.compute_sequential_funnel()
-    tot_sampled = sum(int(f["step0_sampled"]) for f in funnel_list)
-    tot_valid = sum(int(f["step5_retained_valid_news"]) for f in funnel_list)
-    typer.echo(f"Report written to: {report_file}")
+    typer.echo(f"Confirmatory report written to: {report_file}")
     typer.echo(f"Summary CSV written to: {csv_file}")
-    typer.echo(
-        f"\nSummary Funnel: Sampled: {tot_sampled:,}, Retained Valid News: {tot_valid:,}"
-    )
     typer.echo(
         f"Projected True News Total: {report_data.aggregated_true_words:,.0f} words (95% CI: [{report_data.aggregated_ci_lower_95:,.0f}, {report_data.aggregated_ci_upper_95:,.0f}])"
     )
@@ -655,10 +740,10 @@ def calibrate_filters(
         ]
     elif audit_file is None:
         default_audit_paths = [
+            Path(".staging/exp/f2/audit_set_50k_400_annotated.jsonl"),
+            Path("artifacts/analysis/f2/audit_set_50k_400_annotated.jsonl"),
             Path(".staging/exp/f2/audit_review_400_annotated.jsonl"),
             Path("artifacts/analysis/f2/audit_set_400_annotated.jsonl"),
-            Path(".staging/exp/f2/audit_review_200_annotated.jsonl"),
-            Path("artifacts/analysis/f2/audit_set_200_annotated.jsonl"),
         ]
         for p in default_audit_paths:
             if p.exists():
@@ -676,9 +761,9 @@ def calibrate_filters(
     calibrator = CalibrationAndPreFetchAnalyzer(manifest_path, audit_records)
     report_md = calibrator.generate_report_markdown()
 
-    out_file = output_dir / "offline_calibration_and_prefetch_study.md"
+    out_file = output_dir / "confirmatory_50k_filter_study.md"
     out_file.write_text(report_md, encoding="utf-8")
-    typer.echo(f"Calibration study written to: {out_file}")
+    typer.echo(f"Filter validation study written to: {out_file}")
 
 
 @app.command("build")
@@ -698,7 +783,6 @@ def build_corpus(
     typer.echo(
         f"Building full corpus for {crawl} (Target: {target_words:,} words) -> {output_dir}"
     )
-    typer.echo("Executing full production extraction using pipeline runner...")
 
 
 __all__ = ["app"]

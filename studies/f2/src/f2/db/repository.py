@@ -42,7 +42,8 @@ class CorpusStateRepository:
                 ) VALUES (%s, %s, %s, %s, %s, %s, %s, 'running', %s, %s)
                 ON CONFLICT (run_id) DO UPDATE SET
                     status = 'running',
-                    finished_at = NULL;
+                    finished_at = NULL,
+                    metadata = EXCLUDED.metadata;
                 """,
                 (
                     run_id,
@@ -84,8 +85,9 @@ class CorpusStateRepository:
                         candidate_id, run_id, crawl_id, url, url_timestamp,
                         arc_filename, arc_offset, arc_length, arc_digest,
                         source_type, stratum, inclusion_probability, design_weight,
-                        block_index, record_index_in_block, block_total_records
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        block_index, record_index_in_block, block_total_records,
+                        prefilter_status, prefilter_rule, fetch_probability, is_selected_for_fetch
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (run_id, candidate_id) DO NOTHING;
                     """,
                     (
@@ -105,6 +107,10 @@ class CorpusStateRepository:
                         c.block_index,
                         c.record_index_in_block,
                         c.block_total_records,
+                        c.prefilter_status,
+                        c.prefilter_rule,
+                        c.fetch_probability,
+                        c.is_selected_for_fetch,
                     ),
                 )
                 count += cur.rowcount
@@ -116,7 +122,7 @@ class CorpusStateRepository:
             cur.execute(
                 """
                 SELECT candidate_id FROM processing_results
-                WHERE run_id = %s AND fetch_status = 'success';
+                WHERE run_id = %s;
                 """,
                 (run_id,),
             )
@@ -128,6 +134,8 @@ class CorpusStateRepository:
         result: ProcessedDocumentResult,
         clean_text_sha256: str | None = None,
         shard_path: str | None = None,
+        prefilter_status: str = "pass",
+        is_reject_exploration: bool = False,
     ) -> None:
         with self.conn.cursor() as cur:
             cur.execute(
@@ -137,8 +145,8 @@ class CorpusStateRepository:
                     downloaded_bytes, extraction_success, news_score,
                     is_news_predicted, is_english, is_valid, rejection_reason,
                     word_count, word_count_proxy, clean_text_sha256, shard_path,
-                    diagnostics
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    prefilter_status, is_reject_exploration, diagnostics
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (run_id, candidate_id) DO UPDATE SET
                     fetch_status = EXCLUDED.fetch_status,
                     http_status = EXCLUDED.http_status,
@@ -153,6 +161,8 @@ class CorpusStateRepository:
                     word_count_proxy = EXCLUDED.word_count_proxy,
                     clean_text_sha256 = EXCLUDED.clean_text_sha256,
                     shard_path = EXCLUDED.shard_path,
+                    prefilter_status = EXCLUDED.prefilter_status,
+                    is_reject_exploration = EXCLUDED.is_reject_exploration,
                     diagnostics = EXCLUDED.diagnostics,
                     processed_at = NOW();
                 """,
@@ -172,6 +182,8 @@ class CorpusStateRepository:
                     result.proxy_words,
                     clean_text_sha256,
                     shard_path,
+                    prefilter_status,
+                    is_reject_exploration,
                     json.dumps(result.diagnostics),
                 ),
             )
@@ -185,24 +197,36 @@ class CorpusStateRepository:
         count = 0
         with self.conn.cursor() as cur:
             for item in assignments:
-                audit_id = f"{run_id}:{item['record_id']}"
+                cand_id = item.get("candidate_id") or item.get("record_id")
+                audit_id = f"{run_id}:{cand_id}"
+                design_strat = item.get(
+                    "design_stratum",
+                    "S1" if item.get("predicted_class", 1) == 1 else "S2",
+                )
+                audit_strat = int(
+                    item.get(
+                        "audit_stratum",
+                        1 if item.get("is_news_predicted", 0) == 1 else 0,
+                    )
+                )
                 cur.execute(
                     """
                     INSERT INTO audit_assignments (
                         audit_id, run_id, candidate_id, audit_stratum, priority_order,
-                        wave, audit_inclusion_probability, audit_design_weight
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                        wave, audit_inclusion_probability, audit_design_weight, design_stratum
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (run_id, candidate_id) DO NOTHING;
                     """,
                     (
                         audit_id,
                         run_id,
-                        item["record_id"],
-                        item["predicted_class"],
+                        cand_id,
+                        audit_strat,
                         item["priority_order"],
                         item.get("wave", 1),
                         item["audit_inclusion_prob_cond"],
                         item["audit_weight_cond"],
+                        design_strat,
                     ),
                 )
                 count += cur.rowcount
@@ -222,6 +246,7 @@ class CorpusStateRepository:
                     a.wave,
                     a.audit_inclusion_probability,
                     a.audit_design_weight,
+                    a.design_stratum,
                     a.is_audited,
                     a.gold_class,
                     a.word_count_gold,
@@ -230,6 +255,8 @@ class CorpusStateRepository:
                     a.notes,
                     c.crawl_id,
                     c.url,
+                    c.prefilter_status,
+                    c.fetch_probability,
                     c.inclusion_probability AS first_stage_pi,
                     c.design_weight AS first_stage_weight,
                     r.news_score,
@@ -245,7 +272,7 @@ class CorpusStateRepository:
                 JOIN candidate_records c ON a.run_id = c.run_id AND a.candidate_id = c.candidate_id
                 JOIN processing_results r ON a.run_id = r.run_id AND a.candidate_id = r.candidate_id
                 WHERE a.run_id = %s
-                ORDER BY a.audit_stratum, a.priority_order;
+                ORDER BY a.priority_order;
                 """,
                 (run_id,),
             )
@@ -263,7 +290,6 @@ class CorpusStateRepository:
         notes: str | None = None,
     ) -> None:
         with self.conn.cursor() as cur:
-            # Look up proxy word count to compute residual
             cur.execute(
                 "SELECT word_count_proxy FROM processing_results WHERE run_id = %s AND candidate_id = %s;",
                 (run_id, candidate_id),
@@ -306,6 +332,13 @@ class CorpusStateRepository:
                     c.url,
                     c.inclusion_probability,
                     c.design_weight,
+                    c.block_index,
+                    c.record_index_in_block,
+                    c.block_total_records,
+                    c.prefilter_status,
+                    c.prefilter_rule,
+                    c.fetch_probability,
+                    c.is_selected_for_fetch,
                     r.fetch_status,
                     r.http_status,
                     r.downloaded_bytes,
@@ -325,7 +358,8 @@ class CorpusStateRepository:
                     a.word_count_gold,
                     a.word_residual,
                     a.audit_inclusion_probability,
-                    a.audit_design_weight
+                    a.audit_design_weight,
+                    a.design_stratum
                 FROM candidate_records c
                 JOIN processing_results r ON c.run_id = r.run_id AND c.candidate_id = r.candidate_id
                 LEFT JOIN audit_assignments a ON c.run_id = a.run_id AND c.candidate_id = a.candidate_id
@@ -352,7 +386,6 @@ class CorpusStateRepository:
         if not records:
             return 0
 
-        # Convert diagnostics to string for clean parquet serialization
         clean_records = []
         for r in records:
             cr = dict(r)
@@ -360,6 +393,9 @@ class CorpusStateRepository:
             cr["is_english"] = int(cr["is_english"])
             cr["is_valid"] = int(cr["is_valid"])
             cr["extraction_success"] = int(cr["extraction_success"])
+            cr["is_selected_for_fetch"] = int(
+                bool(cr.get("is_selected_for_fetch", True))
+            )
             cr["is_audited"] = int(bool(cr["is_audited"]))
             cr["diagnostics"] = json.dumps(cr["diagnostics"] or {})
             clean_records.append(cr)
