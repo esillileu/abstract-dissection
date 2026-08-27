@@ -204,11 +204,11 @@ def test_calibration_and_prefetch_analyzer(tmp_path: Path):
 
     calibrator = CalibrationAndPreFetchAnalyzer(prov_path, audit_records)
     ablation = calibrator.evaluate_rule_ablation()
-    assert len(ablation) == 6
+    assert len(ablation) == 7
 
     post_sweep = calibrator.evaluate_postfetch_sweep()
     assert len(post_sweep) > 0
 
     md = calibrator.generate_report_markdown()
     assert "# Offline Classifier Calibration & Pre-Fetch Feasibility Study" in md
-    assert "Rule 1: Binary & Media Extensions" in md
+    assert "Rule 1 Combined" in md
