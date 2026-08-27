@@ -101,7 +101,12 @@ class FeasibilityAnalyzer:
         audit_gold_map: dict[str, float] = {}
         if audit_records:
             for rec in audit_records:
-                audit_gold_map[rec["record_id"]] = float(rec.get("gold_words", 0.0))
+                rid = rec.get("candidate_id") or rec.get("record_id")
+                if rid:
+                    gw = rec.get("word_count_gold")
+                    if gw is None:
+                        gw = rec.get("gold_words", 0.0)
+                    audit_gold_map[rid] = float(gw)
 
         strata_results: list[CrawlStratumYield] = []
         rng = random.Random(seed)
@@ -122,25 +127,30 @@ class FeasibilityAnalyzer:
             # 1. First-Phase Proxy Total
             w_proxy = sum(row[1] * row[2] for row in rows)
 
-            # 2. Second-Phase Residual Error Total
+            # 2. Second-Phase Stratified Residual Error Total
             e_total = 0.0
-            audit_residuals: list[tuple[float, float]] = []  # (residual, audit_weight)
+            # Bucket by predicted class: h -> list of (residual, design_weight)
+            audit_strata_residuals: dict[int, list[tuple[float, float]]] = {
+                0: [],
+                1: [],
+            }
+            phase1_strata_counts: dict[int, int] = {0: 0, 1: 0}
+
+            for row in rows:
+                rec_id, w_i, y_proxy, is_news = row[0], row[1], row[2], int(row[3])
+                phase1_strata_counts[is_news] = phase1_strata_counts.get(is_news, 0) + 1
+                if audit_records and rec_id in audit_gold_map:
+                    y_gold = audit_gold_map[rec_id]
+                    residual = y_gold - y_proxy
+                    audit_strata_residuals[is_news].append((residual, w_i))
 
             if audit_records:
-                for row in rows:
-                    rec_id, w_i, y_proxy = row[0], row[1], row[2]
-                    if rec_id in audit_gold_map:
-                        y_gold = audit_gold_map[rec_id]
-                        residual = y_gold - y_proxy
-                        # Assuming stratified audit with equal weight if cond weight absent
-                        audit_residuals.append((residual, w_i))
-
-            if audit_residuals:
-                # Estimate total residual error
-                n_audit = len(audit_residuals)
-                n_total_sample = len(rows)
-                scale_factor = n_total_sample / n_audit
-                e_total = sum(res * w * scale_factor for res, w in audit_residuals)
+                for h in [0, 1]:
+                    res_items = audit_strata_residuals.get(h, [])
+                    n1_h = phase1_strata_counts.get(h, 0)
+                    if res_items and n1_h > 0:
+                        scale_h = n1_h / len(res_items)
+                        e_total += sum(res * w * scale_h for res, w in res_items)
 
             w_true = max(0.0, w_proxy + e_total)
 
@@ -154,13 +164,24 @@ class FeasibilityAnalyzer:
                 b_proxy = sum(r[1] * r[2] for r in resample_rows)
 
                 b_res = 0.0
-                if audit_residuals:
-                    resampled_audit = [
-                        audit_residuals[rng.randint(0, len(audit_residuals) - 1)]
-                        for _ in range(len(audit_residuals))
-                    ]
-                    scale_factor = len(resample_rows) / len(resampled_audit)
-                    b_res = sum(res * w * scale_factor for res, w in resampled_audit)
+                if audit_records:
+                    # Count resampled Phase 1 strata
+                    resamp_p1_counts: dict[int, int] = {0: 0, 1: 0}
+                    for r in resample_rows:
+                        resamp_p1_counts[int(r[3])] = (
+                            resamp_p1_counts.get(int(r[3]), 0) + 1
+                        )
+
+                    for h in [0, 1]:
+                        res_items = audit_strata_residuals.get(h, [])
+                        n1_resamp = resamp_p1_counts.get(h, 0)
+                        if res_items and n1_resamp > 0:
+                            boot_res_items = [
+                                res_items[rng.randint(0, len(res_items) - 1)]
+                                for _ in range(len(res_items))
+                            ]
+                            scale_h = n1_resamp / len(boot_res_items)
+                            b_res += sum(res * w * scale_h for res, w in boot_res_items)
 
                 boot_estimates.append(max(0.0, b_proxy + b_res))
 
@@ -207,20 +228,30 @@ class FeasibilityAnalyzer:
         ppv = 0.90  # Default baseline if unmeasured
         tpr = 0.85
         if audit_records and len(audit_records) > 10:
+
+            def _get_pred(r: dict[str, Any]) -> int:
+                val = r.get("predicted_class")
+                if val is not None:
+                    return int(val)
+                val = r.get("audit_stratum")
+                if val is not None:
+                    return int(val)
+                return int(r.get("is_news_predicted", 0))
+
             tp = sum(
                 1
                 for r in audit_records
-                if r.get("predicted_class") == 1 and r.get("gold_class") == 1
+                if _get_pred(r) == 1 and int(r.get("gold_class", 0)) == 1
             )
             fp = sum(
                 1
                 for r in audit_records
-                if r.get("predicted_class") == 1 and r.get("gold_class") == 0
+                if _get_pred(r) == 1 and int(r.get("gold_class", 0)) == 0
             )
             fn = sum(
                 1
                 for r in audit_records
-                if r.get("predicted_class") == 0 and r.get("gold_class") == 1
+                if _get_pred(r) == 0 and int(r.get("gold_class", 0)) == 1
             )
             ppv = tp / max(1, tp + fp)
             tpr = tp / max(1, tp + fn)

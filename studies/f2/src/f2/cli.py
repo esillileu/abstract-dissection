@@ -20,7 +20,6 @@ from .db.repository import CorpusStateRepository
 from .db.session import get_connection
 from .discovery import (
     SEED_DOMAIN_CATALOG,
-    CandidateRecord,
     SequentialAuditSampler,
     TwoStageProbabilitySampler,
 )
@@ -345,37 +344,103 @@ def create_audit(
             typer.echo(f"No records found for run '{run_id}'.")
             return
 
-        cands: list[CandidateRecord] = []
-        preds: list[int] = []
-        for r in records:
-            cands.append(
-                CandidateRecord(
-                    crawl_id=r["crawl_id"],
-                    url=r["url"],
-                    timestamp="",
-                    filename="",
-                    offset=0,
-                    length=0,
-                    digest="",
-                    source_type="prob",
-                    stratum=None,
-                    inclusion_probability=r["inclusion_probability"],
-                    design_weight=r["design_weight"],
-                    block_index=0,
-                    record_index_in_block=0,
-                    block_total_records=0,
-                )
-            )
-            preds.append(int(r["is_news_predicted"]))
-
+        preds = [int(r["is_news_predicted"]) for r in records]
         sampler = SequentialAuditSampler(seed=seed)
-        schedule = sampler.generate_audit_schedule(cands, preds)
+        schedule = sampler.generate_audit_schedule(records, preds)
         per_stratum = {0: budget // 2, 1: budget // 2}
         assignments = sampler.select_audit_wave(schedule, per_stratum)
 
         count = repo.insert_audit_assignments(run_id, assignments)
         typer.echo(
             f"Created {count} audit assignments for run '{run_id}' with pre-specified priority."
+        )
+
+
+@app.command("audit-review")
+def review_audit(
+    run_id: Annotated[
+        str, typer.Option("--run-id", "-r", help="Run ID to export audit records for")
+    ],
+    output_file: Annotated[
+        Path,
+        typer.Option(
+            "--output-file", "-o", help="Audit review JSONL / CSV / MD output path"
+        ),
+    ] = Path(".staging/exp/f2/audit_review_200.jsonl"),
+) -> None:
+    """Export the 200 audit assignments with classifier scores, features, and text for human review."""
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+    with get_connection() as conn:
+        repo = CorpusStateRepository(conn)
+        audit_items = repo.get_audit_assignments(run_id)
+        if not audit_items:
+            typer.echo(
+                f"No audit assignments found for run '{run_id}'. Run 'repro f2 corpus audit' first."
+            )
+            return
+
+        with output_file.open("w", encoding="utf-8") as f:
+            for item in audit_items:
+                review_entry = {
+                    "audit_id": item["audit_id"],
+                    "candidate_id": item["candidate_id"],
+                    "crawl_id": item["crawl_id"],
+                    "url": item["url"],
+                    "audit_stratum": item["audit_stratum"],
+                    "priority_order": item["priority_order"],
+                    "news_score": item["news_score"],
+                    "is_news_predicted": item["is_news_predicted"],
+                    "word_count_proxy": item["word_count_proxy"],
+                    "diagnostics": item["diagnostics"],
+                    # Review fields to annotate:
+                    "gold_class": item["gold_class"] if item["is_audited"] else None,
+                    "word_count_gold": item["word_count_gold"]
+                    if item["is_audited"]
+                    else None,
+                    "notes": item["notes"],
+                }
+                f.write(json.dumps(review_entry, default=str) + "\n")
+
+        typer.echo(
+            f"Exported {len(audit_items)} audit review documents to: {output_file}"
+        )
+
+
+@app.command("audit-record")
+def record_audit(
+    run_id: Annotated[
+        str, typer.Option("--run-id", "-r", help="Run ID to record audit labels for")
+    ],
+    audit_file: Annotated[
+        Path, typer.Option("--audit-file", "-a", help="Path to annotated audit JSONL")
+    ] = Path(".staging/exp/f2/audit_review_200.jsonl"),
+) -> None:
+    """Record completed audit gold labels into PostgreSQL from an annotated JSONL file."""
+    if not audit_file.exists():
+        typer.echo(f"Audit file not found: {audit_file}")
+        return
+
+    annotated_records = [
+        json.loads(line)
+        for line in audit_file.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    with get_connection() as conn:
+        repo = CorpusStateRepository(conn)
+        recorded = 0
+        for r in annotated_records:
+            if r.get("gold_class") is not None and r.get("word_count_gold") is not None:
+                repo.record_audit_gold_label(
+                    run_id=run_id,
+                    candidate_id=r["candidate_id"],
+                    gold_class=int(r["gold_class"]),
+                    word_count_gold=int(r["word_count_gold"]),
+                    auditor_id=r.get("auditor_id", "human_expert"),
+                    notes=r.get("notes"),
+                )
+                recorded += 1
+        typer.echo(
+            f"Recorded {recorded} gold audit labels into PostgreSQL for run '{run_id}'."
         )
 
 

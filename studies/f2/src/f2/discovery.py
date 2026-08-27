@@ -210,11 +210,13 @@ class SequentialAuditSampler:
 
     def generate_audit_schedule(
         self,
-        candidates: list[CandidateRecord],
+        candidates: list[CandidateRecord | dict[str, Any]],
         predicted_classes: list[int],
     ) -> list[dict[str, Any]]:
         """Assign pre-specified random priority permutation per stratum so extension preserves exact SRS."""
-        strata_buckets: dict[int, list[tuple[CandidateRecord, int]]] = {0: [], 1: []}
+        strata_buckets: dict[
+            int, list[tuple[CandidateRecord | dict[str, Any], int]]
+        ] = {0: [], 1: []}
         for cand, pred in zip(candidates, predicted_classes, strict=False):
             strata_buckets[pred].append((cand, pred))
 
@@ -226,11 +228,16 @@ class SequentialAuditSampler:
             rng.shuffle(shuffled_indices)
             for priority, orig_idx in enumerate(shuffled_indices):
                 cand, pred = items[orig_idx]
+                rec_id = (
+                    cand["record_id"] if isinstance(cand, dict) else cand.record_id()
+                )
+                url = cand["url"] if isinstance(cand, dict) else cand.url
+                crawl_id = cand["crawl_id"] if isinstance(cand, dict) else cand.crawl_id
                 schedule.append(
                     {
-                        "record_id": cand.record_id(),
-                        "url": cand.url,
-                        "crawl_id": cand.crawl_id,
+                        "record_id": rec_id,
+                        "url": url,
+                        "crawl_id": crawl_id,
                         "predicted_class": pred,
                         "stratum_total": len(items),
                         "priority_order": priority,  # 0, 1, 2...

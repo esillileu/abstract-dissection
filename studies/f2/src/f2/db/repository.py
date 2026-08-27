@@ -209,6 +209,50 @@ class CorpusStateRepository:
         self.conn.commit()
         return count
 
+    def get_audit_assignments(self, run_id: str) -> list[dict[str, Any]]:
+        with self.conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT 
+                    a.audit_id,
+                    a.run_id,
+                    a.candidate_id,
+                    a.audit_stratum,
+                    a.priority_order,
+                    a.wave,
+                    a.audit_inclusion_probability,
+                    a.audit_design_weight,
+                    a.is_audited,
+                    a.gold_class,
+                    a.word_count_gold,
+                    a.word_residual,
+                    a.auditor_id,
+                    a.notes,
+                    c.crawl_id,
+                    c.url,
+                    c.inclusion_probability AS first_stage_pi,
+                    c.design_weight AS first_stage_weight,
+                    r.news_score,
+                    r.is_news_predicted,
+                    r.is_english,
+                    r.is_valid,
+                    r.word_count,
+                    r.word_count_proxy,
+                    r.shard_path,
+                    r.clean_text_sha256,
+                    r.diagnostics
+                FROM audit_assignments a
+                JOIN candidate_records c ON a.run_id = c.run_id AND a.candidate_id = c.candidate_id
+                JOIN processing_results r ON a.run_id = r.run_id AND a.candidate_id = r.candidate_id
+                WHERE a.run_id = %s
+                ORDER BY a.audit_stratum, a.priority_order;
+                """,
+                (run_id,),
+            )
+            cols = [desc[0] for desc in cur.description]
+            rows = cur.fetchall()
+            return [dict(zip(cols, row, strict=False)) for row in rows]
+
     def record_audit_gold_label(
         self,
         run_id: str,
