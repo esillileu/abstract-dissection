@@ -340,20 +340,22 @@ class FeasibilityAnalyzer:
             "",
             "| Target Corpus Scale | Feasibility Verdict | Minimum Projected Words (95% CI Lower) |",
             "| :--- | :--- | :--- |",
-            f"| **1 Billion Words (1B)** | **{'FEASIBLE' if data.feasibility_1b else 'INSUFFICIENT'}** | {data.aggregated_ci_lower_95:,.0f} words |",
-            f"| **6 Billion Words (6B)** | **{'FEASIBLE' if data.feasibility_6b else 'INSUFFICIENT'}** | {data.aggregated_ci_lower_95:,.0f} words |",
-            f"| **33 Billion Words (33B)** | **{'FEASIBLE' if data.feasibility_33b else 'INSUFFICIENT'}** | {data.aggregated_ci_lower_95:,.0f} words |",
+            f"| **1 Billion Words (1B)** | **{'PROVISIONALLY FEASIBLE' if data.feasibility_1b else 'INSUFFICIENT'}** | {data.aggregated_ci_lower_95:,.0f} words |",
+            f"| **6 Billion Words (6B)** | **{'PROVISIONALLY FEASIBLE' if data.feasibility_6b else 'INSUFFICIENT'}** | {data.aggregated_ci_lower_95:,.0f} words |",
+            f"| **33 Billion Words (33B)** | **{'PROVISIONALLY FEASIBLE' if data.feasibility_33b else 'INSUFFICIENT'}** | {data.aggregated_ci_lower_95:,.0f} words |",
             "",
             "---",
             "",
             "## 2. Statistical Yield Estimates Across Crawl Strata",
             "",
-            "| Crawl Stratum | Sample Size | Retained Docs | Proxy Words | Residual Error | True Total Words (95% CI) |",
+            "| Crawl Stratum | Sample Size | Retained Docs | Uncorrected Proxy Total Words | Residual Error | True Total Words (95% CI) |",
             "| :--- | :--- | :--- | :--- | :--- | :--- |",
         ]
         for y in data.strata_yields:
             res_str = (
-                f"{y.residual_error_words:+,.0f}" if data.has_audit else "0 (No Audit)"
+                f"{y.residual_error_words:+,.0f}"
+                if data.has_audit
+                else "0 (No Audit)"
             )
             lines.append(
                 f"| **{y.crawl_id}** | {y.sample_size:,} | {y.retained_news_docs:,} | {y.proxy_total_words:,.0f} | {res_str} | **{y.true_total_words:,.0f}** [{y.ci_lower_95:,.0f}, {y.ci_upper_95:,.0f}] |"

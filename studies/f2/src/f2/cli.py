@@ -364,46 +364,110 @@ def review_audit(
     output_file: Annotated[
         Path,
         typer.Option(
-            "--output-file", "-o", help="Audit review JSONL / CSV / MD output path"
+            "--output-file", "-o", help="Audit review JSONL output path"
         ),
-    ] = Path(".staging/exp/f2/audit_review_200.jsonl"),
+    ] = Path(".staging/exp/f2/audit_set_200.jsonl"),
 ) -> None:
-    """Export the 200 audit assignments with classifier scores, features, and text for human review."""
+    """Export the 200 audit assignments with complete metadata, weights, and text for manual labeling."""
     output_file.parent.mkdir(parents=True, exist_ok=True)
     with get_connection() as conn:
         repo = CorpusStateRepository(conn)
         audit_items = repo.get_audit_assignments(run_id)
         if not audit_items:
-            typer.echo(
-                f"No audit assignments found for run '{run_id}'. Run 'repro f2 corpus audit' first."
-            )
+            typer.echo(f"No audit assignments found for run '{run_id}'. Run 'repro f2 corpus audit' first.")
             return
 
+        # Map URLs to clean text snippet if shards exist
+        shard_dir = Path(".staging/exp/f2/sample_10k/clean_shards")
+        url_to_text: dict[str, str] = {}
+        if shard_dir.exists():
+            import re
+            for sf in shard_dir.glob("*.txt"):
+                docs = re.findall(r'<DOC url="(.*?)" words="(\d+)">\n(.*?)\n</DOC>', sf.read_text(encoding="utf-8"), re.DOTALL)
+                for u, _, txt in docs:
+                    url_to_text[u] = txt.strip()
+
+        exported_items = []
         with output_file.open("w", encoding="utf-8") as f:
             for item in audit_items:
+                u = item["url"]
+                domain = urllib.parse.urlparse(u).netloc.lower()
+                snippet = url_to_text.get(u, "")
+                if snippet and len(snippet) > 800:
+                    snippet = snippet[:800] + "..."
+
                 review_entry = {
                     "audit_id": item["audit_id"],
                     "candidate_id": item["candidate_id"],
-                    "crawl_id": item["crawl_id"],
-                    "url": item["url"],
-                    "audit_stratum": item["audit_stratum"],
                     "priority_order": item["priority_order"],
+                    "audit_stratum": item["audit_stratum"],
+                    "audit_stratum_label": "News (Stratum 1)" if item["audit_stratum"] == 1 else "Non-News (Stratum 0)",
+                    "wave": item.get("wave", 1),
+                    "crawl_id": item["crawl_id"],
+                    "url": u,
+                    "domain": domain,
+                    "first_stage_inclusion_probability": item["first_stage_pi"],
+                    "first_stage_design_weight": item["first_stage_weight"],
+                    "audit_inclusion_probability": item["audit_inclusion_probability"],
+                    "audit_design_weight": item["audit_design_weight"],
                     "news_score": item["news_score"],
                     "is_news_predicted": item["is_news_predicted"],
+                    "is_english": item["is_english"],
+                    "is_valid": item["is_valid"],
+                    "word_count": item["word_count"],
                     "word_count_proxy": item["word_count_proxy"],
                     "diagnostics": item["diagnostics"],
-                    # Review fields to annotate:
+                    "text_snippet": snippet,
+                    # Fields for manual labeler:
                     "gold_class": item["gold_class"] if item["is_audited"] else None,
-                    "word_count_gold": item["word_count_gold"]
-                    if item["is_audited"]
-                    else None,
-                    "notes": item["notes"],
+                    "word_count_gold": item["word_count_gold"] if item["is_audited"] else None,
+                    "auditor_id": item.get("auditor_id"),
+                    "notes": item.get("notes"),
                 }
+                exported_items.append(review_entry)
                 f.write(json.dumps(review_entry, default=str) + "\n")
 
-        typer.echo(
-            f"Exported {len(audit_items)} audit review documents to: {output_file}"
-        )
+        # Also write Markdown Review Dossier
+        md_file = output_file.parent / "audit_set_200_review.md"
+        md_lines = [
+            f"# Phase-2 Probability Audit Set (200 Documents) — Run `{run_id}`",
+            "",
+            "> **Pre-specified Sequential Probability Sampling Design**",
+            "> * Stratum 1 (Predicted News): 100 documents",
+            "> * Stratum 0 (Predicted Non-News): 100 documents",
+            "",
+            "---",
+            "",
+        ]
+        for entry in exported_items:
+            md_lines.extend(
+                [
+                    f"### #{entry['priority_order']:03d} [{entry['audit_stratum_label']}] `{entry['audit_id']}`",
+                    f"- **URL:** [{entry['url']}]({entry['url']})",
+                    f"- **Crawl:** `{entry['crawl_id']}` | **Domain:** `{entry['domain']}`",
+                    f"- **Classifier Score:** `{entry['news_score']:.1f}` | **Proxy Words:** `{entry['word_count_proxy']:,}`",
+                    f"- **Weights:** $\\pi_1 = {entry['first_stage_inclusion_probability']:.2e}, w_1 = {entry['first_stage_design_weight']:,.1f}$ | $\\pi_2 = {entry['audit_inclusion_probability']:.4f}, w_2 = {entry['audit_design_weight']:.1f}$",
+                    f"- **Diagnostics:** `{json.dumps(entry['diagnostics'])}`",
+                ]
+            )
+            if entry["text_snippet"]:
+                md_lines.extend(["", "```text", entry["text_snippet"], "```", ""])
+            else:
+                md_lines.extend(["", "*(No clean text snippet retained in Phase 1)*", ""])
+            md_lines.extend(["---", ""])
+
+        md_file.write_text("\n".join(md_lines), encoding="utf-8")
+
+        # Also copy to artifacts/analysis/f2/
+        art_dir = Path("artifacts/analysis/f2")
+        art_dir.mkdir(parents=True, exist_ok=True)
+        (art_dir / "audit_set_200.jsonl").write_text(output_file.read_text(encoding="utf-8"), encoding="utf-8")
+        (art_dir / "audit_set_200_review.md").write_text(md_file.read_text(encoding="utf-8"), encoding="utf-8")
+
+        typer.echo(f"Exported {len(audit_items)} audit review documents to:")
+        typer.echo(f"  - JSONL: {output_file}")
+        typer.echo(f"  - Markdown Dossier: {md_file}")
+        typer.echo(f"  - Artifacts Dossier: {art_dir / 'audit_set_200_review.md'}")
 
 
 @app.command("audit-record")
