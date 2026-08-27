@@ -14,6 +14,7 @@ import typer
 from repro_core.context.paths import RuntimePaths
 
 from .analysis import FeasibilityAnalyzer
+from .calibration import CalibrationAndPreFetchAnalyzer
 from .cdx import CDXBlockLocator, CDXIndexReader
 from .db.migrations.runner import run_migrations
 from .db.repository import CorpusStateRepository
@@ -618,6 +619,66 @@ def analyze_corpus(
     typer.echo(
         f"Projected True News Total: {report_data.aggregated_true_words:,.0f} words (95% CI: [{report_data.aggregated_ci_lower_95:,.0f}, {report_data.aggregated_ci_upper_95:,.0f}])"
     )
+
+
+@app.command("calibrate")
+def calibrate_filters(
+    manifest: Annotated[
+        Path,
+        typer.Option(
+            "--manifest", "-m", help="Path to provenance.parquet or provenance.jsonl"
+        ),
+    ] = Path(".staging/exp/f2/sample/provenance.parquet"),
+    audit_file: Annotated[
+        Path | None, typer.Option("--audit-file", "-a", help="Path to gold audit JSONL")
+    ] = None,
+    output_dir: Annotated[
+        Path, typer.Option("--output-dir", "-o", help="Analysis report output dir")
+    ] = Path("artifacts/analysis/f2"),
+) -> None:
+    """Perform offline post-fetch calibration, pre-fetch feasibility, and pipeline recommendations."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    manifest_path = manifest
+    if not manifest_path.exists():
+        fallback_manifest = Path(
+            ".staging/exp/f2/sample_10k_audited/provenance.parquet"
+        )
+        if fallback_manifest.exists():
+            manifest_path = fallback_manifest
+
+    audit_records = None
+    if audit_file and audit_file.exists():
+        audit_records = [
+            json.loads(line)
+            for line in audit_file.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+    elif audit_file is None:
+        default_audit_paths = [
+            Path(".staging/exp/f2/audit_review_400_annotated.jsonl"),
+            Path("artifacts/analysis/f2/audit_set_400_annotated.jsonl"),
+            Path(".staging/exp/f2/audit_review_200_annotated.jsonl"),
+            Path("artifacts/analysis/f2/audit_set_200_annotated.jsonl"),
+        ]
+        for p in default_audit_paths:
+            if p.exists():
+                audit_records = [
+                    json.loads(line)
+                    for line in p.read_text(encoding="utf-8").splitlines()
+                    if line.strip()
+                ]
+                break
+
+    if not audit_records:
+        typer.echo("Error: No audited records found to perform calibration.")
+        return
+
+    calibrator = CalibrationAndPreFetchAnalyzer(manifest_path, audit_records)
+    report_md = calibrator.generate_report_markdown()
+
+    out_file = output_dir / "offline_calibration_and_prefetch_study.md"
+    out_file.write_text(report_md, encoding="utf-8")
+    typer.echo(f"Calibration study written to: {out_file}")
 
 
 @app.command("build")

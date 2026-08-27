@@ -153,3 +153,65 @@ def test_feasibility_analyzer_estimation_with_and_without_audit(tmp_path: Path):
     md_with_audit = analyzer.generate_report_markdown(data_with_audit)
     assert "Audit-Corrected" in md_with_audit
     assert "Classifier Precision (PPV)" in md_with_audit
+
+
+def test_calibration_and_prefetch_analyzer(tmp_path: Path):
+    from f2.calibration import CalibrationAndPreFetchAnalyzer
+
+    prov_path = tmp_path / "provenance.jsonl"
+    records = []
+    audit_records = []
+
+    for i in range(50):
+        is_news = 1 if i < 20 else 0
+        g_cls = 1 if (i < 15 or i == 25) else 0
+        records.append(
+            {
+                "record_id": f"rec_{i}",
+                "crawl_id": "CC-MAIN-2012",
+                "url": f"http://news.example.com/2012/05/article-{i}.html"
+                if is_news
+                else f"http://store.example.com/product/{i}",
+                "fetch_status": "success",
+                "downloaded_bytes": 15000 if is_news else 2000,
+                "arc_length": 8000 if is_news else 1000,
+                "http_status": 200,
+                "extraction_success": 1,
+                "news_score": 2.5 if is_news else 0.0,
+                "is_news_predicted": is_news,
+                "is_english": 1,
+                "is_valid": 1,
+                "rejection_reason": None,
+                "word_count": 600 if is_news else 50,
+                "inclusion_probability": 0.0001,
+                "design_weight": 10000.0,
+                "proxy_words": 600 if is_news else 0,
+                "diagnostics": {},
+            }
+        )
+        audit_records.append(
+            {
+                "record_id": f"rec_{i}",
+                "predicted_class": is_news,
+                "gold_class": g_cls,
+                "word_count_gold": 600 if g_cls else 0,
+            }
+        )
+
+    with prov_path.open("w", encoding="utf-8") as f:
+        for r in records:
+            f.write(json.dumps(r) + "\n")
+
+    calibrator = CalibrationAndPreFetchAnalyzer(prov_path, audit_records)
+    post_sweep = calibrator.evaluate_postfetch_sweep()
+    assert len(post_sweep) > 0
+
+    pre_sweep = calibrator.evaluate_prefetch_sweep()
+    assert len(pre_sweep) > 0
+
+    recs = calibrator.evaluate_production_recommendations()
+    assert len(recs) == 4
+
+    md = calibrator.generate_report_markdown()
+    assert "# Offline Classifier Calibration & Pre-Fetch Feasibility Study" in md
+    assert "Recommended Balanced Pipeline" in md
