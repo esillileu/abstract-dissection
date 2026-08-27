@@ -22,6 +22,20 @@ class CrawlStratumYield:
     ci_upper_95: float
     sample_size: int
     retained_news_docs: int
+    weighted_ppv: float | None = None
+    weighted_tpr: float | None = None
+
+
+@dataclass(frozen=True)
+class AuditConvergencePoint:
+    budget: int
+    audited_docs: int
+    true_total_words: float
+    std_error_words: float
+    ci_lower_95: float
+    ci_upper_95: float
+    lower_vs_33b_ratio: float
+    strata_yields: list[CrawlStratumYield]
 
 
 @dataclass(frozen=True)
@@ -43,6 +57,7 @@ class FeasibilityReportData:
     feasibility_33b: bool
     sequential_funnel: list[dict[str, Any]] | None = None
     marginal_filters: list[dict[str, Any]] | None = None
+    convergence_points: list[AuditConvergencePoint] | None = None
 
 
 class FeasibilityAnalyzer:
@@ -121,13 +136,13 @@ class FeasibilityAnalyzer:
         """).df()
         return df.to_dict(orient="records")[0]
 
-    def compute_two_phase_yield(
+    def _evaluate_single_audit_set(
         self,
-        audit_records: list[dict[str, Any]] | None = None,
+        audit_records: list[dict[str, Any]] | None,
         bootstrap_reps: int = 1000,
         seed: int = 42,
-    ) -> FeasibilityReportData:
-        """Compute Horvitz-Thompson proxy yield and apply probability-weighted residual correction."""
+    ) -> tuple[list[CrawlStratumYield], float, float, float, float]:
+        """Core internal engine for two-phase Horvitz-Thompson estimation and bootstrap variance."""
         crawls = [
             row[0]
             for row in self.con.execute(
@@ -136,10 +151,8 @@ class FeasibilityAnalyzer:
         ]
 
         has_audit = bool(audit_records and len(audit_records) > 0)
-        audit_sample_size = len(audit_records) if audit_records else 0
-
-        # Audit lookup map: record_id -> gold_words
         audit_gold_map: dict[str, float] = {}
+        audit_gold_class: dict[str, int] = {}
         if audit_records:
             for rec in audit_records:
                 rid = rec.get("candidate_id") or rec.get("record_id")
@@ -148,10 +161,12 @@ class FeasibilityAnalyzer:
                     if gw is None:
                         gw = rec.get("gold_words", 0.0)
                     audit_gold_map[rid] = float(gw)
+                    gc = rec.get("gold_class")
+                    if gc is not None:
+                        audit_gold_class[rid] = int(gc)
 
         strata_results: list[CrawlStratumYield] = []
         rng = random.Random(seed)
-
         total_true_words = 0.0
         total_variance = 0.0
 
@@ -165,17 +180,15 @@ class FeasibilityAnalyzer:
             if not rows:
                 continue
 
-            # 1. First-Phase Proxy Total
             w_proxy = sum(row[1] * row[2] for row in rows)
-
-            # 2. Second-Phase Stratified Residual Error Total
             e_total = 0.0
-            # Bucket by predicted class: h -> list of (residual, design_weight)
             audit_strata_residuals: dict[int, list[tuple[float, float]]] = {
                 0: [],
                 1: [],
             }
             phase1_strata_counts: dict[int, int] = {0: 0, 1: 0}
+
+            tp_w = fp_w = fn_w = 0.0
 
             for row in rows:
                 rec_id, w_i, y_proxy, is_news = row[0], row[1], row[2], int(row[3])
@@ -184,6 +197,16 @@ class FeasibilityAnalyzer:
                     y_gold = audit_gold_map[rec_id]
                     residual = y_gold - y_proxy
                     audit_strata_residuals[is_news].append((residual, w_i))
+
+                    g_cls = audit_gold_class.get(rec_id, 1 if y_gold > 0 else 0)
+                    if is_news == 1:
+                        if g_cls == 1:
+                            tp_w += w_i
+                        else:
+                            fp_w += w_i
+                    else:
+                        if g_cls == 1:
+                            fn_w += w_i
 
             if has_audit:
                 for h in [0, 1]:
@@ -195,18 +218,15 @@ class FeasibilityAnalyzer:
 
             w_true = max(0.0, w_proxy + e_total)
 
-            # 3. Two-Phase Stratified Bootstrap Variance
+            # Two-Phase Stratified Bootstrap
             boot_estimates: list[float] = []
             for _ in range(bootstrap_reps):
-                # Resample Phase 1 records
                 resample_rows = [
                     rows[rng.randint(0, len(rows) - 1)] for _ in range(len(rows))
                 ]
                 b_proxy = sum(r[1] * r[2] for r in resample_rows)
-
                 b_res = 0.0
                 if has_audit:
-                    # Count resampled Phase 1 strata
                     resamp_p1_counts: dict[int, int] = {0: 0, 1: 0}
                     for r in resample_rows:
                         resamp_p1_counts[int(r[3])] = (
@@ -226,15 +246,16 @@ class FeasibilityAnalyzer:
 
                 boot_estimates.append(max(0.0, b_proxy + b_res))
 
-            # Compute standard error
             mean_boot = sum(boot_estimates) / len(boot_estimates)
             var_boot = sum((val - mean_boot) ** 2 for val in boot_estimates) / max(
                 1, len(boot_estimates) - 1
             )
             std_err = math.sqrt(var_boot)
-
             ci_low = max(0.0, w_true - 1.96 * std_err)
             ci_high = w_true + 1.96 * std_err
+
+            crawl_ppv = tp_w / (tp_w + fp_w) if (tp_w + fp_w) > 0 else None
+            crawl_tpr = tp_w / (tp_w + fn_w) if (tp_w + fn_w) > 0 else None
 
             retained_news = sum(1 for row in rows if row[2] > 0)
             strata_results.append(
@@ -248,9 +269,10 @@ class FeasibilityAnalyzer:
                     ci_upper_95=ci_high,
                     sample_size=len(rows),
                     retained_news_docs=retained_news,
+                    weighted_ppv=crawl_ppv,
+                    weighted_tpr=crawl_tpr,
                 )
             )
-
             total_true_words += w_true
             total_variance += var_boot
 
@@ -258,14 +280,33 @@ class FeasibilityAnalyzer:
         agg_ci_low = max(0.0, total_true_words - 1.96 * agg_std_err)
         agg_ci_high = total_true_words + 1.96 * agg_std_err
 
-        # 4. Deduplication Sensitivity Scenarios
+        return strata_results, total_true_words, agg_std_err, agg_ci_low, agg_ci_high
+
+    def compute_two_phase_yield(
+        self,
+        audit_records: list[dict[str, Any]] | None = None,
+        bootstrap_reps: int = 1000,
+        seed: int = 42,
+    ) -> FeasibilityReportData:
+        """Compute Horvitz-Thompson proxy yield and apply probability-weighted residual correction."""
+        has_audit = bool(audit_records and len(audit_records) > 0)
+        audit_sample_size = len(audit_records) if audit_records else 0
+
+        strata_results, total_true_words, agg_std_err, agg_ci_low, agg_ci_high = (
+            self._evaluate_single_audit_set(
+                audit_records=audit_records,
+                bootstrap_reps=bootstrap_reps,
+                seed=seed,
+            )
+        )
+
         scenarios = {
             "exact_15pct": total_true_words * (1.0 - 0.15),
             "moderate_syndication_30pct": total_true_words * (1.0 - 0.30),
             "aggressive_neardedup_50pct": total_true_words * (1.0 - 0.50),
         }
 
-        # 5. Diagnostic Classification Metrics
+        # Global Diagnostic Classification Metrics
         ppv: float | None = None
         tpr: float | None = None
         if has_audit and audit_sample_size >= 10:
@@ -297,7 +338,50 @@ class FeasibilityAnalyzer:
             ppv = tp / max(1, tp + fp)
             tpr = tp / max(1, tp + fn)
 
-        # 6. Good-Turing & Chao1 Diagnostics
+        # Audit Convergence Progression (e.g. Budget 200, 300, 400)
+        convergence_points: list[AuditConvergencePoint] | None = None
+        if has_audit and audit_sample_size >= 200:
+            conv_list: list[AuditConvergencePoint] = []
+            test_budgets = [200, 300, audit_sample_size]
+            # Deduplicate budgets
+            seen_budgets = []
+            for b in test_budgets:
+                if b <= audit_sample_size and b not in seen_budgets:
+                    seen_budgets.append(b)
+
+            for b in seen_budgets:
+                sub_limit = b // 2
+                sub_records = [
+                    r
+                    for r in audit_records  # type: ignore[union-attr]
+                    if int(r.get("priority_order", 0)) < sub_limit
+                ]
+                if len(sub_records) >= 20:
+                    (
+                        sub_strata,
+                        sub_total,
+                        sub_se,
+                        sub_low,
+                        sub_high,
+                    ) = self._evaluate_single_audit_set(
+                        audit_records=sub_records,
+                        bootstrap_reps=500,
+                        seed=seed,
+                    )
+                    conv_list.append(
+                        AuditConvergencePoint(
+                            budget=b,
+                            audited_docs=len(sub_records),
+                            true_total_words=sub_total,
+                            std_error_words=sub_se,
+                            ci_lower_95=sub_low,
+                            ci_upper_95=sub_high,
+                            lower_vs_33b_ratio=sub_low / 33_000_000_000,
+                            strata_yields=sub_strata,
+                        )
+                    )
+            convergence_points = conv_list
+
         good_turing = 0.95
         chao1 = 1200.0
 
@@ -322,6 +406,7 @@ class FeasibilityAnalyzer:
             feasibility_33b=agg_ci_low >= 33_000_000_000,
             sequential_funnel=sequential_funnel,
             marginal_filters=marginal_filters,
+            convergence_points=convergence_points,
         )
 
     def generate_report_markdown(self, data: FeasibilityReportData) -> str:
@@ -339,40 +424,76 @@ class FeasibilityAnalyzer:
             "",
             "## 1. Executive Summary & Scale Feasibility Verdicts",
             "",
-            "| Target Corpus Scale | Feasibility Verdict | Minimum Projected Words (95% CI Lower) |",
-            "| :--- | :--- | :--- |",
-            f"| **1 Billion Words (1B)** | **{verdict_str if data.feasibility_1b else 'INSUFFICIENT'}** | {data.aggregated_ci_lower_95:,.0f} words |",
-            f"| **6 Billion Words (6B)** | **{verdict_str if data.feasibility_6b else 'INSUFFICIENT'}** | {data.aggregated_ci_lower_95:,.0f} words |",
-            f"| **33 Billion Words (33B)** | **{verdict_str if data.feasibility_33b else 'INSUFFICIENT'}** | {data.aggregated_ci_lower_95:,.0f} words |",
+            "| Target Corpus Scale | Feasibility Verdict | Minimum Projected Words (95% CI Lower) | Safety Margin vs Target |",
+            "| :--- | :--- | :--- | :--- |",
+            f"| **1 Billion Words (1B)** | **{verdict_str if data.feasibility_1b else 'INSUFFICIENT'}** | {data.aggregated_ci_lower_95:,.0f} words | {data.aggregated_ci_lower_95 / 1_000_000_000:.1f}x |",
+            f"| **6 Billion Words (6B)** | **{verdict_str if data.feasibility_6b else 'INSUFFICIENT'}** | {data.aggregated_ci_lower_95:,.0f} words | {data.aggregated_ci_lower_95 / 6_000_000_000:.1f}x |",
+            f"| **33 Billion Words (33B)** | **{verdict_str if data.feasibility_33b else 'INSUFFICIENT'}** | {data.aggregated_ci_lower_95:,.0f} words | {data.aggregated_ci_lower_95 / 33_000_000_000:.1f}x |",
             "",
             "---",
             "",
-            "## 2. Statistical Yield Estimates Across Crawl Strata",
+            "## 2. Statistical Yield & Residual Estimates Across Crawl Strata",
             "",
-            "| Crawl Stratum | Sample Size | Retained Docs | Uncorrected Proxy Total Words | Residual Error | True Total Words (95% CI) |",
-            "| :--- | :--- | :--- | :--- | :--- | :--- |",
+            "| Crawl Stratum | Sample Size | Retained Docs | Uncorrected Proxy Words | Residual Error ($\\hat{E}_c$) | True Total Words (95% CI) | Weighted PPV | Weighted TPR |",
+            "| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |",
         ]
         for y in data.strata_yields:
             res_str = (
                 f"{y.residual_error_words:+,.0f}" if data.has_audit else "0 (No Audit)"
             )
+            ppv_s = (
+                f"{y.weighted_ppv * 100:.1f}%" if y.weighted_ppv is not None else "N/A"
+            )
+            tpr_s = (
+                f"{y.weighted_tpr * 100:.1f}%" if y.weighted_tpr is not None else "N/A"
+            )
             lines.append(
-                f"| **{y.crawl_id}** | {y.sample_size:,} | {y.retained_news_docs:,} | {y.proxy_total_words:,.0f} | {res_str} | **{y.true_total_words:,.0f}** [{y.ci_lower_95:,.0f}, {y.ci_upper_95:,.0f}] |"
+                f"| **{y.crawl_id}** | {y.sample_size:,} | {y.retained_news_docs:,} | {y.proxy_total_words:,.0f} | {res_str} | **{y.true_total_words:,.0f}** [{y.ci_lower_95:,.0f}, {y.ci_upper_95:,.0f}] | {ppv_s} | {tpr_s} |"
             )
 
         lines.extend(
             [
-                f"| **Aggregated Total** | — | — | — | — | **{data.aggregated_true_words:,.0f}** [{data.aggregated_ci_lower_95:,.0f}, {data.aggregated_ci_upper_95:,.0f}] |",
+                f"| **Aggregated Total** | — | — | — | — | **{data.aggregated_true_words:,.0f}** [{data.aggregated_ci_lower_95:,.0f}, {data.aggregated_ci_upper_95:,.0f}] | — | — |",
                 "",
                 "---",
                 "",
             ]
         )
 
+        # 3. Audit Convergence & Stabilization Section
+        if data.convergence_points:
+            lines.extend(
+                [
+                    "## 3. Sequential Audit Extension & CI Lower Bound Stabilization",
+                    "",
+                    "> **Methodological Verification:** Evaluates stabilization of the residual estimator $\\hat{E}$ and shrinkage of the 95% Bootstrap CI as the pre-specified sequential audit expands from $n=200 \\to n=300 \\to n=400$.",
+                    "",
+                    "| Audit Budget | Audited Docs | Aggregate True Words | Std. Error (SE) | 95% Bootstrap CI | 95% Lower Bound vs 33B | CC-09-10 True Words (95% CI) | CC-12 True Words (95% CI) |",
+                    "| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |",
+                ]
+            )
+            for cp in data.convergence_points:
+                c09 = next((s for s in cp.strata_yields if "2009" in s.crawl_id), None)
+                c12 = next((s for s in cp.strata_yields if "2012" in s.crawl_id), None)
+                c09_str = (
+                    f"{c09.true_total_words:,.0f} [{c09.ci_lower_95:,.0f}, {c09.ci_upper_95:,.0f}]"
+                    if c09
+                    else "N/A"
+                )
+                c12_str = (
+                    f"{c12.true_total_words:,.0f} [{c12.ci_lower_95:,.0f}, {c12.ci_upper_95:,.0f}]"
+                    if c12
+                    else "N/A"
+                )
+                lines.append(
+                    f"| **$n = {cp.budget}$** | {cp.audited_docs:,} | **{cp.true_total_words:,.0f}** | {cp.std_error_words:,.0f} | [{cp.ci_lower_95:,.0f}, {cp.ci_upper_95:,.0f}] | **{cp.lower_vs_33b_ratio:.2f}x** | {c09_str} | {c12_str} |"
+                )
+            lines.extend(["", "---", ""])
+
         if data.sequential_funnel:
             lines.extend(
                 [
-                    "## 3. End-to-End Pipeline Funnel (Strictly Monotonic Survival)",
+                    "## 4. End-to-End Pipeline Funnel (Strictly Monotonic Survival)",
                     "",
                     "| Crawl Stratum | Step 0: Sampled | Step 1: Fetch OK | Step 2: Extraction OK | Step 3: News Pred | Step 4: English News | Step 5: Retained Valid News | Avg Words | Median Words |",
                     "| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |",
@@ -387,7 +508,7 @@ class FeasibilityAnalyzer:
         if data.marginal_filters:
             lines.extend(
                 [
-                    "## 4. Independent Marginal Filter Pass Rates (Across All Extracted Documents)",
+                    "## 5. Independent Marginal Filter Pass Rates (Across All Extracted Documents)",
                     "",
                     "| Crawl Stratum | Extracted Docs | Marginal News Filter | Marginal English Filter | Marginal Format/Length Filter |",
                     "| :--- | :--- | :--- | :--- | :--- |",
@@ -405,17 +526,17 @@ class FeasibilityAnalyzer:
 
         lines.extend(
             [
-                "## 5. Deduplication Sensitivity Scenarios (Net Word Yield)",
+                "## 6. Deduplication Sensitivity Scenarios (Net Word Yield)",
                 "",
-                "| Scenario Description | Assumed Duplicate Rate | Projected Net Words |",
-                "| :--- | :--- | :--- |",
-                f"| **Scenario A: Baseline Exact Deduplication** | 15% | {data.scenarios['exact_15pct']:,.0f} words |",
-                f"| **Scenario B: Moderate Syndication Deduplication** | 30% | {data.scenarios['moderate_syndication_30pct']:,.0f} words |",
-                f"| **Scenario C: Aggressive Near-Deduplication** | 50% | {data.scenarios['aggressive_neardedup_50pct']:,.0f} words |",
+                "| Scenario Description | Assumed Duplicate Rate | Projected Net Words | Safety Margin vs 33B |",
+                "| :--- | :--- | :--- | :--- |",
+                f"| **Scenario A: Baseline Exact Deduplication** | 15% | {data.scenarios['exact_15pct']:,.0f} words | {data.scenarios['exact_15pct'] / 33_000_000_000:.1f}x |",
+                f"| **Scenario B: Moderate Syndication Deduplication** | 30% | {data.scenarios['moderate_syndication_30pct']:,.0f} words | {data.scenarios['moderate_syndication_30pct'] / 33_000_000_000:.1f}x |",
+                f"| **Scenario C: Aggressive Near-Deduplication** | 50% | {data.scenarios['aggressive_neardedup_50pct']:,.0f} words | {data.scenarios['aggressive_neardedup_50pct'] / 33_000_000_000:.1f}x |",
                 "",
                 "---",
                 "",
-                "## 6. Methodological & Diagnostic Metrics",
+                "## 7. Methodological & Diagnostic Metrics",
                 "",
             ]
         )
@@ -433,9 +554,9 @@ class FeasibilityAnalyzer:
             )
             lines.extend(
                 [
-                    f"* **Phase-2 Probability Audit Sample**: {data.audit_sample_size} audited documents",
-                    f"* **Classifier Precision (PPV)**: {ppv_str}",
-                    f"* **Classifier Recall (TPR)**: {tpr_str}",
+                    f"* **Phase-2 Probability Audit Sample**: {data.audit_sample_size} audited documents (Sequential Waves 1, 2, 3)",
+                    f"* **Overall Classifier Precision (PPV)**: {ppv_str}",
+                    f"* **Overall Classifier Recall (TPR)**: {tpr_str}",
                     r"* **Estimation Method**: Two-Phase Stratified Difference Estimator ($\hat{W}_{\text{true}} = \hat{W}_{\text{proxy}} + \hat{E}$)",
                 ]
             )
@@ -459,6 +580,7 @@ class FeasibilityAnalyzer:
 
 
 __all__ = [
+    "AuditConvergencePoint",
     "CrawlStratumYield",
     "FeasibilityAnalyzer",
     "FeasibilityReportData",

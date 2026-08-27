@@ -559,9 +559,11 @@ def analyze_corpus(
     elif audit_file is None:
         # Check standard annotated audit file locations
         default_audit_paths = [
+            Path(".staging/exp/f2/audit_review_400_annotated.jsonl"),
+            Path("artifacts/analysis/f2/audit_set_400_annotated.jsonl"),
             Path(".staging/exp/f2/audit_review_200_annotated.jsonl"),
             Path("artifacts/analysis/f2/audit_set_200_annotated.jsonl"),
-            Path(".staging/exp/f2/audit_set_200_annotated.jsonl"),
+            Path(".staging/exp/f2/audit_set_200.jsonl"),
         ]
         for p in default_audit_paths:
             if p.exists():
@@ -592,14 +594,16 @@ def analyze_corpus(
     # Also export summary.csv
     csv_file = output_dir / "feasibility_summary.csv"
     csv_lines = [
-        "crawl_id,sample_size,retained_news_docs,proxy_words,residual_error,true_total_words,ci_lower_95,ci_upper_95"
+        "crawl_id,sample_size,retained_news_docs,proxy_words,residual_error,true_total_words,ci_lower_95,ci_upper_95,weighted_ppv,weighted_tpr"
     ]
     for y in report_data.strata_yields:
+        ppv_v = f"{y.weighted_ppv:.4f}" if y.weighted_ppv is not None else ""
+        tpr_v = f"{y.weighted_tpr:.4f}" if y.weighted_tpr is not None else ""
         csv_lines.append(
-            f"{y.crawl_id},{y.sample_size},{y.retained_news_docs},{y.proxy_total_words:.0f},{y.residual_error_words:.0f},{y.true_total_words:.0f},{y.ci_lower_95:.0f},{y.ci_upper_95:.0f}"
+            f"{y.crawl_id},{y.sample_size},{y.retained_news_docs},{y.proxy_total_words:.0f},{y.residual_error_words:.0f},{y.true_total_words:.0f},{y.ci_lower_95:.0f},{y.ci_upper_95:.0f},{ppv_v},{tpr_v}"
         )
     csv_lines.append(
-        f"aggregated,{sum(y.sample_size for y in report_data.strata_yields)},{sum(y.retained_news_docs for y in report_data.strata_yields)},{sum(y.proxy_total_words for y in report_data.strata_yields):.0f},{sum(y.residual_error_words for y in report_data.strata_yields):.0f},{report_data.aggregated_true_words:.0f},{report_data.aggregated_ci_lower_95:.0f},{report_data.aggregated_ci_upper_95:.0f}"
+        f"aggregated,{sum(y.sample_size for y in report_data.strata_yields)},{sum(y.retained_news_docs for y in report_data.strata_yields)},{sum(y.proxy_total_words for y in report_data.strata_yields):.0f},{sum(y.residual_error_words for y in report_data.strata_yields):.0f},{report_data.aggregated_true_words:.0f},{report_data.aggregated_ci_lower_95:.0f},{report_data.aggregated_ci_upper_95:.0f},,"
     )
     csv_file.write_text("\n".join(csv_lines) + "\n", encoding="utf-8")
 
