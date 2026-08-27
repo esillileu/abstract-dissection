@@ -537,7 +537,6 @@ class CalibrationAndPreFetchAnalyzer:
 
         recs: list[ProductionPipelineRecommendation] = []
         for name, desc, pre_fn, post_tau in configs:
-            # 1. Pre-fetch network metrics on full 10k population
             passed_10k = [r for r in self.all_records if pre_fn(r)]
             reqs_saved = 1.0 - (len(passed_10k) / tot_10k_reqs)
             bytes_passed = sum(float(r.get("downloaded_bytes", 0)) for r in passed_10k)
@@ -545,7 +544,7 @@ class CalibrationAndPreFetchAnalyzer:
                 1.0 - (bytes_passed / tot_10k_bytes) if tot_10k_bytes > 0 else 0.0
             )
 
-            # 2. Joint filtering evaluation directly on gold sample
+            # Direct joint evaluation on each individual gold record
             tp_joint_w = 0.0
             tp_joint_doc = 0.0
             fp_joint_w = 0.0
@@ -666,10 +665,15 @@ class CalibrationAndPreFetchAnalyzer:
                 "2. **Non-PDF Media & Assets (Rule 1a, `.jpg`, `.png`, `.mp4`, `.zip`, `.js`, `.css`):** Accounts for **4.26% of total network bytes** (6.13 MB). The 6 items triggering proxy news filters were Javascript comment blocks and SVG vector metadata containing datelines/quotes. Primary news loss is 0.0%.",
                 "3. **Rule 1 Only as Leading Pre-Fetch Candidate:** Rule 1 (Binary & Media Exclusions, including PDF) captures **44.37% out of the 45.01% maximum theoretical byte savings**. The additional rules (Rules 2 and 3) contribute only 0.64% additional byte savings while adding complexity. Therefore, **Rule 1 Only is designated as the primary leading pre-fetch candidate**.",
                 "",
-                "### 2.3 Clarification on Pre-Filter Recall Claims (Empirical Sample vs. Statistical Guarantee)",
-                "* **Empirical Audit Sample Word Recall:** **99.63%** (observed on 400 gold audits).",
-                "* **Empirical 10k Population Retention:** **99.33%** (1,155,468 of 1,163,227 words retained).",
-                "* **Statistical Limitation:** For the 85 true-news gold documents in the audit sample, 0 false negatives under Rule 1 yields a 95% Wilson confidence interval of $[95.7\\%, 100.0\\%]$ (half-width $\\pm 4.3\\%$). Hence, claims of near-100% recall are **empirical sample findings**, and operating points should not be frozen without this transparent qualification.",
+                "### 2.3 Reconciliation of Proxy vs. Gold Audit Metrics & Sample-Bounded Risk",
+                "",
+                "| Metric Layer | Evaluated Sample | Rule 1 Only (Binary Exclusions) | Rules 1+2+3 Combined | Metric Interpretation |",
+                "| :--- | :--- | :--- | :--- | :--- |",
+                "| **Gold Audit True News Recall** | $n=400$ audits (85 Gold News) | **100.00%** (85/85 news survive, 0 FN) | **99.63%** (84/85 news survive, 1 FN) | Direct ground-truth retention on verified human labels |",
+                "| **Full Population Proxy Retention** | $N=10,000$ full crawl sample | **99.81%** (1,161,071 / 1,163,227 words) | **99.33%** (1,155,468 / 1,163,227 words) | Uncorrected pipeline proxy text survival across full crawl |",
+                "| **Audit Wilson 95% CI** | $n=400$ audits (85 Gold News) | $[95.7\\%, 100.0\\%]$ | $[94.4\\%, 99.9\\%]$ | Finite-sample statistical uncertainty bounds |",
+                "",
+                "* **Sample-Bounded Risk Statement:** No false-negative binary exclusions were observed in the $n=400$ audit sample (85/85 gold true-news documents survived under Rule 1, yielding an empirical audit recall of 100.00% with a Wilson 95% CI of $[95.7\\%, 100.0\\%]$). However, rare news articles served with unconventional non-HTML URL extensions remain possible in the unobserved tail, so claims of near-100% recall are strictly sample-bounded empirical findings.",
                 "",
                 "---",
                 "",
@@ -709,11 +713,12 @@ class CalibrationAndPreFetchAnalyzer:
                 "",
                 "---",
                 "",
-                "## 4. Production Pipeline Recommendations & Joint End-to-End Evaluation",
+                "## 4. Production Planning Projections & Joint Pipeline Recommendations",
                 "",
-                "> **Direct Joint Evaluation:** Joint recall and precision metrics are computed by applying both stages simultaneously to each individual record in the gold sample, rather than multiplying marginal rates.",
+                "> **Methodological Clarification:** The figures below represent **Production Planning Projections (Filtered Operational Estimates)** resulting from combined pipeline configurations. They do not alter or replace the completed benchmark feasibility estimate of **521.36B true words** [366.84B, 675.87B].",
+                "> Joint recall and precision metrics are computed by applying both stages simultaneously to each individual record in the gold sample, rather than multiplying marginal rates.",
                 "",
-                "| Production Pipeline Option | Stage 1 Pre-Fetch Filter | Stage 2 Post-Fetch ($\\tau$) | Joint True Word Recall | Joint True Word PPV | ARC Requests Avoided | Network Bytes Saved | Local Disk Storage Saved | Net Words (50% Dedup) | Safety Margin vs 33B |",
+                "| Production Pipeline Option | Stage 1 Pre-Fetch Filter | Stage 2 Post-Fetch ($\\tau$) | Joint True Word Recall | Joint True Word PPV | ARC Requests Avoided | Network Bytes Saved | Local Disk Storage Saved | Planning Net Words (50% Dedup) | Safety Margin vs 33B |",
                 "| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |",
             ]
         )
@@ -727,8 +732,8 @@ class CalibrationAndPreFetchAnalyzer:
             [
                 "",
                 "### 4.1 Operating-Point Freezing Decisions",
-                "1. **Post-Fetch Operating Point ($\\tau \\approx 1.25$):** Designated as **PROVISIONALLY FROZEN (Leading Production Candidate)**. It achieves 98.71% joint true-news word recall and eliminates 44.12% of unneeded local disk bytes. Final unfreezing/confirmation will be conducted during production pilot extraction.",
-                "2. **Pre-Fetch Operating Point (Rule 1 Only):** Designated as **PROVISIONALLY RECOMMENDED (Leading Pre-Fetch Candidate)**. It delivers **44.37% network bandwidth savings** (with PDF exclusion contributing 40.12%) with **100.00% joint word recall on the gold audit** and zero structural edge cases.",
+                "1. **Post-Fetch Operating Point ($\\tau \\approx 1.25$):** Designated as **PROVISIONALLY FROZEN (Leading Production Candidate)**. It achieves 98.71% joint true-news word recall and eliminates 44.12% of unneeded local disk bytes. Final confirmation will be conducted during production pilot extraction.",
+                "2. **Pre-Fetch Operating Point (Rule 1 Only):** Designated as **PROVISIONALLY RECOMMENDED (Leading Pre-Fetch Candidate)**. It delivers **44.37% network bandwidth savings** (with PDF exclusion contributing 40.12%) with **100.00% joint word recall on the gold audit** and sample-bounded structural safety.",
                 "",
             ]
         )
