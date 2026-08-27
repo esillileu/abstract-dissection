@@ -8,29 +8,33 @@ from pathlib import Path
 from f2.analysis import FeasibilityAnalyzer
 
 
-def test_feasibility_analyzer_estimation(tmp_path: Path):
+def test_feasibility_analyzer_estimation_with_and_without_audit(tmp_path: Path):
     prov_path = tmp_path / "provenance.jsonl"
     records = []
 
-    # Mock 100 records for CC-MAIN-2012 (w_i = 10,000,000)
+    # Mock 100 records for CC-MAIN-2012 (w_i = 10,000)
     for i in range(100):
         is_news = 1 if i < 30 else 0
-        words = 500 if is_news else 0
+        is_en = (
+            1 if (i < 25 or (30 <= i < 60)) else 0
+        )  # 25 of news are English, 30 of non-news are English
+        is_val = 1 if (i < 20 or (30 <= i < 70)) else 0  # 20 of English news are valid
+        words = 500 if (is_news and is_en and is_val) else 0
         records.append(
             {
                 "record_id": f"rec_{i}",
                 "crawl_id": "CC-MAIN-2012",
                 "url": f"http://test{i}.com",
-                "fetch_status": "success",
-                "downloaded_bytes": 10000,
-                "http_status": 200,
-                "extraction_success": 1,
+                "fetch_status": "success" if i < 95 else "failed",
+                "downloaded_bytes": 10000 if i < 95 else 0,
+                "http_status": 200 if i < 95 else 500,
+                "extraction_success": 1 if i < 90 else 0,
                 "news_score": 2.0 if is_news else 0.0,
                 "is_news_predicted": is_news,
-                "is_english": 1,
-                "is_valid": 1,
-                "rejection_reason": None,
-                "word_count": words,
+                "is_english": is_en,
+                "is_valid": is_val,
+                "rejection_reason": None if words > 0 else "filtered",
+                "word_count": 500 if is_val else 50,
                 "inclusion_probability": 0.0001,
                 "design_weight": 10000.0,
                 "proxy_words": words,
@@ -43,57 +47,109 @@ def test_feasibility_analyzer_estimation(tmp_path: Path):
             f.write(json.dumps(r) + "\n")
 
     analyzer = FeasibilityAnalyzer(prov_path)
-    funnel = analyzer.compute_funnel_summary()
-    assert funnel["total_sampled"] == 100
-    assert funnel["valid_news"] == 30
-    assert funnel["avg_words_per_doc"] == 500.0
 
-    # Test audit correction with gold residuals (e.g. 5 audited records)
+    # 1. Test strictly monotonic sequential funnel
+    seq_funnel = analyzer.compute_sequential_funnel()
+    assert len(seq_funnel) == 1
+    f = seq_funnel[0]
+    assert f["step0_sampled"] == 100
+    assert f["step1_fetch_ok"] == 95
+    assert f["step2_extraction_ok"] == 90
+    assert f["step3_news_pred"] <= f["step2_extraction_ok"]
+    assert f["step4_english_news"] <= f["step3_news_pred"]
+    assert f["step5_retained_valid_news"] <= f["step4_english_news"]
+    assert f["step5_retained_valid_news"] == 20
+    assert (
+        f["step0_sampled"]
+        >= f["step1_fetch_ok"]
+        >= f["step2_extraction_ok"]
+        >= f["step3_news_pred"]
+        >= f["step4_english_news"]
+        >= f["step5_retained_valid_news"]
+    ), "Sequential funnel must be strictly monotonic non-increasing!"
+
+    # 2. Test marginal filters (can be independent)
+    marginal = analyzer.compute_marginal_filters()
+    assert len(marginal) == 1
+    m = marginal[0]
+    assert m["total_extracted"] == 90
+
+    # 3. Test estimation WITHOUT audit file (Uncorrected Proxy)
+    data_no_audit = analyzer.compute_two_phase_yield(
+        audit_records=None, bootstrap_reps=30, seed=42
+    )
+    assert not data_no_audit.has_audit
+    assert data_no_audit.precision_ppv is None
+    assert data_no_audit.recall_tpr is None
+    assert data_no_audit.strata_yields[0].residual_error_words == 0.0
+    # 20 docs * 500 words * 10,000 weight = 100,000,000 proxy words
+    assert data_no_audit.strata_yields[0].proxy_total_words == 100_000_000.0
+    assert data_no_audit.strata_yields[0].true_total_words == 100_000_000.0
+
+    md_no_audit = analyzer.generate_report_markdown(data_no_audit)
+    assert "Uncorrected Proxy" in md_no_audit
+    assert "0 (No Audit)" in md_no_audit
+    assert "End-to-End Pipeline Funnel (Strictly Monotonic Survival)" in md_no_audit
+    assert "Independent Marginal Filter Pass Rates" in md_no_audit
+
+    # 4. Test estimation WITH audit file (Residual Correction)
     audit_records = [
         {
             "record_id": "rec_0",
             "predicted_class": 1,
             "gold_class": 1,
-            "gold_words": 500,
+            "word_count_gold": 500,
         },
         {
             "record_id": "rec_1",
             "predicted_class": 1,
             "gold_class": 1,
-            "gold_words": 550,
-        },  # +50 residual
-        {"record_id": "rec_30", "predicted_class": 0, "gold_class": 0, "gold_words": 0},
+            "word_count_gold": 600,
+        },  # +100 residual
+        {
+            "record_id": "rec_2",
+            "predicted_class": 1,
+            "gold_class": 0,
+            "word_count_gold": 0,
+        },  # -500 false positive residual
+        {
+            "record_id": "rec_30",
+            "predicted_class": 0,
+            "gold_class": 0,
+            "word_count_gold": 0,
+        },
         {
             "record_id": "rec_31",
             "predicted_class": 0,
             "gold_class": 1,
-            "gold_words": 400,
+            "word_count_gold": 400,
         },  # +400 false negative residual
     ]
+    # Pad to >= 10 for diagnostics
+    for k in range(32, 40):
+        audit_records.append(
+            {
+                "record_id": f"rec_{k}",
+                "predicted_class": 0,
+                "gold_class": 0,
+                "word_count_gold": 0,
+            }
+        )
 
-    report_data = analyzer.compute_two_phase_yield(
+    data_with_audit = analyzer.compute_two_phase_yield(
         audit_records=audit_records, bootstrap_reps=50, seed=42
     )
-    assert len(report_data.strata_yields) == 1
-    yield_2012 = report_data.strata_yields[0]
-
-    # 30 news * 500 words * 10,000 weight = 150,000,000 proxy words
-    assert yield_2012.proxy_total_words == 150_000_000.0
-    assert (
-        yield_2012.true_total_words > 150_000_000.0
-    )  # Increased due to positive residual in audit
-    assert report_data.aggregated_true_words == yield_2012.true_total_words
-
-    # Test deduplication scenarios
-    assert (
-        report_data.scenarios["exact_15pct"] == report_data.aggregated_true_words * 0.85
-    )
-    assert (
-        report_data.scenarios["moderate_syndication_30pct"]
-        == report_data.aggregated_true_words * 0.70
+    assert data_with_audit.has_audit
+    assert data_with_audit.audit_sample_size == len(audit_records)
+    assert data_with_audit.precision_ppv is not None
+    assert data_with_audit.recall_tpr is not None
+    assert data_with_audit.strata_yields[0].residual_error_words != 0.0
+    assert data_with_audit.strata_yields[0].true_total_words == max(
+        0.0,
+        data_with_audit.strata_yields[0].proxy_total_words
+        + data_with_audit.strata_yields[0].residual_error_words,
     )
 
-    # Markdown report generation check
-    md = analyzer.generate_report_markdown(report_data)
-    assert "# Common Crawl (2009-2012) Corpus Feasibility Study Report" in md
-    assert "Deduplication Sensitivity Scenarios" in md
+    md_with_audit = analyzer.generate_report_markdown(data_with_audit)
+    assert "Audit-Corrected" in md_with_audit
+    assert "Classifier Precision (PPV)" in md_with_audit

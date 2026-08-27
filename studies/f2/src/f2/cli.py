@@ -491,9 +491,9 @@ def analyze_corpus(
     )
     csv_file.write_text("\n".join(csv_lines) + "\n", encoding="utf-8")
 
-    funnel_list = analyzer.compute_funnel_summary()
-    tot_sampled = sum(int(f["total_sampled"]) for f in funnel_list)
-    tot_valid = sum(int(f["valid_news_retained"]) for f in funnel_list)
+    funnel_list = analyzer.compute_sequential_funnel()
+    tot_sampled = sum(int(f["step0_sampled"]) for f in funnel_list)
+    tot_valid = sum(int(f["step5_retained_valid_news"]) for f in funnel_list)
     typer.echo(f"Report written to: {report_file}")
     typer.echo(f"Summary CSV written to: {csv_file}")
     typer.echo(
