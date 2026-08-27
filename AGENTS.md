@@ -53,7 +53,8 @@ docs/
 │   ├── overview.md                       # Monorepo 4-tier layer topology and dependency rules
 │   ├── packages.md                       # Responsibilities and strict boundaries of packages/
 │   ├── studies.md                        # Structure of studies/ and dynamic repro CLI plugin discovery
-│   └── adapters.md                       # Adapter boundary & representation translation contracts
+│   ├── adapters.md                       # Adapter boundary & representation translation contracts
+│   └── corpus-pipeline.md                # Common Crawl sampling, auditing, two-phase estimation & corpus extraction
 └── guidelines/
     ├── path-and-storage.md               # Storage tiers, MLflow upload rules, and 3-tier path precedence
     ├── reproducibility-and-references.md # Reference vendoring, provenance.json, and seed streams
@@ -63,6 +64,7 @@ docs/
 * **For Package & Core Work:** Read [`docs/architecture/packages.md`](file:///home/esillileu/abstract-dissection/docs/architecture/packages.md).
 * **For Study & Experiment Work:** Read [`docs/architecture/studies.md`](file:///home/esillileu/abstract-dissection/docs/architecture/studies.md).
 * **For Adapter & Representation Translation:** Read [`docs/architecture/adapters.md`](file:///home/esillileu/abstract-dissection/docs/architecture/adapters.md).
+* **For Corpus Sampling, Auditing & Pipeline Work:** Read [`docs/architecture/corpus-pipeline.md`](file:///home/esillileu/abstract-dissection/docs/architecture/corpus-pipeline.md).
 * **For Paths, Datasets & Storage:** Read [`docs/guidelines/path-and-storage.md`](file:///home/esillileu/abstract-dissection/docs/guidelines/path-and-storage.md).
 * **For Reproducibility & RNG:** Read [`docs/guidelines/reproducibility-and-references.md`](file:///home/esillileu/abstract-dissection/docs/guidelines/reproducibility-and-references.md).
 * **For Running, Testing & CLI:** Read [`docs/guidelines/execution-and-verification.md`](file:///home/esillileu/abstract-dissection/docs/guidelines/execution-and-verification.md).
