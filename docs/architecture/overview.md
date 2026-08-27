@@ -20,22 +20,26 @@ graph TD
         ENGINE[packages/deepscratch]
     end
 
-    subgraph Layer 3: Studies [3. Studies (Scientific Experiments)]
-        STUDY[studies/dlfs]
-        ADAPTERS[studies/dlfs/src/dlfs/adapters\nTranslation Adapters Boundary]
+    subgraph Layer 3: Studies [3. Studies (Scientific Experiments & Campaigns)]
+        STUDY_DLFS[studies/dlfs\nDLFS Vol 1 & 2 Suite]
+        STUDY_F2[studies/f2\nF2 Campaign: Corpus Pipeline + 8-10 Studies]
+        ADAPTERS[studies/*/adapters\nTranslation Adapters Boundary]
     end
 
     subgraph Layer 4: Infrastructure [4. Infra & Tracking]
-        INFRA[infra/mlflow, SQLite DB]
+        INFRA[infra/mlflow, SQLite DB, PostgreSQL]
     end
 
-    STUDY -->|orchestrates via| ADAPTERS
+    STUDY_DLFS -->|orchestrates via| ADAPTERS
+    STUDY_F2 -->|orchestrates via| ADAPTERS
     ADAPTERS -->|uses pure retention| CORE
     ADAPTERS -->|injects datasets & builds models| ENGINE
-    STUDY -->|tracks runs| MLFLOW
-    STUDY -->|reads immutable baseline| REF
+    STUDY_DLFS -->|tracks runs| MLFLOW
+    STUDY_F2 -->|tracks runs| MLFLOW
+    STUDY_DLFS -->|reads immutable baseline| REF
     MLFLOW -->|depends on| CORE
-    INFRA -.->|servers tracking| MLFLOW
+    INFRA -.->|serves tracking & storage| MLFLOW
+    INFRA -.->|metadata persistence| STUDY_F2
 ```
 
 ---

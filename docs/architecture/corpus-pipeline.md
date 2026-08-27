@@ -1,6 +1,6 @@
 # Common Crawl Corpus Pipeline & Auditing Architecture
 
-The `studies/f2` package provides an end-to-end, statistically sound Common Crawl sampling, ingestion, auditing, and calibration subsystem designed to construct the 33-billion-word news corpus for Word2Vec reproduction.
+This document describes the Common Crawl corpus sampling, auditing, calibration, and ingestion subsystem in `studies/f2`. This pipeline serves as the **foundational Phase-0 data infrastructure** for the broader `f2` research campaign (a suite of 8~10 studies comprising 2 corpus-dependent Word2Vec training studies and 5 independent benchmark studies).
 
 ---
 

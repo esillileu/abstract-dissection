@@ -87,4 +87,6 @@ just lint
 uv run repro --help
 uv run repro dlfs plan ds1 -e 01
 uv run repro dlfs plan ds2 -e 01
+uv run repro f2 corpus analyze
+uv run repro f2 corpus calibrate
 ```
