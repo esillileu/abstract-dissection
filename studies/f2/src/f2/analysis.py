@@ -1,4 +1,4 @@
-"""Analytical engine: DuckDB statistics, Two-Stage Horvitz-Thompson estimation, two-phase residual difference correction, stratified bootstrap variance replication, and deduplication sensitivity scenarios."""
+"""Feasibility analysis engine executing DuckDB queries over exported provenance Parquet logs."""
 
 from __future__ import annotations
 
@@ -39,6 +39,7 @@ class FeasibilityReportData:
     feasibility_1b: bool
     feasibility_6b: bool
     feasibility_33b: bool
+    funnel_records: list[dict[str, Any]] | None = None
 
 
 class FeasibilityAnalyzer:
@@ -64,24 +65,25 @@ class FeasibilityAnalyzer:
                 f"CREATE TABLE provenance AS SELECT * FROM read_json_auto('{posix_path}');"
             )
 
-    def compute_funnel_summary(self) -> dict[str, Any]:
-        """Compute stage-by-stage document survival funnels."""
+    def compute_funnel_summary(self) -> list[dict[str, Any]]:
+        """Compute stage-by-stage document survival funnels per crawl stratum and total."""
         df = self.con.execute("""
             SELECT 
+                crawl_id,
                 COUNT(*) as total_sampled,
                 SUM(CASE WHEN fetch_status = 'success' THEN 1 ELSE 0 END) as fetch_success,
                 SUM(CASE WHEN extraction_success = 1 THEN 1 ELSE 0 END) as extraction_success,
-                SUM(CASE WHEN is_news_predicted = 1 THEN 1 ELSE 0 END) as predicted_news,
-                SUM(CASE WHEN is_news_predicted = 1 AND is_english = 1 THEN 1 ELSE 0 END) as english_news,
-                SUM(CASE WHEN is_news_predicted = 1 AND is_english = 1 AND is_valid = 1 THEN 1 ELSE 0 END) as valid_news,
+                SUM(CASE WHEN is_news_predicted = 1 THEN 1 ELSE 0 END) as news_pred,
+                SUM(CASE WHEN is_english = 1 THEN 1 ELSE 0 END) as english_pass,
+                SUM(CASE WHEN is_valid = 1 THEN 1 ELSE 0 END) as valid_pass,
+                SUM(CASE WHEN is_news_predicted = 1 AND is_english = 1 AND is_valid = 1 THEN 1 ELSE 0 END) as valid_news_retained,
                 AVG(CASE WHEN proxy_words > 0 THEN word_count ELSE NULL END) as avg_words_per_doc,
-                MEDIAN(CASE WHEN proxy_words > 0 THEN word_count ELSE NULL END) as median_words_per_doc,
-                QUANTILE_CONT(CASE WHEN proxy_words > 0 THEN word_count ELSE NULL END, 0.90) as p90_words_per_doc,
-                AVG(downloaded_bytes) as avg_download_bytes,
-                SUM(downloaded_bytes) / NULLIF(SUM(proxy_words), 0) as bytes_per_retained_word
-            FROM provenance;
+                MEDIAN(CASE WHEN proxy_words > 0 THEN word_count ELSE NULL END) as median_words_per_doc
+            FROM provenance
+            GROUP BY crawl_id
+            ORDER BY crawl_id;
         """).df()
-        return df.to_dict(orient="records")[0]
+        return df.to_dict(orient="records")
 
     def compute_two_phase_yield(
         self,
@@ -89,7 +91,7 @@ class FeasibilityAnalyzer:
         bootstrap_reps: int = 1000,
         seed: int = 42,
     ) -> FeasibilityReportData:
-        """Compute per-crawl Horvitz-Thompson proxy totals, two-phase residual error correction, and stratified bootstrap variance."""
+        """Compute Horvitz-Thompson proxy yield and apply probability-weighted residual correction."""
         crawls = [
             row[0]
             for row in self.con.execute(
@@ -260,6 +262,8 @@ class FeasibilityAnalyzer:
         good_turing = 0.95
         chao1 = 1200.0
 
+        funnel_records = self.compute_funnel_summary()
+
         return FeasibilityReportData(
             strata_yields=strata_results,
             aggregated_true_words=total_true_words,
@@ -274,6 +278,7 @@ class FeasibilityAnalyzer:
             feasibility_1b=agg_ci_low >= 1_000_000_000,
             feasibility_6b=agg_ci_low >= 6_000_000_000,
             feasibility_33b=agg_ci_low >= 33_000_000_000,
+            funnel_records=funnel_records,
         )
 
     def generate_report_markdown(self, data: FeasibilityReportData) -> str:
@@ -307,7 +312,27 @@ class FeasibilityAnalyzer:
                 "",
                 "---",
                 "",
-                "## 3. Deduplication Sensitivity Scenarios (Net Word Yield)",
+            ]
+        )
+
+        if data.funnel_records:
+            lines.extend(
+                [
+                    "## 3. End-to-End Pipeline Funnel Breakdown",
+                    "",
+                    "| Crawl Stratum | Sampled | Fetch OK | Extraction OK | News Pred | English Pass | Valid Pass | Retained News | Avg Words | Median Words |",
+                    "| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |",
+                ]
+            )
+            for f in data.funnel_records:
+                lines.append(
+                    f"| **{f['crawl_id']}** | {f['total_sampled']:,} | {int(f['fetch_success']):,} | {int(f['extraction_success']):,} | {int(f['news_pred']):,} | {int(f['english_pass']):,} | {int(f['valid_pass']):,} | **{int(f['valid_news_retained']):,}** | {f['avg_words_per_doc']:.1f} | {f['median_words_per_doc']:.1f} |"
+                )
+            lines.extend(["", "---", ""])
+
+        lines.extend(
+            [
+                "## 4. Deduplication Sensitivity Scenarios (Net Word Yield)",
                 "",
                 "| Scenario Description | Assumed Duplicate Rate | Projected Net Words |",
                 "| :--- | :--- | :--- |",
@@ -317,7 +342,7 @@ class FeasibilityAnalyzer:
                 "",
                 "---",
                 "",
-                "## 4. Methodological & Diagnostic Metrics",
+                "## 5. Methodological & Diagnostic Metrics",
                 "",
                 f"* **Classifier Precision (PPV)**: {data.precision_ppv * 100:.1f}%",
                 f"* **Classifier Recall (TPR)**: {data.recall_tpr * 100:.1f}%",

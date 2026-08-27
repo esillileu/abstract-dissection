@@ -477,10 +477,27 @@ def analyze_corpus(
     report_file = output_dir / "feasibility_report.md"
     report_file.write_text(md_content, encoding="utf-8")
 
-    funnel = analyzer.compute_funnel_summary()
+    # Also export summary.csv
+    csv_file = output_dir / "feasibility_summary.csv"
+    csv_lines = [
+        "crawl_id,sample_size,retained_news_docs,proxy_words,residual_error,true_total_words,ci_lower_95,ci_upper_95"
+    ]
+    for y in report_data.strata_yields:
+        csv_lines.append(
+            f"{y.crawl_id},{y.sample_size},{y.retained_news_docs},{y.proxy_total_words:.0f},{y.residual_error_words:.0f},{y.true_total_words:.0f},{y.ci_lower_95:.0f},{y.ci_upper_95:.0f}"
+        )
+    csv_lines.append(
+        f"aggregated,{sum(y.sample_size for y in report_data.strata_yields)},{sum(y.retained_news_docs for y in report_data.strata_yields)},{sum(y.proxy_total_words for y in report_data.strata_yields):.0f},{sum(y.residual_error_words for y in report_data.strata_yields):.0f},{report_data.aggregated_true_words:.0f},{report_data.aggregated_ci_lower_95:.0f},{report_data.aggregated_ci_upper_95:.0f}"
+    )
+    csv_file.write_text("\n".join(csv_lines) + "\n", encoding="utf-8")
+
+    funnel_list = analyzer.compute_funnel_summary()
+    tot_sampled = sum(int(f["total_sampled"]) for f in funnel_list)
+    tot_valid = sum(int(f["valid_news_retained"]) for f in funnel_list)
     typer.echo(f"Report written to: {report_file}")
+    typer.echo(f"Summary CSV written to: {csv_file}")
     typer.echo(
-        f"\nSummary Funnel: Sampled: {funnel['total_sampled']}, Valid News: {funnel['valid_news']}, Avg Words: {funnel['avg_words_per_doc']:.1f}"
+        f"\nSummary Funnel: Sampled: {tot_sampled:,}, Retained Valid News: {tot_valid:,}"
     )
     typer.echo(
         f"Projected True News Total: {report_data.aggregated_true_words:,.0f} words (95% CI: [{report_data.aggregated_ci_lower_95:,.0f}, {report_data.aggregated_ci_upper_95:,.0f}])"
