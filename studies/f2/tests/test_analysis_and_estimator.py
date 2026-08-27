@@ -203,15 +203,12 @@ def test_calibration_and_prefetch_analyzer(tmp_path: Path):
             f.write(json.dumps(r) + "\n")
 
     calibrator = CalibrationAndPreFetchAnalyzer(prov_path, audit_records)
+    ablation = calibrator.evaluate_rule_ablation()
+    assert len(ablation) == 6
+
     post_sweep = calibrator.evaluate_postfetch_sweep()
     assert len(post_sweep) > 0
 
-    pre_sweep = calibrator.evaluate_prefetch_sweep()
-    assert len(pre_sweep) > 0
-
-    recs = calibrator.evaluate_production_recommendations()
-    assert len(recs) == 4
-
     md = calibrator.generate_report_markdown()
     assert "# Offline Classifier Calibration & Pre-Fetch Feasibility Study" in md
-    assert "Recommended Balanced Pipeline" in md
+    assert "Rule 1: Binary & Media Extensions" in md
