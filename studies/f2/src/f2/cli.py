@@ -363,9 +363,7 @@ def review_audit(
     ],
     output_file: Annotated[
         Path,
-        typer.Option(
-            "--output-file", "-o", help="Audit review JSONL output path"
-        ),
+        typer.Option("--output-file", "-o", help="Audit review JSONL output path"),
     ] = Path(".staging/exp/f2/audit_set_200.jsonl"),
 ) -> None:
     """Export the 200 audit assignments with complete metadata, weights, and text for manual labeling."""
@@ -374,7 +372,9 @@ def review_audit(
         repo = CorpusStateRepository(conn)
         audit_items = repo.get_audit_assignments(run_id)
         if not audit_items:
-            typer.echo(f"No audit assignments found for run '{run_id}'. Run 'repro f2 corpus audit' first.")
+            typer.echo(
+                f"No audit assignments found for run '{run_id}'. Run 'repro f2 corpus audit' first."
+            )
             return
 
         # Map URLs to clean text snippet if shards exist
@@ -382,8 +382,13 @@ def review_audit(
         url_to_text: dict[str, str] = {}
         if shard_dir.exists():
             import re
+
             for sf in shard_dir.glob("*.txt"):
-                docs = re.findall(r'<DOC url="(.*?)" words="(\d+)">\n(.*?)\n</DOC>', sf.read_text(encoding="utf-8"), re.DOTALL)
+                docs = re.findall(
+                    r'<DOC url="(.*?)" words="(\d+)">\n(.*?)\n</DOC>',
+                    sf.read_text(encoding="utf-8"),
+                    re.DOTALL,
+                )
                 for u, _, txt in docs:
                     url_to_text[u] = txt.strip()
 
@@ -401,7 +406,9 @@ def review_audit(
                     "candidate_id": item["candidate_id"],
                     "priority_order": item["priority_order"],
                     "audit_stratum": item["audit_stratum"],
-                    "audit_stratum_label": "News (Stratum 1)" if item["audit_stratum"] == 1 else "Non-News (Stratum 0)",
+                    "audit_stratum_label": "News (Stratum 1)"
+                    if item["audit_stratum"] == 1
+                    else "Non-News (Stratum 0)",
                     "wave": item.get("wave", 1),
                     "crawl_id": item["crawl_id"],
                     "url": u,
@@ -420,7 +427,9 @@ def review_audit(
                     "text_snippet": snippet,
                     # Fields for manual labeler:
                     "gold_class": item["gold_class"] if item["is_audited"] else None,
-                    "word_count_gold": item["word_count_gold"] if item["is_audited"] else None,
+                    "word_count_gold": item["word_count_gold"]
+                    if item["is_audited"]
+                    else None,
                     "auditor_id": item.get("auditor_id"),
                     "notes": item.get("notes"),
                 }
@@ -453,7 +462,9 @@ def review_audit(
             if entry["text_snippet"]:
                 md_lines.extend(["", "```text", entry["text_snippet"], "```", ""])
             else:
-                md_lines.extend(["", "*(No clean text snippet retained in Phase 1)*", ""])
+                md_lines.extend(
+                    ["", "*(No clean text snippet retained in Phase 1)*", ""]
+                )
             md_lines.extend(["---", ""])
 
         md_file.write_text("\n".join(md_lines), encoding="utf-8")
@@ -461,8 +472,12 @@ def review_audit(
         # Also copy to artifacts/analysis/f2/
         art_dir = Path("artifacts/analysis/f2")
         art_dir.mkdir(parents=True, exist_ok=True)
-        (art_dir / "audit_set_200.jsonl").write_text(output_file.read_text(encoding="utf-8"), encoding="utf-8")
-        (art_dir / "audit_set_200_review.md").write_text(md_file.read_text(encoding="utf-8"), encoding="utf-8")
+        (art_dir / "audit_set_200.jsonl").write_text(
+            output_file.read_text(encoding="utf-8"), encoding="utf-8"
+        )
+        (art_dir / "audit_set_200_review.md").write_text(
+            md_file.read_text(encoding="utf-8"), encoding="utf-8"
+        )
 
         typer.echo(f"Exported {len(audit_items)} audit review documents to:")
         typer.echo(f"  - JSONL: {output_file}")
@@ -523,9 +538,16 @@ def analyze_corpus(
         Path, typer.Option("--output-dir", "-o", help="Analysis report output dir")
     ] = Path("artifacts/analysis/f2"),
 ) -> None:
-    """Analyze sampling provenance, compute Horvitz-Thompson yields, and generate feasibility report."""
     output_dir.mkdir(parents=True, exist_ok=True)
-    analyzer = FeasibilityAnalyzer(manifest)
+    manifest_path = manifest
+    if not manifest_path.exists():
+        fallback_manifest = Path(
+            ".staging/exp/f2/sample_10k_audited/provenance.parquet"
+        )
+        if fallback_manifest.exists():
+            manifest_path = fallback_manifest
+
+    analyzer = FeasibilityAnalyzer(manifest_path)
 
     audit_records = None
     if audit_file and audit_file.exists():
@@ -534,6 +556,32 @@ def analyze_corpus(
             for line in audit_file.read_text(encoding="utf-8").splitlines()
             if line.strip()
         ]
+    elif audit_file is None:
+        # Check standard annotated audit file locations
+        default_audit_paths = [
+            Path(".staging/exp/f2/audit_review_200_annotated.jsonl"),
+            Path("artifacts/analysis/f2/audit_set_200_annotated.jsonl"),
+            Path(".staging/exp/f2/audit_set_200_annotated.jsonl"),
+        ]
+        for p in default_audit_paths:
+            if p.exists():
+                audit_records = [
+                    json.loads(line)
+                    for line in p.read_text(encoding="utf-8").splitlines()
+                    if line.strip()
+                ]
+                break
+
+        if not audit_records:
+            try:
+                with get_connection() as conn:
+                    repo = CorpusStateRepository(conn)
+                    all_audits = repo.get_audit_assignments("run_42_a1d3745e")
+                    audited_items = [a for a in all_audits if a.get("is_audited")]
+                    if audited_items:
+                        audit_records = audited_items
+            except Exception:
+                pass
 
     report_data = analyzer.compute_two_phase_yield(audit_records=audit_records)
     md_content = analyzer.generate_report_markdown(report_data)
