@@ -19,13 +19,14 @@ studies/f2/
     ├── storage.py                     # DuckDB / Parquet / JSONL provenance storage & clean text shard writers
     ├── analysis.py                    # Two-Phase Stratified Difference Estimator & B=10,000 bootstrap variance engine
     ├── calibration.py                 # Offline classifier calibration, pre-fetch filter ablation, & 10k reject-side FN validation
-    └── db/                            # PostgreSQL migrations, schema, session, and repository layer
-        ├── migrations/
-        │   ├── 001_initial_corpus_schema.sql
-        │   ├── 002_add_audit_sample_tracking.sql
-        │   └── runner.py
-        ├── repository.py              # CorpusStateRepository (bulk insertion, transaction-safe audit logging)
-        └── session.py                 # Connection pooling and environment configuration
+    └── corpus/
+        └── db/                        # PostgreSQL migrations, schema, session, and repository layer
+            ├── migrations/
+            │   ├── 001_initial_schema.sql
+            │   ├── 002_add_prefetch_reject_stream.sql
+            │   └── runner.py
+            ├── repository.py          # CorpusStateRepository (bulk insertion, transaction-safe audit logging)
+            └── session.py             # Connection pooling and environment configuration
 ```
 
 ---

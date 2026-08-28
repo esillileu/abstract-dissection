@@ -32,19 +32,18 @@ uv run repro dlfs check ds1 -e 01
 uv run repro dlfs check ds2 -e 01
 
 # -------------------------------------------------------------
-# B. F2 Campaign Suite (Corpus Sampling, Auditing & Pipeline)
+# B. F2 Campaign Suite (Corpus Pipeline & Reproduction Catalog)
 # -------------------------------------------------------------
-# 1. Run Database Migrations
+# 1. Corpus Operational Database Migrations & Pipeline
 uv run repro f2 corpus migrate
-
-# 2. Two-Phase Estimation, Bootstrap & Feasibility Analysis
 uv run repro f2 corpus analyze
-
-# 3. Offline Classifier Calibration & Pre-Fetch Feature Ablation
 uv run repro f2 corpus calibrate
-
-# 4. Ingest and Process ARC Archive Batches
 uv run repro f2 corpus process --limit 10000
+
+# 2. Reproduction Catalog Database & Execution Plan Management
+uv run repro f2 catalog migrate
+uv run repro f2 catalog status
+uv run repro f2 catalog matrix
 ```
 
 ---

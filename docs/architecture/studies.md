@@ -39,9 +39,15 @@ studies/
     ├── pyproject.toml
     └── src/f2/
         ├── plugin.py                  # Plugin entrypoint (registers `repro f2 ...`)
-        ├── cli.py                     # CLI dispatcher (`repro f2 corpus ...`, `repro f2 <study> ...`)
+        ├── cli.py                     # CLI dispatcher (`repro f2 corpus ...`, `repro f2 catalog ...`)
         ├── cdx.py, discovery.py, ...  # Corpus sampling, auditing & calibration engine
-        ├── db/                        # PostgreSQL transactional repository
+        ├── corpus/
+        │   └── db/                    # Corpus operational state PostgreSQL DB
+        ├── catalog/                   # Reproduction catalog, resource tracking & execution plans
+        │   ├── schema.dbml            # DBML architectural schema specification
+        │   ├── materializer.py        # Planned run slot materializer from repro-core Planner
+        │   ├── cli.py                 # Catalog management CLI
+        │   └── db/                    # Catalog PostgreSQL repository & migrations
         └── <sub-studies>/             # Downstream corpus & independent benchmark studies
 ```
 

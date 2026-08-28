@@ -84,8 +84,9 @@ All production run artifacts, checkpoints, manifests, and time-series metrics ar
   * Lineage manifests (`result_manifest.json`, `checkpoint_manifest.json`)
 * Upload verification (`_verify_uploaded_manifest`) ensures that runs are only marked `result.durable_complete = true` when all artifacts are durable in MLflow.
 
-**2) PostgreSQL Database (`F2_CORPUS_DATABASE_URL`):**
-Transaction-safe state storage for Common Crawl candidate sampling, feature extraction diagnostics, and gold human audit labels.
+**2) PostgreSQL Databases:**
+* **`F2_CORPUS_DATABASE_URL`:** Transaction-safe operational state storage for Common Crawl candidate sampling, feature extraction diagnostics, and gold human audit labels.
+* **`F2_CATALOG_DATABASE_URL`:** Reproduction catalog database tracking papers, targets, experiment specifications, resource lineage/substitutions, execution plan revisions, and planned run slots.
 
 ---
 
@@ -127,4 +128,5 @@ All storage roots can be overridden via environment variables for CI, remote clu
 | `REPRO_CACHE_ROOT` | `./.cache` | Reconstructible cache storage |
 | `REPRO_STAGING_ROOT` | `./.staging` | Ephemeral scratch directory |
 | `REPRO_REFERENCES_ROOT` | `./references` | Upstream vendored baselines |
-| `F2_CORPUS_DATABASE_URL` | *(PostgreSQL connection URI)* | Transactional database URI for F2 corpus metadata and audits |
+| `F2_CORPUS_DATABASE_URL` | `postgresql://f2_corpus:f2_corpus@localhost:5432/f2_corpus` | Transactional database URI for F2 corpus metadata and audits |
+| `F2_CATALOG_DATABASE_URL` | `postgresql://f2_catalog:f2_catalog@localhost:5432/f2_catalog` | Transactional database URI for F2 reproduction catalog and planned run slots |
