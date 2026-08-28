@@ -12,38 +12,37 @@ The `studies/` directory contains reproduction studies, experimental campaigns, 
 
 ---
 
-## 2. Study Structure (e.g. `studies/dlfs`)
+## 2. Study Structure & Catalogs
+
+Studies are grouped into cohesive experimental volumes or research campaigns. Each study suite exposes its own subcommands through the `repro` CLI plugin system:
+
+### 1) DLFS Reproduction Suite (`studies/dlfs`)
+Reproduces the canonical "Deep Learning from Scratch" curriculum (Volumes 1 & 2):
+* **`ds1/`:** Volume 1 experiments (MNIST, MLP, CNN filters, numerical gradients — e01 to e11).
+* **`ds2/`:** Volume 2 experiments (Word2Vec CBOW/Skip-Gram, PTB language modeling, RNN, LSTM, Seq2Seq, Attention — e01 to e08).
+
+### 2) F2 Research Campaign Suite (`studies/f2`)
+A comprehensive reproduction and analysis campaign comprising **8~10 distinct sub-studies**:
+* **Corpus Pipeline (`f2 corpus` / Pre-requisite Phase 0):** Common Crawl web-scale sampling, auditing, two-phase difference estimation, and corpus extraction for Word2Vec 33B / 1B pretraining.
+* **Corpus-Dependent Studies (2 Studies):** Word2Vec pretraining dynamics, vocabulary scaling, and representation evaluations trained directly on the constructed corpus.
+* **Independent Studies (5 Studies):** Dedicated theoretical, architecture, and embedding benchmark studies.
 
 ```text
-studies/dlfs/
-├── pyproject.toml                     # Declares repro-core, repro-mlflow, deepscratch as workspace deps
-└── src/dlfs/
-    ├── plugin.py                      # Repro CLI Plugin Entrypoint (discoverable by repro_core)
-    ├── cli.py                         # Study-specific subcommands (plan, run, analyze, status)
-    ├── events.py                      # Study-level event recorders and metric handlers
-    ├── adapters/                      # Study-wide representation adapters
-    │   └── checkpoint.py              # DeepScratch state serialization & CheckpointManager factory
-    ├── ds1/                           # Deep Learning From Scratch Vol 1 (MNIST / CNN / MLP)
-    │   ├── config/                    # YAML run specifications (implemented & original)
-    │   ├── implemented/
-    │   │   ├── adapters/              # DS1 representation adapters (models, objectives, optimizers, data)
-    │   │   ├── executor.py            # DS1 experiment orchestration & evaluation scheduling
-    │   │   ├── final_gap.py           # Final checkpoint parity metrics evaluator
-    │   │   └── backfill_full_train_gap.py
-    │   ├── original/                  # Upstream reference executor (using references/dlfs1-book)
-    │   ├── analysis/                  # Comparison curves, loss trajectories, filter visualizations
-    │   └── tests/                     # DS1 unit, adapter, and smoke tests
-    ├── ds2/                           # Deep Learning From Scratch Vol 2 (NLP / Word2Vec / RNN / Seq2Seq)
-    │   ├── config/                    # YAML run specifications (implemented & original)
-    │   ├── implemented/
-    │   │   ├── adapters/              # DS2 representation adapters (models, objectives, optimizers, batch, data)
-    │   │   ├── executor.py            # DS2 experiment orchestration & evaluation scheduling
-    │   │   └── observations.py        # Sequence and attention observation runners
-    │   ├── original/                  # Upstream reference executor (using references/dlfs2-book)
-    │   ├── profile/                   # Performance profiling and execution breakdown studies
-    │   ├── analysis/                  # Perplexity curves, word vector alignments, attention maps
-    │   └── tests/                     # DS2 unit, adapter, and smoke tests
-    └── analysis/                      # Cross-volume synthesis & report renderers
+studies/
+├── dlfs/                              # DLFS Vol 1 & Vol 2 Reproduction Suite
+│   ├── pyproject.toml
+│   └── src/dlfs/
+│       ├── ds1/                       # Volume 1: Vision & Feedforward
+│       ├── ds2/                       # Volume 2: NLP & Sequence Modeling
+│       └── adapters/
+└── f2/                                # F2 Research & Benchmark Campaign
+    ├── pyproject.toml
+    └── src/f2/
+        ├── plugin.py                  # Plugin entrypoint (registers `repro f2 ...`)
+        ├── cli.py                     # CLI dispatcher (`repro f2 corpus ...`, `repro f2 <study> ...`)
+        ├── cdx.py, discovery.py, ...  # Corpus sampling, auditing & calibration engine
+        ├── db/                        # PostgreSQL transactional repository
+        └── <sub-studies>/             # Downstream corpus & independent benchmark studies
 ```
 
 ---

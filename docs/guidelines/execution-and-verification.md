@@ -12,6 +12,9 @@ All monorepo capabilities are accessible via the unified `repro` CLI:
 # Display top-level CLI help and discovered study plugins
 uv run repro --help
 
+# -------------------------------------------------------------
+# A. DLFS Reproduction Suite (Vision & NLP Experiments)
+# -------------------------------------------------------------
 # 1. Plan Study (dry-run inspect study execution parameters)
 uv run repro dlfs plan ds1 -e 01
 uv run repro dlfs plan ds2 -e 01
@@ -27,6 +30,21 @@ uv run repro dlfs analyze ds2 -e 01 --output-dir artifacts/analysis/dlfs/ds2
 # 4. Inspect Status / Completeness
 uv run repro dlfs check ds1 -e 01
 uv run repro dlfs check ds2 -e 01
+
+# -------------------------------------------------------------
+# B. F2 Campaign Suite (Corpus Sampling, Auditing & Pipeline)
+# -------------------------------------------------------------
+# 1. Run Database Migrations
+uv run repro f2 corpus migrate
+
+# 2. Two-Phase Estimation, Bootstrap & Feasibility Analysis
+uv run repro f2 corpus analyze
+
+# 3. Offline Classifier Calibration & Pre-Fetch Feature Ablation
+uv run repro f2 corpus calibrate
+
+# 4. Ingest and Process ARC Archive Batches
+uv run repro f2 corpus process --limit 10000
 ```
 
 ---

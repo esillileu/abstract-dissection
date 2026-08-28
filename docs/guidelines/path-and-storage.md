@@ -44,23 +44,27 @@ flowchart TD
 ### 3) `artifacts/` (Human-Facing Reports & Results)
 * **Purpose:** Permanent, human-inspectable deliverables and publication materials.
 * **Contents:**
-  * `artifacts/analysis/<study>/<suite>/`:
+  * `artifacts/analysis/<study>/` or `artifacts/analysis/<study>/<suite>/` (resolved via `RuntimePaths.analysis_output(study, suite)`):
     * Publication-grade comparison charts (`.png`, `.pdf`)
     * Final statistical summaries and tables (`summary.md`, `summary.csv`)
+    * Specialized corpus feasibility studies (`artifacts/analysis/f2/corpus/`)
     * Detailed observations (`observations.csv`)
   * `artifacts/runs/<study>/<suite>/<run_id>/`:
     * Local-only execution fallback (used strictly when MLflow is offline/disabled with `tracking.enabled: false`).
 
-### 4) `data/` (Canonical Datasets)
-* **Purpose:** Common dataset storage shared across all studies and packages.
-* **Contents:** MNIST (`.gz`, `.pkl`), PTB (`.txt`, `.npy`, `.pkl`), Sequence datasets (`.txt`).
+### 4) `data/` (Canonical Datasets & Corpus Materialization)
+* **Purpose:** Common dataset and corpus storage shared across all studies and packages.
+* **Contents:**
+  * Vision & NLP Benchmarks: MNIST (`.gz`, `.pkl`), PTB (`.txt`, `.npy`, `.pkl`), Sequence datasets (`.txt`).
+  * Web-Scale Corpora: `data/f2/` (Extracted clean text shards, Parquet provenance manifests, tokenized datasets).
 * **Policy:** Ignored by Git. Cached locally after first download/build.
 
 ---
 
-## 2. MLflow Server as Single Source of Truth
+## 2. MLflow Server & Database as Single Sources of Truth
 
-**All production run artifacts, checkpoints, manifests, and time-series metrics are uploaded to MLflow Server (`infra/mlflow`).**
+**1) MLflow Server (`infra/mlflow`):**
+All production run artifacts, checkpoints, manifests, and time-series metrics are uploaded to MLflow Server.
 
 * The project root filesystem does **NOT** store raw run dumps during production runs.
 * MLflow stores:
@@ -79,6 +83,9 @@ flowchart TD
     * Pointers: `latest.json`, `best.json`, `final.json`
   * Lineage manifests (`result_manifest.json`, `checkpoint_manifest.json`)
 * Upload verification (`_verify_uploaded_manifest`) ensures that runs are only marked `result.durable_complete = true` when all artifacts are durable in MLflow.
+
+**2) PostgreSQL Database (`F2_CORPUS_DATABASE_URL`):**
+Transaction-safe state storage for Common Crawl candidate sampling, feature extraction diagnostics, and gold human audit labels.
 
 ---
 
@@ -120,3 +127,4 @@ All storage roots can be overridden via environment variables for CI, remote clu
 | `REPRO_CACHE_ROOT` | `./.cache` | Reconstructible cache storage |
 | `REPRO_STAGING_ROOT` | `./.staging` | Ephemeral scratch directory |
 | `REPRO_REFERENCES_ROOT` | `./references` | Upstream vendored baselines |
+| `F2_CORPUS_DATABASE_URL` | *(PostgreSQL connection URI)* | Transactional database URI for F2 corpus metadata and audits |

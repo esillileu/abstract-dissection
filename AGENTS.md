@@ -27,7 +27,7 @@ All AI agents working in this repository MUST adhere to the following 6 golden r
 ### 4) Storage Lifecycle & Cache Discipline
 * **`.staging/`:** Ephemeral in-memory/scratch buffer during runs. Can be wiped at any time.
 * **`.cache/`:** Reconstructible caches (MLflow download cache, analysis cache).
-* **`artifacts/analysis/`:** Only human-readable deliverables (paper plots `.png`/`.pdf`, `summary.md`, `summary.csv`).
+* **`artifacts/analysis/`:** Only human-readable deliverables (paper plots `.png`/`.pdf`, `summary.md`, `summary.csv`). Structured as `artifacts/analysis/<study>/` or `artifacts/analysis/<study>/<suite>/` via `RuntimePaths.from_environment().analysis_output(study, suite)` (e.g. `artifacts/analysis/f2/corpus/`).
 * **MLflow:** Single source of truth for all production run checkpoints, manifests, and metrics.
 
 ### 5) Immutable References
@@ -53,7 +53,8 @@ docs/
 │   ├── overview.md                       # Monorepo 4-tier layer topology and dependency rules
 │   ├── packages.md                       # Responsibilities and strict boundaries of packages/
 │   ├── studies.md                        # Structure of studies/ and dynamic repro CLI plugin discovery
-│   └── adapters.md                       # Adapter boundary & representation translation contracts
+│   ├── adapters.md                       # Adapter boundary & representation translation contracts
+│   └── corpus-pipeline.md                # Common Crawl sampling, auditing, two-phase estimation & corpus extraction
 └── guidelines/
     ├── path-and-storage.md               # Storage tiers, MLflow upload rules, and 3-tier path precedence
     ├── reproducibility-and-references.md # Reference vendoring, provenance.json, and seed streams
@@ -63,6 +64,7 @@ docs/
 * **For Package & Core Work:** Read [`docs/architecture/packages.md`](file:///home/esillileu/abstract-dissection/docs/architecture/packages.md).
 * **For Study & Experiment Work:** Read [`docs/architecture/studies.md`](file:///home/esillileu/abstract-dissection/docs/architecture/studies.md).
 * **For Adapter & Representation Translation:** Read [`docs/architecture/adapters.md`](file:///home/esillileu/abstract-dissection/docs/architecture/adapters.md).
+* **For Corpus Sampling, Auditing & Pipeline Work:** Read [`docs/architecture/corpus-pipeline.md`](file:///home/esillileu/abstract-dissection/docs/architecture/corpus-pipeline.md).
 * **For Paths, Datasets & Storage:** Read [`docs/guidelines/path-and-storage.md`](file:///home/esillileu/abstract-dissection/docs/guidelines/path-and-storage.md).
 * **For Reproducibility & RNG:** Read [`docs/guidelines/reproducibility-and-references.md`](file:///home/esillileu/abstract-dissection/docs/guidelines/reproducibility-and-references.md).
 * **For Running, Testing & CLI:** Read [`docs/guidelines/execution-and-verification.md`](file:///home/esillileu/abstract-dissection/docs/guidelines/execution-and-verification.md).
@@ -85,4 +87,6 @@ just lint
 uv run repro --help
 uv run repro dlfs plan ds1 -e 01
 uv run repro dlfs plan ds2 -e 01
+uv run repro f2 corpus analyze
+uv run repro f2 corpus calibrate
 ```
