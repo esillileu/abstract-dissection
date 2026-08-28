@@ -165,15 +165,17 @@ def sample_corpus(
         int, typer.Option("--concurrency", "-j", help="Concurrent fetch workers")
     ] = 4,
     output_dir: Annotated[
-        Path, typer.Option("--output-dir", "-o", help="Output directory")
-    ] = Path(".staging/exp/f2/sample"),
+        Path | None, typer.Option("--output-dir", "-o", help="Output directory")
+    ] = None,
     run_id: Annotated[
         str | None,
         typer.Option("--run-id", help="Explicit run identifier for resuming"),
     ] = None,
 ) -> None:
     """Execute bounded, rate-limited probability sample against Common Crawl backed by PostgreSQL."""
-    output_dir.mkdir(parents=True, exist_ok=True)
+    paths = RuntimePaths.from_environment()
+    target_output_dir = output_dir or (paths.staging_root / "exp" / "f2" / "sample")
+    target_output_dir.mkdir(parents=True, exist_ok=True)
     active_run_id = run_id or f"run_{seed}_{uuid.uuid4().hex[:8]}"
 
     crawl_list = [c.strip() for c in crawls.split(",") if c.strip()]
@@ -222,7 +224,7 @@ def sample_corpus(
             seed=seed,
             bandwidth_mbps=bandwidth_limit,
             concurrency=concurrency,
-            output_dir=output_dir.as_posix(),
+            output_dir=target_output_dir.as_posix(),
             metadata=run_meta,
         )
 
@@ -366,7 +368,7 @@ def sample_corpus(
 
         # Export provenance to parquet & jsonl
         exporter = ProvenanceExporter(repo)
-        exports = exporter.export(active_run_id, output_dir)
+        exports = exporter.export(active_run_id, target_output_dir)
         typer.echo(f"\nSampling completed successfully! Run ID: {active_run_id}")
         typer.echo(f"  - Total Candidates: {processed_total}")
         typer.echo(f"  - Fetched Payloads: {fetched_total}")
@@ -384,14 +386,17 @@ def export_run(
         str, typer.Option("--run-id", "-r", help="Run ID to export from DB")
     ],
     output_dir: Annotated[
-        Path, typer.Option("--output-dir", "-o", help="Output directory")
-    ] = Path(".staging/exp/f2/export"),
+        Path | None, typer.Option("--output-dir", "-o", help="Output directory")
+    ] = None,
 ) -> None:
     """Export provenance records for a given run from PostgreSQL to Parquet and JSONL."""
+    paths = RuntimePaths.from_environment()
+    target_output_dir = output_dir or (paths.staging_root / "exp" / "f2" / "export")
+    target_output_dir.mkdir(parents=True, exist_ok=True)
     with get_connection() as conn:
         repo = CorpusStateRepository(conn)
         exporter = ProvenanceExporter(repo)
-        exports = exporter.export(run_id, output_dir)
+        exports = exporter.export(run_id, target_output_dir)
         typer.echo(f"Exported run '{run_id}':")
         typer.echo(f"  - Parquet: {exports['parquet']}")
         typer.echo(f"  - JSONL:   {exports['jsonl']}")
@@ -436,9 +441,9 @@ def review_audit(
         str, typer.Option("--run-id", "-r", help="Run ID to export audit records for")
     ],
     output_file: Annotated[
-        Path,
+        Path | None,
         typer.Option("--output-file", "-o", help="Audit review JSONL output path"),
-    ] = Path(".staging/exp/f2/audit_set_50k_400_blind.jsonl"),
+    ] = None,
     blind: Annotated[
         bool,
         typer.Option(
@@ -448,7 +453,11 @@ def review_audit(
     ] = True,
 ) -> None:
     """Export the audit assignments with text for manual labeling (supports double-blind mode)."""
-    output_file.parent.mkdir(parents=True, exist_ok=True)
+    paths = RuntimePaths.from_environment()
+    target_output_file = output_file or (
+        paths.staging_root / "exp" / "f2" / "00_corpus_audit_set_50k_400_blind.jsonl"
+    )
+    target_output_file.parent.mkdir(parents=True, exist_ok=True)
     with get_connection() as conn:
         repo = CorpusStateRepository(conn)
         audit_items = repo.get_audit_assignments(run_id)
@@ -459,9 +468,14 @@ def review_audit(
             return
 
         # Map URLs to clean text snippet if shards exist
-        shard_dir = Path(".staging/exp/f2/confirmatory_50k/clean_shards")
-        if not shard_dir.exists():
-            shard_dir = Path(".staging/exp/f2/sample_10k/clean_shards")
+        shard_candidates = [
+            paths.staging_root / "exp" / "f2" / "confirmatory_50k" / "clean_shards",
+            paths.staging_root / "exp" / "f2" / "sample_10k" / "clean_shards",
+            paths.staging_root / "exp" / "f2" / "sample" / "clean_shards",
+        ]
+        shard_dir = next(
+            (p for p in shard_candidates if p.exists()), shard_candidates[0]
+        )
 
         url_to_text: dict[str, str] = {}
         if shard_dir.exists():
@@ -477,7 +491,7 @@ def review_audit(
                     url_to_text[u] = txt.strip()
 
         exported_items = []
-        with output_file.open("w", encoding="utf-8") as f:
+        with target_output_file.open("w", encoding="utf-8") as f:
             for item in audit_items:
                 u = item["url"]
                 domain = urllib.parse.urlparse(u).netloc.lower()
@@ -543,7 +557,7 @@ def review_audit(
                 f.write(json.dumps(review_entry, default=str) + "\n")
 
         # Also write Markdown Review Dossier
-        md_file = output_file.parent / "audit_set_50k_400_review.md"
+        md_file = target_output_file.parent / "00_corpus_audit_set_50k_400_review.md"
         mode_tag = "Double-Blind Mode" if blind else "Unblinded Control Mode"
         md_lines = [
             f"# Phase-2 8-Stratum Gold Audit Set ({len(audit_items)} Documents) — Run `{run_id}` ({mode_tag})",
@@ -582,7 +596,7 @@ def review_audit(
 
         md_file.write_text("\n".join(md_lines), encoding="utf-8")
         typer.echo(f"Exported {len(audit_items)} audit review documents to:")
-        typer.echo(f"  - JSONL: {output_file}")
+        typer.echo(f"  - JSONL: {target_output_file}")
         typer.echo(f"  - Markdown Dossier: {md_file}")
 
 
@@ -592,17 +606,34 @@ def record_audit(
         str, typer.Option("--run-id", "-r", help="Run ID to record audit labels for")
     ],
     audit_file: Annotated[
-        Path, typer.Option("--audit-file", "-a", help="Path to annotated audit JSONL")
-    ] = Path(".staging/exp/f2/audit_set_50k_400_annotated.jsonl"),
+        Path | None,
+        typer.Option("--audit-file", "-a", help="Path to annotated audit JSONL"),
+    ] = None,
 ) -> None:
     """Record completed audit gold labels into PostgreSQL from an annotated JSONL file."""
-    if not audit_file.exists():
-        typer.echo(f"Audit file not found: {audit_file}")
+    paths = RuntimePaths.from_environment()
+    target_audit_file = audit_file
+    if target_audit_file is None:
+        candidate_audits = [
+            paths.staging_root
+            / "exp"
+            / "f2"
+            / "00_corpus_audit_set_50k_400_annotated.jsonl",
+            paths.staging_root / "exp" / "f2" / "audit_set_50k_400_annotated.jsonl",
+            paths.analysis_output("f2") / "00_corpus_audit_set_50k_400_annotated.jsonl",
+            paths.analysis_output("f2") / "audit_set_50k_400_annotated.jsonl",
+        ]
+        target_audit_file = next(
+            (p for p in candidate_audits if p.exists()), candidate_audits[0]
+        )
+
+    if not target_audit_file.exists():
+        typer.echo(f"Audit file not found: {target_audit_file}")
         return
 
     annotated_records = [
         json.loads(line)
-        for line in audit_file.read_text(encoding="utf-8").splitlines()
+        for line in target_audit_file.read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
     with get_connection() as conn:
@@ -628,27 +659,46 @@ def record_audit(
 @app.command("analyze")
 def analyze_corpus(
     manifest: Annotated[
-        Path,
+        Path | None,
         typer.Option(
             "--manifest", "-m", help="Path to provenance.parquet or provenance.jsonl"
         ),
-    ] = Path(".staging/exp/f2/sample/provenance.parquet"),
+    ] = None,
     audit_file: Annotated[
         Path | None, typer.Option("--audit-file", "-a", help="Path to gold audit JSONL")
     ] = None,
     output_dir: Annotated[
-        Path, typer.Option("--output-dir", "-o", help="Analysis report output dir")
-    ] = Path("artifacts/analysis/f2"),
+        Path | None,
+        typer.Option("--output-dir", "-o", help="Analysis report output dir"),
+    ] = None,
 ) -> None:
     """Run Two-Phase 8-Stratum Estimation, Two-Stage Cluster Bootstrap, & Feasibility Verification."""
-    output_dir.mkdir(parents=True, exist_ok=True)
+    paths = RuntimePaths.from_environment()
+    target_output_dir = output_dir or paths.analysis_output("f2", "corpus")
+    target_output_dir.mkdir(parents=True, exist_ok=True)
+
     manifest_path = manifest
-    if not manifest_path.exists():
-        fallback_manifest = Path(
-            ".staging/exp/f2/sample_10k_audited/provenance.parquet"
+    if manifest_path is None:
+        manifest_candidates = [
+            paths.staging_root
+            / "exp"
+            / "f2"
+            / "confirmatory_50k"
+            / "provenance.parquet",
+            paths.staging_root / "exp" / "f2" / "sample" / "provenance.parquet",
+            paths.staging_root
+            / "exp"
+            / "f2"
+            / "sample_10k_audited"
+            / "provenance.parquet",
+        ]
+        manifest_path = next(
+            (p for p in manifest_candidates if p.exists()), manifest_candidates[0]
         )
-        if fallback_manifest.exists():
-            manifest_path = fallback_manifest
+
+    if not manifest_path.exists():
+        typer.echo(f"Error: Manifest file not found: {manifest_path}")
+        return
 
     analyzer = FeasibilityAnalyzer(manifest_path)
 
@@ -661,10 +711,21 @@ def analyze_corpus(
         ]
     elif audit_file is None:
         default_audit_paths = [
-            Path(".staging/exp/f2/audit_set_50k_400_annotated.jsonl"),
-            Path("artifacts/analysis/f2/audit_set_50k_400_annotated.jsonl"),
-            Path(".staging/exp/f2/audit_review_400_annotated.jsonl"),
-            Path("artifacts/analysis/f2/audit_set_400_annotated.jsonl"),
+            target_output_dir / "00_corpus_audit_set_50k_400_annotated.jsonl",
+            paths.staging_root
+            / "exp"
+            / "f2"
+            / "00_corpus_audit_set_50k_400_annotated.jsonl",
+            paths.analysis_output("f2") / "00_corpus_audit_set_50k_400_annotated.jsonl",
+            paths.staging_root / "exp" / "f2" / "audit_set_50k_400_annotated.jsonl",
+            target_output_dir / "audit_set_50k_400_annotated.jsonl",
+            paths.staging_root
+            / "exp"
+            / "f2"
+            / "00_corpus_audit_review_400_annotated.jsonl",
+            paths.staging_root / "exp" / "f2" / "audit_review_400_annotated.jsonl",
+            target_output_dir / "00_corpus_audit_set_400_annotated.jsonl",
+            target_output_dir / "audit_set_400_annotated.jsonl",
         ]
         for p in default_audit_paths:
             if p.exists():
@@ -680,11 +741,11 @@ def analyze_corpus(
     )
     md_content = analyzer.generate_report_markdown(report_data)
 
-    report_file = output_dir / "confirmatory_50k_report.md"
+    report_file = target_output_dir / "00_corpus_confirmatory_50k_report.md"
     report_file.write_text(md_content, encoding="utf-8")
 
-    # Also export confirmatory_50k_summary.csv
-    csv_file = output_dir / "confirmatory_50k_summary.csv"
+    # Also export summary.csv
+    csv_file = target_output_dir / "00_corpus_confirmatory_50k_summary.csv"
     csv_lines = [
         "crawl_id,sample_size,retained_news_docs,proxy_words,residual_error,true_total_words,ci_lower_95,ci_upper_95,weighted_ppv,weighted_tpr"
     ]
@@ -709,27 +770,46 @@ def analyze_corpus(
 @app.command("calibrate")
 def calibrate_filters(
     manifest: Annotated[
-        Path,
+        Path | None,
         typer.Option(
             "--manifest", "-m", help="Path to provenance.parquet or provenance.jsonl"
         ),
-    ] = Path(".staging/exp/f2/sample/provenance.parquet"),
+    ] = None,
     audit_file: Annotated[
         Path | None, typer.Option("--audit-file", "-a", help="Path to gold audit JSONL")
     ] = None,
     output_dir: Annotated[
-        Path, typer.Option("--output-dir", "-o", help="Analysis report output dir")
-    ] = Path("artifacts/analysis/f2"),
+        Path | None,
+        typer.Option("--output-dir", "-o", help="Analysis report output dir"),
+    ] = None,
 ) -> None:
     """Perform offline post-fetch calibration, pre-fetch feasibility, and pipeline recommendations."""
-    output_dir.mkdir(parents=True, exist_ok=True)
+    paths = RuntimePaths.from_environment()
+    target_output_dir = output_dir or paths.analysis_output("f2", "corpus")
+    target_output_dir.mkdir(parents=True, exist_ok=True)
+
     manifest_path = manifest
-    if not manifest_path.exists():
-        fallback_manifest = Path(
-            ".staging/exp/f2/sample_10k_audited/provenance.parquet"
+    if manifest_path is None:
+        manifest_candidates = [
+            paths.staging_root
+            / "exp"
+            / "f2"
+            / "confirmatory_50k"
+            / "provenance.parquet",
+            paths.staging_root / "exp" / "f2" / "sample" / "provenance.parquet",
+            paths.staging_root
+            / "exp"
+            / "f2"
+            / "sample_10k_audited"
+            / "provenance.parquet",
+        ]
+        manifest_path = next(
+            (p for p in manifest_candidates if p.exists()), manifest_candidates[0]
         )
-        if fallback_manifest.exists():
-            manifest_path = fallback_manifest
+
+    if not manifest_path.exists():
+        typer.echo(f"Error: Manifest file not found: {manifest_path}")
+        return
 
     audit_records = None
     if audit_file and audit_file.exists():
@@ -740,10 +820,21 @@ def calibrate_filters(
         ]
     elif audit_file is None:
         default_audit_paths = [
-            Path(".staging/exp/f2/audit_set_50k_400_annotated.jsonl"),
-            Path("artifacts/analysis/f2/audit_set_50k_400_annotated.jsonl"),
-            Path(".staging/exp/f2/audit_review_400_annotated.jsonl"),
-            Path("artifacts/analysis/f2/audit_set_400_annotated.jsonl"),
+            target_output_dir / "00_corpus_audit_set_50k_400_annotated.jsonl",
+            paths.staging_root
+            / "exp"
+            / "f2"
+            / "00_corpus_audit_set_50k_400_annotated.jsonl",
+            paths.analysis_output("f2") / "00_corpus_audit_set_50k_400_annotated.jsonl",
+            paths.staging_root / "exp" / "f2" / "audit_set_50k_400_annotated.jsonl",
+            target_output_dir / "audit_set_50k_400_annotated.jsonl",
+            paths.staging_root
+            / "exp"
+            / "f2"
+            / "00_corpus_audit_review_400_annotated.jsonl",
+            paths.staging_root / "exp" / "f2" / "audit_review_400_annotated.jsonl",
+            target_output_dir / "00_corpus_audit_set_400_annotated.jsonl",
+            target_output_dir / "audit_set_400_annotated.jsonl",
         ]
         for p in default_audit_paths:
             if p.exists():
@@ -761,7 +852,7 @@ def calibrate_filters(
     calibrator = CalibrationAndPreFetchAnalyzer(manifest_path, audit_records)
     report_md = calibrator.generate_report_markdown()
 
-    out_file = output_dir / "confirmatory_50k_filter_study.md"
+    out_file = target_output_dir / "00_corpus_confirmatory_50k_filter_study.md"
     out_file.write_text(report_md, encoding="utf-8")
     typer.echo(f"Filter validation study written to: {out_file}")
 
@@ -775,13 +866,16 @@ def build_corpus(
         int, typer.Option("--target-words", "-t", help="Target word count")
     ] = 1_000_000_000,
     output_dir: Annotated[
-        Path, typer.Option("--output-dir", "-o", help="Materialized corpus output dir")
-    ] = Path("data/f2/news_1b"),
+        Path | None,
+        typer.Option("--output-dir", "-o", help="Materialized corpus output dir"),
+    ] = None,
 ) -> None:
     """Full-scale corpus materialization using the identical logical data pipeline."""
-    output_dir.mkdir(parents=True, exist_ok=True)
+    paths = RuntimePaths.from_environment()
+    target_output_dir = output_dir or (paths.dataset("f2") / "news_1b")
+    target_output_dir.mkdir(parents=True, exist_ok=True)
     typer.echo(
-        f"Building full corpus for {crawl} (Target: {target_words:,} words) -> {output_dir}"
+        f"Building full corpus for {crawl} (Target: {target_words:,} words) -> {target_output_dir}"
     )
 
 
