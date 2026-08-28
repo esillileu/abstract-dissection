@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from f2.analysis import FeasibilityAnalyzer
+from f2.corpus.analysis import FeasibilityAnalyzer
 
 
 def test_feasibility_analyzer_estimation_with_and_without_audit(tmp_path: Path):
@@ -156,7 +156,7 @@ def test_feasibility_analyzer_estimation_with_and_without_audit(tmp_path: Path):
 
 
 def test_calibration_and_prefetch_analyzer(tmp_path: Path):
-    from f2.calibration import CalibrationAndPreFetchAnalyzer
+    from f2.corpus.calibration import CalibrationAndPreFetchAnalyzer
 
     prov_path = tmp_path / "provenance.jsonl"
     records = []

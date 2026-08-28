@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from f2.pipeline import (
+from f2.corpus.pipeline import (
     ARCParser,
     LanguageFilter,
     NewsClassifier,

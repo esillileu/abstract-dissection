@@ -9,13 +9,13 @@ from pathlib import Path
 import psycopg
 import pytest
 
-from f2.analysis import FeasibilityAnalyzer
+from f2.corpus.analysis import FeasibilityAnalyzer
 from f2.corpus.db.migrations.runner import run_migrations
 from f2.corpus.db.repository import CorpusStateRepository
 from f2.corpus.db.session import get_connection
-from f2.discovery import CandidateRecord
-from f2.pipeline import ProcessedDocumentResult
-from f2.storage import ProvenanceExporter
+from f2.corpus.discovery import CandidateRecord
+from f2.corpus.pipeline import ProcessedDocumentResult
+from f2.corpus.storage import ProvenanceExporter
 
 
 @pytest.fixture

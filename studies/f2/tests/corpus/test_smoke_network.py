@@ -8,15 +8,15 @@ from pathlib import Path
 
 import pytest
 
-from f2.analysis import FeasibilityAnalyzer
-from f2.cdx import CDXBlockLocator, CDXIndexReader
+from f2.common.storage import CleanTextWriter, ProvenanceExporter
+from f2.corpus.analysis import FeasibilityAnalyzer
+from f2.corpus.cdx import CDXBlockLocator, CDXIndexReader
 from f2.corpus.db.migrations.runner import run_migrations
 from f2.corpus.db.repository import CorpusStateRepository
 from f2.corpus.db.session import get_connection
-from f2.discovery import TwoStageProbabilitySampler
-from f2.fetcher import RangeFetcher
-from f2.pipeline import ARCParser, PipelineRunner
-from f2.storage import CleanTextWriter, ProvenanceExporter
+from f2.corpus.discovery import TwoStageProbabilitySampler
+from f2.corpus.fetcher import RangeFetcher
+from f2.corpus.pipeline import ARCParser, PipelineRunner
 
 
 @pytest.mark.network

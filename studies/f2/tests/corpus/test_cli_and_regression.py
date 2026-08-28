@@ -12,10 +12,10 @@ import psycopg
 import pytest
 from typer.testing import CliRunner
 
-from f2.cli import app, ensure_cluster_index
+from f2.common.network import FetchResult
+from f2.corpus.cli import app, ensure_cluster_index
 from f2.corpus.db.migrations.runner import run_migrations
 from f2.corpus.db.session import get_connection
-from f2.fetcher import FetchResult
 
 runner = CliRunner()
 
@@ -75,7 +75,7 @@ def test_cli_sample_accepts_http_206_and_produces_non_empty_provenance(
     )
 
     out_dir = tmp_path / "sample_out"
-    with patch("f2.cli.RangeFetcher", return_value=mock_fetcher):
+    with patch("f2.corpus.cli.RangeFetcher", return_value=mock_fetcher):
         result = runner.invoke(
             app,
             [

@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from f2.cdx import (
+from f2.corpus.cdx import (
     CDXIndexReader,
     CDXRecord,
     domain_to_surt_prefix,
     url_to_surt,
 )
-from f2.discovery import (
+from f2.corpus.discovery import (
     CandidateRecord,
     SequentialAuditSampler,
     TwoStageProbabilitySampler,

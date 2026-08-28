@@ -8,8 +8,8 @@ from pathlib import Path
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from f2.analysis import FeasibilityAnalyzer
-from f2.discovery import SequentialAuditSampler
+from f2.corpus.analysis import FeasibilityAnalyzer
+from f2.corpus.discovery import SequentialAuditSampler
 
 
 def test_8_stratum_sparse_cell_redistribution():
@@ -341,7 +341,7 @@ def test_8_stratum_scale_isolation_and_exact_s3_s7_scale(tmp_path: Path):
     3. Pass (S1, S5) and Reject (S3, S7) strata do NOT share scale factors.
     4. Sitemap residual of -38,507 with w=2,290,915.2 contributes approx -88.22B and NOT -3.589T.
     """
-    from f2.calibration import CalibrationAndPreFetchAnalyzer
+    from f2.corpus.calibration import CalibrationAndPreFetchAnalyzer
 
     rows = []
     # 1. S1: 7,078 pass positive records, base weight 114,545.76
