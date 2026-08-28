@@ -9,6 +9,7 @@ import typer
 from repro_core.registry import CommandGroups
 
 from . import cli
+from .catalog import cli as catalog_cli
 
 
 @dataclass(frozen=True)
@@ -27,10 +28,11 @@ class F2StudyPlugin:
         # Study-first subcommand: repro f2 ...
         f2_app = typer.Typer(
             name=self.name,
-            help="Word2Vec 2013 reproduction & Common Crawl corpus feasibility study.",
+            help="Word2Vec 2013 reproduction, Common Crawl corpus pipeline & catalog.",
             no_args_is_help=True,
         )
         f2_app.add_typer(cli.app, name="corpus")
+        f2_app.add_typer(catalog_cli.app, name="catalog")
 
         groups.root.add_typer(f2_app, name=self.name)
 
