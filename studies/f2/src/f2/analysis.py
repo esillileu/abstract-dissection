@@ -221,7 +221,7 @@ class FeasibilityAnalyzer:
 
         # Check table columns
         table_cols = [
-            row[0]
+            row[1]
             for row in self.con.execute("PRAGMA table_info('provenance');").fetchall()
         ]
         has_block_idx = "block_index" in table_cols
@@ -257,7 +257,7 @@ class FeasibilityAnalyzer:
             w_proxy = sum(row[1] * row[2] for row in rows)
 
             # Map audit residuals to design strata (S1 to S8)
-            audit_strata_residuals: dict[str, list[tuple[float, float]]] = {
+            audit_strata_residuals: dict[str, list[tuple[float, float, str]]] = {
                 f"S{i}": [] for i in range(1, 9)
             }
             phase1_strata_counts: dict[str, int] = {f"S{i}": 0 for i in range(1, 9)}
@@ -277,7 +277,7 @@ class FeasibilityAnalyzer:
                 if audit_records and rec_id in audit_gold_map:
                     y_gold = audit_gold_map[rec_id]
                     residual = y_gold - y_proxy
-                    audit_strata_residuals[sid].append((residual, w_i))
+                    audit_strata_residuals[sid].append((residual, w_i, rec_id))
 
                     g_cls = audit_gold_class.get(rec_id, 1 if y_gold > 0 else 0)
                     if is_news == 1:
@@ -296,7 +296,7 @@ class FeasibilityAnalyzer:
                     n1_h = phase1_strata_counts.get(sid, 0)
                     if res_items and n1_h > 0:
                         scale_h = n1_h / len(res_items)
-                        e_total += sum(res * w * scale_h for res, w in res_items)
+                        e_total += sum(res * w * scale_h for res, w, _ in res_items)
 
             w_true = max(0.0, w_proxy + e_total)
 
@@ -327,6 +327,7 @@ class FeasibilityAnalyzer:
                 # Stage 3: Apply reject-exploration subsampling multiplier
                 b_proxy = 0.0
                 resamp_p1_counts: dict[str, int] = {f"S{i}": 0 for i in range(1, 9)}
+                rec_mult_map: dict[str, float] = {}
 
                 for r in resample_rows:
                     rec_id = r[0]
@@ -345,6 +346,7 @@ class FeasibilityAnalyzer:
                     else:
                         mult = 1.0
 
+                    rec_mult_map[rec_id] = mult
                     adj_w = base_w * mult
                     b_proxy += adj_w * y_p
 
@@ -362,7 +364,10 @@ class FeasibilityAnalyzer:
                                 for _ in range(len(res_items))
                             ]
                             scale_h = n1_resamp / len(boot_res_items)
-                            b_res += sum(res * w * scale_h for res, w in boot_res_items)
+                            b_res += sum(
+                                res * w * rec_mult_map.get(rid, 1.0) * scale_h
+                                for res, w, rid in boot_res_items
+                            )
 
                 boot_estimates.append(max(0.0, b_proxy + b_res))
 

@@ -101,13 +101,42 @@ class CalibrationAndPreFetchAnalyzer:
         df = self.con.execute("SELECT * FROM provenance").df()
         self.all_records: list[dict[str, Any]] = df.to_dict(orient="records")
 
-    def _prepare_weights(self) -> None:
-        p1_counts: dict[tuple[str, int], int] = {}
-        for r in self.all_records:
-            k = (str(r["crawl_id"]), int(r["is_news_predicted"]))
-            p1_counts[k] = p1_counts.get(k, 0) + 1
+    @staticmethod
+    def get_stratum_id(
+        crawl_id: str,
+        prefilter_status: str | None,
+        is_news_predicted: bool | int,
+    ) -> str:
+        """Map record attributes to one of the 8 canonical design strata (S1 to S8)."""
+        is_09_10 = "2009-2010" in str(crawl_id)
+        is_pass = (
+            str(prefilter_status).lower() == "pass"
+            if prefilter_status is not None
+            else True
+        )
+        is_pos = int(is_news_predicted) == 1
 
-        aud_counts: dict[tuple[str, int], int] = {}
+        if is_09_10:
+            if is_pass:
+                return "S1" if is_pos else "S2"
+            else:
+                return "S3" if is_pos else "S4"
+        else:
+            if is_pass:
+                return "S5" if is_pos else "S6"
+            else:
+                return "S7" if is_pos else "S8"
+
+    def _prepare_weights(self) -> None:
+        p1_counts: dict[str, int] = {}
+        for r in self.all_records:
+            pref = r.get("prefilter_status", "pass")
+            sid = self.get_stratum_id(
+                r["crawl_id"], pref, r.get("is_news_predicted", 0)
+            )
+            p1_counts[sid] = p1_counts.get(sid, 0) + 1
+
+        aud_counts: dict[str, int] = {}
         for a in self.raw_audit_records:
             rid = a.get("candidate_id") or a.get("record_id")
             rec = next(
@@ -115,9 +144,15 @@ class CalibrationAndPreFetchAnalyzer:
                 None,
             )
             if rec:
-                strat = int(a.get("predicted_class", a.get("audit_stratum", 0)))
-                k = (str(rec["crawl_id"]), strat)
-                aud_counts[k] = aud_counts.get(k, 0) + 1
+                pref = rec.get("prefilter_status", "pass")
+                raw_strat = a.get("design_stratum") or a.get("audit_stratum")
+                if str(raw_strat).startswith("S"):
+                    sid = str(raw_strat)
+                else:
+                    sid = self.get_stratum_id(
+                        rec["crawl_id"], pref, rec.get("is_news_predicted", 0)
+                    )
+                aud_counts[sid] = aud_counts.get(sid, 0) + 1
 
         self.audited_items: list[dict[str, Any]] = []
         for a in self.raw_audit_records:
@@ -132,10 +167,28 @@ class CalibrationAndPreFetchAnalyzer:
                 item["word_count_gold"] = float(
                     a.get("word_count_gold", a.get("gold_words", 0.0))
                 )
-                strat = int(a.get("predicted_class", a.get("audit_stratum", 0)))
-                item["audit_stratum"] = strat
-                k = (str(rec["crawl_id"]), strat)
-                w2 = p1_counts[k] / aud_counts[k] if aud_counts.get(k, 0) > 0 else 1.0
+                pref = rec.get("prefilter_status", "pass")
+                raw_strat = a.get("design_stratum") or a.get("audit_stratum")
+                if str(raw_strat).startswith("S"):
+                    sid = str(raw_strat)
+                else:
+                    sid = self.get_stratum_id(
+                        rec["crawl_id"], pref, rec.get("is_news_predicted", 0)
+                    )
+                item["design_stratum"] = sid
+                item["audit_stratum"] = int(
+                    a.get(
+                        "predicted_class",
+                        1
+                        if "pos" in sid.lower() or sid in ["S1", "S3", "S5", "S7"]
+                        else 0,
+                    )
+                )
+                w2 = (
+                    p1_counts[sid] / aud_counts[sid]
+                    if aud_counts.get(sid, 0) > 0
+                    else 1.0
+                )
                 item["total_weight"] = float(rec["design_weight"]) * w2
                 self.audited_items.append(item)
 
