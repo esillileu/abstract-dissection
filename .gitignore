@@ -53,6 +53,5 @@ mlruns/
 mlruns
 
 .env
-.envrc
 
 .agents/
