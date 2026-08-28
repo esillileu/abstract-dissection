@@ -11,8 +11,8 @@ import psycopg
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from ..discovery import CandidateRecord
-from ..pipeline import ProcessedDocumentResult
+from f2.discovery import CandidateRecord
+from f2.pipeline import ProcessedDocumentResult
 
 
 class CorpusStateRepository:

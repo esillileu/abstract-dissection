@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
-from .db.repository import CorpusStateRepository
+from .corpus.db.repository import CorpusStateRepository
 
 
 class CleanTextWriter:

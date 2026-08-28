@@ -13,8 +13,8 @@ import pytest
 from typer.testing import CliRunner
 
 from f2.cli import app, ensure_cluster_index
-from f2.db.migrations.runner import run_migrations
-from f2.db.session import get_connection
+from f2.corpus.db.migrations.runner import run_migrations
+from f2.corpus.db.session import get_connection
 from f2.fetcher import FetchResult
 
 runner = CliRunner()

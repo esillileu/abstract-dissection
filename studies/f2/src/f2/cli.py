@@ -19,9 +19,9 @@ from repro_core.context.paths import RuntimePaths
 from .analysis import FeasibilityAnalyzer
 from .calibration import CalibrationAndPreFetchAnalyzer
 from .cdx import CDXBlockLocator, CDXIndexReader
-from .db.migrations.runner import run_migrations
-from .db.repository import CorpusStateRepository
-from .db.session import get_connection
+from .corpus.db.migrations.runner import run_migrations
+from .corpus.db.repository import CorpusStateRepository
+from .corpus.db.session import get_connection
 from .discovery import (
     SEED_DOMAIN_CATALOG,
     SequentialAuditSampler,
