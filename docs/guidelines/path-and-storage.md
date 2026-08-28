@@ -44,9 +44,10 @@ flowchart TD
 ### 3) `artifacts/` (Human-Facing Reports & Results)
 * **Purpose:** Permanent, human-inspectable deliverables and publication materials.
 * **Contents:**
-  * `artifacts/analysis/<study>/<suite>/`:
+  * `artifacts/analysis/<study>/` or `artifacts/analysis/<study>/<suite>/` (resolved via `RuntimePaths.analysis_output(study, suite)`):
     * Publication-grade comparison charts (`.png`, `.pdf`)
     * Final statistical summaries and tables (`summary.md`, `summary.csv`)
+    * Specialized corpus feasibility studies (`artifacts/analysis/f2/corpus/`)
     * Detailed observations (`observations.csv`)
   * `artifacts/runs/<study>/<suite>/<run_id>/`:
     * Local-only execution fallback (used strictly when MLflow is offline/disabled with `tracking.enabled: false`).

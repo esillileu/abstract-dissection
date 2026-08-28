@@ -27,7 +27,7 @@ All AI agents working in this repository MUST adhere to the following 6 golden r
 ### 4) Storage Lifecycle & Cache Discipline
 * **`.staging/`:** Ephemeral in-memory/scratch buffer during runs. Can be wiped at any time.
 * **`.cache/`:** Reconstructible caches (MLflow download cache, analysis cache).
-* **`artifacts/analysis/`:** Only human-readable deliverables (paper plots `.png`/`.pdf`, `summary.md`, `summary.csv`).
+* **`artifacts/analysis/`:** Only human-readable deliverables (paper plots `.png`/`.pdf`, `summary.md`, `summary.csv`). Structured as `artifacts/analysis/<study>/` or `artifacts/analysis/<study>/<suite>/` via `RuntimePaths.from_environment().analysis_output(study, suite)` (e.g. `artifacts/analysis/f2/corpus/`).
 * **MLflow:** Single source of truth for all production run checkpoints, manifests, and metrics.
 
 ### 5) Immutable References

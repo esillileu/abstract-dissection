@@ -32,14 +32,15 @@ studies/f2/
 
 ## 2. Core Invariants & Methodological Protocols
 
-### 1) Two-Phase Stratified Difference Estimator
+### 1) Two-Phase 8-Stratum Difference Estimator
 The total true-news word yield $\hat{W}_{\text{true}}$ across Common Crawl crawls $c \in \{\text{2009-2010}, \text{2012}\}$ is estimated without assuming 100% classifier precision or recall:
 
-$$\hat{W}_{\text{true}, c} = \hat{W}_{\text{proxy}, c} + \hat{E}_c = \sum_{i \in s_{1, c}} w_{1, cki} y_i^{\text{proxy}} + \sum_{h \in \{0, 1\}} \frac{N_{c, h}^{(1)}}{n_{c, h}^{(2)}} \sum_{i \in s_{2, c, h}} w_{1, cki} (y_i^{\text{gold}} - y_i^{\text{proxy}})$$
+$$\hat{W}_{\text{true}, c} = \hat{W}_{\text{proxy}, c} + \hat{E}_c = \sum_{i \in s_{1, c}} w_{1, i} y_i^{\text{proxy}} + \sum_{h \in \text{Strata}(c)} \frac{N_{c, h}^{(1)}}{n_{c, h}^{(2)}} \sum_{i \in s_{2, c, h}} w_{1, i} (y_i^{\text{gold}} - y_i^{\text{proxy}})$$
 
-* **Phase 1 Sample ($s_1$):** Large-scale probability sample ($N=10,000$) drawn from CDX cluster index blocks using inclusion probabilities $\pi_{1, i} = \pi_{\text{block}} \times \pi_{\text{record}|\text{block}}$.
-* **Phase 2 Audit Sample ($s_2$):** Stratified subsample ($n=400$) drawn from Phase 1, allocated equally across Stratum 0 (predicted non-news) and Stratum 1 (predicted news), with deterministic `priority_order` ranking for sequential waves ($n=200 \to 300 \to 400$).
-* **Variance Engine:** $B=10,000$ Two-Phase Stratified Residual Bootstrap resampling Phase 1 units and Phase 2 residuals within strata with replacement.
+* **Phase 1 Sample ($s_1$):** Large-scale probability sample ($N=50,000$) drawn from CDX cluster index blocks using inclusion probabilities $\pi_{1, i} = \pi_{\text{block}} \times \pi_{\text{record}|\text{block}} \times \pi_{\text{fetch}}$.
+* **8 Canonical Design Strata ($S_1 \dots S_8$):** Full factorial partitioning across $(\text{Crawl} \times \text{Prefilter Status [Pass / Reject]} \times \text{Predicted News [1 / 0]})$.
+* **Phase 2 Audit Sample ($s_2$):** Stratified subsample ($n=400$) drawn from Phase 1, allocated across design strata with deterministic `priority_order` ranking for sequential waves ($n=200 \to 300 \to 400$).
+* **Variance Engine:** $B=1,000$ Two-Stage Cluster Bootstrap (resampling CDX blocks and records within blocks) with reject exploration subsampling multipliers and residual resampling.
 
 ### 2) Pre-Fetch vs. Post-Fetch Separation
 * **Stage 1: Pre-Fetch CDX Filter (`Rule 1 Only`):** Discards non-HTML binary media extensions (`.pdf`, `.jpg`, `.png`, `.mp4`, `.zip`, `.js`, `.css`) at the CDX index level *before* issuing ARC byte-range HTTP requests. Saves **44.37% of network download bandwidth** (with PDF exclusion contributing 40.12%) with 0 gold false negatives in the audit sample.
@@ -48,7 +49,7 @@ $$\hat{W}_{\text{true}, c} = \hat{W}_{\text{proxy}, c} + \hat{E}_c = \sum_{i \in
 ### 3) 3-Tier Storage Lifecycle for Corpus Pipeline
 * **PostgreSQL:** Transactional source of truth for candidate metadata, sampling weights, processing diagnostics, and gold audit annotations.
 * **`.staging/exp/f2/`:** Ephemeral download shards, intermediate text extractions, and scratch audit sheets. Safe to wipe at any time.
-* **`artifacts/analysis/f2/`:** Publication deliverables (`feasibility_report.md`, `feasibility_summary.csv`, `offline_calibration_and_prefetch_study.md`, `audit_set_400_annotated.jsonl`).
+* **`artifacts/analysis/f2/corpus/`:** Specialized corpus deliverables (`00_corpus_confirmatory_50k_report.md`, `00_corpus_confirmatory_50k_summary.csv`, `00_corpus_confirmatory_50k_filter_study.md`, `00_corpus_audit_set_50k_400_annotated.jsonl`), resolved via `RuntimePaths.from_environment().analysis_output("f2", "corpus")`.
 
 ---
 
@@ -61,22 +62,21 @@ All corpus operations are executed via `uv run repro f2 corpus <subcommand>`:
 uv run repro f2 corpus migrate
 
 # 2. Probability Sampling from CDX Cluster Indexes
-uv run repro f2 corpus sample --crawl CC-MAIN-2009-2010 --target-samples 5000
-uv run repro f2 corpus sample --crawl CC-MAIN-2012 --target-samples 5000
+uv run repro f2 corpus sample --crawls CC-MAIN-2009-2010,CC-MAIN-2012 --sample-size 50000
 
-# 3. Payload Ingestion & Feature Extraction
-uv run repro f2 corpus process --limit 10000
+# 3. Create 8-Stratum Audit Assignments in Database
+uv run repro f2 corpus audit --run-id <RUN_ID> --budget 400
 
-# 4. Generate Priority-Ordered Audit Sample Sheet
-uv run repro f2 corpus audit-plan --stratum-size 200 --output-file artifacts/analysis/f2/audit_set_400_sheet.jsonl
+# 4. Export Blinded Audit Review Dossier and JSONL
+uv run repro f2 corpus audit-review --run-id <RUN_ID> --blind
 
-# 5. Ingest Gold Labels into Database and Parquet Manifest
-uv run repro f2 corpus audit-label --audit-file artifacts/analysis/f2/audit_set_400_annotated.jsonl
+# 5. Record Gold Annotations into Database
+uv run repro f2 corpus audit-record --run-id <RUN_ID>
 
-# 6. Run Two-Phase Estimation, Bootstrap & Deduplication Feasibility
+# 6. Run Two-Phase 8-Stratum Estimation & Feasibility Verification
 uv run repro f2 corpus analyze
 
-# 7. Run Offline Calibration, Prefilter Ablation & Production Pipeline Recommendations
+# 7. Run Offline Calibration, Prefilter Ablation & Filter Validation Study
 uv run repro f2 corpus calibrate
 
 # 8. Full Production Corpus Materialization
