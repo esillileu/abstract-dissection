@@ -1,0 +1,94 @@
+{
+  "status": "SUCCESS",
+  "total_time_seconds": 1060.3720660209656,
+  "database_counts": {
+    "experiments": 3,
+    "experiment_tags": 12,
+    "runs": 1630,
+    "tags": 71800,
+    "params": 64614,
+    "latest_metrics": 32324,
+    "registered_models": 3,
+    "registered_model_tags": 9,
+    "model_versions": 12,
+    "model_version_tags": 48,
+    "registered_model_aliases": 12,
+    "evaluation_datasets": 3,
+    "evaluation_dataset_tags": 9,
+    "evaluation_dataset_records": 30,
+    "entity_associations": 67,
+    "metrics": 29879623
+  },
+  "artifact_stats": {
+    "uploaded_runs": 1598,
+    "uploaded_files": 49831,
+    "uploaded_bytes": 27162574782,
+    "elapsed_seconds": 252.13025188446045
+  },
+  "verification": {
+    "experiments": {
+      "sqlite": 3,
+      "postgres": 3
+    },
+    "experiment_tags": {
+      "sqlite": 12,
+      "postgres": 12
+    },
+    "runs": {
+      "sqlite": 1630,
+      "postgres": 1630
+    },
+    "tags": {
+      "sqlite": 71800,
+      "postgres": 71800
+    },
+    "params": {
+      "sqlite": 64614,
+      "postgres": 64614
+    },
+    "latest_metrics": {
+      "sqlite": 32324,
+      "postgres": 32324
+    },
+    "metrics": {
+      "sqlite": 29879623,
+      "postgres": 29879623
+    },
+    "registered_models": {
+      "sqlite": 3,
+      "postgres": 3
+    },
+    "registered_model_tags": {
+      "sqlite": 9,
+      "postgres": 9
+    },
+    "model_versions": {
+      "sqlite": 12,
+      "postgres": 12
+    },
+    "model_version_tags": {
+      "sqlite": 48,
+      "postgres": 48
+    },
+    "registered_model_aliases": {
+      "sqlite": 12,
+      "postgres": 12
+    },
+    "evaluation_datasets": {
+      "sqlite": 3,
+      "postgres": 3
+    },
+    "evaluation_dataset_tags": {
+      "sqlite": 9,
+      "postgres": 9
+    },
+    "evaluation_dataset_records": {
+      "sqlite": 30,
+      "postgres": 30
+    },
+    "entity_associations": {
+      "sqlite": 67,
+      "postgres": 67
+    }
+  }
+}
