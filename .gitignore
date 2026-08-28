@@ -51,3 +51,8 @@ htmlcov/
 Thumbs.db
 mlruns/
 mlruns
+
+.env
+.agents/
+
+/f1-migrate/
