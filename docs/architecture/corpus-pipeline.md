@@ -11,22 +11,29 @@ studies/f2/
 ├── pyproject.toml                     # Workspace dependencies (repro-core, duckdb, psycopg, typer)
 └── src/f2/
     ├── plugin.py                      # Repro CLI Plugin Entrypoint (discoverable by repro_core)
-    ├── cli.py                         # Typer CLI: migrate, sample, process, audit-plan, audit-label, analyze, calibrate, build
-    ├── cdx.py                         # CDX binary cluster index reader & block locator (O(log N) byte-range lookup)
-    ├── discovery.py                   # 2-stage Horvitz-Thompson probability sampler & sequential audit priority sampler
-    ├── fetcher.py                     # HTTP Range fetcher against Common Crawl ARC/WARC archives with retry/backoff
-    ├── pipeline.py                    # Content extraction, language ID, validity filtering, and news scoring
-    ├── storage.py                     # DuckDB / Parquet / JSONL provenance storage & clean text shard writers
-    ├── analysis.py                    # Two-Phase Stratified Difference Estimator & B=10,000 bootstrap variance engine
-    ├── calibration.py                 # Offline classifier calibration, pre-fetch filter ablation, & 10k reject-side FN validation
-    └── corpus/
+    ├── cli.py                         # Root Typer CLI dispatcher
+    ├── definition.py                  # Study ExecutionDefinitions
+    ├── common/                        # Shared network, storage, statistics & analysis standards
+    │   ├── network/                   # TokenBucketLimiter, RangeFetcher
+    │   ├── storage/                   # TableExporter, CleanTextWriter
+    │   ├── stats/                     # BootstrapVarianceEngine, DifferenceEstimator, ClassifierMetrics
+    │   └── analysis/                  # BaseAnalysisOrchestrator, theme, declarations
+    └── corpus/                        # Common Crawl Extraction Subsystem & Control Plane
+        ├── cli.py                     # Typer CLI: migrate, plan, sample, audit, analyze, calibrate, build
+        ├── cdx.py                     # CDX binary cluster index reader & block locator (O(log N) lookup)
+        ├── discovery.py               # 2-stage Horvitz-Thompson sampler & 8-stratum audit allocator
+        ├── fetcher.py                 # HTTP Range fetcher against Common Crawl ARC/WARC archives
+        ├── pipeline.py                # Content extraction, language ID, validity filter, news scoring
+        ├── storage.py                 # Provenance export & clean text shard writers
+        ├── analysis.py                # Two-Phase Stratified Difference Estimator & Bootstrap
+        ├── calibration.py             # Offline classifier calibration & pre-fetch filter ablation
         └── db/                        # PostgreSQL migrations, schema, session, and repository layer
             ├── migrations/
             │   ├── 001_initial_schema.sql
             │   ├── 002_add_prefetch_reject_stream.sql
             │   └── runner.py
             ├── repository.py          # CorpusStateRepository (bulk insertion, transaction-safe audit logging)
-            └── session.py             # Connection pooling and environment configuration
+            └── session.py             # Connection pooling (F2_CORPUS_DATABASE_URL)
 ```
 
 ---

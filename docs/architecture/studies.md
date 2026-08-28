@@ -39,16 +39,25 @@ studies/
     ├── pyproject.toml
     └── src/f2/
         ├── plugin.py                  # Plugin entrypoint (registers `repro f2 ...`)
-        ├── cli.py                     # CLI dispatcher (`repro f2 corpus ...`, `repro f2 catalog ...`)
-        ├── cdx.py, discovery.py, ...  # Corpus sampling, auditing & calibration engine
-        ├── corpus/
+        ├── cli.py                     # Root CLI dispatcher (`repro f2 corpus ...`, `repro f2 catalog ...`)
+        ├── definition.py              # F2 ExecutionDefinitions registry
+        ├── common/                    # Shared network, storage, statistics, analysis & adapters
+        │   ├── paths.py               # RuntimePaths centralized helper
+        │   ├── network/               # TokenBucketLimiter, RangeFetcher
+        │   ├── storage/               # TableExporter (Parquet/JSONL), CleanTextWriter
+        │   ├── stats/                 # BootstrapVarianceEngine, DifferenceEstimator, ClassifierMetrics
+        │   ├── analysis/              # Theme, declarations, BaseAnalysisOrchestrator
+        │   └── adapters/              # CheckpointAdapter
+        ├── corpus/                    # Common Crawl extraction pipeline & operational DB
+        │   ├── cdx.py, discovery.py, pipeline.py, fetcher.py, storage.py, analysis.py, calibration.py
+        │   ├── cli.py                 # `repro f2 corpus ...`
         │   └── db/                    # Corpus operational state PostgreSQL DB
         ├── catalog/                   # Reproduction catalog, resource tracking & execution plans
         │   ├── schema.dbml            # DBML architectural schema specification
         │   ├── materializer.py        # Planned run slot materializer from repro-core Planner
-        │   ├── cli.py                 # Catalog management CLI
+        │   ├── cli.py                 # `repro f2 catalog ...`
         │   └── db/                    # Catalog PostgreSQL repository & migrations
-        └── <sub-studies>/             # Downstream corpus & independent benchmark studies
+        └── suites/                    # Downstream experimental volumes (w2v_pretrain, vocab, bench)
 ```
 
 ---

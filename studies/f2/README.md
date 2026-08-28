@@ -8,8 +8,10 @@ This study package implements the Common Crawl (2009–2012) corpus acquisition,
 
 * **Primary Objective**: Determine whether Common Crawl snapshots from 2009–2012 contain enough usable English news/article text to build reproducible training corpora up to 1B, 6B, and 33B words, and track reproduction resources, specifications, and execution plans for Word2Vec models.
 * **Subsystems & Architecture**:
-  * **Corpus Pipeline (`f2/corpus/db/`, `cdx.py`, `discovery.py`, `fetcher.py`, `pipeline.py`, `storage.py`, `analysis.py`, `calibration.py`)**: Two-stage crawl-stratified sampling, rate-limited range fetcher, news classifier, Two-Phase 8-Stratum estimator, and operational state store.
+  * **Common Infrastructure (`f2/common/`)**: Shared rate-limited HTTP range fetching (`common/network/`), tabular Parquet/JSONL persistence (`common/storage/`), bootstrap variance & two-phase difference estimators (`common/stats/`), and publication plot styling (`common/analysis/`).
+  * **Corpus Pipeline (`f2/corpus/`)**: Two-stage crawl-stratified sampling, rate-limited range fetcher, news classifier, Two-Phase 8-Stratum estimator, and PostgreSQL operational state store.
   * **Reproduction Catalog (`f2/catalog/`)**: PostgreSQL catalog tracking paper targets, experiment specs, resource lineage/substitutions, execution plan revisions, and planned run slots (`schema.dbml`, `CatalogPlanMaterializer`, `CatalogRepository`).
+  * **Experimental Suites (`f2/suites/`)**: Modular volumes for downstream Word2Vec pretraining, vocabulary scaling, and embedding evaluation benchmarks.
 
 ---
 
