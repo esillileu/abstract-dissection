@@ -81,4 +81,47 @@ def show_matrix(
             )
 
 
+@app.command("materialize")
+def materialize_plan(
+    suite: str = typer.Argument(
+        ...,
+        help="Registered F2 suite name to materialize (e.g. w2v_pretrain)",
+    ),
+    revision: int = typer.Option(
+        1, "--revision", "-r", help="Execution plan revision number"
+    ),
+    notes: str | None = typer.Option(
+        None, "--notes", help="Optional notes for this plan revision"
+    ),
+    canonical: bool = typer.Option(
+        True, "--canonical/--non-canonical", help="Mark this plan revision as canonical"
+    ),
+) -> None:
+    """Materialize an F2 suite's declared ExecutionDefinition into Catalog DB planned run slots."""
+    from ..definition import DEFINITION
+    from .materializer import CatalogPlanMaterializer
+
+    try:
+        suite_def = DEFINITION.get_suite(suite)
+    except ValueError as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    with get_connection() as conn:
+        repo = CatalogRepository(conn)
+        materializer = CatalogPlanMaterializer(repo)
+        plan_id = materializer.materialize_from_definition(
+            domain=suite_def,
+            plan_key=suite,
+            revision=revision,
+            is_canonical=canonical,
+            notes=notes,
+        )
+        conn.commit()
+
+    typer.echo(
+        f"Successfully materialized execution plan '{plan_id}' for suite '{suite}'."
+    )
+
+
 __all__ = ["app"]
