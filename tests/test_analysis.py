@@ -12,6 +12,7 @@ from dlfs.analysis.input import AnalysisRun, StudyAnalysisInput
 from dlfs.analysis.orchestrator import _render_studies
 from dlfs.ds1 import result_schema as ds1_result_schema
 from dlfs.ds2.analysis import render as ds2_render
+from dlfs.execution.selection import CanonicalAttemptSelector
 from dlfs.identity import Variant, Volume
 from repro_core.analysis.core import (
     AnalysisClient,
@@ -59,11 +60,76 @@ class FakeClient:
     def get_experiment_by_name(self, name):
         return None if name == "missing" else SimpleNamespace(experiment_id="1")
 
-    def search_runs(self, **kwargs):
+    def search_runs(self, *_args, **_kwargs):
         return self.runs
 
     def download_artifacts(self, run_id, artifact_path):
         raise FileNotFoundError((run_id, artifact_path))
+
+
+def _tracked_run(
+    run_id: str,
+    *,
+    study: str,
+    device: str,
+    start_time: int = 1,
+):
+    return SimpleNamespace(
+        info=SimpleNamespace(
+            run_id=run_id,
+            start_time=start_time,
+            status="FINISHED",
+        ),
+        data=SimpleNamespace(
+            tags={
+                "run.type": "seed_trial",
+                "implementation.variant": "implemented",
+                "experiment.id": study,
+                "condition.id": "condition",
+                "seed": "1",
+                "result.durable_complete": "true",
+                "runtime.device": device,
+            },
+            params={},
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    ("volume", "study", "device"),
+    [
+        (Volume.DS2, "e02", "cuda:0"),
+        (Volume.DS2, "e08", "cpu"),
+        (Volume.DS2, "e12", "cpu"),
+        (Volume.DS1, "e01", "cpu"),
+    ],
+)
+def test_canonical_analysis_selection_is_device_independent(
+    volume: Volume,
+    study: str,
+    device: str,
+) -> None:
+    run = _tracked_run(f"{study}-{device}", study=study, device=device)
+
+    class Client(FakeClient):
+        tracking_uri = "http://tracking"
+
+        def get_experiment_by_name(self, _name):
+            return SimpleNamespace(experiment_id="1")
+
+        def get_run(self, _run_id):
+            return run
+
+    selected = CanonicalAttemptSelector(Client([run])).select(
+        volume,
+        Variant.IMPLEMENTED,
+        study_id=study,
+        condition_ids=("condition",),
+        seed=1,
+    )
+
+    assert selected is not None
+    assert selected.run_id == run.info.run_id
 
 
 def test_prepared_analysis_replays_without_raw_or_mlflow_access(tmp_path):

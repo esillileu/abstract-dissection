@@ -74,11 +74,7 @@ def write_analysis(
     raw_cache_dir = (
         WorkspacePaths.from_environment(Path.cwd()).cache_root / "mlflow_raw"
     )
-    selector = CanonicalAttemptSelector(
-        client,
-        tracking_uri=tracking_uri,
-        default_device="cpu" if volume is Volume.DS2 else None,
-    )
+    selector = CanonicalAttemptSelector(client, tracking_uri=tracking_uri)
     studies = importlib.import_module(f"dlfs.{volume.value}.result_schema")
     summary_metrics = studies.SUMMARY_METRICS
     studies = studies.STUDIES

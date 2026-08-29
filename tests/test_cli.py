@@ -173,7 +173,7 @@ def test_analyze_uses_single_normalized_orchestrator(
     result = runner.invoke(app, ["analyze", "deepscratch", "ds2", "-e", "01"])
 
     assert result.exit_code == 0
-    assert str(captured.pop("output_dir")).endswith("artifacts/exp/deepscratch")
+    assert str(captured.pop("output_dir")).endswith("artifacts/analysis/dlfs/ds2")
     assert captured["experiment_ids"] == ["e01"]
     assert captured["variants"] == (Variant.IMPLEMENTED,)
     assert captured["seed"] is None
