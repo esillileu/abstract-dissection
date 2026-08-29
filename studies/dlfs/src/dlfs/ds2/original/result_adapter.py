@@ -60,8 +60,12 @@ def _attention_projection(
     if csv_path.is_file() and render_path.is_file():
         return csv_path.resolve(), render_path.resolve()
     try:
-        tracking_uri = getattr(client, "tracking_uri", None) or os.getenv(
-            "MLFLOW_TRACKING_URI", "http://127.0.0.1:5000"
+        tracking_uri = (
+            getattr(client, "tracking_uri", None)
+            or os.getenv("REPRO_TRACKING_URI")
+            or os.getenv("MLFLOW_TRACKING_URI")
+            or os.getenv("MLFLOW_F1_URL")
+            or "http://127.0.0.1:5000"
         )
         cache = artifact_cache or MlflowArtifactCache(client, str(tracking_uri))
         arrays_path = cache.get(run_id, "raw/attention.npz")
@@ -121,8 +125,12 @@ def _word2vec_checkpoint_projection(
     if manifest_path.is_file() and weights_path.is_file():
         return manifest_path.resolve()
     try:
-        tracking_uri = getattr(client, "tracking_uri", None) or os.getenv(
-            "MLFLOW_TRACKING_URI", "http://127.0.0.1:5000"
+        tracking_uri = (
+            getattr(client, "tracking_uri", None)
+            or os.getenv("REPRO_TRACKING_URI")
+            or os.getenv("MLFLOW_TRACKING_URI")
+            or os.getenv("MLFLOW_F1_URL")
+            or "http://127.0.0.1:5000"
         )
         cache = artifact_cache or MlflowArtifactCache(client, str(tracking_uri))
         source = cache.get(run_id, "raw/checkpoint.npz")

@@ -31,7 +31,10 @@ def load_native_result(client, run_id, declarations, *, artifact_cache=None):
         client,
         str(
             getattr(client, "tracking_uri", None)
-            or os.getenv("MLFLOW_TRACKING_URI", "http://127.0.0.1:5000")
+            or os.getenv("REPRO_TRACKING_URI")
+            or os.getenv("MLFLOW_TRACKING_URI")
+            or os.getenv("MLFLOW_F1_URL")
+            or "http://127.0.0.1:5000"
         ),
     )
     if study_id == "e09":

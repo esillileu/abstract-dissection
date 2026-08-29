@@ -256,3 +256,41 @@ def test_only_canonical_domain_is_exposed() -> None:
         assert help_result.exit_code == 0
         assert "deepscratch" in help_result.output
         assert "ds1_original" not in help_result.output
+
+
+def test_dlfs_cli_respects_mlflow_f1_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    from dlfs.cli import _resolve_tracking_uri
+
+    monkeypatch.delenv("REPRO_TRACKING_URI", raising=False)
+    monkeypatch.delenv("MLFLOW_TRACKING_URI", raising=False)
+    monkeypatch.delenv("MLFLOW_DLFS_URL", raising=False)
+    monkeypatch.delenv("MLFLOW_F1_URL", raising=False)
+
+    assert _resolve_tracking_uri(None) is None
+
+    monkeypatch.setenv("MLFLOW_F1_URL", "http://10.0.0.1:5001/mlflow-f1")
+    assert _resolve_tracking_uri(None) == "http://10.0.0.1:5001/mlflow-f1"
+    assert _resolve_tracking_uri("http://custom:5000") == "http://custom:5000"
+
+    monkeypatch.setenv("MLFLOW_DLFS_URL", "http://10.0.0.1:5001/mlflow-dlfs")
+    assert _resolve_tracking_uri(None) == "http://10.0.0.1:5001/mlflow-dlfs"
+
+    monkeypatch.setenv("MLFLOW_TRACKING_URI", "http://higher-precedence:5000")
+    assert _resolve_tracking_uri(None) == "http://higher-precedence:5000"
+
+
+def test_core_analysis_respects_study_mlflow_urls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from repro_core.analysis.core import DEFAULT_TRACKING_URI, tracking_uri_default
+
+    monkeypatch.delenv("REPRO_TRACKING_URI", raising=False)
+    monkeypatch.delenv("MLFLOW_TRACKING_URI", raising=False)
+    monkeypatch.delenv("MLFLOW_F2_URL", raising=False)
+    monkeypatch.delenv("MLFLOW_DLFS_URL", raising=False)
+    monkeypatch.delenv("MLFLOW_F1_URL", raising=False)
+
+    assert tracking_uri_default() == DEFAULT_TRACKING_URI
+
+    monkeypatch.setenv("MLFLOW_F2_URL", "http://10.0.0.1:5002/mlflow-f2")
+    assert tracking_uri_default() == "http://10.0.0.1:5002/mlflow-f2"

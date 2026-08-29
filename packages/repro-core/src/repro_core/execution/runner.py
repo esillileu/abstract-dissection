@@ -114,6 +114,9 @@ class Runner:
                 uris.add(
                     os.getenv("REPRO_TRACKING_URI")
                     or os.getenv("MLFLOW_TRACKING_URI")
+                    or os.getenv("MLFLOW_F2_URL")
+                    or os.getenv("MLFLOW_DLFS_URL")
+                    or os.getenv("MLFLOW_F1_URL")
                     or str(tracking.get("uri", "http://127.0.0.1:5000"))
                 )
         for uri in sorted(uris):

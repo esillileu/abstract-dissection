@@ -67,8 +67,13 @@ def resolve_checkpoint_source_in_experiment(
         raise ValueError("checkpoint source resolution requires source coordinates")
 
     tracking = config.get("tracking", {})
-    tracking_uri = os.getenv("MLFLOW_TRACKING_URI") or str(
-        tracking.get("uri", "http://127.0.0.1:5000")
+    tracking_uri = (
+        os.getenv("REPRO_TRACKING_URI")
+        or os.getenv("MLFLOW_TRACKING_URI")
+        or os.getenv("MLFLOW_F2_URL")
+        or os.getenv("MLFLOW_DLFS_URL")
+        or os.getenv("MLFLOW_F1_URL")
+        or str(tracking.get("uri", "http://127.0.0.1:5000"))
     )
     if client is None:
         from mlflow.tracking import MlflowClient

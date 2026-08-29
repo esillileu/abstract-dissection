@@ -56,6 +56,16 @@ def _writer_overrides(
     ]
 
 
+def _resolve_tracking_uri(explicit: str | None = None) -> str | None:
+    return (
+        explicit
+        or os.getenv("REPRO_TRACKING_URI")
+        or os.getenv("MLFLOW_TRACKING_URI")
+        or os.getenv("MLFLOW_DLFS_URL")
+        or os.getenv("MLFLOW_F1_URL")
+    )
+
+
 @cli_errors
 def plan(
     volume: Annotated[Volume, typer.Argument()],
@@ -120,7 +130,7 @@ def run(
         dry_run=dry_run,
         progress=progress,
         progress_every=progress_every,
-        tracking_uri=tracking_uri,
+        tracking_uri=_resolve_tracking_uri(tracking_uri),
         run_fn=run_yaml,
     )
 
@@ -168,7 +178,7 @@ def check(
 
     from .execution.status import inspect_plan_status
 
-    uri = tracking_uri or os.getenv("MLFLOW_TRACKING_URI", "http://127.0.0.1:5000")
+    uri = _resolve_tracking_uri(tracking_uri) or "http://127.0.0.1:5000"
     report = inspect_plan_status(
         MlflowClient(tracking_uri=uri),
         plans,
@@ -294,7 +304,7 @@ def analyze(
         err=True,
     )
     output = write_analysis(
-        tracking_uri or os.getenv("MLFLOW_TRACKING_URI", "http://127.0.0.1:5000"),
+        _resolve_tracking_uri(tracking_uri) or "http://127.0.0.1:5000",
         volume=volume,
         experiment_ids=selected_experiments,
         variants=variants,

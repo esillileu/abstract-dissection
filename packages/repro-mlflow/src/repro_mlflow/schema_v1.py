@@ -119,7 +119,11 @@ class SchemaV1Run:
         return ExperimentRun(
             options=RuntimeOptions(
                 tracking_uri=(
-                    os.getenv("MLFLOW_TRACKING_URI")
+                    os.getenv("REPRO_TRACKING_URI")
+                    or os.getenv("MLFLOW_TRACKING_URI")
+                    or os.getenv("MLFLOW_F2_URL")
+                    or os.getenv("MLFLOW_DLFS_URL")
+                    or os.getenv("MLFLOW_F1_URL")
                     or str(
                         tracking.get(
                             "uri",

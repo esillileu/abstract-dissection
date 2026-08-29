@@ -553,7 +553,14 @@ def write_summary(path: Path, curves: Mapping[str, Curve]) -> Path:
 
 
 def tracking_uri_default() -> str:
-    return os.getenv("MLFLOW_TRACKING_URI", DEFAULT_TRACKING_URI)
+    return (
+        os.getenv("REPRO_TRACKING_URI")
+        or os.getenv("MLFLOW_TRACKING_URI")
+        or os.getenv("MLFLOW_F2_URL")
+        or os.getenv("MLFLOW_DLFS_URL")
+        or os.getenv("MLFLOW_F1_URL")
+        or DEFAULT_TRACKING_URI
+    )
 
 
 def parse_experiment_selection(
