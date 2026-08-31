@@ -77,6 +77,7 @@ def test_matching_seed_selected_checkpoint_is_downloaded(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
+    monkeypatch.delenv("MLFLOW_F1_URL", raising=False)
     monkeypatch.chdir(tmp_path)
     config = _config()
 

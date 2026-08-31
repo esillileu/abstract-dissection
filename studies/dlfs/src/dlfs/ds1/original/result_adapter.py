@@ -2,7 +2,6 @@
 
 import csv
 import json
-import os
 from dataclasses import replace
 from pathlib import Path
 
@@ -10,6 +9,7 @@ import numpy as np
 from mlflow.exceptions import MlflowException
 
 from dlfs.identity import Variant
+from dlfs.tracking import tracking_uri
 from repro_core.context.paths import WorkspacePaths
 from repro_core.results import MlflowResultStore
 from repro_mlflow.artifact_cache import MlflowArtifactCache
@@ -29,13 +29,7 @@ def load_native_result(client, run_id, declarations, *, artifact_cache=None):
     study_id = result.provenance.get("experiment_id")
     cache = artifact_cache or MlflowArtifactCache(
         client,
-        str(
-            getattr(client, "tracking_uri", None)
-            or os.getenv("REPRO_TRACKING_URI")
-            or os.getenv("MLFLOW_TRACKING_URI")
-            or os.getenv("MLFLOW_F1_URL")
-            or "http://127.0.0.1:5000"
-        ),
+        str(getattr(client, "tracking_uri", None) or tracking_uri()),
     )
     if study_id == "e09":
         trajectory = _cached_artifact(cache, run_id, "raw/trajectory.csv")

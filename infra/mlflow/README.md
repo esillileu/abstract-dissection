@@ -19,13 +19,15 @@ set `MLFLOW_TRACKING_URI` only when using another server.
 
 The migrated F1/DLFS service is exposed separately at
 <http://127.0.0.1:5001/mlflow-f1>. DLFS analysis against that production
-history must select it explicitly, either with `--tracking-uri` or the
-environment:
+history always reads the shell-provided canonical DLFS endpoint:
 
 ```bash
-MLFLOW_TRACKING_URI=http://127.0.0.1:5001/mlflow-f1 \
+MLFLOW_F1_URL=http://127.0.0.1:5001/mlflow-f1 \
 uv run repro dlfs analyze ds2 -e 02 --variant all --summary
 ```
+
+`MLFLOW_F1_DATABASE_URL` is the server's direct database connection string and
+must never be passed to DLFS runners, status checks, or analyses.
 
 Stop the server without removing its data:
 
