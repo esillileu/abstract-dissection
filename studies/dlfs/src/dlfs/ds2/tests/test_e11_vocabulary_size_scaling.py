@@ -56,8 +56,11 @@ def test_e11_renderer_uses_a_linear_y_axis() -> None:
         plt.close(figure)
 
 
-def test_e11_renderer_uses_vocabulary_size_as_x_axis(tmp_path: Path) -> None:
+def test_e11_renderer_uses_vocabulary_size_as_x_axis(
+    tmp_path: Path, monkeypatch
+) -> None:
     uri = f"sqlite:///{tmp_path / 'mlflow.db'}"
+    monkeypatch.setenv("MLFLOW_F1_URL", uri)
     client = MlflowClient(uri)
     experiment_id = client.create_experiment("deepscratch.ds2")
     for condition in ("PF-VSCALE-CBOW-FS", "PF-VSCALE-CBOW-NS"):

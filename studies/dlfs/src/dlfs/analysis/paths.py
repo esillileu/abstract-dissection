@@ -15,7 +15,9 @@ def default_result_root(
     variants: tuple[Variant, ...],
 ) -> Path:
     """Resolve derived analysis output through the workspace path policy."""
-    return WorkspacePaths.from_environment(Path.cwd()).domain_results("deepscratch")
+    return WorkspacePaths.from_environment(Path.cwd()).analysis_output(
+        "dlfs", volume.value
+    )
 
 
 def variant_label(variants: tuple[Variant, ...]) -> str:
