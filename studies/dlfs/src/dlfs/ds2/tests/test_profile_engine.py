@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from contextlib import nullcontext
 
+import numpy as np
+from deepscratch.core import BackendConfig, make_backend
+
 from dlfs.ds2.profile.word2vec import Word2VecCondition
+from dlfs.ds2.profile.word2vec.workloads import _build_condition
 from dlfs.profile import MeasurementProtocol, ProfileSection, ScalingAxis
 from dlfs.profile.engine import (
     measure_update_workload,
@@ -83,3 +87,22 @@ def test_generic_profile_engine_measures_declared_sections() -> None:
     assert sections["update"]["timing"]["count"] == 2
     assert workload.updates == 3
     assert workload.released
+
+
+def test_one_hot_skipgram_full_softmax_accepts_grouped_context_targets() -> None:
+    backend = make_backend(BackendConfig(device="cpu", dtype="float32", seed=1))
+    corpus = np.arange(8, dtype=np.int64)
+    contexts = np.array([[0, 2], [1, 3], [2, 4], [3, 5]], dtype=np.int64)
+    targets = np.array([1, 2, 3, 4], dtype=np.int64)
+    workload, _, _, _ = _build_condition(
+        "implemented-skipgram-onehot-fs",
+        corpus=corpus,
+        contexts=contexts,
+        targets=targets,
+        backend=backend,
+    )
+
+    loss = workload.update(workload.contexts[:2], workload.targets[:2])
+
+    assert workload.objective.grouped_targets is True
+    assert np.isfinite(float(loss.data))
