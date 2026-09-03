@@ -20,6 +20,9 @@ ATOMIC_IDS = (
     "PF-W2V-SKIPGRAM-IMPLEMENTED-FUSED-NS",
 )
 
+DEFAULT_LEGEND_FONTSIZE = 14
+BASIC_VARIANTS = ("NS", "FS")
+
 
 def render(
     data,
@@ -27,7 +30,7 @@ def render(
     output: Path,
     *,
     title_fontsize: float | None = 22,
-    legend_fontsize: float | None = 9,
+    legend_fontsize: float | None = DEFAULT_LEGEND_FONTSIZE,
 ) -> list[Path]:
     del error_style
     rows = _module_rows(data)
@@ -40,7 +43,7 @@ def render(
         plt.close(figure)
         outputs.append(path)
 
-    figure, axes = plt.subplots(1, 2, figsize=(14, 6), squeeze=False)
+    figure, axes = plt.subplots(1, 2, figsize=(14, 6), squeeze=False, sharey=True)
     for axis, model in zip(axes[0], ("CBOW", "Skip-gram"), strict=True):
         _plot_model(
             axis,
@@ -48,7 +51,17 @@ def render(
             model,
             title=model,
             title_fontsize=title_fontsize,
-            legend_fontsize=legend_fontsize,
+            variants=BASIC_VARIANTS,
+            show_legend=False,
+        )
+    handles, labels = _unique_legend_entries(axes[0])
+    if handles:
+        axes[0, 0].legend(
+            handles,
+            labels,
+            loc="upper left",
+            ncol=2,
+            fontsize=legend_fontsize,
         )
     figure.tight_layout()
     save_figure(figure, output)
@@ -98,11 +111,27 @@ def _plot_model(
     title: str | None = None,
     title_fontsize: float | None = None,
     legend_fontsize: float | None = None,
+    variants: tuple[str, ...] | None = None,
+    show_legend: bool = True,
 ) -> None:
-    selected = [row for row in rows if _condition_model(row["condition"]) == model]
+    selected = [
+        row
+        for row in rows
+        if _condition_model(row["condition"]) == model
+        and (variants is None or _condition_variant(str(row["condition"])) in variants)
+    ]
+    ordered_ids = ATOMIC_IDS
+    if variants is not None:
+        ordered_ids = tuple(
+            condition
+            for variant in variants
+            for condition in ATOMIC_IDS
+            if _condition_model(condition) == model
+            and _condition_variant(condition) == variant
+        )
     conditions = [
         condition
-        for condition in ATOMIC_IDS
+        for condition in ordered_ids
         if _condition_model(condition) == model
         and any(row["condition"] == condition for row in selected)
     ]
@@ -140,13 +169,26 @@ def _plot_model(
     axis.set_ylabel("Operation time (ms)")
     if title is not None:
         axis.set_title(title, fontsize=title_fontsize)
-    if components:
-        axis.legend(fontsize=legend_fontsize, ncol=2)
+    if components and show_legend:
+        axis.legend(loc="upper left", fontsize=legend_fontsize, ncol=2)
     axis.grid(axis="y", alpha=0.25)
+
+
+def _unique_legend_entries(axes) -> tuple[list[object], list[str]]:
+    entries = {}
+    for axis in axes:
+        handles, labels = axis.get_legend_handles_labels()
+        for handle, label in zip(handles, labels, strict=True):
+            entries.setdefault(label, handle)
+    return list(entries.values()), list(entries)
 
 
 def _condition_model(condition: object) -> str:
     return "CBOW" if "-CBOW-" in str(condition) else "Skip-gram"
+
+
+def _condition_variant(condition: str) -> str:
+    return condition.split("-IMPLEMENTED-", maxsplit=1)[-1]
 
 
 def _condition_label(condition: str) -> str:
