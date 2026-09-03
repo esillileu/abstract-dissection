@@ -169,8 +169,7 @@ class CanonicalAttemptSelector:
             candidates = [
                 item
                 for item in candidates
-                if item.run_type != "seed_trial"
-                or self._run_device(item.run_id) == selected_device
+                if self._run_device(item.run_id) == selected_device
             ]
         if run_id is not None:
             selected = next(

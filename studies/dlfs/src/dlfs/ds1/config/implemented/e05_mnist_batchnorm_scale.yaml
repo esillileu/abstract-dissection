@@ -17,7 +17,7 @@ recording:
 numerics: {dtype: float64, backend: numpy, device: cpu}
 checkpoint: {save_final: true, save_on_eval: false, format: v2}
 profiling: {enabled: false}
-tracking: {enabled: true, experiment: deepscratch.ds1}
+tracking: {experiment: deepscratch.ds1}
 variants:
   BN-SCALE-01-OFF: {run: {structure_signature: mnist-mlp-100x5-no-bn}, model: {initializer: 'std:1.0', use_batchnorm: false}}
   BN-SCALE-01-ON: {run: {structure_signature: mnist-mlp-100x5-bn}, model: {initializer: 'std:1.0', use_batchnorm: true}}

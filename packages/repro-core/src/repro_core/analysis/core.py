@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import csv
 import json
-import os
 import re
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
@@ -16,9 +15,6 @@ from repro_core.context.paths import WorkspacePaths
 from repro_core.plotting.theme import MUTED, apply_plot_theme, remove_figure_title
 
 apply_plot_theme()
-
-
-DEFAULT_TRACKING_URI = "http://127.0.0.1:5000"
 
 
 class AnalysisClient:
@@ -550,17 +546,6 @@ def write_summary(path: Path, curves: Mapping[str, Curve]) -> Path:
                 }
             )
     return path
-
-
-def tracking_uri_default() -> str:
-    return (
-        os.getenv("REPRO_TRACKING_URI")
-        or os.getenv("MLFLOW_TRACKING_URI")
-        or os.getenv("MLFLOW_F2_URL")
-        or os.getenv("MLFLOW_DLFS_URL")
-        or os.getenv("MLFLOW_F1_URL")
-        or DEFAULT_TRACKING_URI
-    )
 
 
 def parse_experiment_selection(

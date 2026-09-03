@@ -13,7 +13,7 @@ def test_comparison_table_marks_absent_native_metric_unavailable(
     tmp_path: Path, monkeypatch
 ) -> None:
     uri = f"sqlite:///{tmp_path / 'mlflow.db'}"
-    monkeypatch.setenv("MLFLOW_F1_URL", uri)
+    monkeypatch.setenv("F1_MLFLOW_TRACKING_URI", uri)
     client = MlflowClient(uri)
     canonical_id = client.create_experiment("deepscratch.ds2")
     common = {
@@ -74,7 +74,7 @@ def test_cli_variants_share_the_normalized_analysis_path(
     tmp_path: Path, monkeypatch
 ) -> None:
     uri = f"sqlite:///{tmp_path / 'cli-mlflow.db'}"
-    monkeypatch.setenv("MLFLOW_F1_URL", uri)
+    monkeypatch.setenv("F1_MLFLOW_TRACKING_URI", uri)
     client = MlflowClient(uri)
     canonical_id = client.create_experiment("deepscratch.ds2")
     common = {

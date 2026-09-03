@@ -17,7 +17,7 @@ recording:
 numerics: {dtype: float32, backend: cupy, device: cuda:0, deterministic: true}
 checkpoint: {save_final: true, save_best: true, save_latest: false, best_payload: model_only, final_payload: full, format: v2}
 profiling: {enabled: false}
-tracking: {enabled: true, experiment: deepscratch.ds2}
+tracking: {experiment: deepscratch.ds2}
 variants:
   LM-RNN-RECIPE: {run: {structure_signature: ptb-rnn-650}, model: {name: VanillaRnnlm, wordvec_size: 650, hidden_size: 650}}
   LM-LSTM-RECIPE: {run: {structure_signature: ptb-lstm-650}, model: {name: Rnnlm, wordvec_size: 650, hidden_size: 650}}

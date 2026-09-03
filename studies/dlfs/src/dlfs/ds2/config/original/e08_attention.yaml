@@ -7,7 +7,7 @@ execution: {mode: seeded, default_device: cuda:0}
 seed_policy: {seed_set: research_v1, seed_count: 10}
 dataset: {id: date, cache: canonical, split_seed: 1984, example_selection_seed: 1984}
 numerics: {backend: cupy, device: cuda:0}
-tracking: {enabled: true, experiment: deepscratch.ds2}
+tracking: {experiment: deepscratch.ds2}
 checkpoint:
   save_final: false
   source_group_id: ORIGINAL-E07

@@ -44,6 +44,7 @@ def write_analysis(
     output_dir: Path,
     cache_dir: Path | None = None,
     seed: int | None = None,
+    device: str | None = None,
     run_id: str | None = None,
     error_style: str = "band",
     print_summary: bool = False,
@@ -146,7 +147,9 @@ def write_analysis(
                             variant,
                             study_id=study_id,
                             condition_ids=aliases,
-                        ),
+                        )
+                        if device is None
+                        else device,
                     )
                     attempts[variant] = attempt
                 selections.append((study_id, condition, selected_seed, attempts))
@@ -170,6 +173,7 @@ def write_analysis(
         summary_metrics=summary_metrics,
         seed=seed,
         run_id=run_id,
+        device=device,
         selections=selections,
     )
     analysis_path = cache_dir / "analysis_input.json"
@@ -326,6 +330,7 @@ def _cache_signature(
     summary_metrics,
     seed,
     run_id,
+    device,
     selections,
 ) -> dict[str, object]:
     runs = []
@@ -361,6 +366,7 @@ def _cache_signature(
         "variants": [variant.value for variant in variants],
         "seed": seed,
         "run_id": run_id,
+        "device": device,
         "summary_metrics": {
             study_id: [
                 {

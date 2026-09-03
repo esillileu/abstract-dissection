@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 
-TRACKING_URI_ENV = "MLFLOW_F1_URL"
+TRACKING_URI_ENV = "F1_MLFLOW_TRACKING_URI"
 
 
 def tracking_uri() -> str:
@@ -18,14 +18,13 @@ def tracking_uri() -> str:
 
 
 def resolve_tracking_uri(explicit: str | None = None) -> str:
-    """Resolve a CLI request without overriding the shell's canonical endpoint."""
-    canonical = tracking_uri()
-    if explicit is not None and explicit.rstrip("/") != canonical:
-        raise ValueError(
-            "--tracking-uri must match the canonical URI loaded from "
-            f"{TRACKING_URI_ENV}"
-        )
-    return canonical
+    """Resolve an explicit CLI value before the study-owned environment value."""
+    if explicit is not None:
+        value = explicit.strip()
+        if not value:
+            raise ValueError("--tracking-uri must not be empty")
+        return value.rstrip("/")
+    return tracking_uri()
 
 
 __all__ = ["TRACKING_URI_ENV", "resolve_tracking_uri", "tracking_uri"]

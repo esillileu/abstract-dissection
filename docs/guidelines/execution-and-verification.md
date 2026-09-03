@@ -47,9 +47,9 @@ uv run repro f2 corpus calibrate
 uv run repro f2 corpus process --limit 10000
 ```
 
-Tracked DLFS commands require `MLFLOW_F1_URL` in the shell environment. This is
-the sole canonical DLFS tracking endpoint; database connection variables are not
-tracking URIs. DLFS analysis outputs resolve through `RuntimePaths` under
+Tracked DLFS commands require `F1_MLFLOW_TRACKING_URI` unless `--tracking-uri`
+is supplied. The complete service connection contract is defined in
+[`path-and-storage.md`](path-and-storage.md). DLFS analysis outputs resolve through `RuntimePaths` under
 `artifacts/analysis/dlfs/<volume>/` unless `--output-dir` is explicitly supplied.
 
 ---
@@ -63,8 +63,6 @@ The repository root includes a [`justfile`](file:///home/esillileu/abstract-diss
 | **`just check`** | Run full verification suite (`ruff check` + `ruff format --check` + `pytest -q`). |
 | **`just test`** | Run full test suite with verbose output (`uv run pytest -v`). |
 | **`just lint`** | Run linter and auto-fix formatting (`uv run ruff check --fix` + `uv run ruff format`). |
-| **`just mlflow-up`** | Start local Docker MLflow tracking server and UI. |
-| **`just mlflow-down`** | Stop local MLflow tracking server. |
 
 ---
 

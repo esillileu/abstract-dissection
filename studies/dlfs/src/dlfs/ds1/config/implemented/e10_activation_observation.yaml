@@ -13,7 +13,7 @@ recording: {evaluation_sources: [], triggers: [], outputs: [observations/activat
 numerics: {dtype: float64, backend: numpy, device: cpu}
 checkpoint: {save_final: false, save_on_eval: false, format: none}
 profiling: {enabled: false}
-tracking: {enabled: true, experiment: deepscratch.ds1, upload_checkpoint: false}
+tracking: {experiment: deepscratch.ds1, upload_checkpoint: false}
 variants:
   ACT-SIGMOID-STD001: {model: {activation: sigmoid, initializer: 'std:0.01'}}
   ACT-SIGMOID-XAVIER: {model: {activation: sigmoid, initializer: xavier}}

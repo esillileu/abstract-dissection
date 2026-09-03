@@ -27,7 +27,7 @@ graph TD
     end
 
     subgraph Layer 4: Infrastructure [4. Infra & Tracking]
-        INFRA[infra/mlflow, SQLite DB, PostgreSQL]
+        INFRA[Externally managed MLflow and PostgreSQL services]
     end
 
     STUDY_DLFS -->|orchestrates via| ADAPTERS
@@ -51,7 +51,7 @@ graph TD
 | **`packages/`** | Reusable, self-contained Python libraries (`repro-core`, `repro-mlflow`, `deepscratch`). | **Must NOT depend on `studies/` or external references.** `deepscratch` has 0 dependencies on other workspace packages. `repro-core` has 0 dependencies on `repro-mlflow`, `deepscratch`, or `studies/`. |
 | **`studies/`** | Domain-specific reproduction studies and experimental protocols (`studies/dlfs`, `studies/f2`). | Orchestrates `packages/` engines and compares against `references/`. Contains explicit **adapters**, study catalogs, configs, and custom analysis scripts. |
 | **`references/`** | Vendored immutable upstream baselines (`references/dlfs1-book`, `references/dlfs2-book`). | Read-only snapshots of upstream code. Must include `provenance.json`. |
-| **`infra/`** | Local/remote services configuration (`infra/mlflow` Docker compose, SQLite migration). | Service definitions and tracking storage backend. |
+| **External services** | Managed MLflow and PostgreSQL deployments. | Durable tracking and transactional storage; see the storage contract. |
 | **`artifacts/`** | Human-readable final analysis reports, paper figures, and markdown summaries. | Ephemeral scratch data must NOT be committed here. |
 | **`data/`** | Canonical dataset directory (`data/mnist`, `data/ptb`, `data/sequence`). | Managed via 3-tier fallback resolution. Ignored by Git. |
 | **`.staging/`** | Volatile in-memory / scratch buffer during live runs. | Completely disposable (`rm -rf .staging` safe). |
@@ -74,4 +74,3 @@ graph TD
    All executions must declare exact seeds, backend targets (CPU/GPU), precision dtypes, and configuration digests.
 6. **Module-Scoped Study Isolation:**
    `repro-core` dispatches execution dynamically to study adapters through declared `executor_module`s (`ExecutionDefinition.executor_module`). No process-global registries or cross-study name collisions exist.
-
