@@ -4,6 +4,23 @@ Welcome to the `abstract-dissection` reproduction monorepo. This document define
 
 ---
 
+## Required Documentation by Work Type
+
+| Work type | Read first |
+| :--- | :--- |
+| Packages and core | `docs/architecture/packages.md` |
+| Studies and experiments | `docs/architecture/studies.md` |
+| Adapters and representation translation | `docs/architecture/adapters.md` |
+| Corpus pipeline | `docs/architecture/corpus-pipeline.md` |
+| Paths, storage, MLflow, and databases | `docs/guidelines/path-and-storage.md` |
+| Reproducibility and RNG | `docs/guidelines/reproducibility-and-references.md` |
+| CLI, tests, and verification | `docs/guidelines/execution-and-verification.md` |
+
+`docs/guidelines/path-and-storage.md` is the canonical source for service
+connection ownership and environment-variable contracts.
+
+---
+
 ## 1. Mandatory Operating Conditions
 
 All AI agents working in this repository MUST adhere to the following 6 golden rules:

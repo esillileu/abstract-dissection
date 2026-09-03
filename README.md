@@ -15,7 +15,7 @@ abstract-dissection/
 │
 ├── packages/                   # Reusable Libraries & Infrastructure
 │   ├── repro-core/             # Central CLI, path resolver, config parser, runner
-│   ├── repro-mlflow/           # MLflow tracking, checkpoint schema, transfer tools
+│   ├── repro-mlflow/           # MLflow tracking and checkpoint schema
 │   └── deepscratch/            # Standalone scratch deep learning library (Tensor, Autograd, Layers, Optim)
 │
 ├── studies/                    # Independent Study Packages
@@ -27,8 +27,7 @@ abstract-dissection/
 │   └── papers/                 # Original paper PDFs
 │
 ├── data/                       # Central datasets (MNIST, PTB, Sequence) [.gitignore]
-├── artifacts/                  # Runs, metrics, checkpoints, and figures [.gitignore]
-├── infra/                      # Services (Local MLflow compose)
+├── artifacts/                  # Human-readable analysis outputs [.gitignore]
 └── tests/                      # Monorepo integration & regression tests
 ```
 
