@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import matplotlib.pyplot as plt
 from mlflow.tracking import MlflowClient
 
 from dlfs.analysis.orchestrator import write_analysis
@@ -69,6 +70,50 @@ def test_e10_analysis_uses_implemented_profiles_and_short_labels() -> None:
         e10_word2vec_profile._condition_label("PF-W2V-CBOW-IMPLEMENTED-NS")
         == "Negative\nSampling"
     )
+
+
+def test_e10_basic_graph_orders_ns_then_fs_and_uses_one_larger_legend() -> None:
+    rows = [
+        {"condition": condition, "component": "model_forward", "mean_ms": 1.0}
+        for condition in e10_word2vec_profile.ATOMIC_IDS
+    ]
+    figure, axes = plt.subplots(1, 2, squeeze=False, sharey=True)
+    try:
+        for axis, model in zip(axes[0], ("CBOW", "Skip-gram"), strict=True):
+            e10_word2vec_profile._plot_model(
+                axis,
+                rows,
+                model,
+                title=model,
+                variants=e10_word2vec_profile.BASIC_VARIANTS,
+                show_legend=False,
+            )
+            assert [label.get_text() for label in axis.get_xticklabels()] == [
+                "Negative\nSampling",
+                "Full Softmax",
+            ]
+            assert axis.get_legend() is None
+
+        handles, labels = e10_word2vec_profile._unique_legend_entries(axes[0])
+        legend = axes[0, 0].legend(
+            handles,
+            labels,
+            loc="upper left",
+            fontsize=e10_word2vec_profile.DEFAULT_LEGEND_FONTSIZE,
+        )
+        figure.canvas.draw()
+        assert len(figure.legends) == 0
+        assert axes[0, 0].get_legend() is legend
+        assert axes[0, 1].get_legend() is None
+        assert legend._loc == 2  # matplotlib's "upper left"
+        assert axes[0, 0].get_shared_y_axes().joined(axes[0, 0], axes[0, 1])
+        assert axes[0, 0].get_ylim() == axes[0, 1].get_ylim()
+        assert all(
+            text.get_fontsize() == e10_word2vec_profile.DEFAULT_LEGEND_FONTSIZE
+            for text in legend.get_texts()
+        )
+    finally:
+        plt.close(figure)
 
 
 def test_e10_renderer_selects_durable_profile_runs(tmp_path: Path, monkeypatch) -> None:
