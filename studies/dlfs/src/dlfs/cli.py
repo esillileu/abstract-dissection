@@ -221,6 +221,7 @@ def analyze(
     tracking_uri: Annotated[str | None, typer.Option("--tracking-uri")] = None,
     output_dir: Annotated[Path | None, typer.Option("--output-dir")] = None,
     seed: Annotated[int | None, typer.Option("--seed")] = None,
+    device: Annotated[str | None, typer.Option("--device")] = None,
     variant: Annotated[str, typer.Option("--variant")] = "implemented",
     original: Annotated[bool, typer.Option("-o")] = False,
     summary: Annotated[
@@ -258,6 +259,8 @@ def analyze(
         raise ValueError("--run-id requires one explicit variant")
     if error_style not in {"band", "errorbar"}:
         raise ValueError("--error-style must be band or errorbar")
+    if device is not None and device != "cpu" and not device.startswith("cuda:"):
+        raise ValueError("--device must be cpu or cuda:<index>")
     variants = (
         (Variant.IMPLEMENTED, Variant.ORIGINAL)
         if variant == "all"
@@ -275,6 +278,8 @@ def analyze(
         seed=seed,
         run_id=run_id,
     )
+    if device is not None:
+        output_dir /= device.replace(":", "-")
     cache_dir = WorkspacePaths.from_environment(Path.cwd()).resolve(
         StateOwner.CACHE,
         StateCoordinate(
@@ -289,6 +294,8 @@ def analyze(
         cache_dir /= f"seed-{seed}"
     elif run_id is not None:
         cache_dir /= f"run-{run_id[:8]}"
+    if device is not None:
+        cache_dir /= f"device-{device.replace(':', '-')}"
     typer.echo(
         f"selecting MLflow runs: deepscratch/{volume.value}/{variant}",
         err=True,
@@ -301,6 +308,7 @@ def analyze(
         output_dir=output_dir,
         cache_dir=cache_dir,
         seed=seed,
+        device=device,
         run_id=run_id,
         error_style=error_style,
         print_summary=summary,

@@ -195,9 +195,44 @@ def test_analyze_uses_single_normalized_orchestrator(
     assert captured["experiment_ids"] == ["e01"]
     assert captured["variants"] == (Variant.IMPLEMENTED,)
     assert captured["seed"] is None
+    assert captured["device"] is None
     assert captured["run_id"] is None
     assert captured["error_style"] == "band"
     assert captured["print_summary"] is False
+
+
+def test_analyze_selects_and_isolates_explicit_device(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    monkeypatch.setenv("F1_MLFLOW_TRACKING_URI", "https://tracking.example/mlflow")
+    captured = {}
+
+    def fake_write_analysis(*args, **kwargs):
+        captured.update(kwargs)
+        return kwargs["output_dir"]
+
+    monkeypatch.setattr(
+        "dlfs.analysis.orchestrator.write_analysis", fake_write_analysis
+    )
+    result = runner.invoke(
+        app,
+        [
+            "analyze",
+            "deepscratch",
+            "ds2",
+            "-e",
+            "10",
+            "--device",
+            "cpu",
+            "--output-dir",
+            str(tmp_path),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert captured["device"] == "cpu"
+    assert captured["output_dir"] == tmp_path / "cpu"
+    assert str(captured["cache_dir"]).endswith("device-cpu")
 
 
 def test_analyze_accepts_explicit_errorbar_style(

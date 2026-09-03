@@ -10,6 +10,7 @@ from dlfs.ds2.analysis import e10_word2vec_profile
 from dlfs.ds2.catalog import IMPLEMENTED
 from dlfs.ds2.implemented.executor import ProfileExecutor
 from dlfs.ds2.implemented.spec import parse_run_spec
+from dlfs.execution.selection import CanonicalAttemptSelector
 from dlfs.execution.status import inspect_plan_status
 from dlfs.identity import Variant, Volume
 from repro_core.execution import RunOptions, RunSelection
@@ -135,6 +136,7 @@ def test_e10_renderer_selects_durable_profile_runs(tmp_path: Path, monkeypatch) 
         variants=(Variant.IMPLEMENTED,),
         output_dir=canonical_output,
         cache_dir=canonical_cache,
+        device="cpu",
     )
     assert (canonical_output / "ds2_e10_imp.png").exists()
     assert (canonical_output / "ds2_e10_imp_cbow.png").exists()
@@ -158,3 +160,37 @@ def test_e10_renderer_selects_durable_profile_runs(tmp_path: Path, monkeypatch) 
         expected_protocols={("e10", "PF-W2V-CBOW-ORIGINAL-NS"): "ds2-e10-profile-v1"},
     )
     assert report.counts["completed"] == 1
+
+
+def test_profile_selection_filters_every_run_by_device(tmp_path: Path) -> None:
+    uri = f"sqlite:///{tmp_path / 'selection.db'}"
+    client = MlflowClient(uri)
+    experiment_id = client.create_experiment("deepscratch.ds2")
+    run_ids = {}
+    for device in ("cpu", "cuda:0"):
+        run = client.create_run(
+            experiment_id,
+            tags={
+                "run.type": "profile",
+                "experiment.id": "e10",
+                "atomic_run.id": "PF-W2V-CBOW-IMPLEMENTED-NS",
+                "implementation.variant": "implemented",
+                "result.durable_complete": "true",
+            },
+        )
+        client.log_param(run.info.run_id, "numerics/device", device)
+        client.set_terminated(run.info.run_id, "FINISHED")
+        run_ids[device] = run.info.run_id
+
+    selector = CanonicalAttemptSelector(client, tracking_uri=uri)
+    for device, run_id in run_ids.items():
+        selected = selector.select(
+            Volume.DS2,
+            Variant.IMPLEMENTED,
+            study_id="e10",
+            condition_ids=("PF-W2V-CBOW-IMPLEMENTED-NS",),
+            seed="single",
+            device=device,
+        )
+        assert selected is not None
+        assert selected.run_id == run_id

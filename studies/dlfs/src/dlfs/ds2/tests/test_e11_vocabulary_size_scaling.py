@@ -77,6 +77,7 @@ def test_e11_renderer_uses_vocabulary_size_as_x_axis(
                 "protocol.version": "ds2-e11-vocabulary-size-scaling-v1",
             },
         )
+        client.log_param(run.info.run_id, "numerics/device", "cpu")
         for vocabulary_size in (1000, 2000):
             client.log_metric(
                 run.info.run_id,
@@ -119,6 +120,7 @@ def test_e11_renderer_uses_vocabulary_size_as_x_axis(
         variants=(Variant.IMPLEMENTED,),
         output_dir=canonical_output,
         cache_dir=canonical_cache,
+        device="cpu",
     )
     assert (canonical_output / "ds2_e11_imp.png").exists()
     assert (canonical_output / "ds2_e11_imp_cbow.png").exists()
