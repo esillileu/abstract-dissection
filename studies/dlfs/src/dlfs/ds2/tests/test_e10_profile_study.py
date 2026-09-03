@@ -72,7 +72,7 @@ def test_e10_analysis_uses_implemented_profiles_and_short_labels() -> None:
 
 def test_e10_renderer_selects_durable_profile_runs(tmp_path: Path, monkeypatch) -> None:
     uri = f"sqlite:///{tmp_path / 'mlflow.db'}"
-    monkeypatch.setenv("MLFLOW_F1_URL", uri)
+    monkeypatch.setenv("F1_MLFLOW_TRACKING_URI", uri)
     client = MlflowClient(uri)
     experiment_id = client.create_experiment("deepscratch.ds2")
     for index, subject in enumerate(("original", "implemented"), start=1):

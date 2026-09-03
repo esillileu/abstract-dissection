@@ -14,7 +14,6 @@ numerics: {dtype: float32, backend: cupy, device: cuda:0, deterministic: true}
 checkpoint: {save_final: false, save_best: false, save_latest: false}
 profiling: {study_kind: update_breakdown, warmup_updates: 20, measured_updates: 50, repetitions: 5, timing_source: window, measure_modules: true, module_warmup: 5, module_iterations: 20}
 tracking:
-  enabled: true
   experiment: deepscratch.ds2
   tags:
     run.type: profile

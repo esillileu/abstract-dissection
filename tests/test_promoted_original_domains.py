@@ -52,7 +52,7 @@ def test_atomic_seed_override_and_seed_first_order() -> None:
         ),
         RunOptions(
             device="cpu",
-            overrides={"tracking": {"enabled": False}},
+            overrides={"budget": {"max_epochs": 1}},
             order=RunOrder.SEED_FIRST,
         ),
     )
@@ -64,9 +64,9 @@ def test_atomic_seed_override_and_seed_first_order() -> None:
     spec = DS1_ORIGINAL.load_run_spec(
         plans[0].path,
         atomic_run_id=plans[0].atomic_run_id,
-        overrides={"tracking": {"enabled": False}},
+        overrides={"budget": {"max_epochs": 1}},
     )
-    assert spec.to_executor_config()["tracking"]["enabled"] is False
+    assert spec.to_executor_config()["training"]["max_epochs"] == 1
 
 
 def test_upstream_import_context_restores_modules() -> None:

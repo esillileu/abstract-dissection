@@ -7,7 +7,7 @@ execution: {mode: seeded, default_device: cpu}
 seed_policy: {seed_set: research_v1, seed_count: 10, paired_execution: true}
 dataset: {id: mnist, split_seed: 1984}
 numerics: {backend: numpy, device: cpu}
-tracking: {enabled: true, experiment: deepscratch.ds1}
+tracking: {experiment: deepscratch.ds1}
 checkpoint: {save_final: false}
 variants:
   OPT-SGD: {trial_id: dlfs1.ch06.optimizer-mnist.sgd, conditions: {condition: SGD}}

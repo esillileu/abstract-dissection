@@ -320,7 +320,9 @@ def profile(
     update_warmup: Annotated[int, typer.Option("--update-warmup")] = 20,
     update_repetitions: Annotated[int, typer.Option("--update-repetitions")] = 5,
     measured_updates: Annotated[int, typer.Option("--measured-updates")] = 50,
+    tracking_uri: Annotated[str | None, typer.Option("--tracking-uri")] = None,
 ) -> None:
+    resolve_tracking_uri(tracking_uri)
     if volume is not Volume.DS2:
         raise ValueError("DeepScratch DS1 has no declared profiles")
     if variant is not Variant.IMPLEMENTED:

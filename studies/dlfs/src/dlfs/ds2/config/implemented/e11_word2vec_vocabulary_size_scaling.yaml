@@ -14,7 +14,6 @@ numerics: {dtype: float32, backend: cupy, device: cuda:0, deterministic: true}
 checkpoint: {save_final: false, save_best: false, save_latest: false}
 profiling: {study_kind: axis_scaling, axis: {name: vocabulary_size, values: device_default, schedule: device_default-v1, reverse: false}, warmup_updates: 20, measured_updates: 50, repetitions: 5, timing_source: window}
 tracking:
-  enabled: true
   experiment: deepscratch.ds2
   tags:
     run.type: profile

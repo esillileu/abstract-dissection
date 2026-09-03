@@ -13,3 +13,6 @@ def isolate_mlflow_default_artifact_root(
 ) -> None:
     artifact_root = tmp_path / "mlflow-artifacts"
     monkeypatch.setenv("_MLFLOW_SERVER_ARTIFACT_ROOT", artifact_root.as_uri())
+    monkeypatch.setenv(
+        "F1_MLFLOW_TRACKING_URI", f"sqlite:///{tmp_path / 'tracking.db'}"
+    )

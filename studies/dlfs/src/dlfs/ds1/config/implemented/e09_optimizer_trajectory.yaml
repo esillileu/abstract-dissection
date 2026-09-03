@@ -13,7 +13,7 @@ recording: {evaluation_sources: [], triggers: [], outputs: [observations/traject
 numerics: {dtype: float64, backend: numpy, device: cpu}
 checkpoint: {save_final: false, save_on_eval: false, format: none}
 profiling: {enabled: false}
-tracking: {enabled: true, experiment: deepscratch.ds1, upload_checkpoint: false}
+tracking: {experiment: deepscratch.ds1, upload_checkpoint: false}
 variants:
   TOY-SGD: {optimizer: {name: toy_sgd, learning_rate: 0.95}}
   TOY-MOMENTUM: {optimizer: {name: toy_momentum, learning_rate: 0.1, momentum: 0.9}}

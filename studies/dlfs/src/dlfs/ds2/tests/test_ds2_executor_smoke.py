@@ -58,7 +58,6 @@ def _cpu_overrides() -> dict[str, object]:
             "dtype": "float32",
             "deterministic": True,
         },
-        "tracking": {"enabled": False},
         "profiling": {"enabled": False},
     }
 
@@ -200,6 +199,10 @@ def test_ds2_seq2seq_config_runs_one_epoch(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
+    data_root = tmp_path / "data"
+    (data_root / "sequence").mkdir(parents=True)
+    (data_root / "sequence/addition.txt").write_text("fixture", encoding="utf-8")
+    monkeypatch.setenv("REPRO_DATA_ROOT", str(data_root))
     monkeypatch.setattr(
         "dlfs.ds2.implemented.executor.load_ds2_sequence",
         lambda *_args, **_kwargs: _sequence_data(),
@@ -236,6 +239,10 @@ def test_ds2_attention_observation_loads_checkpoint_and_runs(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
+    data_root = tmp_path / "data"
+    (data_root / "sequence").mkdir(parents=True)
+    (data_root / "sequence/date.txt").write_text("fixture", encoding="utf-8")
+    monkeypatch.setenv("REPRO_DATA_ROOT", str(data_root))
     monkeypatch.setattr(
         "dlfs.ds2.implemented.executor.load_ds2_sequence",
         lambda *_args, **_kwargs: _sequence_data(),

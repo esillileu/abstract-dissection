@@ -1,14 +1,14 @@
 from __future__ import annotations
 
+import pytest
+
 from repro_mlflow.schema_v1 import SchemaV1Run, _select_final_checkpoint
 
 
 def test_yaml_contract_projects_to_the_schema_v1_artifact_tree(
     tmp_path, monkeypatch
 ) -> None:
-    import repro_mlflow.schema_v1 as schema
-
-    monkeypatch.setattr(schema, "ARTIFACT_ROOT", tmp_path)
+    monkeypatch.setenv("REPRO_STAGING_ROOT", str(tmp_path / "staging"))
     run = SchemaV1Run(
         {
             "kind": "supervised_classification",
@@ -24,7 +24,9 @@ def test_yaml_contract_projects_to_the_schema_v1_artifact_tree(
                 "entrypoint": "exp/deepscratch/ds1/config/implemented/e01_mnist_optimizer.yaml",
                 "max_epochs": 0,
             },
-        }
+            "tracking": {"experiment": "deepscratch.ds1"},
+        },
+        tracking_uri="sqlite:///test.db",
     )
 
     run.write_artifacts(
@@ -39,18 +41,13 @@ def test_yaml_contract_projects_to_the_schema_v1_artifact_tree(
     )
 
     assert run.identity.schema_version == 1
-    assert (
-        run.artifact_root
-        == tmp_path
-        / "mlprosection"
-        / "results"
-        / "mlflow_artifacts"
+    expected = (
+        tmp_path
+        / "staging/exp/deepscratch.ds1/deepscratch.ds1/e01/implemented"
         / run.identity.run_key
     )
-    assert (
-        run.local_checkpoint_root
-        == tmp_path / "mlprosection" / "results" / "checkpoints" / run.identity.run_key
-    )
+    assert run.artifact_root == expected / "record"
+    assert run.local_checkpoint_root == expected / "checkpoints"
     assert (run.artifact_root / "config/resolved.json").is_file()
     assert (run.artifact_root / "metrics/metrics.csv").is_file()
     metrics_text = (run.artifact_root / "metrics/metrics.csv").read_text()
@@ -68,6 +65,26 @@ def test_final_checkpoint_can_be_disabled(tmp_path) -> None:
     assert digest is None
 
 
+def test_schema_rejects_tracking_disabled_execution() -> None:
+    with pytest.raises(ValueError, match="tracking cannot be disabled"):
+        SchemaV1Run(
+            {
+                "kind": "test",
+                "seed": 1,
+                "atomic_run_id": "condition",
+                "experiment_ids": ["e01"],
+                "execution_group_id": "group",
+                "recipe_id": "recipe",
+                "structure_signature": "structure",
+                "dataset": {},
+                "model": {},
+                "training": {"entrypoint": "config.yaml"},
+                "tracking": {"experiment": "experiment", "enabled": False},
+            },
+            tracking_uri="sqlite:///test.db",
+        )
+
+
 def test_final_checkpoint_selects_latest_v2_generation(tmp_path) -> None:
     generation = tmp_path / "generations" / "latest-1"
     generation.mkdir(parents=True)
@@ -81,9 +98,6 @@ def test_final_checkpoint_selects_latest_v2_generation(tmp_path) -> None:
 
 
 def test_deepscratch_writer_uses_durable_staging_root(tmp_path, monkeypatch) -> None:
-    import repro_mlflow.schema_v1 as schema
-
-    monkeypatch.setattr(schema, "ARTIFACT_ROOT", None)
     monkeypatch.setenv("EXP_STAGING_ROOT", str(tmp_path / "staging"))
     run = SchemaV1Run(
         {
@@ -98,7 +112,6 @@ def test_deepscratch_writer_uses_durable_staging_root(tmp_path, monkeypatch) -> 
             "model": {"family": "mlp", "task_type": "classification"},
             "training": {"entrypoint": "config.yaml", "max_epochs": 0},
             "tracking": {
-                "enabled": False,
                 "experiment": "deepscratch.ds1",
                 "tags": {
                     "domain.name": "deepscratch",
@@ -107,7 +120,8 @@ def test_deepscratch_writer_uses_durable_staging_root(tmp_path, monkeypatch) -> 
                     "implementation.variant": "implemented",
                 },
             },
-        }
+        },
+        tracking_uri="sqlite:///test.db",
     )
 
     expected = (

@@ -114,14 +114,6 @@ class RuntimePaths:
         _validate_parts((domain,))
         return self.artifacts_root / "exp" / domain
 
-    def run_artifact(
-        self, study: str, suite: str, experiment: str, run_id: str
-    ) -> Path:
-        _validate_parts((study, suite, experiment, run_id))
-        target = self.artifacts_root / "runs" / study / suite / experiment / run_id
-        target.mkdir(parents=True, exist_ok=True)
-        return target
-
     def analysis_output(self, study: str, suite: str | None = None) -> Path:
         _validate_parts((study,))
         target = self.artifacts_root / "analysis" / study

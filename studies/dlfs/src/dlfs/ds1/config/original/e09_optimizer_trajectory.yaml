@@ -7,7 +7,7 @@ execution: {mode: seeded, default_device: cpu}
 seed_policy: {seed_set: research_v1, seed_count: 10}
 dataset: {id: synthetic-optimizer-surface}
 numerics: {backend: numpy, device: cpu}
-tracking: {enabled: true, experiment: deepscratch.ds1}
+tracking: {experiment: deepscratch.ds1}
 checkpoint: {save_final: false}
 variants:
   PATH-SGD: {trial_id: dlfs1.ch06.optimizer-path.sgd}

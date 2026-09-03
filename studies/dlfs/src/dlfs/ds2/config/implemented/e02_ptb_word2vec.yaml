@@ -15,7 +15,7 @@ recording:
 numerics: {dtype: float32, backend: cupy, device: cuda:0, deterministic: true}
 checkpoint: {save_final: true, save_best: false, format: v2}
 profiling: {enabled: false, synchronize_train: true}
-tracking: {enabled: true, experiment: deepscratch.ds2}
+tracking: {experiment: deepscratch.ds2}
 variants:
   W2V-PTB-CBOW-NS: {run: {structure_signature: ptb-dumb-cbow-negative-sampling-w5-e100}, model: {name: DumbCBOW}, objective: {name: NegativeSampling}}
   W2V-PTB-SKIPGRAM-NS: {run: {structure_signature: ptb-dumb-skipgram-negative-sampling-w5-e100}, model: {name: DumbSkipGram}, objective: {name: NegativeSampling}}

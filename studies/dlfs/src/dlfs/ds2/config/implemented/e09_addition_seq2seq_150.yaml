@@ -15,7 +15,7 @@ recording:
 numerics: {dtype: float32, backend: cupy, device: cuda:0, deterministic: true}
 checkpoint: {save_final: true, save_best: true, format: v2}
 profiling: {enabled: false}
-tracking: {enabled: true, experiment: deepscratch.ds2}
+tracking: {experiment: deepscratch.ds2}
 variants:
   SEQA-VAN-FWD: {run: {structure_signature: addition-seq2seq-16-128}, model: {name: Seq2seq, wordvec_size: 16, hidden_size: 128}, dataset: {reverse: false}}
   SEQA-VAN-REV: {run: {structure_signature: addition-seq2seq-16-128}, model: {name: Seq2seq, wordvec_size: 16, hidden_size: 128}, dataset: {reverse: true}}

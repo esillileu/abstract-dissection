@@ -383,7 +383,7 @@ def test_render_studies_skips_analysis_without_runs(tmp_path, capsys):
         client=None,
         output_dir=tmp_path / "results",
         artifact_cache_dir=tmp_path / "artifacts",
-        tracking_uri="http://127.0.0.1:5000",
+        tracking_uri="https://tracking.example/mlflow",
         studies=ds1_result_schema.STUDIES,
         selected_studies=["e01"],
         variants=(Variant.IMPLEMENTED,),

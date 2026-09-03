@@ -10,7 +10,7 @@ recording: {evaluations: []}
 numerics: {dtype: float32, backend: numpy, device: cpu, deterministic: true}
 checkpoint: {save_final: true, save_best: false, format: npz}
 profiling: {enabled: false}
-tracking: {enabled: true, experiment: deepscratch.ds2}
+tracking: {experiment: deepscratch.ds2}
 variants:
   COUNT-PTB-PPMI: {model: {name: ppmi}}
   COUNT-PTB-SVD: {model: {name: svd}}

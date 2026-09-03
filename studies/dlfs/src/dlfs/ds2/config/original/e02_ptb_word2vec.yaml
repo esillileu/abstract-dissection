@@ -12,7 +12,7 @@ objective: {name: NegativeSampling, negative_samples: 5, sampler: {power: 0.75, 
 optimizer: {name: Adam, learning_rate: 0.001}
 budget: {max_epochs: 10}
 numerics: {backend: cupy, device: cuda:0, dtype: float32}
-tracking: {enabled: true, experiment: deepscratch.ds2}
+tracking: {experiment: deepscratch.ds2}
 checkpoint: {save_final: true, format: npz}
 variants:
   PTB-CBOW:

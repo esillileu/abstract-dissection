@@ -36,7 +36,6 @@ class RunIdentity:
 class RuntimeOptions:
     tracking_uri: str
     experiment_name: str
-    mlflow_enabled: bool = True
     upload_checkpoint: bool = True
     upload_eval_checkpoints: bool = True
     queue_size: int = 256
@@ -543,8 +542,6 @@ class _Sink:
                 self.events.task_done()
 
     def _start_mlflow(self):
-        if not self.options.mlflow_enabled:
-            return None
         try:
             import mlflow
 
@@ -586,10 +583,10 @@ def _verify_uploaded_manifest(client, run_id: str) -> None:
     """Verify every uploaded record file before declaring a run durable."""
     from .artifact_cache import MlflowArtifactCache
 
-    cache = MlflowArtifactCache(
-        client,
-        str(getattr(client, "tracking_uri", "http://127.0.0.1:5000")),
-    )
+    tracking_uri = getattr(client, "tracking_uri", None)
+    if not tracking_uri:
+        raise ValueError("manifest verification requires an explicit tracking URI")
+    cache = MlflowArtifactCache(client, str(tracking_uri))
     staged: list[tuple[str, Path]] = []
     try:
         manifest_path = cache.fetch(run_id, "result_manifest.json")
