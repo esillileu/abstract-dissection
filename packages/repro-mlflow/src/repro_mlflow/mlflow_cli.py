@@ -35,7 +35,14 @@ app = typer.Typer(
 
 
 def _tracking_uri() -> str:
-    return os.getenv("MLFLOW_TRACKING_URI", DEFAULT_TRACKING_URI)
+    return (
+        os.getenv("REPRO_TRACKING_URI")
+        or os.getenv("MLFLOW_TRACKING_URI")
+        or os.getenv("MLFLOW_F2_URL")
+        or os.getenv("MLFLOW_DLFS_URL")
+        or os.getenv("MLFLOW_F1_URL")
+        or DEFAULT_TRACKING_URI
+    )
 
 
 def _archive_path(name: str) -> Path:

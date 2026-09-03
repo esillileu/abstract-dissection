@@ -84,6 +84,20 @@ def test_catalog_plan_counts_and_default_devices() -> None:
     assert {plan.device for plan in ds2 if plan.experiment_id == "e12"} == {"cpu"}
 
 
+def test_e02_analysis_uses_catalog_canonical_gpu() -> None:
+    from dlfs.analysis.orchestrator import _canonical_device
+
+    assert (
+        _canonical_device(
+            Volume.DS2,
+            Variant.IMPLEMENTED,
+            study_id="e02",
+            condition_ids=("W2V-PTB-SKIPGRAM-NS",),
+        )
+        == "cuda:0"
+    )
+
+
 def test_atomic_selection_and_seed_first_order() -> None:
     plans = _plans(
         "ds1",
@@ -158,6 +172,7 @@ def test_nonstandard_seed_and_removed_seed_first_are_rejected() -> None:
 def test_analyze_uses_single_normalized_orchestrator(
     monkeypatch: pytest.MonkeyPatch, tmp_path
 ) -> None:
+    monkeypatch.setenv("MLFLOW_F1_URL", "http://canonical:5001/mlflow-f1/")
     captured = {}
 
     def fake_write_analysis(*args, **kwargs):
@@ -173,7 +188,8 @@ def test_analyze_uses_single_normalized_orchestrator(
     result = runner.invoke(app, ["analyze", "deepscratch", "ds2", "-e", "01"])
 
     assert result.exit_code == 0
-    assert str(captured.pop("output_dir")).endswith("artifacts/exp/deepscratch")
+    assert str(captured.pop("output_dir")).endswith("artifacts/analysis/dlfs/ds2")
+    assert captured["tracking_uri"] == "http://canonical:5001/mlflow-f1"
     assert captured["experiment_ids"] == ["e01"]
     assert captured["variants"] == (Variant.IMPLEMENTED,)
     assert captured["seed"] is None
@@ -185,6 +201,7 @@ def test_analyze_uses_single_normalized_orchestrator(
 def test_analyze_accepts_explicit_errorbar_style(
     monkeypatch: pytest.MonkeyPatch, tmp_path
 ) -> None:
+    monkeypatch.setenv("MLFLOW_F1_URL", "http://canonical:5001/mlflow-f1")
     captured = {}
 
     def fake_write_analysis(*args, **kwargs):
@@ -224,6 +241,7 @@ def test_analyze_supports_raw_and_analysis_refresh_scopes(
     refresh_arguments: list[str],
     expected: str,
 ) -> None:
+    monkeypatch.setenv("MLFLOW_F1_URL", "http://canonical:5001/mlflow-f1")
     captured = {}
 
     def fake_write_analysis(*args, **kwargs):
@@ -256,3 +274,50 @@ def test_only_canonical_domain_is_exposed() -> None:
         assert help_result.exit_code == 0
         assert "deepscratch" in help_result.output
         assert "ds1_original" not in help_result.output
+
+
+def test_dlfs_cli_respects_mlflow_f1_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    from dlfs.tracking import resolve_tracking_uri
+
+    monkeypatch.delenv("REPRO_TRACKING_URI", raising=False)
+    monkeypatch.delenv("MLFLOW_TRACKING_URI", raising=False)
+    monkeypatch.delenv("MLFLOW_DLFS_URL", raising=False)
+    monkeypatch.delenv("MLFLOW_F1_URL", raising=False)
+    monkeypatch.setenv(
+        "MLFLOW_F1_DATABASE_URL", "postgresql://must-not-be-used/tracking"
+    )
+
+    with pytest.raises(ValueError, match="MLFLOW_F1_URL must be loaded"):
+        resolve_tracking_uri()
+
+    monkeypatch.setenv("MLFLOW_F1_URL", "http://10.0.0.1:5001/mlflow-f1")
+    assert resolve_tracking_uri() == "http://10.0.0.1:5001/mlflow-f1"
+    assert (
+        resolve_tracking_uri("http://10.0.0.1:5001/mlflow-f1/")
+        == "http://10.0.0.1:5001/mlflow-f1"
+    )
+    with pytest.raises(ValueError, match="must match"):
+        resolve_tracking_uri("http://custom:5000")
+
+    monkeypatch.setenv("MLFLOW_DLFS_URL", "http://10.0.0.1:5001/mlflow-dlfs")
+    assert resolve_tracking_uri() == "http://10.0.0.1:5001/mlflow-f1"
+
+    monkeypatch.setenv("MLFLOW_TRACKING_URI", "http://higher-precedence:5000")
+    assert resolve_tracking_uri() == "http://10.0.0.1:5001/mlflow-f1"
+
+
+def test_core_analysis_respects_study_mlflow_urls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from repro_core.analysis.core import DEFAULT_TRACKING_URI, tracking_uri_default
+
+    monkeypatch.delenv("REPRO_TRACKING_URI", raising=False)
+    monkeypatch.delenv("MLFLOW_TRACKING_URI", raising=False)
+    monkeypatch.delenv("MLFLOW_F2_URL", raising=False)
+    monkeypatch.delenv("MLFLOW_DLFS_URL", raising=False)
+    monkeypatch.delenv("MLFLOW_F1_URL", raising=False)
+
+    assert tracking_uri_default() == DEFAULT_TRACKING_URI
+
+    monkeypatch.setenv("MLFLOW_F2_URL", "http://10.0.0.1:5002/mlflow-f2")
+    assert tracking_uri_default() == "http://10.0.0.1:5002/mlflow-f2"
