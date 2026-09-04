@@ -13,17 +13,18 @@ This document specifies the exact lifecycle, storage tiers, and path resolution 
 | `F2_MLFLOW_TRACKING_URI` | F2 MLflow HTTP(S) endpoint | F2 tracked workflows |
 | `F2_MLFLOW_DATABASE_URL` | F2 MLflow PostgreSQL backend credentials | Infrastructure operators only; application code must not read it |
 | `F2_CORPUS_DATABASE_URL` | F2 corpus PostgreSQL application database | F2 corpus CLI |
+| `F2_CATALOG_DATABASE_URL` | F2 catalog PostgreSQL application database | F2 catalog CLI |
 
 A tracking URI is an HTTP(S) application endpoint used by an MLflow client. A
 database URL is a privileged direct PostgreSQL connection string; it must never
 be substituted for a tracking URI or consumed by study runtime code. F1 owns the
-DLFS tracking service, while F2 owns its campaign tracking service and corpus
-database. There is no cross-study or generic fallback.
+DLFS tracking service, while F2 owns its campaign tracking service, corpus
+database, and catalog database. There is no cross-study or generic fallback.
 
 For a tracked study command, resolution is `--tracking-uri`, then that study's
 dedicated environment variable, then a clear error. Resolution trims whitespace
-and removes trailing `/` characters only. F2 corpus commands are not tracked and
-therefore do not expose a tracking option.
+and removes trailing `/` characters only. F2 corpus and catalog commands are not
+tracked and therefore do not expose a tracking option.
 
 Real endpoints and credentials belong in the uncommitted `.env` or the deployment
 secret manager. `.env.example` contains placeholders only. Database credentials
