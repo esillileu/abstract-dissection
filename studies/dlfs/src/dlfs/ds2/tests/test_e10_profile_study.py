@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import matplotlib.pyplot as plt
 from mlflow.tracking import MlflowClient
 
 from dlfs.analysis.orchestrator import write_analysis
@@ -10,6 +11,7 @@ from dlfs.ds2.analysis import e10_word2vec_profile
 from dlfs.ds2.catalog import IMPLEMENTED
 from dlfs.ds2.implemented.executor import ProfileExecutor
 from dlfs.ds2.implemented.spec import parse_run_spec
+from dlfs.execution.selection import CanonicalAttemptSelector
 from dlfs.execution.status import inspect_plan_status
 from dlfs.identity import Variant, Volume
 from repro_core.execution import RunOptions, RunSelection
@@ -70,8 +72,53 @@ def test_e10_analysis_uses_implemented_profiles_and_short_labels() -> None:
     )
 
 
-def test_e10_renderer_selects_durable_profile_runs(tmp_path: Path) -> None:
+def test_e10_basic_graph_orders_ns_then_fs_and_uses_one_larger_legend() -> None:
+    rows = [
+        {"condition": condition, "component": "model_forward", "mean_ms": 1.0}
+        for condition in e10_word2vec_profile.ATOMIC_IDS
+    ]
+    figure, axes = plt.subplots(1, 2, squeeze=False, sharey=True)
+    try:
+        for axis, model in zip(axes[0], ("CBOW", "Skip-gram"), strict=True):
+            e10_word2vec_profile._plot_model(
+                axis,
+                rows,
+                model,
+                title=model,
+                variants=e10_word2vec_profile.BASIC_VARIANTS,
+                show_legend=False,
+            )
+            assert [label.get_text() for label in axis.get_xticklabels()] == [
+                "Negative\nSampling",
+                "Full Softmax",
+            ]
+            assert axis.get_legend() is None
+
+        handles, labels = e10_word2vec_profile._unique_legend_entries(axes[0])
+        legend = axes[0, 0].legend(
+            handles,
+            labels,
+            loc="upper left",
+            fontsize=e10_word2vec_profile.DEFAULT_LEGEND_FONTSIZE,
+        )
+        figure.canvas.draw()
+        assert len(figure.legends) == 0
+        assert axes[0, 0].get_legend() is legend
+        assert axes[0, 1].get_legend() is None
+        assert legend._loc == 2  # matplotlib's "upper left"
+        assert axes[0, 0].get_shared_y_axes().joined(axes[0, 0], axes[0, 1])
+        assert axes[0, 0].get_ylim() == axes[0, 1].get_ylim()
+        assert all(
+            text.get_fontsize() == e10_word2vec_profile.DEFAULT_LEGEND_FONTSIZE
+            for text in legend.get_texts()
+        )
+    finally:
+        plt.close(figure)
+
+
+def test_e10_renderer_selects_durable_profile_runs(tmp_path: Path, monkeypatch) -> None:
     uri = f"sqlite:///{tmp_path / 'mlflow.db'}"
+    monkeypatch.setenv("F1_MLFLOW_TRACKING_URI", uri)
     client = MlflowClient(uri)
     experiment_id = client.create_experiment("deepscratch.ds2")
     for index, subject in enumerate(("original", "implemented"), start=1):
@@ -134,6 +181,7 @@ def test_e10_renderer_selects_durable_profile_runs(tmp_path: Path) -> None:
         variants=(Variant.IMPLEMENTED,),
         output_dir=canonical_output,
         cache_dir=canonical_cache,
+        device="cpu",
     )
     assert (canonical_output / "ds2_e10_imp.png").exists()
     assert (canonical_output / "ds2_e10_imp_cbow.png").exists()
@@ -157,3 +205,37 @@ def test_e10_renderer_selects_durable_profile_runs(tmp_path: Path) -> None:
         expected_protocols={("e10", "PF-W2V-CBOW-ORIGINAL-NS"): "ds2-e10-profile-v1"},
     )
     assert report.counts["completed"] == 1
+
+
+def test_profile_selection_filters_every_run_by_device(tmp_path: Path) -> None:
+    uri = f"sqlite:///{tmp_path / 'selection.db'}"
+    client = MlflowClient(uri)
+    experiment_id = client.create_experiment("deepscratch.ds2")
+    run_ids = {}
+    for device in ("cpu", "cuda:0"):
+        run = client.create_run(
+            experiment_id,
+            tags={
+                "run.type": "profile",
+                "experiment.id": "e10",
+                "atomic_run.id": "PF-W2V-CBOW-IMPLEMENTED-NS",
+                "implementation.variant": "implemented",
+                "result.durable_complete": "true",
+            },
+        )
+        client.log_param(run.info.run_id, "numerics/device", device)
+        client.set_terminated(run.info.run_id, "FINISHED")
+        run_ids[device] = run.info.run_id
+
+    selector = CanonicalAttemptSelector(client, tracking_uri=uri)
+    for device, run_id in run_ids.items():
+        selected = selector.select(
+            Volume.DS2,
+            Variant.IMPLEMENTED,
+            study_id="e10",
+            condition_ids=("PF-W2V-CBOW-IMPLEMENTED-NS",),
+            seed="single",
+            device=device,
+        )
+        assert selected is not None
+        assert selected.run_id == run_id

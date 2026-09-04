@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from repro_mlflow.artifact_cache import tracking_uri_key
 from repro_mlflow.checkpoint_source import resolve_checkpoint_source
 
 
@@ -63,7 +64,7 @@ class _Client:
 def _config() -> dict[str, object]:
     return {
         "seed": 7,
-        "tracking": {"enabled": True, "experiment": "ds2"},
+        "tracking": {"experiment": "ds2"},
         "checkpoint": {
             "source_group_id": "GT07",
             "source_atomic_run_id": "SEQD-ATTN-REV",
@@ -77,16 +78,20 @@ def test_matching_seed_selected_checkpoint_is_downloaded(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
+    monkeypatch.delenv("F1_MLFLOW_TRACKING_URI", raising=False)
     monkeypatch.chdir(tmp_path)
     config = _config()
 
     client = _Client(tmp_path)
-    resolved = resolve_checkpoint_source(config, client=client)
+    resolved = resolve_checkpoint_source(
+        config, tracking_uri="sqlite:///test.db", client=client
+    )
 
     assert resolved == (
         tmp_path
         / ".cache/mlflow_artifact"
-        / "f9413619c3096789/source-run/checkpoints/generations/best-epoch-0001"
+        / tracking_uri_key("sqlite:///test.db")
+        / "source-run/checkpoints/generations/best-epoch-0001"
     )
     assert config["checkpoint"]["source_path"] == str(resolved)
     assert client.requested_artifacts[-1] == ("checkpoints/generations/best-epoch-0001")
@@ -101,6 +106,7 @@ def test_missing_selected_payload_has_an_actionable_error(
     with pytest.raises(ValueError, match="upload_eval_checkpoints=true"):
         resolve_checkpoint_source(
             _config(),
+            tracking_uri="sqlite:///test.db",
             client=_Client(tmp_path, payload=False),
         )
 
@@ -123,7 +129,9 @@ def test_matching_seed_arbitrary_artifact_is_downloaded(
         return str(target)
 
     client.download_artifacts = download
-    resolved = resolve_checkpoint_source(config, client=client)
+    resolved = resolve_checkpoint_source(
+        config, tracking_uri="sqlite:///test.db", client=client
+    )
 
     assert resolved.is_file()
     assert config["checkpoint"]["source_path"] == str(resolved)
@@ -134,4 +142,6 @@ def test_arbitrary_artifact_rejects_parent_traversal(tmp_path: Path) -> None:
     config["checkpoint"]["source_artifact_path"] = "../checkpoint.npz"
 
     with pytest.raises(ValueError, match="invalid checkpoint source artifact"):
-        resolve_checkpoint_source(config, client=_Client(tmp_path))
+        resolve_checkpoint_source(
+            config, tracking_uri="sqlite:///test.db", client=_Client(tmp_path)
+        )

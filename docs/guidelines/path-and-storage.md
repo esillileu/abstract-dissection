@@ -4,7 +4,35 @@ This document specifies the exact lifecycle, storage tiers, and path resolution 
 
 ---
 
-## 1. Storage Tiers & Data Lifecycle
+## 1. Service Connection Contract
+
+| Variable | Value and ownership | Consumer |
+| :--- | :--- | :--- |
+| `F1_MLFLOW_TRACKING_URI` | F1 MLflow HTTP(S) endpoint | DLFS run, check, analyze, and tracked profile workflows |
+| `F1_MLFLOW_DATABASE_URL` | F1 MLflow PostgreSQL backend credentials | Infrastructure operators only; application code must not read it |
+| `F2_MLFLOW_TRACKING_URI` | F2 MLflow HTTP(S) endpoint | F2 tracked workflows |
+| `F2_MLFLOW_DATABASE_URL` | F2 MLflow PostgreSQL backend credentials | Infrastructure operators only; application code must not read it |
+| `F2_CORPUS_DATABASE_URL` | F2 corpus PostgreSQL application database | F2 corpus CLI |
+
+A tracking URI is an HTTP(S) application endpoint used by an MLflow client. A
+database URL is a privileged direct PostgreSQL connection string; it must never
+be substituted for a tracking URI or consumed by study runtime code. F1 owns the
+DLFS tracking service, while F2 owns its campaign tracking service and corpus
+database. There is no cross-study or generic fallback.
+
+For a tracked study command, resolution is `--tracking-uri`, then that study's
+dedicated environment variable, then a clear error. Resolution trims whitespace
+and removes trailing `/` characters only. F2 corpus commands are not tracked and
+therefore do not expose a tracking option.
+
+Real endpoints and credentials belong in the uncommitted `.env` or the deployment
+secret manager. `.env.example` contains placeholders only. Database credentials
+must not appear in logs, CLI arguments, committed configuration, or application
+artifacts.
+
+---
+
+## 2. Storage Tiers & Data Lifecycle
 
 ```mermaid
 flowchart TD
@@ -49,8 +77,6 @@ flowchart TD
     * Final statistical summaries and tables (`summary.md`, `summary.csv`)
     * Specialized corpus feasibility studies (`artifacts/analysis/f2/corpus/`)
     * Detailed observations (`observations.csv`)
-  * `artifacts/runs/<study>/<suite>/<run_id>/`:
-    * Local-only execution fallback (used strictly when MLflow is offline/disabled with `tracking.enabled: false`).
 
 ### 4) `data/` (Canonical Datasets & Corpus Materialization)
 * **Purpose:** Common dataset and corpus storage shared across all studies and packages.
@@ -61,10 +87,10 @@ flowchart TD
 
 ---
 
-## 2. MLflow Server & Database as Single Sources of Truth
+## 3. MLflow Server & Database as Single Sources of Truth
 
-**1) MLflow Server (`infra/mlflow`):**
-All production run artifacts, checkpoints, manifests, and time-series metrics are uploaded to MLflow Server.
+**1) Externally managed MLflow services:**
+All production run artifacts, checkpoints, manifests, and time-series metrics are uploaded to the study-owned MLflow service.
 
 * The project root filesystem does **NOT** store raw run dumps during production runs.
 * MLflow stores:
@@ -90,7 +116,7 @@ All production run artifacts, checkpoints, manifests, and time-series metrics ar
 
 ---
 
-## 3. 3-Tier Dataset Path Resolution Precedence
+## 4. 3-Tier Dataset Path Resolution Precedence
 
 To allow `deepscratch` to run both as a standalone library and inside monorepo studies, dataset paths are resolved using a 3-tier fallback precedence:
 
@@ -117,7 +143,7 @@ def load_ds1_mnist(*, flatten: bool = True, gpu: bool = False, paths=None):
 
 ---
 
-## 4. Environment Variable Overrides
+## 5. Path Environment Variable Overrides
 
 All storage roots can be overridden via environment variables for CI, remote cluster mounting, or high-performance scratch drives:
 
@@ -128,5 +154,3 @@ All storage roots can be overridden via environment variables for CI, remote clu
 | `REPRO_CACHE_ROOT` | `./.cache` | Reconstructible cache storage |
 | `REPRO_STAGING_ROOT` | `./.staging` | Ephemeral scratch directory |
 | `REPRO_REFERENCES_ROOT` | `./references` | Upstream vendored baselines |
-| `F2_CORPUS_DATABASE_URL` | `postgresql://f2_corpus:f2_corpus@localhost:5432/f2_corpus` | Transactional database URI for F2 corpus metadata and audits |
-| `F2_CATALOG_DATABASE_URL` | `postgresql://f2_catalog:f2_catalog@localhost:5432/f2_catalog` | Transactional database URI for F2 reproduction catalog and planned run slots |

@@ -15,7 +15,7 @@ def default_result_root(
     variants: tuple[Variant, ...],
 ) -> Path:
     """Resolve derived analysis output through the workspace path policy."""
-    return RuntimePaths.from_environment(Path.cwd()).analysis_output(
+    return WorkspacePaths.from_environment(Path.cwd()).analysis_output(
         "dlfs", volume.value
     )
 

@@ -16,7 +16,7 @@ recording:
 numerics: {dtype: float32, backend: cupy, device: cuda:0, deterministic: true}
 checkpoint: {save_final: true, save_best: true, format: v2}
 profiling: {enabled: false}
-tracking: {enabled: true, experiment: deepscratch.ds2, upload_eval_checkpoints: true}
+tracking: {experiment: deepscratch.ds2, upload_eval_checkpoints: true}
 variants:
   SEQD-VAN-REV: {run: {structure_signature: date-seq2seq-16-256}, model: {name: Seq2seq, wordvec_size: 16, hidden_size: 256}}
   SEQD-PEEKY-REV: {run: {structure_signature: date-peeky-16-256}, model: {name: PeekySeq2seq, wordvec_size: 16, hidden_size: 256}}

@@ -46,6 +46,8 @@ The `packages/` directory houses independent, reusable Python libraries. Each pa
   * **Verification:** Integrity checksum verification (`_verify_uploaded_manifest`) before marking runs as durable.
   * **Artifact Caching:** Transparent local caching of remote checkpoints and metric payloads (`.cache/mlflow_artifact/`).
   * **YAML Runner:** CLI run orchestration with metadata validation (`run_yaml`).
+* **Non-Goals:** Does not operate MLflow infrastructure, transfer historical runs,
+  or maintain server-side checkpoints.
 
 ---
 

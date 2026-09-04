@@ -20,7 +20,7 @@ recording:
 numerics: {dtype: float64, backend: cupy, device: cuda:0}
 checkpoint: {save_final: true, save_on_eval: false, format: v2}
 profiling: {enabled: false}
-tracking: {enabled: true, experiment: deepscratch.ds1}
+tracking: {experiment: deepscratch.ds1}
 variants:
   SIMPLE-CNN-HE:
     dataset: {id: mnist-image-full, flatten: false}

@@ -14,14 +14,18 @@ from mlflow.tracking import MlflowClient
 from tqdm.auto import tqdm
 
 from repro_core.context.paths import StateCoordinate, StateOwner, WorkspacePaths
+from repro_core.execution import RunOptions, RunSelection
+from repro_core.execution.planning import Planner
 from repro_core.results import ArtifactReference, MetricSeries, NativeRunResult
 from repro_mlflow.artifact_cache import (
     artifact_download_progress,
     tracking_uri_key,
 )
 
+from ..definition import DEFINITION
 from ..execution.selection import CanonicalAttemptSelector
 from ..identity import DeepScratchCoordinate, Variant, Volume
+from ..tracking import resolve_tracking_uri
 from .input import AnalysisRun, StudyAnalysisInput, local_artifact_root
 from .normalization import normalize_declared_metric
 from .paths import result_stem
@@ -40,12 +44,14 @@ def write_analysis(
     output_dir: Path,
     cache_dir: Path | None = None,
     seed: int | None = None,
+    device: str | None = None,
     run_id: str | None = None,
     error_style: str = "band",
     print_summary: bool = False,
     refresh: str | bool | None = None,
     artifact_cache_dir: Path | None = None,
 ) -> Path:
+    tracking_uri = resolve_tracking_uri(tracking_uri)
     if cache_dir is None:
         cache_dir = WorkspacePaths.from_environment(Path.cwd()).resolve(
             StateOwner.CACHE,
@@ -74,7 +80,10 @@ def write_analysis(
     raw_cache_dir = (
         WorkspacePaths.from_environment(Path.cwd()).cache_root / "mlflow_raw"
     )
-    selector = CanonicalAttemptSelector(client, tracking_uri=tracking_uri)
+    selector = CanonicalAttemptSelector(
+        client,
+        tracking_uri=tracking_uri,
+    )
     studies = importlib.import_module(f"dlfs.{volume.value}.result_schema")
     summary_metrics = studies.SUMMARY_METRICS
     studies = studies.STUDIES
@@ -125,13 +134,22 @@ def write_analysis(
             for selected_seed in sorted(seeds, key=_seed_key):
                 attempts = {}
                 for variant in variants:
+                    aliases = condition.aliases(variant)
                     attempt = selector.select(
                         volume,
                         variant,
                         study_id=study_id,
-                        condition_ids=condition.aliases(variant),
+                        condition_ids=aliases,
                         seed=selected_seed,
                         run_id=run_id if len(variants) == 1 else None,
+                        device=_canonical_device(
+                            volume,
+                            variant,
+                            study_id=study_id,
+                            condition_ids=aliases,
+                        )
+                        if device is None
+                        else device,
                     )
                     attempts[variant] = attempt
                 selections.append((study_id, condition, selected_seed, attempts))
@@ -155,6 +173,7 @@ def write_analysis(
         summary_metrics=summary_metrics,
         seed=seed,
         run_id=run_id,
+        device=device,
         selections=selections,
     )
     analysis_path = cache_dir / "analysis_input.json"
@@ -311,6 +330,7 @@ def _cache_signature(
     summary_metrics,
     seed,
     run_id,
+    device,
     selections,
 ) -> dict[str, object]:
     runs = []
@@ -346,6 +366,7 @@ def _cache_signature(
         "variants": [variant.value for variant in variants],
         "seed": seed,
         "run_id": run_id,
+        "device": device,
         "summary_metrics": {
             study_id: [
                 {
@@ -363,6 +384,32 @@ def _cache_signature(
         },
         "runs": runs,
     }
+
+
+def _canonical_device(
+    volume: Volume,
+    variant: Variant,
+    *,
+    study_id: str,
+    condition_ids: tuple[str, ...],
+) -> str | None:
+    """Resolve analysis selection through the execution catalog's device policy."""
+    if not condition_ids:
+        return None
+    plans = Planner(DEFINITION.implementation(volume, variant)).build(
+        RunSelection(
+            experiment_ids=(study_id,),
+            atomic_run_ids=(condition_ids[0],),
+        ),
+        RunOptions(),
+    )
+    devices = {plan.device for plan in plans}
+    if len(devices) != 1:
+        raise ValueError(
+            "analysis coordinate has multiple canonical devices: "
+            f"{study_id}/{condition_ids[0]}: {sorted(devices)}"
+        )
+    return next(iter(devices))
 
 
 def _load_analysis_cache(

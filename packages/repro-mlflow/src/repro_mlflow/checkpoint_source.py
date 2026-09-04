@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import csv
-import os
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +14,7 @@ class CheckpointSourceRunNotFound(ValueError):
 def resolve_checkpoint_source(
     config: dict[str, object],
     *,
+    tracking_uri: str,
     client: Any | None = None,
 ) -> Path | None:
     """Resolve a matching-seed source checkpoint and update ``source_path``.
@@ -43,6 +43,7 @@ def resolve_checkpoint_source(
     return resolve_checkpoint_source_in_experiment(
         config,
         experiment_name=experiment_name,
+        tracking_uri=tracking_uri,
         client=client,
     )
 
@@ -51,6 +52,7 @@ def resolve_checkpoint_source_in_experiment(
     config: dict[str, object],
     *,
     experiment_name: str,
+    tracking_uri: str,
     client: Any | None = None,
 ) -> Path:
     """Resolve a declared source from one explicit MLflow experiment.
@@ -66,10 +68,6 @@ def resolve_checkpoint_source_in_experiment(
     if not source_group or not source_atomic:
         raise ValueError("checkpoint source resolution requires source coordinates")
 
-    tracking = config.get("tracking", {})
-    tracking_uri = os.getenv("MLFLOW_TRACKING_URI") or str(
-        tracking.get("uri", "http://127.0.0.1:5000")
-    )
     if client is None:
         from mlflow.tracking import MlflowClient
 

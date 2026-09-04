@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 from collections.abc import Callable
 from pathlib import Path
 
@@ -31,7 +30,6 @@ from dlfs.ds1.implemented.final_gap import (
 )
 from dlfs.ds1.implemented.spec import parse_run_spec
 
-DEFAULT_TRACKING_URI = "http://127.0.0.1:5000"
 TARGET_NAMES = {
     "e06": ("GT06", "CNN-SIMPLE-BOOK"),
     "e07": ("GT07", "CNN-DEEP-BOOK"),
@@ -240,9 +238,9 @@ def main() -> None:
 
     from mlflow.tracking import MlflowClient
 
-    tracking_uri = (
-        args.tracking_uri or os.getenv("MLFLOW_TRACKING_URI") or DEFAULT_TRACKING_URI
-    )
+    from dlfs.tracking import resolve_tracking_uri
+
+    tracking_uri = resolve_tracking_uri(args.tracking_uri)
     client = MlflowClient(tracking_uri=tracking_uri)
     targets = (
         {TARGET_NAMES[name] for name in args.target}

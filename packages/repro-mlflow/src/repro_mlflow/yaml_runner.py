@@ -35,9 +35,8 @@ def run_yaml(
     executor_module: str | None = None,
     spec_module: str | None = None,
     progress_reporter: ProgressReporter | None = None,
-    checkpoint_source_resolver: Callable[
-        [dict[str, object]], Path | None
-    ] = resolve_checkpoint_source,
+    tracking_uri: str,
+    checkpoint_source_resolver: Callable[..., Path | None] = resolve_checkpoint_source,
 ):
     """Run a domain YAML and upload the CSV-backed record to MLflow."""
     if spec_module is None:
@@ -59,8 +58,13 @@ def run_yaml(
         checkpoint = config["checkpoint"]
         assert isinstance(checkpoint, dict)
         checkpoint["resume"] = resume
-    record = SchemaV1Run(config)
-    checkpoint_source_resolver(config)
+    tracking = config.get("tracking")
+    if not isinstance(tracking, dict) or tracking.get("enabled") is False:
+        raise ValueError("run_yaml requires MLflow tracking")
+    if not tracking.get("experiment"):
+        raise ValueError("run_yaml requires tracking.experiment")
+    record = SchemaV1Run(config, tracking_uri=tracking_uri)
+    checkpoint_source_resolver(config, tracking_uri=tracking_uri)
     runtime = record.runtime()
     if progress_reporter is not None:
         runtime.sink.console_writer = progress_reporter.write
@@ -144,7 +148,7 @@ def run_yaml(
     write_json(
         record.artifact_root / "runtime" / "upload_summary.json",
         {
-            "uploaded": not errors and bool(config["tracking"].get("enabled", True)),
+            "uploaded": not errors,
             "errors": errors,
             "artifact_root": str(record.artifact_root),
         },
@@ -153,9 +157,5 @@ def run_yaml(
         result=result,
         run_id=runtime.sink.run_id,
         staging_root=record.artifact_root.parent,
-        durable_complete=(
-            bool(config["tracking"].get("enabled", True))
-            and runtime.sink.run_id is not None
-            and not errors
-        ),
+        durable_complete=runtime.sink.run_id is not None and not errors,
     )

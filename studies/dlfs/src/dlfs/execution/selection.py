@@ -16,6 +16,7 @@ from repro_mlflow.artifact_cache import MlflowArtifactCache
 
 from ..analysis.declarations import MetricDeclaration
 from ..identity import Variant, Volume
+from ..tracking import tracking_uri as canonical_tracking_uri
 
 
 @dataclass(frozen=True)
@@ -52,7 +53,7 @@ class CanonicalAttemptSelector:
         resolved_tracking_uri = tracking_uri or getattr(client, "tracking_uri", None)
         self._artifact_cache = MlflowArtifactCache(
             client,
-            str(resolved_tracking_uri or "http://127.0.0.1:5000"),
+            str(resolved_tracking_uri or canonical_tracking_uri()),
         )
         self._attempt_cache: dict[tuple[Volume, Variant], tuple[AttemptRef, ...]] = {}
 
@@ -168,8 +169,7 @@ class CanonicalAttemptSelector:
             candidates = [
                 item
                 for item in candidates
-                if item.run_type != "seed_trial"
-                or self._run_device(item.run_id) == selected_device
+                if self._run_device(item.run_id) == selected_device
             ]
         if run_id is not None:
             selected = next(

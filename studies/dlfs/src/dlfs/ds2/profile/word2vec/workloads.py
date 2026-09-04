@@ -417,7 +417,7 @@ def _implemented_components(
     return (
         model_class,
         adapter,
-        False,
+        model_name == "SkipGram" and one_hot and objective_name == "FullSoftmax",
     )
 
 

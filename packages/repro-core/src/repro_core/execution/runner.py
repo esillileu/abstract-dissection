@@ -3,13 +3,10 @@
 from __future__ import annotations
 
 import importlib
-import os
 import shutil
 import warnings
 from collections.abc import Callable
 from pathlib import Path
-from urllib.error import URLError
-from urllib.request import urlopen
 
 from .definition import ExecutionDefinition, RunOptions, RunPlan
 
@@ -28,6 +25,7 @@ class Runner:
         plans: list[RunPlan],
         options: RunOptions,
         *,
+        tracking_uri: str,
         run_fn: Callable[..., object] | None = None,
     ) -> None:
         runner_fn = run_fn or self._run_fn
@@ -35,7 +33,6 @@ class Runner:
             raise ValueError(
                 "Runner requires an execution runner function (e.g. run_yaml)"
             )
-        self._require_tracking_server(plans, options.overrides)
         self._require_devices(plans)
         from repro_core.context.progress import ProgressManager, RunProgressContext
 
@@ -86,6 +83,7 @@ class Runner:
                         executor_module=self.domain.executor_module,
                         spec_module=self.domain.spec_module,
                         progress_reporter=reporter,
+                        tracking_uri=tracking_uri,
                         **run_kwargs,
                     )
                     receipts.append(receipt)
@@ -100,33 +98,6 @@ class Runner:
                 staging_root = getattr(receipt, "staging_root", None)
                 if staging_root is not None:
                     _remove_durable_staging(staging_root)
-
-    def _require_tracking_server(
-        self, plans: list[RunPlan], overrides: dict[str, object]
-    ) -> None:
-        uris = set()
-        for plan in plans:
-            config = self.domain.load_run_spec(
-                plan.path, atomic_run_id=plan.atomic_run_id, overrides=overrides
-            ).to_executor_config()
-            tracking = config.get("tracking", {})
-            if isinstance(tracking, dict) and tracking.get("enabled", True):
-                uris.add(
-                    os.getenv("REPRO_TRACKING_URI")
-                    or os.getenv("MLFLOW_TRACKING_URI")
-                    or str(tracking.get("uri", "http://127.0.0.1:5000"))
-                )
-        for uri in sorted(uris):
-            try:
-                with urlopen(f"{uri.rstrip('/')}/health", timeout=5) as response:
-                    if response.status != 200:
-                        raise RuntimeError(
-                            f"Tracking server health check returned HTTP {response.status}"
-                        )
-            except (OSError, URLError) as exc:
-                raise RuntimeError(
-                    f"Tracking server is unavailable at {uri}. Start it before running plans."
-                ) from exc
 
     @staticmethod
     def _require_devices(plans: list[RunPlan]) -> None:

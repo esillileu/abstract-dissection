@@ -10,9 +10,10 @@ from repro_core.cli import app
 
 
 def test_comparison_table_marks_absent_native_metric_unavailable(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch
 ) -> None:
     uri = f"sqlite:///{tmp_path / 'mlflow.db'}"
+    monkeypatch.setenv("F1_MLFLOW_TRACKING_URI", uri)
     client = MlflowClient(uri)
     canonical_id = client.create_experiment("deepscratch.ds2")
     common = {
@@ -20,7 +21,7 @@ def test_comparison_table_marks_absent_native_metric_unavailable(
         "experiment.id": "e03",
         "master_seed": "1",
         "protocol.version": "book-source-v1",
-        "runtime.device": "cpu",
+        "runtime.device": "cuda:0",
     }
     implemented = client.create_run(
         canonical_id,
@@ -69,8 +70,11 @@ def test_comparison_table_marks_absent_native_metric_unavailable(
     assert perplexity["original_value"] == ""
 
 
-def test_cli_variants_share_the_normalized_analysis_path(tmp_path: Path) -> None:
+def test_cli_variants_share_the_normalized_analysis_path(
+    tmp_path: Path, monkeypatch
+) -> None:
     uri = f"sqlite:///{tmp_path / 'cli-mlflow.db'}"
+    monkeypatch.setenv("F1_MLFLOW_TRACKING_URI", uri)
     client = MlflowClient(uri)
     canonical_id = client.create_experiment("deepscratch.ds2")
     common = {
@@ -78,7 +82,7 @@ def test_cli_variants_share_the_normalized_analysis_path(tmp_path: Path) -> None
         "experiment.id": "e03",
         "master_seed": "1",
         "protocol.version": "book-source-v1",
-        "runtime.device": "cpu",
+        "runtime.device": "cuda:0",
     }
     implemented = client.create_run(
         canonical_id,

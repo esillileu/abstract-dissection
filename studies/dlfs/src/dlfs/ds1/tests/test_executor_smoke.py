@@ -72,7 +72,6 @@ def test_ds1_supervised_config_runs_one_update(
                 "device": "cpu",
                 "dtype": "float64",
             },
-            "tracking": {"enabled": False},
         },
     )
     config = spec.to_executor_config()
@@ -118,7 +117,6 @@ def test_extended_mlp_with_batchnorm_dropout_and_weight_decay_runs_one_update(
                 "device": "cpu",
                 "dtype": "float64",
             },
-            "tracking": {"enabled": False},
         },
     )
     config = spec.to_executor_config()
@@ -148,7 +146,6 @@ def test_ds1_optimizer_observation_config_runs(
         atomic_run_id="TOY-SGD",
         overrides={
             "budget": {"max_updates": 2},
-            "tracking": {"enabled": False},
         },
     )
     config = spec.to_executor_config()
@@ -174,7 +171,6 @@ def test_ds1_activation_observation_config_runs(
         atomic_run_id="ACT-RELU-HE",
         overrides={
             "model": {"width": 4, "depth": 2},
-            "tracking": {"enabled": False},
         },
     )
     config = spec.to_executor_config()
@@ -207,7 +203,6 @@ def test_ds1_gradient_check_observation_runs(
         atomic_run_id="TWO-LAYER-GRADIENT-CHECK",
         overrides={
             "model": {"input_size": 4, "hidden_size": 3, "output_size": 2},
-            "tracking": {"enabled": False},
         },
     )
     config = spec.to_executor_config()

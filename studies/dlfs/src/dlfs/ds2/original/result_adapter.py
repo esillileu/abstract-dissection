@@ -2,7 +2,6 @@
 
 import csv
 import json
-import os
 from dataclasses import replace
 from pathlib import Path
 
@@ -10,6 +9,7 @@ import numpy as np
 from mlflow.exceptions import MlflowException
 
 from dlfs.identity import Variant
+from dlfs.tracking import tracking_uri as canonical_tracking_uri
 from repro_core.context.paths import WorkspacePaths
 from repro_core.results import MlflowResultStore
 from repro_mlflow.artifact_cache import MlflowArtifactCache
@@ -60,9 +60,7 @@ def _attention_projection(
     if csv_path.is_file() and render_path.is_file():
         return csv_path.resolve(), render_path.resolve()
     try:
-        tracking_uri = getattr(client, "tracking_uri", None) or os.getenv(
-            "MLFLOW_TRACKING_URI", "http://127.0.0.1:5000"
-        )
+        tracking_uri = getattr(client, "tracking_uri", None) or canonical_tracking_uri()
         cache = artifact_cache or MlflowArtifactCache(client, str(tracking_uri))
         arrays_path = cache.get(run_id, "raw/attention.npz")
         labels_path = cache.get(run_id, "raw/labels.csv")
@@ -121,9 +119,7 @@ def _word2vec_checkpoint_projection(
     if manifest_path.is_file() and weights_path.is_file():
         return manifest_path.resolve()
     try:
-        tracking_uri = getattr(client, "tracking_uri", None) or os.getenv(
-            "MLFLOW_TRACKING_URI", "http://127.0.0.1:5000"
-        )
+        tracking_uri = getattr(client, "tracking_uri", None) or canonical_tracking_uri()
         cache = artifact_cache or MlflowArtifactCache(client, str(tracking_uri))
         source = cache.get(run_id, "raw/checkpoint.npz")
         with np.load(source, allow_pickle=False) as archive:

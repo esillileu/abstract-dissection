@@ -7,7 +7,7 @@ execution: {mode: seeded, default_device: cuda:0}
 seed_policy: {seed_set: research_v1, seed_count: 10}
 dataset: {id: addition, cache: canonical, split_seed: 1984}
 numerics: {backend: cupy, device: cuda:0}
-tracking: {enabled: true, experiment: deepscratch.ds2}
+tracking: {experiment: deepscratch.ds2}
 checkpoint: {save_final: false}
 variants:
   SEQ2SEQ-FORWARD: {trial_id: dlfs2.ch07.addition.seq2seq-forward}

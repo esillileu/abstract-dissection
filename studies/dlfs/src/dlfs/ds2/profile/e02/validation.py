@@ -25,8 +25,10 @@ from deepscratch.nn.model.architecture import (
 from deepscratch.nn.objective import FusedNegativeSampling, NegativeSampling
 from deepscratch.optim.SGD import Adam
 
-DEFAULT_OUTPUT = Path("exp/deepscratch/ds2/profile/e02/results/fused_validation.json")
-DEFAULT_REPORT = Path("exp/deepscratch/ds2/profile/e02/results/fused_validation.md")
+from ..paths import profile_analysis
+
+DEFAULT_OUTPUT = profile_analysis("e02") / "fused_validation.json"
+DEFAULT_REPORT = profile_analysis("e02") / "fused_validation.md"
 LOSS_CEILING = 1e-5
 GRADIENT_CEILING = 1e-4
 PARAMETER_CEILING = 1e-4

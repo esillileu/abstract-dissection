@@ -15,7 +15,7 @@ recording:
 numerics: {dtype: float32, backend: cupy, device: cuda:0, deterministic: true}
 checkpoint: {save_final: true, save_best: false, format: v2}
 profiling: {enabled: false}
-tracking: {enabled: true, experiment: deepscratch.ds2}
+tracking: {experiment: deepscratch.ds2}
 variants:
   W2V-TOY-CBOW-FULL: {}
   W2V-TOY-SKIPGRAM-FULL: {run: {recipe_id: ds2-gt01-toy-skipgram, structure_signature: toy-skipgram-full-softmax-w1-e5}, model: {name: SkipGram}}

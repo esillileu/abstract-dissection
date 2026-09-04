@@ -17,13 +17,6 @@ dist/
 /.cache/
 /.staging/
 
-# Local MLflow server data & exports
-infra/mlflow/data/
-infra/mlflow/data-next/
-infra/mlflow/archive/
-infra/mlflow/migration-work/
-infra/mlflow/exports/
-
 # Binary data & caches
 *.pkl
 *.pickle

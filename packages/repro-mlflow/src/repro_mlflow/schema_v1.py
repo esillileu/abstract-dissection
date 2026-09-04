@@ -35,12 +35,6 @@ from .runtime import (
     write_text,
 )
 
-# Per-domain run material is deliberately kept outside MLflow's own artifact
-# store. MLflow receives the lightweight record, while the local workspace is
-# pleasant to browse and safe to clean independently.
-# Explicitly patched by old callers/tests. New runs use WorkspacePaths.
-ARTIFACT_ROOT: Path | None = None
-
 
 def _storage_domain(value: object) -> str:
     """Make the tracking experiment safe to use as a local directory name."""
@@ -69,8 +63,11 @@ def seed_config(master_seed: int) -> dict[str, int]:
 class SchemaV1Run:
     """Owns the full legacy-compatible record for one YAML experiment."""
 
-    def __init__(self, config: dict[str, object]) -> None:
+    def __init__(self, config: dict[str, object], *, tracking_uri: str) -> None:
         self.config = normalize_config(config)
+        self.tracking_uri = tracking_uri.rstrip("/")
+        if not self.tracking_uri:
+            raise ValueError("SchemaV1Run requires a tracking URI")
         self.seed = int(self.config["seed"])
         self.seeds = seed_config(self.seed)
         policy = _section(self.config, "policy")
@@ -82,58 +79,36 @@ class SchemaV1Run:
         self.condition = build_condition_config(self.config, self.git_info)
         self.identity = build_identity(self.config, self.condition, self.seeds)
         tracking = _section(self.config, "tracking")
-        self.storage_domain = _storage_domain(
-            tracking.get(
-                "experiment", os.getenv("MLFLOW_EXPERIMENT_NAME", "mlprosection")
-            )
-        )
-        if ARTIFACT_ROOT is not None:
-            domain_root = ARTIFACT_ROOT / self.storage_domain / "results"
-            self.artifact_root = (
-                domain_root / "mlflow_artifacts" / self.identity.run_key
-            )
-            self.local_checkpoint_root = (
-                domain_root / "checkpoints" / self.identity.run_key
-            )
-        else:
-            from repro_core.context.paths import WorkspacePaths
+        experiment = tracking.get("experiment")
+        if not experiment:
+            raise ValueError("tracking.experiment is required")
+        if tracking.get("enabled") is False:
+            raise ValueError("tracking cannot be disabled")
+        self.storage_domain = _storage_domain(experiment)
+        from repro_core.context.paths import WorkspacePaths
 
-            declared_tags = tracking.get("tags", {})
-            tags = declared_tags if isinstance(declared_tags, dict) else {}
-            domain = str(tags.get("domain.name", self.storage_domain))
-            suite = str(tags.get("suite.name", self.storage_domain))
-            study = str(self.identity.experiment_ids[0])
-            variant = str(tags.get("implementation.variant", "implemented"))
-            staging = WorkspacePaths.from_environment(Path.cwd()).run_staging(
-                domain=domain,
-                suite=suite,
-                study=study,
-                variant=variant,
-                run_key=self.identity.run_key,
-            )
-            self.artifact_root = staging / "record"
-            self.local_checkpoint_root = staging / "checkpoints"
+        declared_tags = tracking.get("tags", {})
+        tags = declared_tags if isinstance(declared_tags, dict) else {}
+        domain = str(tags.get("domain.name", self.storage_domain))
+        suite = str(tags.get("suite.name", self.storage_domain))
+        study = str(self.identity.experiment_ids[0])
+        variant = str(tags.get("implementation.variant", "implemented"))
+        staging = WorkspacePaths.from_environment(Path.cwd()).run_staging(
+            domain=domain,
+            suite=suite,
+            study=study,
+            variant=variant,
+            run_key=self.identity.run_key,
+        )
+        self.artifact_root = staging / "record"
+        self.local_checkpoint_root = staging / "checkpoints"
 
     def runtime(self, *, model: Any | None = None) -> ExperimentRun:
         tracking = _section(self.config, "tracking")
         return ExperimentRun(
             options=RuntimeOptions(
-                tracking_uri=(
-                    os.getenv("MLFLOW_TRACKING_URI")
-                    or str(
-                        tracking.get(
-                            "uri",
-                            "http://127.0.0.1:5000",
-                        )
-                    )
-                ),
-                experiment_name=str(
-                    tracking.get(
-                        "experiment",
-                        os.getenv("MLFLOW_EXPERIMENT_NAME", "mlprosection"),
-                    )
-                ),
-                mlflow_enabled=bool(tracking.get("enabled", True)),
+                tracking_uri=self.tracking_uri,
+                experiment_name=str(tracking["experiment"]),
                 upload_checkpoint=bool(tracking.get("upload_checkpoint", True)),
                 upload_eval_checkpoints=bool(
                     tracking.get("upload_eval_checkpoints", True)
