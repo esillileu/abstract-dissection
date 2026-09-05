@@ -12,13 +12,17 @@ def get_migrations_dir() -> Path:
     return Path(__file__).parent
 
 
-def run_catalog_migrations(conn: psycopg.Connection[Any]) -> list[str]:
+def run_catalog_migrations(
+    conn: psycopg.Connection[Any], schema: str = "catalog"
+) -> list[str]:
     """Execute all pending SQL migrations in ascending order inside a transaction."""
     applied: list[str] = []
     migrations_dir = get_migrations_dir()
 
     with conn.transaction():
         with conn.cursor() as cur:
+            cur.execute(f"CREATE SCHEMA IF NOT EXISTS {schema};")
+            cur.execute(f"SET search_path TO {schema}, public;")
             # Ensure schema_migrations table exists
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS schema_migrations (

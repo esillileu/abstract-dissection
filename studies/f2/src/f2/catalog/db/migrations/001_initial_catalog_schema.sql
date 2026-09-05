@@ -82,7 +82,11 @@ CREATE TABLE IF NOT EXISTS resource_versions (
 DO $$
 BEGIN
     IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint WHERE conname = 'fk_resources_canonical_version'
+        SELECT 1 FROM pg_constraint c
+        JOIN pg_class t ON c.conrelid = t.oid
+        JOIN pg_namespace n ON t.relnamespace = n.oid
+        WHERE c.conname = 'fk_resources_canonical_version'
+          AND n.nspname = current_schema()
     ) THEN
         ALTER TABLE resources
             ADD CONSTRAINT fk_resources_canonical_version

@@ -12,7 +12,7 @@ import psycopg
 
 
 class CatalogDatabaseConfigError(Exception):
-    """Raised when F2_CATALOG_DATABASE_URL is missing or invalid."""
+    """Raised when F2_DATABASE_URL or F2_CATALOG_DATABASE_URL is missing or invalid."""
 
 
 @dataclass(frozen=True)
@@ -21,17 +21,21 @@ class CatalogDatabaseConfig:
 
     @classmethod
     def from_environment(cls) -> CatalogDatabaseConfig:
-        url = os.getenv("F2_CATALOG_DATABASE_URL")
+        url = os.getenv("F2_DATABASE_URL")
         if not url:
             try:
                 from dotenv import load_dotenv
 
-                load_dotenv()
-                url = os.getenv("F2_CATALOG_DATABASE_URL")
+                load_dotenv(override=True)
+                url = os.getenv("F2_DATABASE_URL") or os.getenv(
+                    "F2_CATALOG_DATABASE_URL"
+                )
             except Exception:
                 pass
         if not url:
-            url = "postgresql://f2_catalog:f2_catalog@localhost:5432/f2_catalog"
+            url = os.getenv("F2_CATALOG_DATABASE_URL")
+        if not url:
+            url = "postgresql://f2:f2@localhost:5432/f2"
         return cls(connection_url=url)
 
 
@@ -44,7 +48,7 @@ def get_connection(
     connection_url: str | None = None,
 ) -> Generator[psycopg.Connection[Any], None, None]:
     url = connection_url or get_catalog_db_url()
-    with psycopg.connect(url) as conn:
+    with psycopg.connect(url, options="-c search_path=catalog,public") as conn:
         yield conn
 
 
@@ -53,6 +57,6 @@ def transaction(
     connection_url: str | None = None,
 ) -> Generator[psycopg.Connection[Any], None, None]:
     url = connection_url or get_catalog_db_url()
-    with psycopg.connect(url) as conn:
+    with psycopg.connect(url, options="-c search_path=catalog,public") as conn:
         with conn.transaction():
             yield conn

@@ -18,7 +18,7 @@ from repro_core.execution.definition import RunPlan
 
 @pytest.fixture
 def catalog_db_conn():
-    url = os.getenv("F2_CATALOG_DATABASE_URL") or get_catalog_db_url()
+    url = get_catalog_db_url()
     try:
         with get_connection(url) as conn:
             run_catalog_migrations(conn)
