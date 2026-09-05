@@ -12,7 +12,7 @@ import psycopg
 
 
 class DatabaseConfigError(Exception):
-    """Raised when F2_CORPUS_DATABASE_URL is missing or invalid."""
+    """Raised when F2_DATABASE_URL or F2_CORPUS_DATABASE_URL is missing or invalid."""
 
 
 @dataclass(frozen=True)
@@ -21,11 +21,21 @@ class DatabaseConfig:
 
     @classmethod
     def from_environment(cls) -> DatabaseConfig:
-        url = os.getenv("F2_CORPUS_DATABASE_URL")
+        url = os.getenv("F2_DATABASE_URL")
         if not url:
-            raise DatabaseConfigError(
-                "Environment variable 'F2_CORPUS_DATABASE_URL' is required but not set."
-            )
+            try:
+                from dotenv import load_dotenv
+
+                load_dotenv(override=True)
+                url = os.getenv("F2_DATABASE_URL") or os.getenv(
+                    "F2_CORPUS_DATABASE_URL"
+                )
+            except Exception:
+                pass
+        if not url:
+            url = os.getenv("F2_CORPUS_DATABASE_URL")
+        if not url:
+            url = "postgresql://f2:f2@localhost:5432/f2"
         return cls(connection_url=url)
 
 
@@ -38,7 +48,7 @@ def get_connection(
     connection_url: str | None = None,
 ) -> Generator[psycopg.Connection[Any], None, None]:
     url = connection_url or get_db_url()
-    with psycopg.connect(url) as conn:
+    with psycopg.connect(url, options="-c search_path=corpus,public") as conn:
         yield conn
 
 
@@ -47,6 +57,6 @@ def transaction(
     connection_url: str | None = None,
 ) -> Generator[psycopg.Connection[Any], None, None]:
     url = connection_url or get_db_url()
-    with psycopg.connect(url) as conn:
+    with psycopg.connect(url, options="-c search_path=corpus,public") as conn:
         with conn.transaction():
             yield conn
