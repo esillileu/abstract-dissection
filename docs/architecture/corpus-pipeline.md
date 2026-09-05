@@ -27,13 +27,13 @@ studies/f2/
         ├── storage.py                 # Provenance export & clean text shard writers
         ├── analysis.py                # Two-Phase Stratified Difference Estimator & Bootstrap
         ├── calibration.py             # Offline classifier calibration & pre-fetch filter ablation
-        └── db/                        # PostgreSQL migrations, schema, session, and repository layer
             ├── migrations/
             │   ├── 001_initial_schema.sql
             │   ├── 002_add_prefetch_reject_stream.sql
+            │   ├── 003_corpus_lifecycle_lineage_and_validation.sql
             │   └── runner.py
-            ├── repository.py          # CorpusStateRepository (bulk insertion, transaction-safe audit logging)
-            └── session.py             # Connection pooling (F2_CORPUS_DATABASE_URL)
+            ├── repository.py          # CorpusStateRepository (sampling, auditing, lifecycle DAG lineage & validation)
+            └── session.py             # Connection pooling (F2_DATABASE_URL / F2_CORPUS_DATABASE_URL)
 ```
 
 ---
@@ -61,7 +61,71 @@ $$\hat{W}_{\text{true}, c} = \hat{W}_{\text{proxy}, c} + \hat{E}_c = \sum_{i \in
 
 ---
 
-## 3. CLI Command Reference
+## 3. Generic Corpus Lifecycle, Multi-Hop Lineage & Validation Architecture
+
+Migration `003_corpus_lifecycle_lineage_and_validation.sql` formalizes the end-to-end lifecycle and provenance model:
+
+$$\text{catalog release} \xrightarrow{\text{acquire}} \text{raw artifact} \xrightarrow{\text{multi-stage process}} \text{canonical shard(s)} \xrightarrow{\text{package}} \text{corpus version} \xrightarrow{\text{validate}} \text{validation evidence}$$
+
+```mermaid
+flowchart LR
+    subgraph Catalog [1. Source Identity]
+        CR[catalog.resources] --> CRV[catalog.resource_versions]
+    end
+
+    subgraph Acquisition [2. Ingestion]
+        CRV -->|catalog_resource_version_id| AR[corpus.acquisition_runs]
+        AR -->|produces| ART_RAW[corpus.artifacts\n(raw dump / tar / arc)]
+    end
+
+    subgraph Processing [3. Multi-Hop DAG]
+        ART_RAW -->|input_role: raw_archive| PR1[corpus.processing_runs\nStage: extract]
+        PR1 -->|output_role: extracted_text| ART_EXT[corpus.artifacts\n(extracted docs)]
+        ART_EXT -->|input_role: dirty_text| PR2[corpus.processing_runs\nStage: normalize]
+        PR2 -->|output_role: clean_text| ART_NORM[corpus.artifacts\n(normalized docs)]
+        ART_NORM -->|input_role: uncompressed| PR3[corpus.processing_runs\nStage: shard]
+        PR3 -->|output_role: canonical_shard| ART_SHARD[corpus.artifacts\n(sharded gz / zst)]
+    end
+
+    subgraph Packaging [4. Corpus Release]
+        ART_SHARD -->|artifact_id| CS[corpus.corpus_shards]
+        CS --> CV[corpus.corpus_versions\ne.g., news_1b:v1]
+    end
+
+    subgraph Validation [5. Provenance & Evidence]
+        VP[corpus.validation_profiles\nImmutable Trigger Protected] --> VR[corpus.validation_runs]
+        VR -.->|target: run| PR2
+        VR -.->|target: artifact| ART_SHARD
+        VR -.->|target: version| CRV
+        VR --> VC[corpus.validation_checks\nMetrics, Thresholds, Diffs]
+    end
+```
+
+### 1) Storage Distribution & Single Source of Truth
+* **PostgreSQL (`f2`):** SSOT for metadata, content hashes (SHA-256), schema constraints, lineage DAG edges, and validation records.
+* **SeaweedFS S3:** Immutable object store for actual archive binaries, intermediate text chunks, and canonical shards (`s3://...`).
+* **Catalog Identity SSOT:** All generic sources (WMT News Crawl, LM1B, Gigaword, UMBC, Wikipedia, Common Crawl) are registered exclusively in `catalog.resources` and `catalog.resource_versions`. Corpus lifecycle tables reference `catalog.resource_versions(resource_version_id)` via strict foreign keys without duplicating source definitions.
+
+### 2) Core Entities & Relational Design
+* **Acquisition Layer (`corpus.acquisition_runs`):** Captures source snapshots, acquisition method (`crawler`, `dump_download`, `api`, `torrent`, `manual_archive`), parameters, target S3 prefix, status, and error logs.
+* **Immutable Artifact Registry (`corpus.artifacts`):** Records all raw, intermediate, and terminal files with immutable SHA-256 digests, size, row counts, byte counts, and token counts.
+* **Multi-Hop Processing Lineage (`corpus.processing_runs`, `processing_run_inputs`, `processing_run_outputs`):** Arbitrary-depth DAG support connecting processing runs to input/output artifacts with role semantics (`input_role`, `output_role`) such as `primary_text`, `vocabulary`, `filtered_output`, `reject_stream`.
+* **Corpus Versioning & Sharding (`corpus.corpus_shards`, `corpus_version_stats`):** Packages sharded canonical artifacts into a frozen release version registered under `catalog.resource_versions` with aggregate document, token, and byte counters.
+* **Validation Provenance (`corpus.validation_profiles`, `validation_runs`, `validation_checks`):**
+  * **Target Referential Integrity:** Mutually exclusive non-null foreign keys (`target_processing_run_id`, `target_artifact_id`, `target_resource_version_id`) with CHECK constraint `ck_validation_runs_target` and generated column `target_id`.
+  * **Profile Immutability:** Protected by PostgreSQL trigger `prevent_validation_profile_modification` preventing UPDATE of specification, spec_hash, and identity fields on existing revisions.
+  * **Detailed Evidence:** Records individual validation rules, pass/fail status, expected/actual metrics, thresholds, and diagnostic JSON payloads.
+* **Common Crawl Lineage Bridge (`corpus.pipeline_run_lineage`):** Dedicated identity PK (`lineage_id`) with partial unique indexes (`pipeline_run_id`, `stage`) allowing safe retries and bridging Common Crawl operational pipeline runs to standard lifecycle acquisition/processing runs.
+
+### 3) Provenance Invariants & Recursive Lineage Traversal
+* **Strict Provenance Retention:** All historical provenance entities (`resource_versions`, `acquisition_runs`, `processing_runs`, `artifacts`, `corpus_shards`) enforce `ON DELETE RESTRICT`. Accidental deletion of any participant in a lineage chain is rejected at the database level.
+* **Multi-Hop Recursive CTE Traversal:**
+  * **Reverse Lineage (`get_reverse_lineage`):** Traverses upstream through arbitrarily deep processing hops from any shard or intermediate artifact back to its originating raw artifact and catalog resource version. Includes cycle protection `a_up.artifact_id <> ALL(rd.path)`.
+  * **Forward Lineage (`get_forward_lineage`):** Traverses downstream from any raw or intermediate artifact to inspect all derived processing runs, child artifacts, and corpus releases affected.
+
+---
+
+## 4. CLI Command Reference
 
 All corpus operations are executed via `uv run repro f2 corpus <subcommand>`:
 

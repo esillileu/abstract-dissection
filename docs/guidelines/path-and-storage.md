@@ -12,14 +12,16 @@ This document specifies the exact lifecycle, storage tiers, and path resolution 
 | `F1_MLFLOW_DATABASE_URL` | F1 MLflow PostgreSQL backend credentials | Infrastructure operators only; application code must not read it |
 | `F2_MLFLOW_TRACKING_URI` | F2 MLflow HTTP(S) endpoint | F2 tracked workflows |
 | `F2_MLFLOW_DATABASE_URL` | F2 MLflow PostgreSQL backend credentials | Infrastructure operators only; application code must not read it |
-| `F2_CORPUS_DATABASE_URL` | F2 corpus PostgreSQL application database | F2 corpus CLI |
-| `F2_CATALOG_DATABASE_URL` | F2 catalog PostgreSQL application database | F2 catalog CLI |
+| `F2_DATABASE_URL` | Unified F2 PostgreSQL application database (contains `catalog` & `corpus` schemas) | F2 catalog CLI & F2 corpus CLI |
+| `F2_CORPUS_DATABASE_URL` | F2 corpus PostgreSQL connection URL (legacy alias, routes to `f2` corpus schema) | F2 corpus CLI |
+| `F2_CATALOG_DATABASE_URL` | F2 catalog PostgreSQL connection URL (legacy alias, routes to `f2` catalog schema) | F2 catalog CLI |
 
 A tracking URI is an HTTP(S) application endpoint used by an MLflow client. A
 database URL is a privileged direct PostgreSQL connection string; it must never
 be substituted for a tracking URI or consumed by study runtime code. F1 owns the
-DLFS tracking service, while F2 owns its campaign tracking service, corpus
-database, and catalog database. There is no cross-study or generic fallback.
+DLFS tracking service, while F2 owns its campaign tracking service and unified
+application database (`f2`, partitioned logically into `catalog` and `corpus`
+schemas). There is no cross-study or generic fallback.
 
 For a tracked study command, resolution is `--tracking-uri`, then that study's
 dedicated environment variable, then a clear error. Resolution trims whitespace
@@ -112,8 +114,11 @@ All production run artifacts, checkpoints, manifests, and time-series metrics ar
 * Upload verification (`_verify_uploaded_manifest`) ensures that runs are only marked `result.durable_complete = true` when all artifacts are durable in MLflow.
 
 **2) PostgreSQL Databases:**
-* **`F2_CORPUS_DATABASE_URL`:** Transaction-safe operational state storage for Common Crawl candidate sampling, feature extraction diagnostics, and gold human audit labels.
-* **`F2_CATALOG_DATABASE_URL`:** Reproduction catalog database tracking papers, targets, experiment specifications, resource lineage/substitutions, execution plan revisions, and planned run slots.
+* **`F2_DATABASE_URL`:** Unified PostgreSQL database (`f2`) partitioned logically into `catalog` and `corpus` schemas.
+  * **Schema `corpus`:** Transaction-safe operational state storage for Common Crawl candidate sampling, feature extraction diagnostics, gold human audit labels, generic acquisition runs, immutable artifact metadata, multi-hop processing DAG lineage, and validation evidence.
+  * **Schema `catalog`:** Reproduction catalog database tracking papers, targets, experiment specifications, resource lineage/substitutions, execution plan revisions, and planned run slots.
+* **Corpus Artifact Object Storage (SeaweedFS S3):** Actual corpus binary files, raw archive dumps, intermediate extracts, and canonical tokenized/sharded text files reside in S3-compatible object storage (SeaweedFS S3). PostgreSQL `f2` acts strictly as the Single Source of Truth (SSOT) for metadata, object URIs (`s3://...`), SHA-256 digests, byte/token counts, multi-hop processing lineage, and validation evidence.
+* **`F2_CORPUS_DATABASE_URL` / `F2_CATALOG_DATABASE_URL`:** Backward-compatible legacy aliases routing transparently to `f2` with dedicated schema search paths.
 
 ---
 
