@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from f2.corpus.canonical import (
+    BandwidthScheduler,
     DeterministicSharder,
     extract_gigaword_documents,
     extract_wikipedia_records,
@@ -116,3 +117,66 @@ def test_shards_are_record_bounded_and_repeatable(tmp_path: Path) -> None:
         "first": "c",
         "last": "c",
     }
+
+
+def test_bandwidth_scheduler_peak_and_offpeak_limits() -> None:
+    current_hour = 12
+    scheduler = BandwidthScheduler(
+        peak_mbps=40.0,
+        offpeak_mbps=100.0,
+        peak_start=9,
+        peak_end=22,
+        current_hour_fn=lambda: current_hour,
+    )
+
+    # Peak hours: 09:00 - 21:59 -> 40 Mbps = 5,000,000 bytes/s
+    for hour in [9, 12, 18, 21]:
+        current_hour = hour
+        assert scheduler.limit_bps() == 40.0 * 125_000.0
+
+    # Off-peak hours: 22:00 - 08:59 -> 100 Mbps = 12,500,000 bytes/s
+    for hour in [22, 23, 0, 4, 8]:
+        current_hour = hour
+        assert scheduler.limit_bps() == 100.0 * 125_000.0
+
+
+def test_bandwidth_scheduler_drain_throttle() -> None:
+    simulated_time = 100.0
+    sleeps: list[float] = []
+
+    def mock_time() -> float:
+        return simulated_time
+
+    def mock_sleep(seconds: float) -> None:
+        nonlocal simulated_time
+        sleeps.append(seconds)
+        simulated_time += seconds
+
+    scheduler = BandwidthScheduler(
+        peak_mbps=8.0,  # 8 Mbit/s = 1,000,000 bytes/s (1 MB/s)
+        offpeak_mbps=80.0,
+        current_hour_fn=lambda: 12,  # peak: 1 MB/s
+        time_fn=mock_time,
+        sleep_fn=mock_sleep,
+    )
+
+    # Initial state: 0 tokens. Requesting 500,000 bytes.
+    # Deficit = 500,000 bytes / 1,000,000 bytes/s = 0.5s wait
+    scheduler.drain(500_000)
+    assert len(sleeps) == 1
+    assert pytest.approx(sleeps[0], 0.01) == 0.5
+
+    # Simulate 2.0s passing without draining -> bucket fills up to capacity (1s = 1,000,000 bytes)
+    simulated_time += 2.0
+    sleeps.clear()
+
+    # Requesting 400,000 bytes should not sleep because bucket has 1,000,000 tokens
+    scheduler.drain(400_000)
+    assert len(sleeps) == 0
+
+
+def test_bandwidth_scheduler_invalid_limits() -> None:
+    with pytest.raises(ValueError, match="bandwidth limits must be positive"):
+        BandwidthScheduler(peak_mbps=0, offpeak_mbps=100.0)
+    with pytest.raises(ValueError, match="bandwidth limits must be positive"):
+        BandwidthScheduler(peak_mbps=40.0, offpeak_mbps=-10.0)

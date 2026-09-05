@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from .canonical import (
+    BandwidthScheduler,
     DeterministicSharder,
     SerialDownloader,
     normalize_text,
@@ -124,6 +125,7 @@ def acquire_source(
     repo: CorpusStateRepository,
     *,
     checksum_overrides: dict[str, str] | None = None,
+    bandwidth: BandwidthScheduler | None = None,
 ) -> list[str]:
     if source.blocked_reason:
         raise PermissionError(source.blocked_reason)
@@ -141,7 +143,7 @@ def acquire_source(
         {"source": source.key, "release": source.release},
     )
     output: list[str] = []
-    downloader = SerialDownloader()
+    downloader = SerialDownloader(bandwidth=bandwidth)
     try:
         for item in source.files:
             expected = checksum_overrides.get(item.name) or item.sha256

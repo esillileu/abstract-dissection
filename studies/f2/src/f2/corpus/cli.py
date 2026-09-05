@@ -19,7 +19,7 @@ from repro_core.context.paths import RuntimePaths
 
 from .analysis import FeasibilityAnalyzer
 from .calibration import CalibrationAndPreFetchAnalyzer
-from .canonical import sha256_file
+from .canonical import BandwidthScheduler, sha256_file
 from .cdx import CDXBlockLocator, CDXIndexReader
 from .db.migrations.runner import run_migrations
 from .db.repository import CorpusStateRepository
@@ -68,11 +68,32 @@ def _selected(source: str) -> list:
     return [SOURCE_BY_KEY[source]]
 
 
-def _store(*, restricted: bool = False) -> S3ObjectStore:
-    try:
-        return S3ObjectStore(S3Config.from_environment(restricted=restricted))
-    except ValueError as exc:
-        raise typer.BadParameter(str(exc)) from exc
+def _store(restricted: bool = False) -> S3ObjectStore:
+    cfg = (
+        S3Config.from_environment(restricted=True)
+        if restricted
+        else S3Config.from_environment()
+    )
+    return S3ObjectStore(cfg)
+
+
+_BW_PEAK_DEFAULT = 40.0  # Mbit/s  (09:00-22:00 local)
+_BW_OFFPEAK_DEFAULT = 100.0  # Mbit/s  (22:00-09:00 local)
+
+
+def _bandwidth(
+    peak_mbps: float | None,
+    offpeak_mbps: float | None,
+) -> BandwidthScheduler:
+    """Return a :class:`BandwidthScheduler` applying the given limits.
+
+    Defaults: 40 Mbit/s peak (09-22), 100 Mbit/s off-peak (22-09).
+    Either value can be overridden via CLI; ``0`` means use the default.
+    """
+    return BandwidthScheduler(
+        peak_mbps=peak_mbps or _BW_PEAK_DEFAULT,
+        offpeak_mbps=offpeak_mbps or _BW_OFFPEAK_DEFAULT,
+    )
 
 
 @sources_app.command("preflight")
@@ -109,6 +130,20 @@ def sources_acquire(
         list[str] | None,
         typer.Option("--checksum", help="NAME=SHA256; required for LM1B and Wikipedia"),
     ] = None,
+    peak_mbps: Annotated[
+        float | None,
+        typer.Option(
+            "--peak-mbps",
+            help="Download rate limit during peak hours 09:00-22:00 (default: 40 Mbps)",
+        ),
+    ] = None,
+    offpeak_mbps: Annotated[
+        float | None,
+        typer.Option(
+            "--offpeak-mbps",
+            help="Download rate limit during off-peak hours 22:00-09:00 (default: 100 Mbps)",
+        ),
+    ] = None,
 ) -> None:
     """Download, upload, remotely verify, and transactionally register raw releases."""
     overrides: dict[str, str] = {}
@@ -118,6 +153,7 @@ def sources_acquire(
             raise typer.BadParameter("--checksum must be NAME=64_HEX_SHA256")
         overrides[name] = digest.lower()
     paths, store = RuntimePaths.from_environment(), _store()
+    bw = _bandwidth(peak_mbps, offpeak_mbps)
     with get_connection() as conn:
         repo = CorpusStateRepository(conn)
         for spec in _selected(source):
@@ -128,6 +164,7 @@ def sources_acquire(
                     store,
                     repo,
                     checksum_overrides=overrides,
+                    bandwidth=bw,
                 )
                 typer.echo(f"{spec.key}: ACQUIRED ({len(artifacts)} artifacts)")
             except PermissionError as exc:
@@ -379,10 +416,31 @@ def import_gigaword(
 
 
 @sources_app.command("run")
-def sources_run(source: Annotated[str, typer.Option("--source", "-s")] = "all") -> None:
+def sources_run(
+    source: Annotated[str, typer.Option("--source", "-s")] = "all",
+    peak_mbps: Annotated[
+        float | None,
+        typer.Option(
+            "--peak-mbps",
+            help="Download rate limit during peak hours 09:00-22:00 (default: 40 Mbps)",
+        ),
+    ] = None,
+    offpeak_mbps: Annotated[
+        float | None,
+        typer.Option(
+            "--offpeak-mbps",
+            help="Download rate limit during off-peak hours 22:00-09:00 (default: 100 Mbps)",
+        ),
+    ] = None,
+) -> None:
     """Run acquire; processing and validation remain individually resumable commands."""
     sources_catalog()
-    sources_acquire(source=source, checksum=None)
+    sources_acquire(
+        source=source,
+        checksum=None,
+        peak_mbps=peak_mbps,
+        offpeak_mbps=offpeak_mbps,
+    )
     sources_process(source=source, target_words=10_000_000)
     sources_validate(source=source)
 
