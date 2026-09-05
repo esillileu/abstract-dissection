@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import uuid
 from pathlib import Path
 
@@ -13,7 +12,7 @@ from f2.corpus.analysis import FeasibilityAnalyzer
 from f2.corpus.cdx import CDXBlockLocator, CDXIndexReader
 from f2.corpus.db.migrations.runner import run_migrations
 from f2.corpus.db.repository import CorpusStateRepository
-from f2.corpus.db.session import get_connection
+from f2.corpus.db.session import get_connection, get_db_url
 from f2.corpus.discovery import TwoStageProbabilitySampler
 from f2.corpus.fetcher import RangeFetcher
 from f2.corpus.pipeline import ARCParser, PipelineRunner
@@ -56,9 +55,7 @@ def test_live_common_crawl_2009_2010_range_fetch():
 
 @pytest.mark.network
 def test_live_end_to_end_smoke_with_postgres(tmp_path: Path):
-    db_url = os.getenv("F2_CORPUS_DATABASE_URL")
-    if not db_url:
-        pytest.skip("F2_CORPUS_DATABASE_URL is not set")
+    db_url = get_db_url()
 
     run_id = f"smoke_{uuid.uuid4().hex[:8]}"
     fetcher = RangeFetcher(bandwidth_mbps=20.0, max_concurrency=2)

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import uuid
 from pathlib import Path
 
@@ -12,7 +11,7 @@ import pytest
 from f2.corpus.analysis import FeasibilityAnalyzer
 from f2.corpus.db.migrations.runner import run_migrations
 from f2.corpus.db.repository import CorpusStateRepository
-from f2.corpus.db.session import get_connection
+from f2.corpus.db.session import get_connection, get_db_url
 from f2.corpus.discovery import CandidateRecord
 from f2.corpus.pipeline import ProcessedDocumentResult
 from f2.corpus.storage import ProvenanceExporter
@@ -20,9 +19,9 @@ from f2.corpus.storage import ProvenanceExporter
 
 @pytest.fixture
 def db_conn():
-    url = os.getenv("F2_CORPUS_DATABASE_URL")
+    url = get_db_url()
     if not url:
-        pytest.skip("F2_CORPUS_DATABASE_URL environment variable is not set")
+        pytest.skip("F2 database URL environment variable is not set")
     with get_connection(url) as conn:
         run_migrations(conn)
         yield conn

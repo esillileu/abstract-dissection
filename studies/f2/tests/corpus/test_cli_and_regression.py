@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import gzip
 import json
-import os
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -15,16 +14,16 @@ from typer.testing import CliRunner
 from f2.common.network import FetchResult
 from f2.corpus.cli import app, ensure_cluster_index
 from f2.corpus.db.migrations.runner import run_migrations
-from f2.corpus.db.session import get_connection
+from f2.corpus.db.session import get_connection, get_db_url
 
 runner = CliRunner()
 
 
 @pytest.fixture
 def db_ready():
-    url = os.getenv("F2_CORPUS_DATABASE_URL")
+    url = get_db_url()
     if not url:
-        pytest.skip("F2_CORPUS_DATABASE_URL environment variable is not set")
+        pytest.skip("F2 database URL environment variable is not set")
     with get_connection(url) as conn:
         run_migrations(conn)
         yield conn
