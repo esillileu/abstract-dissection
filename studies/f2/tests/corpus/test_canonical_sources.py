@@ -1,0 +1,118 @@
+from __future__ import annotations
+
+import hashlib
+import io
+import json
+import tarfile
+from pathlib import Path
+
+import pytest
+
+from f2.corpus.canonical import (
+    DeterministicSharder,
+    extract_gigaword_documents,
+    extract_wikipedia_records,
+    iter_tar_records,
+    normalize_text,
+)
+from f2.corpus.sources import SOURCE_BY_KEY, SOURCES, VALIDATION_PROFILES
+
+
+def _tar(path: Path, members: dict[str, bytes]) -> None:
+    with tarfile.open(path, "w:gz") as archive:
+        for name, payload in members.items():
+            info = tarfile.TarInfo(name)
+            info.size = len(payload)
+            archive.addfile(info, io.BytesIO(payload))
+
+
+def test_frozen_source_order_and_wmt_years() -> None:
+    assert [source.key for source in SOURCES] == [
+        "lm1b",
+        "wmt",
+        "gigaword",
+        "umbc",
+        "wikipedia",
+    ]
+    assert [item.year for item in SOURCE_BY_KEY["wmt"].files] == list(range(2007, 2013))
+    assert SOURCE_BY_KEY["gigaword"].blocked_reason == "authorized LDC access required"
+    assert (
+        VALIDATION_PROFILES["word2vec-2013-compatibility-v1"]["maximum_verdict"]
+        == "compatible_reconstruction"
+    )
+
+
+def test_lm1b_excludes_heldout_and_rejects_traversal(tmp_path: Path) -> None:
+    archive = tmp_path / "lm.tgz"
+    _tar(
+        archive,
+        {
+            "x/training-monolingual.tokenized.shuffled/news.en-00001-of-00100": b"train\n",
+            "x/heldout-monolingual.tokenized.shuffled/news.en.heldout": b"heldout\n",
+        },
+    )
+    assert [payload for _, payload in iter_tar_records(archive, "lm1b")] == [b"train\n"]
+
+    unsafe = tmp_path / "unsafe.tgz"
+    _tar(unsafe, {"../training-monolingual.tokenized.shuffled/escape": b"bad"})
+    with pytest.raises(ValueError, match="unsafe archive member"):
+        list(iter_tar_records(unsafe, "lm1b"))
+
+
+def test_umbc_includes_only_plain_webbase_files(tmp_path: Path) -> None:
+    archive = tmp_path / "umbc.tgz"
+    _tar(
+        archive,
+        {
+            "webbase_all/a.txt": b"plain\n",
+            "webbase_all_tagged/a.txt": b"word_NN\n",
+            "webbase_all/readme": b"ignore\n",
+        },
+    )
+    assert [(name, payload) for name, payload in iter_tar_records(archive, "umbc")] == [
+        ("webbase_all/a.txt", b"plain\n")
+    ]
+
+
+def test_normalize_text_matches_shell_recipe_fixture() -> None:
+    original = "It's “Version-2”, wow! <br /> 19\n"
+    assert normalize_text(original) == 'it \' s  " version -   "  , wow !      \n'
+
+
+def test_gigaword_and_wikipedia_fixtures() -> None:
+    sgml = '<DOC id="1"><HEADLINE>Ignored</HEADLINE><TEXT><P>First &amp; second.</P><P>Third.</P></TEXT></DOC>'
+    assert list(extract_gigaword_documents(sgml)) == ["First & second.\nThird."]
+    xml = """<mediawiki><page><title>A</title><revision><text>Visible [[Target|label]] 2.</text></revision></page>
+    <page><title>B</title><redirect title="A"/><revision><text>#REDIRECT [[A]]</text></revision></page></mediawiki>"""
+    assert list(extract_wikipedia_records(xml)) == ["visible label   ."]
+
+
+def test_shards_are_record_bounded_and_repeatable(tmp_path: Path) -> None:
+    records = [
+        ("a", "one two three"),
+        ("b", "four five"),
+        ("c", "six seven eight nine ten eleven"),
+    ]
+    first = DeterministicSharder(tmp_path / "a", target_words=5).write(
+        records, source="fixture"
+    )
+    second = DeterministicSharder(tmp_path / "b", target_words=5).write(
+        records, source="fixture"
+    )
+    assert [item.word_count for item in first] == [5, 6]
+    assert [item.physical_sha256 for item in first] == [
+        item.physical_sha256 for item in second
+    ]
+    assert (tmp_path / "a" / "manifest.json").read_bytes() == (
+        tmp_path / "b" / "manifest.json"
+    ).read_bytes()
+    assert (
+        hashlib.sha256((tmp_path / "a" / "manifest.json").read_bytes()).hexdigest()
+        == hashlib.sha256((tmp_path / "b" / "manifest.json").read_bytes()).hexdigest()
+    )
+    manifest = json.loads((tmp_path / "a" / "manifest.json").read_text())
+    assert manifest["shards"][1]["source_span"] == {
+        "source": "fixture",
+        "first": "c",
+        "last": "c",
+    }

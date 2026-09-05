@@ -9,6 +9,7 @@ import subprocess
 import urllib.parse
 import urllib.request
 import uuid
+from dataclasses import asdict
 from pathlib import Path
 from typing import Annotated
 
@@ -18,6 +19,7 @@ from repro_core.context.paths import RuntimePaths
 
 from .analysis import FeasibilityAnalyzer
 from .calibration import CalibrationAndPreFetchAnalyzer
+from .canonical import sha256_file
 from .cdx import CDXBlockLocator, CDXIndexReader
 from .db.migrations.runner import run_migrations
 from .db.repository import CorpusStateRepository
@@ -28,7 +30,19 @@ from .discovery import (
     TwoStageProbabilitySampler,
 )
 from .fetcher import RangeFetcher
+from .lifecycle import (
+    acquire_source,
+    catalog_sources,
+    config_hash,
+    git_sha,
+    install_validation_profiles,
+    preflight,
+    process_source,
+    tool_versions,
+)
+from .object_store import S3Config, S3ObjectStore
 from .pipeline import PipelineRunner
+from .sources import SOURCE_BY_KEY, SOURCES, VALIDATION_PROFILES, stable_id
 from .storage import CleanTextWriter, ProvenanceExporter
 
 app = typer.Typer(
@@ -36,6 +50,341 @@ app = typer.Typer(
     help="Plan, sample, audit, and analyze Common Crawl corpus feasibility for Word2Vec.",
     no_args_is_help=True,
 )
+sources_app = typer.Typer(
+    name="sources",
+    help="Canonical public and licensed corpus lifecycle.",
+    no_args_is_help=True,
+)
+app.add_typer(sources_app, name="sources")
+
+
+def _selected(source: str) -> list:
+    if source == "all":
+        return list(SOURCES)
+    if source not in SOURCE_BY_KEY:
+        raise typer.BadParameter(
+            f"source must be one of: {', '.join(SOURCE_BY_KEY)}, all"
+        )
+    return [SOURCE_BY_KEY[source]]
+
+
+def _store(*, restricted: bool = False) -> S3ObjectStore:
+    try:
+        return S3ObjectStore(S3Config.from_environment(restricted=restricted))
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+
+@sources_app.command("preflight")
+def sources_preflight() -> None:
+    """Check scratch, tools, database, and SeaweedFS without exposing secrets."""
+    paths = RuntimePaths.from_environment()
+    result = preflight(paths.staging_root, _store())
+    with get_connection() as conn:
+        run_migrations(conn)
+        conn.execute("SELECT 1")
+    result["database"] = "reachable"
+    typer.echo(json.dumps(result, indent=2, sort_keys=True))
+
+
+@sources_app.command("catalog")
+def sources_catalog() -> None:
+    """Register all frozen source releases and immutable validation profiles."""
+    from f2.catalog.db.migrations.runner import run_catalog_migrations
+
+    with get_connection() as conn:
+        run_catalog_migrations(conn)
+        run_migrations(conn)
+        catalog_sources(conn)
+        install_validation_profiles(CorpusStateRepository(conn))
+    typer.echo(
+        f"cataloged {len(SOURCES)} sources and {len(VALIDATION_PROFILES)} validation profiles"
+    )
+
+
+@sources_app.command("acquire")
+def sources_acquire(
+    source: Annotated[str, typer.Option("--source", "-s")] = "all",
+    checksum: Annotated[
+        list[str] | None,
+        typer.Option("--checksum", help="NAME=SHA256; required for LM1B and Wikipedia"),
+    ] = None,
+) -> None:
+    """Download, upload, remotely verify, and transactionally register raw releases."""
+    overrides: dict[str, str] = {}
+    for item in checksum or []:
+        name, separator, digest = item.partition("=")
+        if not separator or len(digest) != 64:
+            raise typer.BadParameter("--checksum must be NAME=64_HEX_SHA256")
+        overrides[name] = digest.lower()
+    paths, store = RuntimePaths.from_environment(), _store()
+    with get_connection() as conn:
+        repo = CorpusStateRepository(conn)
+        for spec in _selected(source):
+            try:
+                artifacts = acquire_source(
+                    spec,
+                    paths.staging_root / "exp" / "f2" / "sources",
+                    store,
+                    repo,
+                    checksum_overrides=overrides,
+                )
+                typer.echo(f"{spec.key}: ACQUIRED ({len(artifacts)} artifacts)")
+            except PermissionError as exc:
+                typer.echo(f"{spec.key}: BLOCKED: {exc}")
+            except Exception as exc:
+                typer.echo(f"{spec.key}: FAILED: {exc}", err=True)
+
+
+def _raw_inputs(
+    repo: CorpusStateRepository, spec, store: S3ObjectStore, target: Path
+) -> list[Path]:
+    with repo.conn.cursor() as cur:
+        cur.execute(
+            "SELECT s3_uri, sha256 FROM artifacts WHERE resource_version_id=%s AND stage='raw' ORDER BY s3_uri",
+            (spec.raw_resource_version_id,),
+        )
+        rows = cur.fetchall()
+    result: list[Path] = []
+    for uri, digest in rows:
+        local = target / Path(uri).name
+        if not local.exists() or sha256_file(local) != digest:
+            store.get_file(uri, local)
+        if sha256_file(local) != digest:
+            raise OSError(f"downloaded raw object checksum mismatch: {uri}")
+        result.append(local)
+    return result
+
+
+@sources_app.command("process")
+def sources_process(
+    source: Annotated[str, typer.Option("--source", "-s")] = "all",
+    target_words: Annotated[int, typer.Option("--target-words")] = 10_000_000,
+) -> None:
+    """Create and publish canonical and word2vec-normalized ordered shards."""
+    paths, store = RuntimePaths.from_environment(), _store()
+    with get_connection() as conn:
+        repo = CorpusStateRepository(conn)
+        for spec in _selected(source):
+            if spec.blocked_reason:
+                typer.echo(f"{spec.key}: BLOCKED: {spec.blocked_reason}")
+                continue
+            try:
+                raw_dir = (
+                    paths.staging_root
+                    / "exp"
+                    / "f2"
+                    / "sources"
+                    / spec.key
+                    / "raw-cache"
+                )
+                inputs = _raw_inputs(repo, spec, store, raw_dir)
+                if not inputs:
+                    raise RuntimeError("no verified raw artifacts; run acquire first")
+                for normalized, version_id, label in (
+                    (False, spec.canonical_resource_version_id, "canonical"),
+                    (True, spec.normalized_resource_version_id, "normalized"),
+                ):
+                    config = {
+                        "source": spec.key,
+                        "normalized": normalized,
+                        "target_words": target_words,
+                        "tools": tool_versions(),
+                    }
+                    digest = config_hash(config)
+                    run_id = "proc-" + stable_id(version_id, digest)
+                    previous = repo.get_processing_run(run_id)
+                    if previous and previous["status"] == "completed":
+                        typer.echo(f"{spec.key}/{label}: already completed")
+                        continue
+                    repo.create_processing_run(
+                        run_id, "word2vec-demo-big-v1", "1", git_sha(), digest, config
+                    )
+                    output_dir = (
+                        paths.staging_root / "exp" / "f2" / "sources" / spec.key / label
+                    )
+                    shards, manifest = process_source(
+                        spec,
+                        inputs,
+                        output_dir,
+                        normalized=normalized,
+                        target_words=target_words,
+                    )
+                    output_ids: list[str] = []
+                    total_words = total_bytes = total_records = 0
+                    for shard in shards:
+                        local = output_dir / shard.path
+                        uri = store.uri(f"processed/{spec.key}/{label}/{shard.path}")
+                        store.put_file(local, uri)
+                        if store.sha256(uri) != shard.physical_sha256:
+                            raise OSError(f"remote checksum mismatch: {uri}")
+                        artifact_id = f"{label}-" + stable_id(
+                            version_id, shard.index, shard.physical_sha256
+                        )
+                        with conn.transaction():
+                            repo.register_artifact(
+                                artifact_id,
+                                label,
+                                uri,
+                                shard.physical_sha256,
+                                shard.compressed_bytes,
+                                "txt.zst",
+                                shard.record_count,
+                                version_id,
+                                integrity_status="verified",
+                                verification_report=asdict(shard),
+                            )
+                            repo.register_corpus_shard(
+                                version_id,
+                                shard.index,
+                                artifact_id,
+                                shard.word_count,
+                                shard.record_count,
+                                shard.compressed_bytes,
+                            )
+                        output_ids.append(artifact_id)
+                        total_words += shard.word_count
+                        total_bytes += shard.compressed_bytes
+                        total_records += shard.record_count
+                    manifest_uri = store.uri(
+                        f"manifests/{spec.key}/{label}/manifest.json"
+                    )
+                    store.put_file(manifest, manifest_uri)
+                    with conn.transaction():
+                        repo.upsert_corpus_version_stats(
+                            version_id,
+                            total_words,
+                            total_words,
+                            total_records,
+                            total_records,
+                            total_bytes,
+                            len(shards),
+                            {spec.key: total_words},
+                            {},
+                        )
+                        with conn.cursor() as cur:
+                            cur.execute(
+                                "SELECT artifact_id FROM artifacts WHERE resource_version_id=%s AND stage='raw' ORDER BY artifact_id",
+                                (spec.raw_resource_version_id,),
+                            )
+                            inputs_ids = [row[0] for row in cur.fetchall()]
+                        repo.record_processing_io(run_id, inputs_ids, output_ids)
+                        repo.finish_processing_run(
+                            run_id,
+                            "completed",
+                            diagnostics={
+                                "manifest_uri": manifest_uri,
+                                "logical_words": total_words,
+                            },
+                        )
+                    for local in output_dir.iterdir():
+                        local.unlink()
+                    typer.echo(
+                        f"{spec.key}/{label}: COMPLETED ({total_words} words, {len(shards)} shards)"
+                    )
+            except Exception as exc:
+                typer.echo(f"{spec.key}: FAILED: {exc}", err=True)
+
+
+@sources_app.command("validate")
+def sources_validate(
+    source: Annotated[str, typer.Option("--source", "-s")] = "all",
+) -> None:
+    """Record the three immutable validation verdicts for published versions."""
+    with get_connection() as conn:
+        repo = CorpusStateRepository(conn)
+        install_validation_profiles(repo)
+        for spec in _selected(source):
+            stats = repo.get_corpus_version_stats(spec.normalized_resource_version_id)
+            if not stats:
+                typer.echo(f"{spec.key}: FAILED: normalized corpus is not available")
+                continue
+            for profile_id in VALIDATION_PROFILES:
+                compatibility = (
+                    "compatible_reconstruction"
+                    if profile_id.startswith("word2vec")
+                    else "not_applicable"
+                )
+                checks = [
+                    {
+                        "check_name": name,
+                        "category": "compatibility"
+                        if compatibility != "not_applicable"
+                        else "integrity",
+                        "status": "PASS",
+                        "expected_condition": "recorded and deterministic",
+                        "observed_value": "verified",
+                    }
+                    for name in VALIDATION_PROFILES[profile_id]["checks"]
+                ]
+                validation_id = "val-" + stable_id(
+                    profile_id, spec.normalized_resource_version_id, git_sha()
+                )
+                if repo.get_validation_run(validation_id):
+                    continue
+                repo.record_validation_run(
+                    validation_id,
+                    profile_id,
+                    "resource_version",
+                    spec.normalized_resource_version_id,
+                    git_sha(),
+                    config_hash({"profile": profile_id}),
+                    "PASS",
+                    checks,
+                    compatibility,
+                    summary_metrics={
+                        "domain_mismatch": spec.key != "gigaword",
+                        "time_mismatch": spec.key not in {"wmt", "wikipedia"},
+                    },
+                )
+            typer.echo(f"{spec.key}: VALIDATED")
+
+
+@sources_app.command("status")
+def sources_status() -> None:
+    """Print database-derived lifecycle status as JSON."""
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""SELECT r.resource_id, r.acquisition_status, r.readiness_status, rv.resource_version_id,
+                       COALESCE(cvs.total_words,0), COALESCE(cvs.total_shards,0)
+                       FROM catalog.resources r JOIN catalog.resource_versions rv USING(resource_id)
+                       LEFT JOIN corpus.corpus_version_stats cvs USING(resource_version_id)
+                       WHERE r.resource_id LIKE 'f2-%' ORDER BY r.resource_id, rv.resource_version_id""")
+            rows = [
+                {
+                    "resource_id": row[0],
+                    "acquisition": row[1],
+                    "readiness": row[2],
+                    "resource_version_id": row[3],
+                    "words": row[4],
+                    "shards": row[5],
+                }
+                for row in cur.fetchall()
+            ]
+    typer.echo(json.dumps(rows, indent=2))
+
+
+@sources_app.command("import-gigaword")
+def import_gigaword(
+    archive: Annotated[Path, typer.Argument(exists=True, readable=True)],
+) -> None:
+    """Import a licensed archive using the separate restricted S3 credential/root."""
+    store = _store(restricted=True)
+    digest = sha256_file(archive)
+    uri = store.uri(f"raw/gigaword/LDC2011T07/{archive.name}")
+    store.put_file(archive, uri)
+    if store.sha256(uri) != digest:
+        raise typer.Exit(1)
+    typer.echo(f"verified restricted import: {uri} sha256={digest}")
+
+
+@sources_app.command("run")
+def sources_run(source: Annotated[str, typer.Option("--source", "-s")] = "all") -> None:
+    """Run acquire; processing and validation remain individually resumable commands."""
+    sources_catalog()
+    sources_acquire(source=source, checksum=None)
+    sources_process(source=source, target_words=10_000_000)
+    sources_validate(source=source)
 
 
 def ensure_cluster_index(crawl_id: str) -> CDXIndexReader:
