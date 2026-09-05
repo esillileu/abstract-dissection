@@ -50,6 +50,7 @@ ADDITIONAL_RENDERERS = {
 STUDY_SOURCES = {
     "e07": ("e06", "e07"),
     "e11": ("e06", "e08"),
+    "e15": ("e07", "e15"),
 }
 
 
