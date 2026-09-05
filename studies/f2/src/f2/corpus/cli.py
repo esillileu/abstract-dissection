@@ -418,6 +418,10 @@ def import_gigaword(
 @sources_app.command("run")
 def sources_run(
     source: Annotated[str, typer.Option("--source", "-s")] = "all",
+    checksum: Annotated[
+        list[str] | None,
+        typer.Option("--checksum", help="NAME=SHA256; required for LM1B and Wikipedia"),
+    ] = None,
     peak_mbps: Annotated[
         float | None,
         typer.Option(
@@ -437,7 +441,7 @@ def sources_run(
     sources_catalog()
     sources_acquire(
         source=source,
-        checksum=None,
+        checksum=checksum,
         peak_mbps=peak_mbps,
         offpeak_mbps=offpeak_mbps,
     )
