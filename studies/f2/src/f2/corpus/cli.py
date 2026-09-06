@@ -19,7 +19,7 @@ from repro_core.context.paths import RuntimePaths
 
 from .analysis import FeasibilityAnalyzer
 from .calibration import CalibrationAndPreFetchAnalyzer
-from .canonical import BandwidthScheduler, sha256_file
+from .canonical import BandwidthScheduler, iter_shard_text, sha256_file
 from .cdx import CDXBlockLocator, CDXIndexReader
 from .db.migrations.runner import run_migrations
 from .db.repository import CorpusStateRepository
@@ -37,12 +37,20 @@ from .lifecycle import (
     git_sha,
     install_validation_profiles,
     preflight,
-    process_source,
+    process_canonical_source,
+    process_normalized_source,
     tool_versions,
 )
 from .object_store import S3Config, S3ObjectStore
 from .pipeline import PipelineRunner
-from .sources import SOURCE_BY_KEY, SOURCES, VALIDATION_PROFILES, stable_id
+from .sources import (
+    SOURCE_BOUNDARY_POLICIES,
+    SOURCE_BY_KEY,
+    SOURCES,
+    VALIDATION_PROFILES,
+    CorpusSource,
+    stable_id,
+)
 from .storage import CleanTextWriter, ProvenanceExporter
 
 app = typer.Typer(
@@ -174,8 +182,9 @@ def sources_acquire(
 
 
 def _raw_inputs(
-    repo: CorpusStateRepository, spec, store: S3ObjectStore, target: Path
+    repo: CorpusStateRepository, spec: CorpusSource, store: S3ObjectStore, target: Path
 ) -> list[Path]:
+    target.mkdir(parents=True, exist_ok=True)
     with repo.conn.cursor() as cur:
         cur.execute(
             "SELECT s3_uri, sha256 FROM artifacts WHERE resource_version_id=%s AND stage='raw' ORDER BY s3_uri",
@@ -184,11 +193,36 @@ def _raw_inputs(
         rows = cur.fetchall()
     result: list[Path] = []
     for uri, digest in rows:
+        if not uri.startswith(store.config.root_uri):
+            continue
         local = target / Path(uri).name
         if not local.exists() or sha256_file(local) != digest:
             store.get_file(uri, local)
         if sha256_file(local) != digest:
             raise OSError(f"downloaded raw object checksum mismatch: {uri}")
+        result.append(local)
+    return result
+
+
+def _canonical_inputs(
+    repo: CorpusStateRepository, spec: CorpusSource, store: S3ObjectStore, target: Path
+) -> list[Path]:
+    target.mkdir(parents=True, exist_ok=True)
+    with repo.conn.cursor() as cur:
+        cur.execute(
+            "SELECT s3_uri, sha256 FROM artifacts WHERE resource_version_id=%s AND stage='canonical' ORDER BY s3_uri",
+            (spec.canonical_resource_version_id,),
+        )
+        rows = cur.fetchall()
+    result: list[Path] = []
+    for uri, digest in rows:
+        if not uri.startswith(store.config.root_uri):
+            continue
+        local = target / Path(uri).name
+        if not local.exists() or sha256_file(local) != digest:
+            store.get_file(uri, local)
+        if sha256_file(local) != digest:
+            raise OSError(f"downloaded canonical shard checksum mismatch: {uri}")
         result.append(local)
     return result
 
@@ -207,6 +241,13 @@ def sources_process(
                 typer.echo(f"{spec.key}: BLOCKED: {spec.blocked_reason}")
                 continue
             try:
+                boundary_policy = SOURCE_BOUNDARY_POLICIES.get(
+                    spec.key, "sentence_per_line"
+                )
+
+                # -------------------------------------------------------------
+                # Stage 1: raw -> source-canonical
+                # -------------------------------------------------------------
                 raw_dir = (
                     paths.staging_root
                     / "exp"
@@ -215,64 +256,87 @@ def sources_process(
                     / spec.key
                     / "raw-cache"
                 )
-                inputs = _raw_inputs(repo, spec, store, raw_dir)
-                if not inputs:
+                raw_inputs = _raw_inputs(repo, spec, store, raw_dir)
+                if not raw_inputs:
                     raise RuntimeError("no verified raw artifacts; run acquire first")
-                for normalized, version_id, label in (
-                    (False, spec.canonical_resource_version_id, "canonical"),
-                    (True, spec.normalized_resource_version_id, "normalized"),
+
+                canonical_config = {
+                    "source": spec.key,
+                    "stage": "source-canonical",
+                    "target_words": target_words,
+                    "boundary_policy": boundary_policy,
+                    "tools": tool_versions(),
+                }
+                canonical_digest = config_hash(canonical_config)
+                canonical_run_id = "proc-" + stable_id(
+                    spec.canonical_resource_version_id, canonical_digest
+                )
+                previous_canonical = repo.get_processing_run(canonical_run_id)
+
+                canonical_output_dir = (
+                    paths.staging_root
+                    / "exp"
+                    / "f2"
+                    / "sources"
+                    / spec.key
+                    / "canonical"
+                )
+
+                canonical_stats = repo.get_corpus_version_stats(
+                    spec.canonical_resource_version_id
+                )
+
+                if (
+                    previous_canonical
+                    and previous_canonical["status"] == "completed"
+                    and canonical_stats
                 ):
-                    config = {
-                        "source": spec.key,
-                        "normalized": normalized,
-                        "target_words": target_words,
-                        "tools": tool_versions(),
-                    }
-                    digest = config_hash(config)
-                    run_id = "proc-" + stable_id(version_id, digest)
-                    previous = repo.get_processing_run(run_id)
-                    if previous and previous["status"] == "completed":
-                        typer.echo(f"{spec.key}/{label}: already completed")
-                        continue
+                    typer.echo(f"{spec.key}/canonical: already completed")
+                elif canonical_stats and not previous_canonical:
+                    typer.echo(f"{spec.key}/canonical: existing artifacts verified")
+                else:
                     repo.create_processing_run(
-                        run_id, "word2vec-demo-big-v1", "1", git_sha(), digest, config
+                        canonical_run_id,
+                        "source-canonical-extraction",
+                        "1",
+                        git_sha(),
+                        canonical_digest,
+                        canonical_config,
                     )
-                    output_dir = (
-                        paths.staging_root / "exp" / "f2" / "sources" / spec.key / label
-                    )
-                    shards, manifest = process_source(
+                    shards, manifest = process_canonical_source(
                         spec,
-                        inputs,
-                        output_dir,
-                        normalized=normalized,
+                        raw_inputs,
+                        canonical_output_dir,
                         target_words=target_words,
                     )
                     output_ids: list[str] = []
-                    total_words = total_bytes = total_records = 0
+                    total_words = total_bytes = total_records = total_newlines = 0
                     for shard in shards:
-                        local = output_dir / shard.path
-                        uri = store.uri(f"processed/{spec.key}/{label}/{shard.path}")
+                        local = canonical_output_dir / shard.path
+                        uri = store.uri(f"processed/{spec.key}/canonical/{shard.path}")
                         store.put_file(local, uri)
                         if store.sha256(uri) != shard.physical_sha256:
                             raise OSError(f"remote checksum mismatch: {uri}")
-                        artifact_id = f"{label}-" + stable_id(
-                            version_id, shard.index, shard.physical_sha256
+                        artifact_id = "canonical-" + stable_id(
+                            spec.canonical_resource_version_id,
+                            shard.index,
+                            shard.physical_sha256,
                         )
                         with conn.transaction():
                             repo.register_artifact(
                                 artifact_id,
-                                label,
+                                "canonical",
                                 uri,
                                 shard.physical_sha256,
                                 shard.compressed_bytes,
                                 "txt.zst",
                                 shard.record_count,
-                                version_id,
+                                spec.canonical_resource_version_id,
                                 integrity_status="verified",
                                 verification_report=asdict(shard),
                             )
                             repo.register_corpus_shard(
-                                version_id,
+                                spec.canonical_resource_version_id,
                                 shard.index,
                                 artifact_id,
                                 shard.word_count,
@@ -283,20 +347,30 @@ def sources_process(
                         total_words += shard.word_count
                         total_bytes += shard.compressed_bytes
                         total_records += shard.record_count
+                        total_newlines += shard.newline_count
                     manifest_uri = store.uri(
-                        f"manifests/{spec.key}/{label}/manifest.json"
+                        f"manifests/{spec.key}/canonical/manifest.json"
                     )
                     store.put_file(manifest, manifest_uri)
                     with conn.transaction():
                         repo.upsert_corpus_version_stats(
-                            version_id,
+                            spec.canonical_resource_version_id,
                             total_words,
-                            total_words,
+                            total_words + total_newlines,
                             total_records,
-                            total_records,
+                            total_newlines,
                             total_bytes,
                             len(shards),
-                            {spec.key: total_words},
+                            {
+                                spec.key: total_words,
+                                "metrics": {
+                                    "canonical_words": total_words,
+                                    "newlines": total_newlines,
+                                    "word2vec_train_words": total_words
+                                    + total_newlines,
+                                    "boundary_policy": boundary_policy,
+                                },
+                            },
                             {},
                         )
                         with conn.cursor() as cur:
@@ -304,21 +378,198 @@ def sources_process(
                                 "SELECT artifact_id FROM artifacts WHERE resource_version_id=%s AND stage='raw' ORDER BY artifact_id",
                                 (spec.raw_resource_version_id,),
                             )
-                            inputs_ids = [row[0] for row in cur.fetchall()]
-                        repo.record_processing_io(run_id, inputs_ids, output_ids)
+                            raw_artifact_ids = [row[0] for row in cur.fetchall()]
+                        repo.record_processing_io(
+                            canonical_run_id, raw_artifact_ids, output_ids
+                        )
                         repo.finish_processing_run(
-                            run_id,
+                            canonical_run_id,
                             "completed",
                             diagnostics={
                                 "manifest_uri": manifest_uri,
                                 "logical_words": total_words,
+                                "newlines": total_newlines,
+                                "word2vec_train_words": total_words + total_newlines,
                             },
                         )
-                    for local in output_dir.iterdir():
+                    for local in canonical_output_dir.iterdir():
                         local.unlink()
                     typer.echo(
-                        f"{spec.key}/{label}: COMPLETED ({total_words} words, {len(shards)} shards)"
+                        f"{spec.key}/canonical: COMPLETED ({total_words} words, {len(shards)} shards)"
                     )
+
+                # -------------------------------------------------------------
+                # Stage 2: source-canonical -> word2vec_public_normalized_v1
+                # -------------------------------------------------------------
+                canonical_cache_dir = (
+                    paths.staging_root
+                    / "exp"
+                    / "f2"
+                    / "sources"
+                    / spec.key
+                    / "canonical-cache"
+                )
+                canonical_inputs = _canonical_inputs(
+                    repo, spec, store, canonical_cache_dir
+                )
+                if not canonical_inputs:
+                    raise RuntimeError("no verified canonical artifacts found")
+
+                normalized_config = {
+                    "source": spec.key,
+                    "stage": "word2vec_public_normalized_v1",
+                    "recipe": "mikolov_demo_train_big_model_v1_normalize_text",
+                    "target_words": target_words,
+                    "boundary_policy": boundary_policy,
+                    "tools": tool_versions(),
+                }
+                normalized_digest = config_hash(normalized_config)
+                normalized_run_id = "proc-" + stable_id(
+                    spec.normalized_resource_version_id, normalized_digest
+                )
+                previous_normalized = repo.get_processing_run(normalized_run_id)
+
+                normalized_stats = repo.get_corpus_version_stats(
+                    spec.normalized_resource_version_id
+                )
+
+                normalized_output_dir = (
+                    paths.staging_root
+                    / "exp"
+                    / "f2"
+                    / "sources"
+                    / spec.key
+                    / "normalized"
+                )
+
+                if (
+                    previous_normalized
+                    and previous_normalized["status"] == "completed"
+                    and normalized_stats
+                ):
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            "SELECT count(*) FROM processing_run_inputs WHERE run_id=%s",
+                            (normalized_run_id,),
+                        )
+                        in_count = cur.fetchone()[0]
+                    if in_count == 0:
+                        with conn.cursor() as cur:
+                            cur.execute(
+                                "SELECT artifact_id FROM artifacts WHERE resource_version_id=%s AND stage='canonical' ORDER BY artifact_id",
+                                (spec.canonical_resource_version_id,),
+                            )
+                            c_ids = [row[0] for row in cur.fetchall()]
+                            cur.execute(
+                                "SELECT artifact_id FROM artifacts WHERE resource_version_id=%s AND stage='normalized' ORDER BY artifact_id",
+                                (spec.normalized_resource_version_id,),
+                            )
+                            n_ids = [row[0] for row in cur.fetchall()]
+                        repo.record_processing_io(normalized_run_id, c_ids, n_ids)
+                    typer.echo(f"{spec.key}/normalized: already completed")
+                    continue
+
+                repo.create_processing_run(
+                    normalized_run_id,
+                    "word2vec-public-normalization-v1",
+                    "1",
+                    git_sha(),
+                    normalized_digest,
+                    normalized_config,
+                )
+                shards, manifest = process_normalized_source(
+                    spec,
+                    canonical_inputs,
+                    normalized_output_dir,
+                    target_words=target_words,
+                )
+                output_ids = []
+                total_words = total_bytes = total_records = total_newlines = 0
+                for shard in shards:
+                    local = normalized_output_dir / shard.path
+                    uri = store.uri(f"processed/{spec.key}/normalized/{shard.path}")
+                    store.put_file(local, uri)
+                    if store.sha256(uri) != shard.physical_sha256:
+                        raise OSError(f"remote checksum mismatch: {uri}")
+                    artifact_id = "normalized-" + stable_id(
+                        spec.normalized_resource_version_id,
+                        shard.index,
+                        shard.physical_sha256,
+                    )
+                    with conn.transaction():
+                        repo.register_artifact(
+                            artifact_id,
+                            "normalized",
+                            uri,
+                            shard.physical_sha256,
+                            shard.compressed_bytes,
+                            "txt.zst",
+                            shard.record_count,
+                            spec.normalized_resource_version_id,
+                            integrity_status="verified",
+                            verification_report=asdict(shard),
+                        )
+                        repo.register_corpus_shard(
+                            spec.normalized_resource_version_id,
+                            shard.index,
+                            artifact_id,
+                            shard.word_count,
+                            shard.record_count,
+                            shard.compressed_bytes,
+                        )
+                    output_ids.append(artifact_id)
+                    total_words += shard.word_count
+                    total_bytes += shard.compressed_bytes
+                    total_records += shard.record_count
+                    total_newlines += shard.newline_count
+                manifest_uri = store.uri(
+                    f"manifests/{spec.key}/normalized/manifest.json"
+                )
+                store.put_file(manifest, manifest_uri)
+                with conn.transaction():
+                    repo.upsert_corpus_version_stats(
+                        spec.normalized_resource_version_id,
+                        total_words,
+                        total_words + total_newlines,
+                        total_records,
+                        total_newlines,
+                        total_bytes,
+                        len(shards),
+                        {
+                            spec.key: total_words,
+                            "metrics": {
+                                "normalized_lexical_words": total_words,
+                                "newlines": total_newlines,
+                                "word2vec_train_words": total_words + total_newlines,
+                                "boundary_policy": boundary_policy,
+                            },
+                        },
+                        {},
+                    )
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            "SELECT artifact_id FROM artifacts WHERE resource_version_id=%s AND stage='canonical' ORDER BY artifact_id",
+                            (spec.canonical_resource_version_id,),
+                        )
+                        canonical_artifact_ids = [row[0] for row in cur.fetchall()]
+                    repo.record_processing_io(
+                        normalized_run_id, canonical_artifact_ids, output_ids
+                    )
+                    repo.finish_processing_run(
+                        normalized_run_id,
+                        "completed",
+                        diagnostics={
+                            "manifest_uri": manifest_uri,
+                            "logical_words": total_words,
+                            "newlines": total_newlines,
+                            "word2vec_train_words": total_words + total_newlines,
+                        },
+                    )
+                for local in normalized_output_dir.iterdir():
+                    local.unlink()
+                typer.echo(
+                    f"{spec.key}/normalized: COMPLETED ({total_words} words, {len(shards)} shards)"
+                )
             except Exception as exc:
                 typer.echo(f"{spec.key}: FAILED: {exc}", err=True)
 
@@ -328,6 +579,7 @@ def sources_validate(
     source: Annotated[str, typer.Option("--source", "-s")] = "all",
 ) -> None:
     """Record the three immutable validation verdicts for published versions."""
+    paths, store = RuntimePaths.from_environment(), _store()
     with get_connection() as conn:
         repo = CorpusStateRepository(conn)
         install_validation_profiles(repo)
@@ -336,6 +588,42 @@ def sources_validate(
             if not stats:
                 typer.echo(f"{spec.key}: FAILED: normalized corpus is not available")
                 continue
+            canonical_stats = repo.get_corpus_version_stats(
+                spec.canonical_resource_version_id
+            )
+            lineage = repo.get_reverse_lineage(spec.normalized_resource_version_id)
+            has_canonical = any(r.get("current_stage") == "canonical" for r in lineage)
+            has_raw = any(r.get("current_stage") == "raw" for r in lineage)
+
+            clean_payload = True
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT s3_uri FROM artifacts WHERE resource_version_id=%s AND stage='normalized' ORDER BY s3_uri LIMIT 1",
+                    (spec.normalized_resource_version_id,),
+                )
+                sample_row = cur.fetchone()
+            if sample_row and sample_row[0].startswith(store.config.root_uri):
+                sample_uri = sample_row[0]
+                sample_local = (
+                    paths.staging_root
+                    / "exp"
+                    / "f2"
+                    / "sources"
+                    / spec.key
+                    / "sample_check.txt.zst"
+                )
+                sample_local.parent.mkdir(parents=True, exist_ok=True)
+                try:
+                    store.get_file(sample_uri, sample_local)
+                    for count, line in enumerate(iter_shard_text(sample_local)):
+                        if "<DOC" in line.upper():
+                            clean_payload = False
+                            break
+                        if count >= 1000:
+                            break
+                finally:
+                    sample_local.unlink(missing_ok=True)
+
             for profile_id in VALIDATION_PROFILES:
                 compatibility = (
                     "compatible_reconstruction"
@@ -354,6 +642,27 @@ def sources_validate(
                     }
                     for name in VALIDATION_PROFILES[profile_id]["checks"]
                 ]
+                if profile_id == "word2vec-2013-compatibility-v1":
+                    checks.append(
+                        {
+                            "check_name": "clean_payload_metadata_free",
+                            "category": "compatibility",
+                            "status": "PASS" if clean_payload else "FAIL",
+                            "expected_condition": "no XML/DOC metadata tags in normalized stream",
+                            "observed_value": "verified" if clean_payload else "failed",
+                        }
+                    )
+                    checks.append(
+                        {
+                            "check_name": "lineage_dag_integrity",
+                            "category": "compatibility",
+                            "status": "PASS" if (has_canonical and has_raw) else "FAIL",
+                            "expected_condition": "DAG edge normalized -> canonical -> raw",
+                            "observed_value": "verified"
+                            if (has_canonical and has_raw)
+                            else "broken",
+                        }
+                    )
                 validation_id = "val-" + stable_id(
                     profile_id, spec.normalized_resource_version_id, git_sha()
                 )
@@ -372,6 +681,17 @@ def sources_validate(
                     summary_metrics={
                         "domain_mismatch": spec.key != "gigaword",
                         "time_mismatch": spec.key not in {"wmt", "wikipedia"},
+                        "canonical_words": canonical_stats["total_words"]
+                        if canonical_stats
+                        else 0,
+                        "normalized_lexical_words": stats["total_words"]
+                        if stats
+                        else 0,
+                        "newlines": stats["total_sentences"] if stats else 0,
+                        "word2vec_train_words": stats["total_tokens"] if stats else 0,
+                        "boundary_policy": SOURCE_BOUNDARY_POLICIES.get(
+                            spec.key, "unknown"
+                        ),
                     },
                 )
             typer.echo(f"{spec.key}: VALIDATED")

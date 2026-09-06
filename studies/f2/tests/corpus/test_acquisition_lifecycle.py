@@ -68,11 +68,34 @@ def _umbc_source(tmp_path: Path) -> tuple[Path, CorpusSource]:
                 sha256=None,  # umbc does not require a hash override
             ),
         ),
-        raw_resource_version_id="f2-umbc-webbase-2013-raw",
-        canonical_resource_version_id="f2-umbc-webbase-canonical-v1",
-        normalized_resource_version_id="f2-umbc-webbase-normalized-v1",
+        raw_resource_version_id=f"f2-umbc-test-{uid}-raw",
+        canonical_resource_version_id=f"f2-umbc-test-{uid}-canonical-v1",
+        normalized_resource_version_id=f"f2-umbc-test-{uid}-normalized-v1",
     )
     return archive, source
+
+
+def _register_test_source(conn, source: CorpusSource) -> None:
+    with conn.cursor() as cur:
+        resource_id = f"f2-{source.key}-test-{source.release}"
+        cur.execute(
+            """
+            INSERT INTO catalog.resources
+            (resource_id, kind, name, description, access_status, acquisition_status, readiness_status)
+            VALUES (%s, 'dataset', %s, 'Test resource', 'public', 'available', 'ready')
+            ON CONFLICT (resource_id) DO NOTHING;
+            """,
+            (resource_id, source.name),
+        )
+        cur.execute(
+            """
+            INSERT INTO catalog.resource_versions (resource_version_id, resource_id, version_label)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (resource_version_id) DO NOTHING;
+            """,
+            (source.raw_resource_version_id, resource_id, source.release),
+        )
+    conn.commit()
 
 
 # ---------------------------------------------------------------------------
@@ -167,6 +190,7 @@ def test_acquire_source_is_idempotent_on_completed_run(db_conn, tmp_path: Path) 
     install_validation_profiles(repo)
 
     archive, source = _umbc_source(tmp_path)
+    _register_test_source(db_conn, source)
     real_digest = sha256_file(archive)
 
     mock_store = MagicMock()
@@ -195,6 +219,7 @@ def test_acquire_source_s3_checksum_mismatch_leaves_status_failed(
     catalog_sources(db_conn)
 
     archive, source = _umbc_source(tmp_path)
+    _register_test_source(db_conn, source)
     wrong_remote_digest = "b" * 64  # remote returns a different hash
 
     mock_store = MagicMock()
@@ -223,6 +248,7 @@ def test_acquire_source_db_commit_failure_leaves_status_failed(
     catalog_sources(db_conn)
 
     archive, source = _umbc_source(tmp_path)
+    _register_test_source(db_conn, source)
     real_digest = sha256_file(archive)
 
     mock_store = MagicMock()

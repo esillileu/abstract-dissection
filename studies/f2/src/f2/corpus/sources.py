@@ -49,6 +49,7 @@ SOURCES: tuple[CorpusSource, ...] = (
             SourceFile(
                 "1-billion-word-language-modeling-benchmark-r13output.tar.gz",
                 "https://www.statmt.org/lm-benchmark/1-billion-word-language-modeling-benchmark-r13output.tar.gz",
+                sha256="01ba60381110baf7f189dfd2b8374de371e8c9a340835793f190bdae9e90a34e",
             ),
         ),
         raw_resource_version_id="f2-lm1b-r13output-raw",
@@ -147,6 +148,15 @@ VALIDATION_PROFILES = {
 }
 
 
+SOURCE_BOUNDARY_POLICIES: dict[str, str] = {
+    "lm1b": "sentence_per_line",
+    "wmt": "sentence_per_line",
+    "umbc": "document_paragraph_lines",
+    "wikipedia": "article_paragraph_lines",
+    "gigaword": "article_paragraph_lines",
+}
+
+
 def stable_id(*parts: object, length: int = 32) -> str:
     value = "\0".join(str(part) for part in parts)
     return hashlib.sha256(value.encode()).hexdigest()[:length]
@@ -154,6 +164,7 @@ def stable_id(*parts: object, length: int = 32) -> str:
 
 __all__ = [
     "SOURCES",
+    "SOURCE_BOUNDARY_POLICIES",
     "SOURCE_BY_KEY",
     "VALIDATION_PROFILES",
     "CorpusSource",

@@ -292,7 +292,8 @@ def _clean_wikipedia_text(value: str) -> str | None:
     value = re.sub(r"\[\[[^|\]]*\|", "[[", value)
     value = re.sub(r"{{[^}]*}}|{[^}]*}|\[|\]", "", value)
     value = re.sub(r"&[^;]*;", " ", value)
-    value = normalize_text(value)
+    lines = [" ".join(line.split()) for line in value.splitlines()]
+    value = "\n".join(line for line in lines if line)
     return value.strip() if len(value.split()) > 1 else None
 
 
@@ -307,6 +308,8 @@ class ShardInfo:
     word_count: int
     record_count: int
     source_span: dict[str, object]
+    newline_count: int = 0
+    train_words_count: int = 0
 
 
 class DeterministicSharder:
@@ -315,7 +318,11 @@ class DeterministicSharder:
         self.target_words = target_words
 
     def write(
-        self, records: Iterable[tuple[str, str]], *, source: str
+        self,
+        records: Iterable[tuple[str, str]],
+        *,
+        source: str,
+        boundary_policy: str = "sentence_per_line",
     ) -> list[ShardInfo]:
         self.output_dir.mkdir(parents=True, exist_ok=True)
         shards: list[ShardInfo] = []
@@ -330,6 +337,8 @@ class DeterministicSharder:
             raw = b"".join(
                 text.rstrip("\n").encode("utf-8") + b"\n" for _, text in batch
             )
+            newline_count = raw.count(b"\n")
+            train_words_count = words + newline_count
             raw_path = self.output_dir / f"shard-{index:05d}.txt"
             compressed_path = raw_path.with_suffix(".txt.zst")
             raw_path.write_bytes(raw)
@@ -362,6 +371,8 @@ class DeterministicSharder:
                     words,
                     len(batch),
                     {"source": source, "first": batch[0][0], "last": batch[-1][0]},
+                    newline_count=newline_count,
+                    train_words_count=train_words_count,
                 )
             )
             batch, words = [], 0
@@ -375,17 +386,54 @@ class DeterministicSharder:
             if count > self.target_words:
                 flush()
         flush()
+        total_words = sum(shard.word_count for shard in shards)
+        total_newlines = sum(shard.newline_count for shard in shards)
         manifest = {
-            "schema_version": 1,
+            "schema_version": 2,
             "source": source,
             "target_words": self.target_words,
+            "boundary_policy": boundary_policy,
+            "summary": {
+                "total_shards": len(shards),
+                "total_lexical_words": total_words,
+                "total_newlines": total_newlines,
+                "total_word2vec_train_words": total_words + total_newlines,
+            },
             "shards": [asdict(shard) for shard in shards],
         }
         (self.output_dir / "manifest.json").write_text(
-            json.dumps(manifest, sort_keys=True, separators=(",", ":")) + "\n",
+            json.dumps(manifest, sort_keys=True, indent=2) + "\n",
             encoding="utf-8",
         )
         return shards
+
+
+def iter_shard_text(shard_path: Path) -> Iterator[str]:
+    """Stream decompressed lines from a .txt.zst shard file using zstd CLI."""
+    env = os.environ.copy()
+    env["LC_ALL"] = "C"
+    proc = subprocess.Popen(
+        ["zstd", "-dc", "-q", shard_path.as_posix()],
+        stdout=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        env=env,
+    )
+    assert proc.stdout is not None
+    yield from proc.stdout
+    proc.wait()
+    if proc.returncode != 0:
+        raise RuntimeError(f"zstd decompression failed for {shard_path}")
+
+
+def open_canonical_shards(shard_paths: list[Path]) -> Iterator[tuple[str, str]]:
+    """Read (record_id, text) from a list of source-canonical shard files."""
+    for shard_path in sorted(shard_paths, key=lambda p: p.name):
+        for lineno, line in enumerate(iter_shard_text(shard_path)):
+            line = line.strip()
+            if line:
+                yield f"{shard_path.name}:{lineno}", line
 
 
 def open_source_records(source: str, paths: list[Path]) -> Iterator[tuple[str, str]]:
@@ -443,10 +491,13 @@ __all__ = [
     "BandwidthScheduler",
     "DeterministicSharder",
     "SerialDownloader",
+    "ShardInfo",
     "extract_gigaword_documents",
     "extract_wikipedia_records",
+    "iter_shard_text",
     "iter_tar_records",
     "normalize_text",
+    "open_canonical_shards",
     "open_source_records",
     "sha256_file",
 ]

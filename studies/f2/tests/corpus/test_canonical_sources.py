@@ -80,12 +80,45 @@ def test_normalize_text_matches_shell_recipe_fixture() -> None:
     assert normalize_text(original) == 'it \' s  " version -   "  , wow !      \n'
 
 
+def test_normalize_text_exact_bash_equivalence() -> None:
+    import subprocess
+
+    bash_code = """normalize_text() {
+  awk '{print tolower($0);}' | sed -e "s/’/'/g" -e "s/′/'/g" -e "s/''/ /g" -e "s/'/ ' /g" -e "s/“/\\"/g" -e "s/”/\\"/g" \\
+  -e 's/"/ " /g' -e 's/\\./ \\. /g' -e 's/<br \\/>/ /g' -e 's/, / , /g' -e 's/(/ ( /g' -e 's/)/ ) /g' -e 's/\\!/ \\! /g' \\
+  -e 's/\\?/ \\? /g' -e 's/\\;/ /g' -e 's/\\:/ /g' -e 's/-/ - /g' -e 's/=/ /g' -e 's/=/ /g' -e 's/*/ /g' -e 's/|/ /g' \\
+  -e 's/«/ /g' | tr 0-9 " "
+}
+normalize_text
+"""  # noqa: RUF001
+    test_cases = [
+        "Hello, world! 123 test’s “quote” (parenthesis) a*b=c; d:e-f <br /> end.",  # noqa: RUF001
+        "comma,no_space comma, with_space",
+        "single'quote ''double'' '''triple'''",
+        "Special: 1234567890 & % $ # @ ! ? ; : / \\ | = + * - _ ~ ` ^ < > [ ] { }",
+        "French «guillemets» and prime 5′ and smart quotes ‘single’ “double”",  # noqa: RUF001
+        "Mixed CASE WITH 99 NUMBERS and   spaces    and tabs\t",
+    ]
+    for tc in test_cases:
+        res = subprocess.run(
+            ["bash", "-c", bash_code],
+            input=tc,
+            text=True,
+            capture_output=True,
+            env={"LC_ALL": "C"},
+        )
+        expected = res.stdout.rstrip("\n")
+        assert normalize_text(tc) == expected
+
+
 def test_gigaword_and_wikipedia_fixtures() -> None:
     sgml = '<DOC id="1"><HEADLINE>Ignored</HEADLINE><TEXT><P>First &amp; second.</P><P>Third.</P></TEXT></DOC>'
     assert list(extract_gigaword_documents(sgml)) == ["First & second.\nThird."]
     xml = """<mediawiki><page><title>A</title><revision><text>Visible [[Target|label]] 2.</text></revision></page>
     <page><title>B</title><redirect title="A"/><revision><text>#REDIRECT [[A]]</text></revision></page></mediawiki>"""
-    assert list(extract_wikipedia_records(xml)) == ["visible label   ."]
+    extracted = list(extract_wikipedia_records(xml))
+    assert extracted == ["Visible label 2."]
+    assert [normalize_text(text).strip() for text in extracted] == ["visible label   ."]
 
 
 def test_shards_are_record_bounded_and_repeatable(tmp_path: Path) -> None:
@@ -112,6 +145,11 @@ def test_shards_are_record_bounded_and_repeatable(tmp_path: Path) -> None:
         == hashlib.sha256((tmp_path / "b" / "manifest.json").read_bytes()).hexdigest()
     )
     manifest = json.loads((tmp_path / "a" / "manifest.json").read_text())
+    assert manifest["schema_version"] == 2
+    assert manifest["summary"]["total_shards"] == 2
+    assert manifest["summary"]["total_lexical_words"] == 11
+    assert manifest["summary"]["total_newlines"] == 3
+    assert manifest["summary"]["total_word2vec_train_words"] == 14
     assert manifest["shards"][1]["source_span"] == {
         "source": "fixture",
         "first": "c",
