@@ -117,7 +117,9 @@ All production run artifacts, checkpoints, manifests, and time-series metrics ar
 * **`F2_DATABASE_URL`:** Unified PostgreSQL database (`f2`) partitioned logically into `catalog` and `corpus` schemas.
   * **Schema `corpus`:** Transaction-safe operational state storage for Common Crawl candidate sampling, feature extraction diagnostics, gold human audit labels, generic acquisition runs, immutable artifact metadata, multi-hop processing DAG lineage, and validation evidence.
   * **Schema `catalog`:** Reproduction catalog database tracking papers, targets, experiment specifications, resource lineage/substitutions, execution plan revisions, and planned run slots.
-* **Corpus Artifact Object Storage (SeaweedFS S3):** Actual corpus binary files, raw archive dumps, intermediate extracts, and canonical tokenized/sharded text files reside in S3-compatible object storage (SeaweedFS S3). PostgreSQL `f2` acts strictly as the Single Source of Truth (SSOT) for metadata, object URIs (`s3://...`), SHA-256 digests, byte/token counts, multi-hop processing lineage, and validation evidence.
+* **Corpus Artifact Object Storage (SeaweedFS S3):** Actual corpus binary files, raw archive dumps, intermediate extracts, and canonical tokenized/sharded text files reside in S3-compatible object storage (SeaweedFS S3, bucket `f2-corpus`). PostgreSQL `f2` acts strictly as the Single Source of Truth (SSOT) for metadata, object URIs (`s3://...`), SHA-256 digests, byte/token counts, multi-hop processing lineage, and validation evidence.
+  * **S3 URI Layout:** `raw/<source>/<release>/...`, `processed/<source>/canonical/shard-XXXXX.txt.zst`, `processed/<source>/normalized/shard-XXXXX.txt.zst`, `manifests/<source>/...`.
+  * **Remote Worker Tailscale HTTPS:** Exposed over Tailnet via Tailscale Serve at `https://esillileu-server.tail4941d3.ts.net:9000` (`F2_CORPUS_S3_ACCESS_KEY` / `F2_CORPUS_S3_SECRET_KEY`, path-style addressing).
 * **`F2_CORPUS_DATABASE_URL` / `F2_CATALOG_DATABASE_URL`:** Backward-compatible legacy aliases routing transparently to `f2` with dedicated schema search paths.
 
 ---

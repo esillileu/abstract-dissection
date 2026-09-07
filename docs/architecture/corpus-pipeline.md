@@ -125,9 +125,94 @@ flowchart LR
 
 ---
 
-## 4. CLI Command Reference
+## 4. Word2Vec Non-Common-Crawl Corpus 3-Tier Lifecycle
 
-All corpus operations are executed via `uv run repro f2 corpus <subcommand>`:
+To supply training inputs for historical Word2Vec reproductions (Mikolov et al., 2013), non-Common-Crawl datasets (WMT News Crawl, LM1B One Billion Word Benchmark, UMBC WebBase 2013, Wikipedia, Gigaword 5) are managed through a strictly decoupled 3-tier representation lifecycle:
+
+$$\text{Raw Release Archive} \xrightarrow{\text{acquire}} \text{Source-Canonical Artifact} \xrightarrow{\text{normalize}} \text{Word2Vec Normalized Artifact} \xrightarrow{\text{validate}} \text{Verified Corpus}$$
+
+```mermaid
+flowchart TD
+    subgraph Raw [Tier 1: Raw Artifacts]
+        RAW_ARCHIVE["raw/<source>/<release>/... (tar.gz / gz / bz2)"]
+    end
+
+    subgraph Canonical [Tier 2: Source-Canonical]
+        PR_CANON["processing_runs (stage: source-canonical-extraction)"]
+        SHARD_CANON["processed/<source>/canonical/shard-XXXXX.txt.zst\n(10M words/shard, zstd -19, un-normalized)"]
+    end
+
+    subgraph Normalized [Tier 3: Word2Vec Public Normalized v1]
+        PR_NORM["processing_runs (stage: word2vec-public-normalization-v1)"]
+        SHARD_NORM["processed/<source>/normalized/shard-XXXXX.txt.zst\n(10M words/shard, zstd -19, Mikolov C normalized)"]
+    end
+
+    subgraph Storage [Storage & Lineage SSOT]
+        S3[SeaweedFS S3 / Tailscale HTTPS]
+        PG[(PostgreSQL f2: catalog.processing_io & corpus.corpus_version_stats)]
+    end
+
+    RAW_ARCHIVE -->|iter_tar_records / streaming| PR_CANON
+    PR_CANON --> SHARD_CANON
+    SHARD_CANON -->|zstd -dc pipe streaming| PR_NORM
+    PR_NORM --> SHARD_NORM
+
+    SHARD_CANON -.-> S3
+    SHARD_NORM -.-> S3
+    PR_CANON -.-> PG
+    PR_NORM -.-> PG
+```
+
+### 1) Tier 1: Raw Release Ingestion (`raw`)
+* Original vendor/upstream archives (`tar.gz`, `gz`, `bz2`) downloaded via `SerialDownloader` with byte-range resume and SHA-256 verification.
+* Streamed directly to SeaweedFS S3 under `s3://f2-corpus/raw/<source>/<release>/<filename>`.
+* Zero local unpack: archives are never unpacked to disk in full.
+
+### 2) Tier 2: Source-Canonical Extraction (`canonical`)
+* **Objective:** Extract pure, visible, author-released text while strictly preserving raw vocabulary, capitalization, casing, and sentence/document boundaries.
+* **Extraction Rules by Source:**
+  * **WMT (News 2007–2012):** Decompresses yearly `.gz` releases line by line, preserving sentence boundaries (`sentence_per_line`).
+  * **LM1B (One Billion Benchmark):** Streams `training-monolingual.tokenized.shuffled/*` members in sequential order (`sentence_per_line`).
+  * **UMBC (WebBase 2013):** Sequential in-memory extraction of `webbase_all/*.txt` documents from multi-part `.tar.gz` (`document_paragraph_lines`).
+  * **Wikipedia (2012-12-01):** Historical streaming XML parser excluding `#redirect` pages and stripping wiki markup (`<ref>`, `[[image:...]]`, templates).
+  * **Gigaword 5 (LDC2011T07):** SGML parsing of `<DOC>` and `<P>` tags with HTML unescaping.
+* **Deterministic Sharding (`DeterministicSharder`):**
+  * Exact 10,000,000 words per shard.
+  * Compressed via `zstd -q -f -T1 -19 --no-progress` into `shard-00000.txt.zst`.
+  * Physical & logical SHA-256 digests and source span metadata recorded in `manifest.json`.
+
+### 3) Tier 3: Word2Vec Public Normalization v1 (`normalized`)
+* **Objective:** Exact output equivalence to Mikolov's official Word2Vec training script ([`demo-train-big-model-v1.sh`](https://code.google.com/archive/p/word2vec/)) `normalize_text()` under the `C` locale.
+* **Concrete Text Transformation Pipeline:**
+  1. **Lowercasing:** `text.lower()`
+  2. **Smart Quote & Apostrophe Harmonization:** `’`, `′` $\to$ `'`; `“`, `”` $\to$ `"`; `''` $\to$ `' '`
+  3. **Punctuation Token Spacing:** Forces isolated tokens for `'`, `"`, `.`, `,`, `(`, `)`, `!`, `?`, `-` by padding with whitespace.
+  4. **Symbol Stripping:** Replaces `;`, `:`, `=`, `*`, `|`, `«`, `<br />` with spaces.
+  5. **Digit Removal (Numbers to Spaces):** Replaces all ASCII digits `0`~`9` with spaces.
+  6. **Tag Exclusion:** Strips and prohibits metadata tags such as `<DOC>` or URLs. Final payload is pure training token stream.
+* **4-Metric Corpus Statistics:**
+  * `word_count`: Whitespace-separated lexical word count.
+  * `newline_count`: Line break count.
+  * `train_words_count`: Actual word tokens read by `word2vec.c` (`word_count + newline_count`, since `word2vec.c` counts `\n` as `</s>`).
+  * `record_count`: Document or sentence unit count.
+
+### 4) Storage Layout & Remote Worker Access
+* **S3 Bucket Layout (`s3://f2-corpus/`):**
+  * `raw/<source>/<release>/...`
+  * `processed/<source>/canonical/shard-XXXXX.txt.zst`
+  * `processed/<source>/normalized/shard-XXXXX.txt.zst`
+  * `manifests/<source>/canonical/manifest.json`
+  * `manifests/<source>/normalized/manifest.json`
+* **Tailscale S3 HTTPS Gateway:**
+  * Exposed over Tailnet via Tailscale Serve at `https://esillileu-server.tail4941d3.ts.net:9000`.
+  * Remote worker nodes can fetch shards directly via AWS CLI, `boto3`, or `rclone` using AWS SigV4 path-style addressing (`f2_corpus_s3` credentials).
+
+---
+
+## 5. CLI Command Reference
+
+### A. Common Crawl Subsystem Commands
+All Common Crawl sampling, auditing, and estimation commands run via `uv run repro f2 corpus <subcommand>`:
 
 ```bash
 # 1. Database Migrations
@@ -151,6 +236,32 @@ uv run repro f2 corpus analyze
 # 7. Run Offline Calibration, Prefilter Ablation & Filter Validation Study
 uv run repro f2 corpus calibrate
 
-# 8. Full Production Corpus Materialization
+# 8. Full Production Common Crawl Corpus Materialization
 uv run repro f2 corpus build --crawl CC-MAIN-2012 --target-words 1000000000 --output-dir data/f2/news_1b
+```
+
+### B. Non-Common-Crawl Generic Sources Commands
+Word2Vec training corpus acquisition, 2-stage processing, and validation run via `uv run repro f2 corpus sources <subcommand>`:
+
+```bash
+# 1. Inspect Inventory & Readiness Status Across All Sources
+uv run repro f2 corpus sources status
+
+# 2. Acquire Raw Release Archives (HTTP Download -> S3 Raw)
+uv run repro f2 corpus sources acquire --source wmt
+uv run repro f2 corpus sources acquire --source lm1b
+uv run repro f2 corpus sources acquire --source umbc
+
+# 3. Process Shards (Raw -> Canonical -> Word2Vec Normalized)
+uv run repro f2 corpus sources process --source wmt
+uv run repro f2 corpus sources process --source lm1b
+uv run repro f2 corpus sources process --source umbc
+
+# 4. Validate S3 Shards, Metadata & Statistics Consistency
+uv run repro f2 corpus sources validate --source wmt
+uv run repro f2 corpus sources validate --source lm1b
+uv run repro f2 corpus sources validate --source umbc
+
+# 5. Manual Ingest for Proprietary Datasets (Gigaword 5)
+uv run repro f2 corpus sources import-gigaword /path/to/LDC2011T07.tgz
 ```

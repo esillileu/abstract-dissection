@@ -40,7 +40,28 @@ uv run repro f2 corpus analyze \
     --output-dir artifacts/analysis/f2/corpus
 ```
 
-### B. Reproduction Catalog Commands
+### B. Word2Vec Generic Sources Commands (`repro f2 corpus sources`)
+```bash
+# Inspect inventory and acquisition/readiness status across all sources
+uv run repro f2 corpus sources status
+
+# Acquire raw source archives (HTTP download -> S3 raw)
+uv run repro f2 corpus sources acquire --source wmt
+uv run repro f2 corpus sources acquire --source lm1b
+uv run repro f2 corpus sources acquire --source umbc
+
+# Process into 10M-word shards (Raw -> Canonical -> Word2Vec Normalized)
+uv run repro f2 corpus sources process --source wmt
+uv run repro f2 corpus sources process --source lm1b
+uv run repro f2 corpus sources process --source umbc
+
+# Validate S3 shards, SHA-256 integrity, and statistics
+uv run repro f2 corpus sources validate --source wmt
+uv run repro f2 corpus sources validate --source lm1b
+uv run repro f2 corpus sources validate --source umbc
+```
+
+### C. Reproduction Catalog Commands
 ```bash
 # Apply pending reproduction catalog DB migrations
 uv run repro f2 catalog migrate
