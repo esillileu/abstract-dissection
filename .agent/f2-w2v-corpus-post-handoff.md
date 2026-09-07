@@ -101,6 +101,34 @@ When transitioning from `canonical` to `word2vec_public_normalized_v1` (where pu
 * **Gateway**: Tailscale Serve terminates TLS at `https://esillileu-server.tail4941d3.ts.net:9000` with valid Tailscale Let's Encrypt certificates.
 * **Verification**: Tested external SigV4 requests via Python `requests` and confirmed seamless path-style addressing with credentials `f2_corpus_s3` / `f2_corpus_s3`.
 * **Utility**: Any developer laptop or external GPU cluster connected to Tailscale can directly stream or download these shards without copying them locally to the server.
+* **Client Download Recipes**:
+  ```bash
+  # AWS CLI
+  export AWS_ACCESS_KEY_ID=f2_corpus_s3
+  export AWS_SECRET_ACCESS_KEY=f2_corpus_s3
+  export AWS_DEFAULT_REGION=us-east-1
+  ENDPOINT=https://esillileu-server.tail4941d3.ts.net:9000
+
+  aws --endpoint-url "$ENDPOINT" s3 ls s3://f2-corpus/processed/umbc/normalized/
+  aws --endpoint-url "$ENDPOINT" s3 cp s3://f2-corpus/processed/umbc/normalized/shard-00000.txt.zst ./
+  ```
+  ```python
+  # Python (boto3)
+  import boto3
+  from botocore.client import Config
+
+  s3 = boto3.client(
+      "s3",
+      endpoint_url="https://esillileu-server.tail4941d3.ts.net:9000",
+      aws_access_key_id="f2_corpus_s3",
+      aws_secret_access_key="f2_corpus_s3",
+      region_name="us-east-1",
+      config=Config(s3={"addressing_style": "path"}),
+  )
+  s3.download_file(
+      "f2-corpus", "processed/umbc/normalized/shard-00000.txt.zst", "shard-00000.txt.zst"
+  )
+  ```
 
 ---
 

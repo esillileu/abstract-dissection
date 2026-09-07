@@ -203,9 +203,56 @@ flowchart TD
   * `processed/<source>/normalized/shard-XXXXX.txt.zst`
   * `manifests/<source>/canonical/manifest.json`
   * `manifests/<source>/normalized/manifest.json`
-* **Tailscale S3 HTTPS Gateway:**
+* **Tailscale S3 HTTPS Gateway & Client Download Recipes:**
   * Exposed over Tailnet via Tailscale Serve at `https://esillileu-server.tail4941d3.ts.net:9000`.
-  * Remote worker nodes can fetch shards directly via AWS CLI, `boto3`, or `rclone` using AWS SigV4 path-style addressing (`f2_corpus_s3` credentials).
+  * Remote worker nodes and developer machines connected to Tailscale can inspect, stream, and download shards directly using AWS SigV4 path-style addressing:
+
+```bash
+# 1. Environment Credentials Contract
+export AWS_ACCESS_KEY_ID=f2_corpus_s3
+export AWS_SECRET_ACCESS_KEY=f2_corpus_s3
+export AWS_DEFAULT_REGION=us-east-1
+ENDPOINT=https://esillileu-server.tail4941d3.ts.net:9000
+
+# 2. AWS CLI Examples
+# List normalized shards for a corpus (e.g., UMBC or WMT)
+aws --endpoint-url "$ENDPOINT" s3 ls s3://f2-corpus/processed/umbc/normalized/
+
+# Download a specific shard
+aws --endpoint-url "$ENDPOINT" s3 cp s3://f2-corpus/processed/umbc/normalized/shard-00000.txt.zst ./shard-00000.txt.zst
+
+# Sync all normalized shards locally
+aws --endpoint-url "$ENDPOINT" s3 sync s3://f2-corpus/processed/umbc/normalized/ ./umbc-normalized/
+```
+
+```python
+# 3. Python (boto3) Example
+import boto3
+from botocore.client import Config
+
+s3 = boto3.client(
+    "s3",
+    endpoint_url="https://esillileu-server.tail4941d3.ts.net:9000",
+    aws_access_key_id="f2_corpus_s3",
+    aws_secret_access_key="f2_corpus_s3",
+    region_name="us-east-1",
+    config=Config(s3={"addressing_style": "path"}),
+)
+s3.download_file(
+    "f2-corpus",
+    "processed/umbc/normalized/shard-00000.txt.zst",
+    "shard-00000.txt.zst",
+)
+```
+
+```bash
+# 4. rclone Example
+rclone copy --s3-provider Other \
+  --s3-endpoint https://esillileu-server.tail4941d3.ts.net:9000 \
+  --s3-access-key-id f2_corpus_s3 \
+  --s3-secret-access-key f2_corpus_s3 \
+  :s3:f2-corpus/processed/umbc/normalized/shard-00000.txt.zst ./
+```
 
 ---
 
