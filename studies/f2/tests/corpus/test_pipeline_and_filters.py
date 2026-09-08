@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from repro_io.archive import ARCParser
+
 from f2.corpus.pipeline import (
-    ARCParser,
     LanguageFilter,
     NewsClassifier,
     PipelineRunner,

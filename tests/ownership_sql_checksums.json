@@ -1,0 +1,7 @@
+{
+  "studies/f2/src/f2/catalog/db/migrations/001_initial_catalog_schema.sql": "5f271f793e37a5ae927de1887d3e9f13e446d64161028d1d67cfc6669f74ef94",
+  "studies/f2/src/f2/catalog/schema.dbml": "fa30928a944608feccaf7cbb52c19b93793fd90a49644795bc9c115424e148d4",
+  "studies/f2/src/f2/corpus/db/migrations/001_initial_schema.sql": "3af75b113f2f8e7dc967e4f440576ae278aac13ac6fb9ba45dcf07616495f295",
+  "studies/f2/src/f2/corpus/db/migrations/002_add_prefetch_reject_stream.sql": "bddb22a22cab966c192fd0ad70989f6f5e6a79477e04e7c2c28987fb8e34635a",
+  "studies/f2/src/f2/corpus/db/migrations/003_corpus_lifecycle_lineage_and_validation.sql": "864a33ebebfb0b2cb95783ffce67939e1410e161f136124c7f4e47252c49ef32"
+}

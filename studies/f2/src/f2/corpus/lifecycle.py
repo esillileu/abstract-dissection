@@ -10,18 +10,18 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from repro_io.checksum import sha256_file
+from repro_io.http.download import BandwidthScheduler, SerialDownloader
+from repro_io.s3 import S3ObjectStore
+
 from .canonical import (
-    BandwidthScheduler,
     DeterministicSharder,
-    SerialDownloader,
     ShardInfo,
     normalize_text,
     open_canonical_shards,
     open_source_records,
-    sha256_file,
 )
 from .db.repository import CorpusStateRepository
-from .object_store import S3ObjectStore
 from .sources import (
     SOURCE_BOUNDARY_POLICIES,
     SOURCES,
@@ -151,7 +151,9 @@ def acquire_source(
         {"source": source.key, "release": source.release},
     )
     output: list[str] = []
-    downloader = SerialDownloader(bandwidth=bandwidth)
+    downloader = SerialDownloader(
+        user_agent="abstract-dissection-f2/1.0", bandwidth=bandwidth
+    )
     try:
         for item in source.files:
             expected = checksum_overrides.get(item.name) or item.sha256

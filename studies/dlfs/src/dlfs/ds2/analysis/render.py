@@ -6,8 +6,9 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 
+from dlfs.analysis.core import write_summary
 from dlfs.identity import Variant
-from repro_core.analysis.core import save_figure, write_summary
+from repro_core.analysis.core import save_figure
 
 from . import (
     e01_toy_word2vec,

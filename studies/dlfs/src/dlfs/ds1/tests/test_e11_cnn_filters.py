@@ -5,6 +5,7 @@ from pathlib import Path
 
 import numpy as np
 
+from dlfs.analysis.core import RunRef
 from dlfs.ds1.analysis.e11_cnn_filters import (
     RUN_GROUPS,
     _checkpoint_weights_path,
@@ -15,7 +16,6 @@ from dlfs.ds1.analysis.e11_cnn_filters import (
     _shared_weight_limit,
     _visualization_runs,
 )
-from repro_core.analysis.core import RunRef
 
 
 class _NoDownloadClient:

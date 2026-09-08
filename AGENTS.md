@@ -31,7 +31,7 @@ All AI agents working in this repository MUST adhere to the following 6 golden r
 * **Environment:** Python 3.11.11 managed via root [`pyproject.toml`](file:///home/esillileu/abstract-dissection/pyproject.toml) and [`uv.lock`](file:///home/esillileu/abstract-dissection/uv.lock).
 
 ### 2) Zero-Dependency Invariants & Package Isolation
-* **`deepscratch`:** 100% standalone deep learning library. NEVER import `repro_core`, `repro_mlflow`, or studies (`dlfs`). Allowed: `numpy`, `psutil`, (optional: `cupy`).
+* **`deepscratch`:** 100% standalone deep learning library. NEVER import `repro_core`, `repro_mlflow`, or studies (`dlfs`, `f2`). Allowed: `numpy`, `psutil`, (optional: `cupy`).
 * **`repro-core`:** Tracking-neutral experiment orchestration library. NEVER import `repro_mlflow`, `deepscratch`, or studies. Orchestrates executions via injected delegates and module-scoped executor dispatch (`ExecutionDefinition.executor_module`).
 * **Directionality:** Unidirectional dependency flow: $\text{studies} \rightarrow \text{repro-mlflow} \rightarrow \text{repro-core} \rightarrow \text{standard library / third-party}$.
 
@@ -107,3 +107,17 @@ uv run repro dlfs plan ds2 -e 01
 uv run repro f2 corpus analyze
 uv run repro f2 corpus calibrate
 ```
+
+
+## Acquisition and semantic boundaries
+
+- Read `docs/architecture/ownership-inventory.md` for the component ownership map.
+- `repro-io` owns HTTP, S3, checksum, Common Crawl protocol and ARC parsing only.
+  No workspace/study imports, F2 environment interpretation or research policy.
+- Core analysis is tracking-neutral; DLFS owns run selection, book smoothing and
+  parameter reports. MLflow result loading belongs to repro-mlflow.
+- F2 SQL/DBML and migration ledgers stay in the study. Never modify existing SQL
+  during ownership moves. Infra specifies service deployment, not domain tables.
+- DB tests use only F2_TEST_DATABASE_URL or disposable PostgreSQL 18; no production
+  dotenv fallback. Unavailable DB verification fails. See infra/ for the external
+  service handoff, not for repository-owned operations.

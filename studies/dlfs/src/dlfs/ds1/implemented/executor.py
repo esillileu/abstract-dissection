@@ -30,10 +30,7 @@ from dlfs.ds1.implemented.adapters import (
     training_parameters,
 )
 from repro_core.context import ExperimentContext
-from repro_core.context.checkpoint import (
-    CheckpointManager,
-    CheckpointRetentionPolicy,
-)
+from repro_core.context.checkpoint import CheckpointManager, CheckpointRetentionPolicy
 from repro_core.context.contracts import ExperimentResult
 from repro_core.context.event_executor import EvaluationRequest, EventExperimentExecutor
 from repro_core.context.metrics import build_final_metrics

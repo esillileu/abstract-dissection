@@ -6,8 +6,8 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from repro_core.analysis.core import RunRef
-from repro_core.analysis.model_parameters import (
+from dlfs.analysis.core import RunRef
+from dlfs.analysis.model_parameters import (
     ParameterCount,
     append_parameter_counts,
     count_model_parameters,

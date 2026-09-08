@@ -35,7 +35,9 @@ class CatalogDatabaseConfig:
         if not url:
             url = os.getenv("F2_CATALOG_DATABASE_URL")
         if not url:
-            url = "postgresql://f2:f2@localhost:5432/f2"
+            raise CatalogDatabaseConfigError(
+                "F2_DATABASE_URL or F2_CATALOG_DATABASE_URL is required"
+            )
         return cls(connection_url=url)
 
 

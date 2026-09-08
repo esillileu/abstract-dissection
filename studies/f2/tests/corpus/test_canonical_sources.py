@@ -7,9 +7,9 @@ import tarfile
 from pathlib import Path
 
 import pytest
+from repro_io.http.download import BandwidthScheduler
 
 from f2.corpus.canonical import (
-    BandwidthScheduler,
     DeterministicSharder,
     extract_gigaword_documents,
     extract_wikipedia_records,

@@ -6,8 +6,9 @@ from pathlib import Path
 
 import numpy as np
 
+from dlfs.analysis.core import RunRef
 from dlfs.ds2.analysis import e02_ptb_word2vec as analysis
-from repro_core.analysis.core import RunRef, aggregate
+from repro_core.analysis.core import aggregate
 
 
 def test_nearest_words_uses_cosine_similarity_and_excludes_query() -> None:
