@@ -4,14 +4,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 from deepscratch.datasets.mnist import load_mnist
 
+from dlfs.analysis.core import write_summary
 from dlfs.analysis.input import metric_histories
-from repro_core.analysis.core import (
-    aggregate,
-    mark_empty,
-    plot_curve,
-    save_figure,
-    write_summary,
-)
+from repro_core.analysis.core import aggregate, mark_empty, plot_curve, save_figure
 from repro_core.plotting.theme import ACCENT_COLORS
 
 from .broken_axis import add_wave_break

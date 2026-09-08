@@ -1,7 +1,7 @@
 """Adapter for implemented DS2 SchemaV1 runs."""
 
 from dlfs.identity import Variant
-from repro_core.results import MlflowResultStore
+from repro_mlflow.results import MlflowResultStore
 
 
 def load_native_result(client, run_id, declarations):

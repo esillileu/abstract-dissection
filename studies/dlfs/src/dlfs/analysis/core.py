@@ -1,0 +1,433 @@
+"""Shared, seed-aware MLflow analysis helpers for experiment domains."""
+
+from __future__ import annotations
+
+import csv
+import json
+import re
+from collections.abc import Callable, Iterable, Mapping, Sequence
+from dataclasses import dataclass
+from pathlib import Path
+
+import numpy as np
+
+from repro_core.analysis.core import Curve
+from repro_core.context.paths import WorkspacePaths
+
+
+class AnalysisClient:
+    """Delegate MLflow calls while carrying analysis-only selection state."""
+
+    def __init__(
+        self,
+        client,
+        *,
+        seed: int | None = None,
+    ) -> None:
+        self._client = client
+        self.analysis_seed = None if seed is None else str(seed)
+        self.analysis_selections: list[dict[str, object]] = []
+
+    def __getattr__(self, name):
+        return getattr(self._client, name)
+
+    def record_analysis_selection(self, selection: dict[str, object]) -> None:
+        self.analysis_selections.append(selection)
+
+
+@dataclass(frozen=True)
+class RunRef:
+    run_id: str
+    atomic_run_id: str
+    seed: str
+    start_time: int
+    local_artifact_root: Path | None = None
+
+
+def completed_seed_runs(
+    client,
+    *,
+    experiment_name: str,
+    group_id: str,
+    atomic_run_ids: Iterable[str],
+    protocol_version: str | None = None,
+) -> dict[str, list[RunRef]]:
+    """Return the newest completed attempt for every (condition, seed)."""
+    wanted = tuple(atomic_run_ids)
+    grouped: dict[str, list[RunRef]] = {atomic: [] for atomic in wanted}
+    experiment = client.get_experiment_by_name(experiment_name)
+    if experiment is None:
+        return grouped
+    runs = client.search_runs(
+        experiment_ids=[experiment.experiment_id],
+        filter_string=(
+            "attributes.status = 'FINISHED' and "
+            f"tags.`execution_group.id` = '{group_id}'"
+        ),
+        order_by=["attributes.start_time DESC"],
+        max_results=5_000,
+    )
+    selected: dict[tuple[str, str], RunRef] = {}
+    for run in runs:
+        tags = run.data.tags
+        if tags.get("run.type") != "seed_trial":
+            continue
+        if tags.get("execution_group.id") != group_id:
+            continue
+        if (
+            protocol_version is not None
+            and tags.get("protocol.version", "legacy") != protocol_version
+        ):
+            continue
+        atomic = tags.get("atomic_run.id", "")
+        if atomic not in grouped:
+            continue
+        seed = run.data.params.get(
+            "seed/master", run.data.params.get("seed", run.info.run_id)
+        )
+        selected_seed = getattr(client, "analysis_seed", None)
+        if selected_seed is not None and str(seed) != selected_seed:
+            continue
+        key = (atomic, str(seed))
+        selected.setdefault(
+            key,
+            RunRef(
+                run.info.run_id,
+                atomic,
+                str(seed),
+                int(run.info.start_time or 0),
+                _local_artifact_root(tags.get("run.key"), tags),
+            ),
+        )
+    for (atomic, _), run in selected.items():
+        grouped[atomic].append(run)
+    for runs_for_condition in grouped.values():
+        runs_for_condition.sort(key=lambda run: run.seed)
+    record_selection = getattr(client, "record_analysis_selection", None)
+    if record_selection is not None:
+        record_selection(
+            {
+                "experiment_name": experiment_name,
+                "group_id": group_id,
+                "atomic_run_ids": list(wanted),
+                "protocol_version": protocol_version,
+                "run_ids": sorted(
+                    run.run_id
+                    for runs_for_condition in grouped.values()
+                    for run in runs_for_condition
+                ),
+            }
+        )
+    return grouped
+
+
+ANALYSIS_CACHE_SCHEMA_VERSION = 6
+
+
+def analysis_cache_path(output: Path) -> Path:
+    """Keep cache metadata out of the durable artifact tree."""
+    paths = WorkspacePaths.from_environment(Path.cwd())
+    try:
+        relative = output.resolve().relative_to(paths.results_root.resolve())
+    except ValueError:
+        return output.with_name(f".{output.name}.analysis-cache.json")
+    return (paths.cache_root / "exp" / relative).with_name(
+        f".{output.name}.analysis-cache.json"
+    )
+
+
+def cached_analysis_outputs(
+    client: AnalysisClient,
+    output: Path,
+) -> list[Path] | None:
+    """Return existing outputs when every recorded selection has the same runs."""
+    path = analysis_cache_path(output)
+    try:
+        manifest = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if manifest.get("schema_version") != ANALYSIS_CACHE_SCHEMA_VERSION:
+        return None
+    selections = manifest.get("selections")
+    encoded_outputs = manifest.get("outputs")
+    if not isinstance(selections, list) or not selections:
+        return None
+    if not isinstance(encoded_outputs, list) or not encoded_outputs:
+        return None
+    outputs = [
+        candidate if candidate.is_absolute() else path.parent / candidate
+        for item in encoded_outputs
+        if isinstance(item, str)
+        for candidate in (Path(item),)
+    ]
+    if len(outputs) != len(encoded_outputs) or not all(
+        item.is_file() for item in outputs
+    ):
+        return None
+    previous_selections = client.analysis_selections
+    client.analysis_selections = []
+    try:
+        for selection in selections:
+            if not isinstance(selection, dict):
+                return None
+            try:
+                grouped = completed_seed_runs(
+                    client,
+                    experiment_name=str(selection["experiment_name"]),
+                    group_id=str(selection["group_id"]),
+                    atomic_run_ids=[str(item) for item in selection["atomic_run_ids"]],
+                    protocol_version=(
+                        None
+                        if selection.get("protocol_version") is None
+                        else str(selection["protocol_version"])
+                    ),
+                )
+            except (KeyError, TypeError):
+                return None
+            current_run_ids = sorted(
+                run.run_id
+                for runs_for_condition in grouped.values()
+                for run in runs_for_condition
+            )
+            if current_run_ids != selection.get("run_ids"):
+                return None
+    finally:
+        client.analysis_selections = previous_selections
+    return outputs
+
+
+def cached_analysis_console_output(output: Path) -> str:
+    """Return console output saved with a validated analysis cache hit."""
+    try:
+        manifest = json.loads(analysis_cache_path(output).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return ""
+    value = manifest.get("console_output", "")
+    return value if isinstance(value, str) else ""
+
+
+def write_analysis_cache(
+    client: AnalysisClient,
+    output: Path,
+    outputs: Sequence[Path],
+    *,
+    console_output: str = "",
+) -> None:
+    """Persist selected run IDs and the files produced from them."""
+    if not client.analysis_selections or not outputs:
+        return
+    path = analysis_cache_path(output)
+    if not all(item.is_file() for item in outputs):
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    encoded_outputs = []
+    for item in outputs:
+        try:
+            encoded_outputs.append(str(item.relative_to(path.parent)))
+        except ValueError:
+            encoded_outputs.append(str(item.resolve()))
+    manifest = {
+        "schema_version": ANALYSIS_CACHE_SCHEMA_VERSION,
+        "selections": client.analysis_selections,
+        "outputs": encoded_outputs,
+        "console_output": console_output,
+    }
+    temporary = path.with_suffix(f"{path.suffix}.tmp")
+    temporary.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    temporary.replace(path)
+
+
+def _local_artifact_root(
+    run_key: str | None,
+    tags: Mapping[str, str] | None = None,
+) -> Path | None:
+    if not run_key:
+        return None
+    metadata = tags or {}
+    domain = metadata.get("domain.name")
+    suite = metadata.get("suite.name")
+    study = (
+        metadata.get("experiment.id")
+        or metadata.get("experiment.ids", "").split(",")[0]
+    )
+    variant = metadata.get("implementation.variant")
+    if all((domain, suite, study, variant)):
+        staging = (
+            WorkspacePaths.from_environment(Path.cwd()).run_staging(
+                domain=str(domain),
+                suite=str(suite),
+                study=str(study),
+                variant=str(variant),
+                run_key=run_key,
+            )
+            / "record"
+        )
+        if staging.is_dir():
+            return staging
+    return None
+
+
+def artifact_file(client, run: RunRef, artifact_path: str) -> Path | None:
+    """Resolve the local schema-v1 mirror, then fall back to client download."""
+    if run.local_artifact_root is not None:
+        local_path = run.local_artifact_root / artifact_path
+        if local_path.is_file():
+            return local_path
+    if client is None:
+        return None
+    try:
+        if hasattr(client, "artifact_file") and callable(client.artifact_file):
+            result = client.artifact_file(run, artifact_path)
+            if result is not None and Path(result).is_file():
+                return Path(result)
+        if hasattr(client, "get") and callable(client.get):
+            result = client.get(run.run_id, artifact_path)
+            if result is not None and Path(result).is_file():
+                return Path(result)
+        if hasattr(client, "download_artifacts") and callable(
+            client.download_artifacts
+        ):
+            import tempfile
+
+            temp_dir = tempfile.mkdtemp(prefix="repro_artifact_")
+            result = client.download_artifacts(run.run_id, artifact_path, temp_dir)
+            if result is not None and Path(result).is_file():
+                return Path(result)
+    except Exception:
+        return None
+    return None
+
+
+def artifact_rows(client, run: RunRef, artifact_path: str) -> list[dict[str, str]]:
+    """Load one CSV artifact. A missing artifact represents no history."""
+    local_path = artifact_file(client, run, artifact_path)
+    if local_path is None:
+        return []
+    with local_path.open(encoding="utf-8", newline="") as file:
+        return list(csv.DictReader(file))
+
+
+def histories_from_artifact(
+    client,
+    runs: Sequence[RunRef],
+    *,
+    artifact_path: str,
+    x: str,
+    y: str,
+    row_filter: Callable[[Mapping[str, str]], bool] | None = None,
+    x_value: Callable[[Mapping[str, str]], float] | None = None,
+    y_value: Callable[[Mapping[str, str]], float] | None = None,
+) -> list[dict[float, float]]:
+    histories: list[dict[float, float]] = []
+    for run in runs:
+        history: dict[float, float] = {}
+        for row in artifact_rows(client, run, artifact_path):
+            if row_filter is not None and not row_filter(row):
+                continue
+            try:
+                step = x_value(row) if x_value is not None else float(row[x])
+                value = y_value(row) if y_value is not None else float(row[y])
+            except (KeyError, TypeError, ValueError):
+                continue
+            if np.isfinite(step) and np.isfinite(value):
+                history[float(step)] = float(value)
+        if history:
+            histories.append(history)
+    return histories
+
+
+def metric_histories(
+    client, runs: Sequence[RunRef], metric: str
+) -> list[dict[float, float]]:
+    histories = []
+    for run in runs:
+        values = {
+            float(item.step): float(item.value)
+            for item in client.get_metric_history(run.run_id, metric)
+            if np.isfinite(item.value)
+        }
+        if values:
+            histories.append(values)
+    return histories
+
+
+def smooth_book(values: Sequence[float]) -> np.ndarray:
+    """Reproduce the book's 11-point Kaiser smoothing."""
+    array = np.asarray(values, dtype=float)
+    window_len = 11
+    if len(array) < window_len:
+        return array
+    reflected = np.r_[array[window_len - 1 : 0 : -1], array, array[-1:-window_len:-1]]
+    window = np.kaiser(window_len, 2)
+    smoothed = np.convolve(window / window.sum(), reflected, mode="valid")
+    return smoothed[5 : len(smoothed) - 5]
+
+
+def smooth_histories(
+    histories: Sequence[Mapping[float, float]],
+) -> list[dict[float, float]]:
+    output = []
+    for history in histories:
+        steps = sorted(history)
+        values = smooth_book([history[step] for step in steps])
+        output.append(
+            {step: float(value) for step, value in zip(steps, values, strict=True)}
+        )
+    return output
+
+
+def write_summary(path: Path, curves: Mapping[str, Curve]) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8", newline="") as file:
+        writer = csv.DictWriter(
+            file,
+            fieldnames=[
+                "series",
+                "seed_runs",
+                "points",
+                "final_mean",
+                "final_min",
+                "final_max",
+            ],
+        )
+        writer.writeheader()
+        for name, curve in curves.items():
+            writer.writerow(
+                {
+                    "series": name,
+                    "seed_runs": curve.run_count,
+                    "points": len(curve.steps),
+                    "final_mean": curve.mean[-1] if len(curve.mean) else "",
+                    "final_min": curve.minimum[-1] if len(curve.minimum) else "",
+                    "final_max": curve.maximum[-1] if len(curve.maximum) else "",
+                }
+            )
+    return path
+
+
+def parse_experiment_selection(
+    values: Sequence[str], available: Iterable[str]
+) -> tuple[list[str], list[str]]:
+    """Expand 01, e01, 01-08, and comma-separated analysis selections."""
+    supported = tuple(available)
+    if not values or any(value.lower() == "all" for value in values):
+        return list(supported), []
+    requested: list[str] = []
+    for value in values:
+        for item in value.split(","):
+            item = item.strip().lower()
+            match = re.fullmatch(r"e?(\d+)(?:-e?(\d+))?", item)
+            if match is None:
+                raise ValueError(f"invalid experiment selection: {item}")
+            start = int(match.group(1))
+            end = int(match.group(2)) if match.group(2) is not None else start
+            if start > end:
+                raise ValueError(f"experiment range must be ascending: {item}")
+            requested.extend(f"e{number:02d}" for number in range(start, end + 1))
+    unique = list(dict.fromkeys(requested))
+    return [item for item in unique if item in supported], [
+        item for item in unique if item not in supported
+    ]

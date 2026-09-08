@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from repro_core.analysis.core import Curve, aggregate, smooth_histories
+from dlfs.analysis.core import smooth_histories
+from repro_core.analysis.core import Curve, aggregate
 
 
 def runs(data, group: str, atomic_ids: list[str]):

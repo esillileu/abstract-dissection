@@ -12,8 +12,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 from deepscratch.datasets import load_ptb
 
+from dlfs.analysis.core import write_summary
 from dlfs.analysis.input import artifact_file
-from repro_core.analysis.core import mark_empty, plot_curve, save_figure, write_summary
+from repro_core.analysis.core import mark_empty, plot_curve, save_figure
 from repro_core.plotting.theme import ACCENT_COLORS
 
 from .common import runs, source_curve
