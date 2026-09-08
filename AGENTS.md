@@ -71,7 +71,7 @@ docs/
 │   ├── packages.md                       # Responsibilities and strict boundaries of packages/
 │   ├── studies.md                        # Structure of studies/ and dynamic repro CLI plugin discovery
 │   ├── adapters.md                       # Adapter boundary & representation translation contracts
-│   └── corpus-pipeline.md                # Common Crawl sampling, auditing, two-phase estimation & corpus extraction
+│   └── corpus-pipeline.md                # Common Crawl sampling, auditing, two-phase estimation, corpus extraction & lifecycle lineage
 └── guidelines/
     ├── path-and-storage.md               # Storage tiers, MLflow upload rules, and 3-tier path precedence
     ├── reproducibility-and-references.md # Reference vendoring, provenance.json, and seed streams

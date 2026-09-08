@@ -26,9 +26,22 @@ def test_retired_tracking_contracts_are_absent() -> None:
             path.name == ".env"
             or not path.is_file()
             or any(
-                part in {".git", ".venv", "references", "__pycache__"}
+                part
+                in {
+                    ".git",
+                    ".venv",
+                    "references",
+                    "__pycache__",
+                    ".cache",
+                    ".staging",
+                    "data",
+                    "artifacts",
+                    ".pytest_cache",
+                    ".ruff_cache",
+                }
                 for part in path.parts
             )
+            or path.stat().st_size > 500_000
         ):
             continue
         try:

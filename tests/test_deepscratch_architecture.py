@@ -7,7 +7,6 @@ import yaml
 from typer.testing import CliRunner
 
 from dlfs.analysis.normalization import ComparableMetric, normalize_metric
-from dlfs.cli import _writer_overrides
 from dlfs.identity import DeepScratchCoordinate, Variant, Volume
 from repro_core.cli import PLUGIN_REGISTRY, app
 from repro_core.context.paths import StateCoordinate, StateOwner, WorkspacePaths
@@ -182,6 +181,8 @@ def test_declared_tracking_tags_expand_logical_identity() -> None:
 
 
 def test_writer_overrides_preserve_dotted_tag_names_and_templates() -> None:
+    from dlfs.cli import _writer_overrides
+
     overrides = parse_overrides(_writer_overrides(Volume.DS2, Variant.IMPLEMENTED, []))
 
     assert overrides["tracking"] == {

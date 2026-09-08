@@ -137,6 +137,67 @@ def test_render_writes_ns_graphs_text_and_csv(
     assert {row["task"] for row in rows} == {"similarity", "analogy"}
 
 
+def test_checkpoint_resolves_historical_absolute_generation_through_mlflow(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    artifact_root = tmp_path / "artifacts"
+    manifest = artifact_root / "checkpoints" / "checkpoint_manifest.json"
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text(
+        json.dumps(
+            {"final": {"path": "/old/worker/checkpoints/generations/final-abc123"}}
+        ),
+        encoding="utf-8",
+    )
+    downloaded = tmp_path / "model_parameters.npz"
+    np.savez(downloaded, W_in=np.ones((2, 2)))
+    requested = []
+
+    def fake_artifact_file(_client, _run, artifact_path):
+        requested.append(artifact_path)
+        if artifact_path == "checkpoints/checkpoint_manifest.json":
+            return manifest
+        if artifact_path == (
+            "checkpoints/generations/final-abc123/model_parameters.npz"
+        ):
+            return downloaded
+        return None
+
+    monkeypatch.setattr(analysis, "artifact_file", fake_artifact_file)
+    run = RunRef("run-1", analysis.ATOMIC_RUN_IDS[0], "1", 1, None)
+
+    assert analysis._checkpoint_weights_path(object(), run) == downloaded
+    assert "checkpoints/generations/final-abc123/model_parameters.npz" in requested
+
+
+def test_checkpoint_resolves_original_legacy_final_npz_through_mlflow(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    artifact_root = tmp_path / "artifacts"
+    manifest = artifact_root / "checkpoints" / "checkpoint_manifest.json"
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text(
+        json.dumps({"final": {"path": "/old/worker/checkpoints/final.npz"}}),
+        encoding="utf-8",
+    )
+    downloaded = tmp_path / "final.npz"
+    np.savez(downloaded, W_in=np.ones((2, 2)))
+
+    def fake_artifact_file(_client, _run, artifact_path):
+        if artifact_path == "checkpoints/checkpoint_manifest.json":
+            return manifest
+        if artifact_path == "checkpoints/final.npz":
+            return downloaded
+        return None
+
+    monkeypatch.setattr(analysis, "artifact_file", fake_artifact_file)
+    run = RunRef("run-1", analysis.ATOMIC_RUN_IDS[0], "1", 1, None)
+
+    assert analysis._checkpoint_weights_path(object(), run) == downloaded
+
+
 def test_append_markdown_report_places_word_vectors_after_summary(
     tmp_path: Path,
 ) -> None:

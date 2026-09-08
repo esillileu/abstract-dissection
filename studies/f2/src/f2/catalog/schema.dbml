@@ -1,0 +1,315 @@
+Table papers {
+  paper_id text [pk]
+  title text [not null]
+  citation_key text
+  version text
+  source_url text
+  notes text
+}
+
+Table reproduction_targets {
+  target_id text [pk]
+  paper_id text [not null]
+
+  location_type text [not null]
+  location_label text [not null]
+  ordinal int
+
+  target_type text [not null]
+  description text [not null]
+
+  source_locator text
+  notes text
+}
+
+Table experiment_specs {
+  experiment_spec_id text [pk]
+  paper_id text [not null]
+
+  name text [not null]
+
+  // trained / reused / pretrained / cited / descriptive
+  run_type text [not null]
+
+  // explicit / partially_specified / inferred / unknown
+  provenance_status text [not null]
+
+  specification json [not null]
+
+  source_locator text
+  notes text
+}
+
+Table target_experiments {
+  target_id text [not null]
+  experiment_spec_id text [not null]
+  role text [not null, default: "primary"]
+
+  indexes {
+    (target_id, experiment_spec_id) [pk]
+  }
+}
+
+Table resources {
+  resource_id text [pk]
+
+  // dataset / dataset_split / evaluation_dataset /
+  // model / pretrained_model / embedding /
+  // source_code / evaluation_code / preprocessor /
+  // software / hardware / environment
+  kind text [not null]
+
+  name text [not null]
+  description text
+
+  // public / licensed / private / lost / unknown
+  access_status text [not null]
+
+  // not_checked / located / requested / acquired /
+  // verified / unavailable
+  acquisition_status text [not null]
+
+  // ready / preprocess / reconstruct / blocked / unknown
+  readiness_status text [not null]
+
+  canonical_version_id text
+  notes text
+}
+
+Table resource_versions {
+  resource_version_id text [pk]
+  resource_id text [not null]
+
+  version_label text
+
+  uri text
+  local_path text
+
+  checksum_algo text
+  checksum text
+  size_bytes bigint
+
+  metadata json
+
+  is_verified boolean [not null, default: false]
+  created_at timestamp
+  notes text
+}
+
+Table resource_sources {
+  source_id bigint [pk, increment]
+  resource_id text [not null]
+
+  // official_page / official_repo / author_page /
+  // archive / mirror / paper_supplement / third_party
+  source_type text [not null]
+
+  url text
+  citation text
+  license text
+
+  is_preferred boolean [not null, default: false]
+  notes text
+}
+
+Table preparation_specs {
+  preparation_id text [pk]
+
+  input_resource_id text [not null]
+  output_resource_id text
+
+  // format_conversion / filter / tokenize / deduplicate /
+  // subset / merge / reconstruct / derive / phrase_detection
+  preparation_type text [not null]
+
+  specification json [not null]
+
+  code_resource_id text
+
+  // planned / blocked / ready / completed / deprecated
+  status text [not null]
+
+  notes text
+}
+
+Table experiment_requirements {
+  requirement_id text [pk]
+  experiment_spec_id text [not null]
+
+  // train_data / validation_data / evaluation_data /
+  // model / pretrained_model / training_code /
+  // evaluation_code / preprocessor / environment / hardware
+  role text [not null]
+
+  // Set when the paper identifies a concrete resource.
+  required_resource_id text
+
+  // Set when the paper specifies properties rather than an exact resource.
+  requirement_spec json
+
+  required boolean [not null, default: true]
+  notes text
+}
+
+Table requirement_candidates {
+  requirement_id text [not null]
+  resource_id text [not null]
+
+  // exact / equivalent / reconstructed / substitute
+  candidate_type text [not null]
+
+  // proposed / selected / rejected / blocked
+  status text [not null]
+
+  justification text
+  notes text
+
+  indexes {
+    (requirement_id, resource_id) [pk]
+  }
+}
+
+Table execution_plans {
+  execution_plan_id text [pk]
+
+  // Allows future independent plan series while F2 can initially use "f2".
+  plan_key text [not null]
+
+  revision int [not null]
+
+  // draft / blocked / runnable / deprecated
+  status text [not null]
+
+  source_ref text
+  source_hash text
+
+  is_canonical boolean [not null, default: false]
+
+  created_at timestamp [not null]
+  superseded_at timestamp
+
+  notes text
+
+  indexes {
+    (plan_key, revision) [unique]
+  }
+}
+
+Table execution_plan_experiments {
+  plan_experiment_id text [pk]
+
+  execution_plan_id text [not null]
+  experiment_spec_id text [not null]
+
+  enabled boolean [not null, default: true]
+
+  // Parameters common to this experiment within this plan.
+  parameters json [not null]
+
+  notes text
+
+  indexes {
+    (execution_plan_id, experiment_spec_id) [unique]
+  }
+}
+
+Table execution_plan_bindings {
+  plan_experiment_id text [not null]
+  requirement_id text [not null]
+
+  // Concrete artifact/version actually used by this plan.
+  resource_version_id text [not null]
+
+  // exact / equivalent / reconstructed / substitute
+  binding_type text [not null]
+
+  justification text
+  notes text
+
+  indexes {
+    (plan_experiment_id, requirement_id) [pk]
+  }
+}
+
+Table planned_run_slots {
+  planned_run_slot_id text [pk]
+
+  plan_experiment_id text [not null]
+
+  // Deterministic identity within a plan experiment.
+  // It must be stable across repeated materialization.
+  slot_key text [not null]
+
+  atomic_run_id text
+  variant_key text
+  seed bigint
+
+  // Per-slot overrides after plan expansion.
+  parameters json [not null]
+
+  expected boolean [not null, default: true]
+
+  // Pointer only. MLflow remains the runtime source of truth.
+  reference_mlflow_run_id text
+
+  created_at timestamp [not null]
+
+  notes text
+
+  indexes {
+    (plan_experiment_id, slot_key) [unique]
+  }
+}
+
+Table reported_results {
+  reported_result_id bigint [pk, increment]
+
+  target_id text [not null]
+
+  metric text [not null]
+
+  value double
+  value_text text
+  unit text
+
+  aggregation text
+  metadata json
+
+  notes text
+}
+
+
+// Relationships
+
+Ref: reproduction_targets.paper_id > papers.paper_id
+
+Ref: experiment_specs.paper_id > papers.paper_id
+
+Ref: target_experiments.target_id > reproduction_targets.target_id
+Ref: target_experiments.experiment_spec_id > experiment_specs.experiment_spec_id
+
+Ref: resource_versions.resource_id > resources.resource_id
+Ref: resources.canonical_version_id > resource_versions.resource_version_id
+
+Ref: resource_sources.resource_id > resources.resource_id
+
+Ref: preparation_specs.input_resource_id > resources.resource_id
+Ref: preparation_specs.output_resource_id > resources.resource_id
+Ref: preparation_specs.code_resource_id > resources.resource_id
+
+Ref: experiment_requirements.experiment_spec_id > experiment_specs.experiment_spec_id
+Ref: experiment_requirements.required_resource_id > resources.resource_id
+
+Ref: requirement_candidates.requirement_id > experiment_requirements.requirement_id
+Ref: requirement_candidates.resource_id > resources.resource_id
+
+Ref: execution_plan_experiments.execution_plan_id > execution_plans.execution_plan_id
+Ref: execution_plan_experiments.experiment_spec_id > experiment_specs.experiment_spec_id
+
+Ref: execution_plan_bindings.plan_experiment_id > execution_plan_experiments.plan_experiment_id
+Ref: execution_plan_bindings.requirement_id > experiment_requirements.requirement_id
+Ref: execution_plan_bindings.resource_version_id > resource_versions.resource_version_id
+
+Ref: planned_run_slots.plan_experiment_id > execution_plan_experiments.plan_experiment_id
+
+Ref: reported_results.target_id > reproduction_targets.target_id
