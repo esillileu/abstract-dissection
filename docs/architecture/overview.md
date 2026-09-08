@@ -18,6 +18,7 @@ graph TD
         CORE[packages/repro-core]
         MLFLOW[packages/repro-mlflow]
         ENGINE[packages/deepscratch]
+        IO[packages/repro-io]
     end
 
     subgraph Layer 3: Studies [3. Studies (Scientific Experiments & Campaigns)]
@@ -27,7 +28,7 @@ graph TD
     end
 
     subgraph Layer 4: Infrastructure [4. Infra & Tracking]
-        INFRA[Externally managed MLflow and PostgreSQL services]
+        INFRA[External operators: MLflow, PostgreSQL, S3]
     end
 
     STUDY_DLFS -->|orchestrates via| ADAPTERS
@@ -36,10 +37,11 @@ graph TD
     ADAPTERS -->|injects datasets & builds models| ENGINE
     STUDY_DLFS -->|tracks runs| MLFLOW
     STUDY_F2 -->|tracks runs| MLFLOW
+    STUDY_F2 -->|acquires bytes| IO
     STUDY_DLFS -->|reads immutable baseline| REF
     MLFLOW -->|depends on| CORE
-    INFRA -.->|serves tracking & storage| MLFLOW
-    INFRA -.->|metadata persistence| STUDY_F2
+    INFRA -.->|provides endpoints| MLFLOW
+    INFRA -.->|provides database/object-store services| STUDY_F2
 ```
 
 ---
@@ -48,10 +50,10 @@ graph TD
 
 | Top-Level Directory | Ownership / Role | Dependency Rules |
 | :--- | :--- | :--- |
-| **`packages/`** | Reusable, self-contained Python libraries (`repro-core`, `repro-mlflow`, `deepscratch`). | **Must NOT depend on `studies/` or external references.** `deepscratch` has 0 dependencies on other workspace packages. `repro-core` has 0 dependencies on `repro-mlflow`, `deepscratch`, or `studies/`. |
+| **`packages/`** | Reusable, self-contained Python libraries (`repro-core`, `repro-mlflow`, `repro-io`, `deepscratch`). | **Must NOT depend on `studies/` or external references.** `deepscratch` has 0 dependencies on other workspace packages. `repro-core` has 0 dependencies on `repro-mlflow`, `deepscratch`, or `studies/`. |
 | **`studies/`** | Domain-specific reproduction studies and experimental protocols (`studies/dlfs`, `studies/f2`). | Orchestrates `packages/` engines and compares against `references/`. Contains explicit **adapters**, study catalogs, configs, and custom analysis scripts. |
 | **`references/`** | Vendored immutable upstream baselines (`references/dlfs1-book`, `references/dlfs2-book`). | Read-only snapshots of upstream code. Must include `provenance.json`. |
-| **External services** | Managed MLflow and PostgreSQL deployments. | Durable tracking and transactional storage; see the storage contract. |
+| **External services** | MLflow, PostgreSQL, and S3-compatible services operated outside this repository. | Provide endpoints and durable infrastructure; service operation, server schemas, roles, buckets, backups, and availability are outside repository/study ownership. |
 | **`artifacts/`** | Human-readable final analysis reports, paper figures, and markdown summaries. | Ephemeral scratch data must NOT be committed here. |
 | **`data/`** | Canonical dataset directory (`data/mnist`, `data/ptb`, `data/sequence`). | Managed via 3-tier fallback resolution. Ignored by Git. |
 | **`.staging/`** | Volatile in-memory / scratch buffer during live runs. | Completely disposable (`rm -rf .staging` safe). |
@@ -74,3 +76,8 @@ graph TD
    All executions must declare exact seeds, backend targets (CPU/GPU), precision dtypes, and configuration digests.
 6. **Module-Scoped Study Isolation:**
    `repro-core` dispatches execution dynamically to study adapters through declared `executor_module`s (`ExecutionDefinition.executor_module`). No process-global registries or cross-study name collisions exist.
+
+`infra/` records external service interfaces and operator handoff only; it is not
+an in-repository service operations responsibility. F2 retains only research-domain
+DDL, migrations, and lineage semantics.
+Independent repro-io and deepscratch sit beside the core/tracking dependency chain.

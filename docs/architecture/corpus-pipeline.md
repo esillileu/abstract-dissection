@@ -13,27 +13,24 @@ studies/f2/
     ├── plugin.py                      # Repro CLI Plugin Entrypoint (discoverable by repro_core)
     ├── cli.py                         # Root Typer CLI dispatcher
     ├── definition.py                  # Study ExecutionDefinitions
-    ├── common/                        # Shared network, storage, statistics & analysis standards
-    │   ├── network/                   # TokenBucketLimiter, RangeFetcher
-    │   ├── storage/                   # TableExporter, CleanTextWriter
+    ├── common/                        # Shared statistics & analysis standards
     │   ├── stats/                     # BootstrapVarianceEngine, DifferenceEstimator, ClassifierMetrics
     │   └── analysis/                  # BaseAnalysisOrchestrator, theme, declarations
     └── corpus/                        # Common Crawl Extraction Subsystem & Control Plane
         ├── cli.py                     # Typer CLI: migrate, plan, sample, audit, analyze, calibrate, build
-        ├── cdx.py                     # CDX binary cluster index reader & block locator (O(log N) lookup)
         ├── discovery.py               # 2-stage Horvitz-Thompson sampler & 8-stratum audit allocator
-        ├── fetcher.py                 # HTTP Range fetcher against Common Crawl ARC/WARC archives
         ├── pipeline.py                # Content extraction, language ID, validity filter, news scoring
         ├── storage.py                 # Provenance export & clean text shard writers
         ├── analysis.py                # Two-Phase Stratified Difference Estimator & Bootstrap
         ├── calibration.py             # Offline classifier calibration & pre-fetch filter ablation
+        └── db/                        # F2-owned schemas/state on external PostgreSQL
             ├── migrations/
             │   ├── 001_initial_schema.sql
             │   ├── 002_add_prefetch_reject_stream.sql
             │   ├── 003_corpus_lifecycle_lineage_and_validation.sql
             │   └── runner.py
             ├── repository.py          # CorpusStateRepository (sampling, auditing, lifecycle DAG lineage & validation)
-            └── session.py             # Connection pooling (F2_DATABASE_URL / F2_CORPUS_DATABASE_URL)
+            └── session.py             # Connection/transaction lifecycle (F2_DATABASE_URL / F2_CORPUS_DATABASE_URL)
 ```
 
 ---
@@ -102,8 +99,8 @@ flowchart LR
 ```
 
 ### 1) Storage Distribution & Single Source of Truth
-* **PostgreSQL (`f2`):** SSOT for metadata, content hashes (SHA-256), schema constraints, lineage DAG edges, and validation records.
-* **SeaweedFS S3:** Immutable object store for actual archive binaries, intermediate text chunks, and canonical shards (`s3://...`).
+* **PostgreSQL (external service, F2 schemas):** SSOT for metadata, content hashes (SHA-256), schema constraints, lineage DAG edges, and validation records. F2 owns schema definitions and migrations, not the PostgreSQL service.
+* **S3-compatible object storage (external service):** Stores actual archive binaries, intermediate text chunks, and canonical shards (`s3://...`). F2 defines logical keys and records their identities; bucket administration, retention, and availability are external responsibilities.
 * **Catalog Identity SSOT:** All generic sources (WMT News Crawl, LM1B, Gigaword, UMBC, Wikipedia, Common Crawl) are registered exclusively in `catalog.resources` and `catalog.resource_versions`. Corpus lifecycle tables reference `catalog.resource_versions(resource_version_id)` via strict foreign keys without duplicating source definitions.
 
 ### 2) Core Entities & Relational Design
@@ -177,7 +174,7 @@ flowchart TD
   * **Wikipedia (2012-12-01):** Historical streaming XML parser excluding `#redirect` pages and stripping wiki markup (`<ref>`, `[[image:...]]`, templates).
   * **Gigaword 5 (LDC2011T07):** SGML parsing of `<DOC>` and `<P>` tags with HTML unescaping.
 * **Deterministic Sharding (`DeterministicSharder`):**
-  * Exact 10,000,000 words per shard.
+  * 10,000,000-word target with record boundaries preserved; shard counts can differ.
   * Compressed via `zstd -q -f -T1 -19 --no-progress` into `shard-00000.txt.zst`.
   * Physical & logical SHA-256 digests and source span metadata recorded in `manifest.json`.
 
@@ -204,15 +201,15 @@ flowchart TD
   * `manifests/<source>/canonical/manifest.json`
   * `manifests/<source>/normalized/manifest.json`
 * **Tailscale S3 HTTPS Gateway & Client Download Recipes:**
-  * Exposed over Tailnet via Tailscale Serve at `https://esillileu-server.tail4941d3.ts.net:9000`.
+  * Exposed over Tailnet via Tailscale Serve at `https://<tailnet-host>:9000`.
   * Remote worker nodes and developer machines connected to Tailscale can inspect, stream, and download shards directly using AWS SigV4 path-style addressing:
 
 ```bash
 # 1. Environment Credentials Contract
-export AWS_ACCESS_KEY_ID=f2_corpus_s3
-export AWS_SECRET_ACCESS_KEY=f2_corpus_s3
+export AWS_ACCESS_KEY_ID="<corpus-access-key>"
+export AWS_SECRET_ACCESS_KEY="<corpus-secret-key>"
 export AWS_DEFAULT_REGION=us-east-1
-ENDPOINT=https://esillileu-server.tail4941d3.ts.net:9000
+ENDPOINT="https://<tailnet-host>:9000"
 
 # 2. AWS CLI Examples
 # List normalized shards for a corpus (e.g., UMBC or WMT)
@@ -232,9 +229,9 @@ from botocore.client import Config
 
 s3 = boto3.client(
     "s3",
-    endpoint_url="https://esillileu-server.tail4941d3.ts.net:9000",
-    aws_access_key_id="f2_corpus_s3",
-    aws_secret_access_key="f2_corpus_s3",
+    endpoint_url="https://<tailnet-host>:9000",
+    aws_access_key_id="<corpus-credential>",
+    aws_secret_access_key="<corpus-credential>",
     region_name="us-east-1",
     config=Config(s3={"addressing_style": "path"}),
 )
@@ -248,9 +245,9 @@ s3.download_file(
 ```bash
 # 4. rclone Example
 rclone copy --s3-provider Other \
-  --s3-endpoint https://esillileu-server.tail4941d3.ts.net:9000 \
-  --s3-access-key-id f2_corpus_s3 \
-  --s3-secret-access-key f2_corpus_s3 \
+  --s3-endpoint "https://<tailnet-host>:9000" \
+  --s3-access-key-id "<corpus-access-key>" \
+  --s3-secret-access-key "<corpus-secret-key>" \
   :s3:f2-corpus/processed/umbc/normalized/shard-00000.txt.zst ./
 ```
 
@@ -283,7 +280,7 @@ uv run repro f2 corpus analyze
 # 7. Run Offline Calibration, Prefilter Ablation & Filter Validation Study
 uv run repro f2 corpus calibrate
 
-# 8. Full Production Common Crawl Corpus Materialization
+# 8. Build placeholder (directory creation and guidance only)
 uv run repro f2 corpus build --crawl CC-MAIN-2012 --target-words 1000000000 --output-dir data/f2/news_1b
 ```
 
@@ -312,3 +309,18 @@ uv run repro f2 corpus sources validate --source umbc
 # 5. Manual Ingest for Proprietary Datasets (Gigaword 5)
 uv run repro f2 corpus sources import-gigaword /path/to/LDC2011T07.tgz
 ```
+
+
+## Implemented boundary and limitations
+
+Transport, S3 client, CDX/SURT and ARC parsing are in repro-io. F2 owns release
+selection, extraction options, filters, word definitions, sampling probabilities,
+audit strata, estimators, source spans, normalization and canonical lineage.
+`corpus/storage.py` owns DOC/provenance representations. DB schema and migrations
+stay under catalog and corpus; bootstrap catalog first, then corpus.
+
+The `corpus build` command currently creates its output directory and prints
+instructions; it does not implement full production materialization. The command
+example above describes its intended interface, not a completed production pipeline.
+Shards preserve record boundaries and use a word target/threshold; they do not
+promise exactly ten million words per shard. These behaviors are unchanged.
