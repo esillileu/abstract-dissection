@@ -11,14 +11,12 @@ import pytest
 from f2.catalog.db.migrations.runner import run_catalog_migrations
 from f2.corpus.db.migrations.runner import run_migrations
 from f2.corpus.db.repository import CorpusStateRepository
-from f2.corpus.db.session import get_connection, get_db_url
+from f2.corpus.db.session import get_connection
 
 
 @pytest.fixture
-def db_conn():
-    url = get_db_url()
-    if not url:
-        pytest.skip("F2 database URL is not set")
+def db_conn(f2_test_database):
+    url = f2_test_database
     with get_connection(url) as conn:
         run_catalog_migrations(conn)
         run_migrations(conn)

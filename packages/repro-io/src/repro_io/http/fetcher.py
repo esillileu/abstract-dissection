@@ -26,12 +26,14 @@ class RangeFetcher:
 
     def __init__(
         self,
-        base_url: str = "https://data.commoncrawl.org",
+        base_url: str,
         bandwidth_mbps: float = 20.0,
         max_concurrency: int = 2,
         max_retries: int = 5,
         timeout_sec: float = 30.0,
+        user_agent: str = "repro-io/0.1",
     ) -> None:
+        self.user_agent = user_agent
         self.base_url = base_url.rstrip("/")
         self.limiter = TokenBucketLimiter.from_mbps(bandwidth_mbps)
         self.semaphore = threading.Semaphore(max_concurrency)
@@ -48,7 +50,7 @@ class RangeFetcher:
         range_header = f"bytes={offset}-{offset + length - 1}"
         headers = {
             "Range": range_header,
-            "User-Agent": "abstract-dissection-repro/0.1 (Research reproduction study)",
+            "User-Agent": self.user_agent,
             "Accept-Encoding": "identity",
         }
 

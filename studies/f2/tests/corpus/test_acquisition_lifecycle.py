@@ -9,12 +9,13 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+from repro_io.checksum import sha256_file
+from repro_io.http.download import SerialDownloader
 
 from f2.catalog.db.migrations.runner import run_catalog_migrations
-from f2.corpus.canonical import SerialDownloader, sha256_file
 from f2.corpus.db.migrations.runner import run_migrations
 from f2.corpus.db.repository import CorpusStateRepository
-from f2.corpus.db.session import get_connection, get_db_url
+from f2.corpus.db.session import get_connection
 from f2.corpus.lifecycle import (
     acquire_source,
     catalog_sources,
@@ -173,10 +174,8 @@ def test_serial_downloader_range_header_sent_when_partial_exists(
 
 
 @pytest.fixture
-def db_conn():
-    url = get_db_url()
-    if not url:
-        pytest.skip("F2_DATABASE_URL not configured")
+def db_conn(f2_test_database):
+    url = f2_test_database
     with get_connection(url) as conn:
         run_catalog_migrations(conn)
         run_migrations(conn)

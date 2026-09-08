@@ -8,3 +8,7 @@ __all__ = [
     "RangeFetcher",
     "TokenBucketLimiter",
 ]
+
+from .download import BandwidthScheduler, SerialDownloader
+
+__all__ += ["BandwidthScheduler", "SerialDownloader"]
