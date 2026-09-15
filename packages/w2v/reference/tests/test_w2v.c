@@ -59,6 +59,16 @@ static void test_config_and_rng(void)
     assert(vocab_config_validate(&vocab_config) == STATUS_OK);
     assert(training_config_validate(&training_config) == STATUS_OK);
     assert(training_config.rng_algorithm == RNG_LCG);
+    assert(vocab_config.hash_capacity == 30000000);
+    assert(MAX_CODE_LENGTH == 40);
+    assert(training_config.initial_learning_rate == 0.05f);
+    assert(training_config.negative_table_size == 100000000);
+
+    training_config_defaults_for_model(&training_config, MODEL_SKIP_GRAM);
+    assert(training_config.model_kind == MODEL_SKIP_GRAM);
+    assert(training_config.initial_learning_rate == 0.025f);
+    assert(training_config_validate(&training_config) == STATUS_OK);
+    training_config_defaults_for_model(&training_config, MODEL_CBOW);
     assert(training_config.initial_learning_rate == 0.05f);
 
     training_config.rng_algorithm = RNG_XORSHIFT;
@@ -165,6 +175,155 @@ static void test_context_order(void)
     assert(observed_count == 4);
 }
 
+/* Fixed one-step oracle: the expected values follow the upstream CBOW and
+ * skip-gram equations with a constant sigmoid value. In negative sampling,
+ * a duplicate negative is consumed but intentionally makes no update. */
+static void test_fixed_one_step(
+    const Corpus *corpus,
+    const Vocabulary *vocab,
+    ModelKind kind,
+    ObjectiveKind objective)
+{
+    TrainingConfig config;
+    training_config_defaults_for_model(&config, kind);
+    config.embedding_dimension = 2;
+    config.objective_kind = objective;
+    config.window_radius = 1;
+    config.negative_sample_count = 1;
+    config.negative_table_size = 7;
+    config.sigmoid_table_size = 3;
+    config.subsampling_threshold = 0;
+    config.initial_learning_rate = 0.05f;
+
+    Status status;
+    Model *model = model_create(vocab, 2, 1, RNG_LCG, &status);
+    assert(model != NULL && status == STATUS_OK);
+    Trainer *trainer = trainer_create(corpus, vocab, model, &config, &status);
+    assert(trainer != NULL && status == STATUS_OK);
+    for (size_t index = 0; index < trainer->sigmoid_table.size; index++)
+    {
+        trainer->sigmoid_table.values[index] = 0.5f;
+    }
+    for (size_t index = 0; index < trainer->negative_sampler.size; index++)
+    {
+        trainer->negative_sampler.table[index] = 2;
+    }
+
+    for (size_t index = 0; index < model->vocab_size * 2; index++)
+    {
+        atomic_float_store(&model->input_embeddings[index], 0);
+        atomic_float_store(&model->output_embeddings[index], 0);
+    }
+    atomic_float_store(&model->input_embeddings[2], 0.25f);
+    atomic_float_store(&model->input_embeddings[3], -0.5f);
+    atomic_float_store(&model->input_embeddings[6], 0.75f);
+    atomic_float_store(&model->input_embeddings[7], 0.5f);
+    atomic_float_store(&model->output_embeddings[4], 0.2f);
+    atomic_float_store(&model->output_embeddings[5], -0.4f);
+    if (objective == OBJECTIVE_HIERARCHICAL_SOFTMAX)
+    {
+        atomic_float_store(&model->output_embeddings[6], 0.2f);
+        atomic_float_store(&model->output_embeddings[7], -0.4f);
+        atomic_float_store(&model->output_embeddings[4], 0);
+        atomic_float_store(&model->output_embeddings[5], 0);
+    }
+
+    Worker worker = {0};
+    worker.sentence[0] = 1;
+    worker.sentence[1] = 2;
+    worker.sentence[2] = 3;
+    worker.sentence_length = 3;
+    worker.sentence_position = 1;
+    rng_init(&worker.window_rng, 1, RNG_LCG);
+    rng_init(&worker.negative_rng, 1, RNG_LCG);
+    worker.hidden = calloc(2, sizeof(real));
+    worker.hidden_gradient = calloc(2, sizeof(real));
+    assert(worker.hidden != NULL && worker.hidden_gradient != NULL);
+    ModelStep step = {
+        .target_token = 2,
+        .learning_rate = 0.05f,
+        .trainer = trainer,
+        .worker = &worker,
+    };
+
+    if (kind == MODEL_CBOW)
+    {
+        cbow_train(&step);
+        assert(atomic_float_load(&model->input_embeddings[2]) == 0.255f);
+        assert(atomic_float_load(&model->input_embeddings[3]) == -0.51f);
+        assert(atomic_float_load(&model->input_embeddings[6]) == 0.755f);
+        assert(atomic_float_load(&model->input_embeddings[7]) == 0.49f);
+        size_t first = objective == OBJECTIVE_HIERARCHICAL_SOFTMAX ? 6 : 4;
+        assert(atomic_float_load(&model->output_embeddings[first]) == 0.2125f);
+        assert(atomic_float_load(&model->output_embeddings[first + 1]) == -0.4f);
+        if (objective == OBJECTIVE_HIERARCHICAL_SOFTMAX)
+        {
+            assert(atomic_float_load(&model->output_embeddings[2]) == -0.0125f);
+        }
+    }
+    else
+    {
+        skip_gram_train(&step);
+        assert(atomic_float_load(&model->input_embeddings[2]) == 0.255f);
+        assert(atomic_float_load(&model->input_embeddings[3]) == -0.51f);
+        if (objective == OBJECTIVE_HIERARCHICAL_SOFTMAX)
+        {
+            assert(atomic_float_load(&model->input_embeddings[6]) == 0.7553125f);
+            assert(atomic_float_load(&model->input_embeddings[7]) == 0.489375f);
+            assert(atomic_float_load(&model->output_embeddings[6]) == 0.225f);
+            assert(atomic_float_load(&model->output_embeddings[7]) == -0.4f);
+            assert(atomic_float_load(&model->output_embeddings[2]) == -0.025f);
+            assert(atomic_float_load(&model->output_embeddings[3]) == 0);
+        }
+        else
+        {
+            assert(atomic_float_load(&model->input_embeddings[6]) == 0.75515625f);
+            assert(atomic_float_load(&model->input_embeddings[7]) == 0.4896875f);
+            assert(atomic_float_load(&model->output_embeddings[4]) == 0.225f);
+            assert(atomic_float_load(&model->output_embeddings[5]) == -0.4f);
+        }
+    }
+    assert(worker.window_rng.state == UINT64_C(25214903928));
+    if (objective == OBJECTIVE_NEGATIVE_SAMPLING)
+    {
+        assert(worker.negative_rng.state != 1);
+    }
+    else
+    {
+        assert(worker.negative_rng.state == 1);
+    }
+    free(worker.hidden);
+    free(worker.hidden_gradient);
+    trainer_destroy(&trainer);
+    model_destroy(&model);
+}
+
+static void test_prune_at_seventy_percent(void)
+{
+    const char *path = "tests/prune.tmp";
+    FILE *file = fopen(path, "wb");
+    assert(file != NULL);
+    assert(fputs("a b c d e f g h\n", file) >= 0);
+    assert(fclose(file) == 0);
+
+    Status status;
+    Corpus *corpus = corpus_create(path, &status);
+    assert(corpus != NULL && status == STATUS_OK);
+    VocabularyConfig config;
+    vocab_config_defaults(&config);
+    config.initial_capacity = 2;
+    config.hash_capacity = 10;
+    config.min_count = 1;
+    Vocabulary *vocab = vocab_build(corpus, &config, &status);
+    assert(vocab != NULL && status == STATUS_OK);
+    assert(vocab->size == 2);
+    assert(strcmp(vocab->entries[0].token, "</s>") == 0);
+    assert(strcmp(vocab->entries[1].token, "h") == 0);
+    vocab_destroy(&vocab);
+    corpus_destroy(&corpus);
+    assert(remove(path) == 0);
+}
+
 static void test_duplicate_negative_is_not_redrawn(
     const Corpus *corpus,
     const Vocabulary *vocab)
@@ -243,17 +402,23 @@ static void test_learning_rate_interval(
     worker.local_token_count = 3;
     atomic_store_explicit(&trainer->processed_tokens, 3, memory_order_relaxed);
     worker_update_learning_rate(&worker, trainer);
+    assert(worker.learning_rate == config.initial_learning_rate);
+    assert(worker.last_learning_rate_update_count == 0);
+
+    worker.local_token_count = 4;
+    atomic_store_explicit(&trainer->processed_tokens, 4, memory_order_relaxed);
+    worker_update_learning_rate(&worker, trainer);
     real updated_rate = worker.learning_rate;
     assert(updated_rate < config.initial_learning_rate);
-    assert(worker.last_learning_rate_update_count == 3);
+    assert(worker.last_learning_rate_update_count == 4);
 
-    worker.local_token_count = 5;
-    atomic_store_explicit(&trainer->processed_tokens, 5, memory_order_relaxed);
+    worker.local_token_count = 7;
+    atomic_store_explicit(&trainer->processed_tokens, 7, memory_order_relaxed);
     worker_update_learning_rate(&worker, trainer);
     assert(worker.learning_rate == updated_rate);
 
-    worker.local_token_count = 6;
-    atomic_store_explicit(&trainer->processed_tokens, 6, memory_order_relaxed);
+    worker.local_token_count = 8;
+    atomic_store_explicit(&trainer->processed_tokens, 8, memory_order_relaxed);
     worker_update_learning_rate(&worker, trainer);
     assert(worker.learning_rate < updated_rate);
 
@@ -319,6 +484,13 @@ static void test_vocab(const Vocabulary *vocab)
     static const char *expected_tokens[] = {
         "</s>", "alpha", "beta", "gamma", "delta"};
     static const uint64_t expected_counts[] = {3, 4, 3, 2, 1};
+    static const size_t expected_lengths[] = {2, 2, 2, 3, 3};
+    static const size_t expected_paths[][3] = {
+        {3, 2, 0}, {3, 2, 0}, {3, 1, 0},
+        {3, 1, 0}, {3, 1, 0}};
+    static const unsigned char expected_bits[][3] = {
+        {1, 1, 0}, {1, 0, 0}, {0, 1, 0},
+        {0, 0, 1}, {0, 0, 0}};
 
     assert(vocab->size == 5);
     for (size_t index = 0; index < 5; index++)
@@ -327,7 +499,14 @@ static void test_vocab(const Vocabulary *vocab)
 
         assert(strcmp(token, expected_tokens[index]) == 0);
         assert(vocab->entries[index].count == expected_counts[index]);
-        assert(vocab->entries[index].huffman_length > 0);
+        assert(vocab->entries[index].huffman_length == expected_lengths[index]);
+        for (size_t path = 0; path < expected_lengths[index]; path++)
+        {
+            assert(vocab->entries[index].huffman_path[path] ==
+                   expected_paths[index][path]);
+            assert(vocab->entries[index].huffman_bits[path] ==
+                   expected_bits[index][path]);
+        }
     }
 
     NegativeSampler sampler = {0};
@@ -369,8 +548,7 @@ static void test_golden_case(
 {
     TrainingConfig config;
 
-    training_config_defaults(&config);
-    config.model_kind = golden->model_kind;
+    training_config_defaults_for_model(&config, golden->model_kind);
     config.objective_kind = golden->objective_kind;
     config.rng_algorithm = golden->rng_algorithm;
     config.embedding_dimension = 8;
@@ -513,9 +691,9 @@ int main(void)
         {MODEL_CBOW, OBJECTIVE_NEGATIVE_SAMPLING, RNG_LCG,
          UINT64_C(0x998a6cbb98dc7f6c), UINT64_C(0x7b15e9239642b63f)},
         {MODEL_SKIP_GRAM, OBJECTIVE_HIERARCHICAL_SOFTMAX, RNG_LCG,
-         UINT64_C(0x5089914b94d27c5d), UINT64_C(0x03e0eac5dc3a1c9d)},
+         UINT64_C(0xdf8d0e477392fa07), UINT64_C(0x9a0b52d6d6b31bd7)},
         {MODEL_SKIP_GRAM, OBJECTIVE_NEGATIVE_SAMPLING, RNG_LCG,
-         UINT64_C(0x87c1d4681119c257), UINT64_C(0xdf8e5627741baeeb)},
+         UINT64_C(0xd9c808eed06c7053), UINT64_C(0xfa8c51e6c86f0efc)},
         {MODEL_CBOW, OBJECTIVE_NEGATIVE_SAMPLING, RNG_XORSHIFT,
          UINT64_C(0xcbe69a7cc0673513), UINT64_C(0x722439a66b1227d7)},
     };
@@ -524,6 +702,7 @@ int main(void)
     test_config_and_rng();
     test_tokenizer_boundaries();
     test_context_order();
+    test_prune_at_seventy_percent();
 
     Status status;
     Corpus *corpus = corpus_create(fixture_path, &status);
@@ -544,6 +723,10 @@ int main(void)
 
     assert(vocab != NULL && status == STATUS_OK);
     test_vocab(vocab);
+    test_fixed_one_step(corpus, vocab, MODEL_CBOW, OBJECTIVE_NEGATIVE_SAMPLING);
+    test_fixed_one_step(corpus, vocab, MODEL_SKIP_GRAM, OBJECTIVE_NEGATIVE_SAMPLING);
+    test_fixed_one_step(corpus, vocab, MODEL_CBOW, OBJECTIVE_HIERARCHICAL_SOFTMAX);
+    test_fixed_one_step(corpus, vocab, MODEL_SKIP_GRAM, OBJECTIVE_HIERARCHICAL_SOFTMAX);
     test_duplicate_negative_is_not_redrawn(corpus, vocab);
     test_learning_rate_interval(corpus, vocab);
     test_hs_boundary_policy(corpus, vocab, HS_OUT_OF_RANGE_SKIP);

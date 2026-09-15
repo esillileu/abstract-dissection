@@ -57,6 +57,15 @@ during training.
 
 The ordering below is part of the single-thread oracle and must not change:
 
+`training_config_defaults_for_model` selects the upstream starting learning
+rate: 0.05 for CBOW and 0.025 for skip-gram. The default negative-sampling
+table has 100,000,000 entries; small tests override this size explicitly.
+Callers may override either setting after applying defaults.
+The default vocabulary hash has 30,000,000 slots. Pruning occurs after a
+recognized token has been counted when vocabulary size exceeds 70% of the
+configured hash capacity. Huffman paths use the upstream 40-element limit and
+the upstream 10^15 sentinel for unused tree nodes.
+
 - Model initialization consumes one model-RNG value per input coordinate in
   row-major order.
 - `RNG_LCG` is the default and uses the original 64-bit recurrence
@@ -76,7 +85,7 @@ The ordering below is part of the single-thread oracle and must not change:
 - Dot products accumulate coordinates from zero upward. Hidden gradients are
   accumulated before output-row additions. CBOW averages coordinates only
   after all context rows have been accumulated.
-- Each worker starts at `initial_learning_rate`. After at least
+- Each worker starts at `initial_learning_rate`. After more than
   `learning_rate_update_interval` additional recognized tokens, it reads the
   relaxed atomic processed-token count and refreshes its local rate. The
   default interval is 10,000; between refreshes the rate is unchanged.
@@ -119,7 +128,7 @@ The remaining learning-rate difference is intentional: upstream publishes a
 worker-local word count to shared state after more than 10,000 words and then
 updates a shared `alpha` without synchronization. This oracle counts recognized
 tokens atomically as they arrive and refreshes a worker-local rate after at
-least the configured interval. The update cadence is similar, while the unsafe
+more than the configured interval. The update cadence is similar, while the unsafe
 shared `alpha` race is not reproduced.
 
 The upstream snapshot is useful only as provenance. It is not a build target or
