@@ -1,6 +1,6 @@
 # Race-free C oracle
 
-This directory contains the C behavioral oracle for a later Rust port. The
+This directory contains the C behavioral oracle for the Rust port in `../src/`. The
 oracle is the modular implementation in this directory. `z_original_w2v.c` is
 an immutable upstream snapshot and is excluded from formatting, compilation,
 tests, and sanitizers.

@@ -85,6 +85,22 @@ table을 만들거나 생략하고, 각 학습 스텝은 **선택된 오브젝�
 `negative_sample_count`·`negative_table_size`는 negative sampling을
 선택했을 때만 학습 동작에 영향을 줍니다. 오브젝티브를 바꾸려면 새 설정으로
 `Trainer`를 다시 만들고 새 학습 실행을 시작해야 합니다.
+
+```rust
+use w2v::{ModelKind, ObjectiveKind, TrainingConfig};
+
+let mut config = TrainingConfig::for_model(ModelKind::SkipGram);
+config.objective_kind = ObjectiveKind::HierarchicalSoftmax;
+config.subsampling_threshold = 0.0; // 비활성화; 기본값 1e-3은 활성화
+// 이 설정으로 Model과 Trainer를 생성한 뒤 Trainer::train()을 실행합니다.
+```
+
+Negative sampling을 선택하려면 `objective_kind`를
+`ObjectiveKind::NegativeSampling`으로 지정하고 `negative_sample_count`를
+1 이상으로 설정합니다. HS를 선택한 경우 음성 샘플 수를 0으로 바꾸어
+“negative를 끄는” 방식은 사용하지 않습니다. `objective_kind`가 선택의
+기준입니다.
+
 같은 `Trainer`에서 `train()`을 다시 호출하면 처리 토큰 카운터는 0으로
 초기화되지만 이미 학습된 임베딩은 초기화되지 않습니다. 처음부터 다시
 학습하려면 새 `Model`을 생성해야 합니다.
@@ -121,7 +137,9 @@ CBOW와 Skip-gram은 `TrainingConfig::for_model(ModelKind::Cbow | ModelKind::Ski
 바이트 기반 토크나이저는 UTF-8을 요구하지 않고 줄바꿈을 `</s>`로
 표현합니다. 최소 빈도·해시 테이블 70% 초과 시 가지치기·동률 정렬
 결과는 어휘 행 순서에 영향을 줍니다. 재현성 확인에는 **같은 어휘 행 순서**가
-필수입니다. 병렬 학습은 좌표별 갱신의 데이터 레이스를 없앴지만 워커 간
+필수입니다. Negative table이 문장 경계 항목 0을 뽑으면 다른 비경계
+어휘 항목으로 대체하고, 양성 타깃과 같아진 음성 샘플은 재추첨하지
+않습니다. 병렬 학습은 좌표별 갱신의 데이터 레이스를 없앴지만 워커 간
 연산 순서는 고정되지 않아 결과의 비트 단위 재현성을 보장하지 않습니다.
 
 ## 검증
