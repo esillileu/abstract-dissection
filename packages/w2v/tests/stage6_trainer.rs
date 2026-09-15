@@ -145,6 +145,39 @@ fn c_learning_rate_interval() {
 }
 
 #[test]
+fn subsampling_is_applied_after_counting_and_before_sentence_storage() {
+    let (corpus, vocab) = fixture();
+    let base = TrainingConfig {
+        embedding_dimension: 2,
+        thread_count: 1,
+        negative_table_size: 7,
+        subsampling_threshold: 0.0,
+        ..TrainingConfig::default()
+    };
+    let model = Model::create(&vocab, 2, base.root_seed, base.rng_algorithm).unwrap();
+    let disabled = Trainer::create(&corpus, &vocab, &model, &base).unwrap();
+    let mut worker = Worker::initialize(&disabled, 0).unwrap();
+    assert!(!worker.fill_sentence(&disabled).unwrap());
+    assert_eq!(worker.sentence.len(), 4);
+    assert_eq!(worker.local_token_count, 5); // 네 단어와 줄 경계
+    assert_eq!(disabled.processed_tokens(), 5);
+    let untouched_subsampling_state = worker.subsampling_rng.state;
+
+    let enabled_config = TrainingConfig {
+        subsampling_threshold: 1e-9,
+        ..base
+    };
+    let enabled = Trainer::create(&corpus, &vocab, &model, &enabled_config).unwrap();
+    let mut worker = Worker::initialize(&enabled, 0).unwrap();
+    assert!(!worker.fill_sentence(&enabled).unwrap());
+    assert!(worker.sentence.is_empty());
+    assert_eq!(worker.local_token_count, 5);
+    assert_eq!(enabled.processed_tokens(), 5);
+    assert_ne!(worker.subsampling_rng.state, untouched_subsampling_state);
+    fs::remove_file(&corpus.path).unwrap();
+}
+
+#[test]
 fn parallel_training_completes_with_finite_embeddings() {
     let (corpus, vocab) = fixture();
     let config = TrainingConfig {
