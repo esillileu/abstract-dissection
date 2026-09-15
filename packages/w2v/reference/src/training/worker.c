@@ -98,15 +98,14 @@ static int token_should_be_discarded(
         return 0;
     }
 
-    double frequency =
-        (double)trainer->vocab->entries[token].count /
-        (double)trainer->vocab->retained_token_count;
-    double threshold = trainer->config.subsampling_threshold;
-    double keep_probability =
-        (sqrt(frequency / threshold) + 1.0) * threshold / frequency;
-    double random_value = rng_uniform(&worker->subsampling_rng);
+    real sample = trainer->config.subsampling_threshold;
+    uint64_t count = trainer->vocab->entries[token].count;
+    uint64_t train_words = trainer->vocab->retained_token_count;
+    real keep_probability =
+        (sqrt(count / (sample * train_words)) + 1) *
+        (sample * train_words) / count;
 
-    return keep_probability < random_value;
+    return keep_probability < rng_uniform(&worker->subsampling_rng);
 }
 
 Status worker_fill_sentence(
@@ -165,7 +164,7 @@ void worker_update_learning_rate(Worker *worker, const Trainer *trainer)
     uint64_t tokens_since_update =
         worker->local_token_count -
         worker->last_learning_rate_update_count;
-    if (tokens_since_update < trainer->config.learning_rate_update_interval)
+    if (tokens_since_update <= trainer->config.learning_rate_update_interval)
     {
         return;
     }
