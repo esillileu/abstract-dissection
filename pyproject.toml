@@ -10,6 +10,7 @@ members = [
     "packages/*",
     "studies/*",
 ]
+exclude = ["packages/w2v"]
 
 [tool.uv.sources]
 repro-core = { workspace = true }
