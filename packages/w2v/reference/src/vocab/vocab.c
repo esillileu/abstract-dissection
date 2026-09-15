@@ -88,7 +88,7 @@ static Status rebuild_hash(Vocabulary *vocab)
 
 static Status grow_entries(Vocabulary *vocab)
 {
-    size_t new_capacity = vocab->capacity * 2;
+    size_t new_capacity = vocab->capacity + 1000;
 
     if (new_capacity <= vocab->capacity ||
         new_capacity > SIZE_MAX / sizeof(*vocab->entries))
@@ -241,21 +241,18 @@ static Status count_corpus(
         if (entry_index == VOCABULARY_NOT_FOUND)
         {
             status = add_token(vocab, token, &entry_index);
-            int hash_is_crowded =
-                vocab->size * 10 >= vocab->hash_capacity * 7;
-            if (status == STATUS_INVALID_ARGUMENT && hash_is_crowded)
-            {
-                status = prune(vocab, prune_threshold);
-                prune_threshold++;
-                if (status == STATUS_OK)
-                {
-                    status = add_token(vocab, token, &entry_index);
-                }
-            }
         }
         if (status == STATUS_OK)
         {
             vocab->entries[entry_index].count++;
+            size_t crowded_limit =
+                (vocab->hash_capacity / 10) * 7 +
+                ((vocab->hash_capacity % 10) * 7) / 10;
+            if (vocab->size > crowded_limit)
+            {
+                status = prune(vocab, prune_threshold);
+                prune_threshold++;
+            }
         }
     }
 

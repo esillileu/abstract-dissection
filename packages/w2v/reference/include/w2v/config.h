@@ -6,7 +6,7 @@
 
 #define MAX_TOKEN_LENGTH 100
 #define MAX_SENTENCE_LENGTH 1000
-#define MAX_CODE_LENGTH 64
+#define MAX_CODE_LENGTH 40
 
 typedef float real;
 
@@ -73,6 +73,7 @@ typedef struct
 
 void vocab_config_defaults(VocabularyConfig *config);
 void training_config_defaults(TrainingConfig *config);
+void training_config_defaults_for_model(TrainingConfig *config, ModelKind model_kind);
 Status vocab_config_validate(const VocabularyConfig *config);
 Status training_config_validate(const TrainingConfig *config);
 const char *status_string(Status status);

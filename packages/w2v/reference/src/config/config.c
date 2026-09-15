@@ -12,7 +12,7 @@ void vocab_config_defaults(VocabularyConfig *config)
 
     *config = (VocabularyConfig){
         .initial_capacity = 1000,
-        .hash_capacity = 3000001,
+        .hash_capacity = 30000000,
         .min_count = 5,
     };
 }
@@ -37,11 +37,26 @@ void training_config_defaults(TrainingConfig *config)
         .negative_sample_count = 5,
         .root_seed = 1,
         .rng_algorithm = RNG_LCG,
-        .negative_table_size = 1000000,
+        .negative_table_size = 100000000,
         .sigmoid_table_size = 1000,
         .sigmoid_max = 6.0f,
         .hs_out_of_range_policy = HS_OUT_OF_RANGE_SKIP,
     };
+}
+
+void training_config_defaults_for_model(TrainingConfig *config, ModelKind model_kind)
+{
+    if (config == NULL)
+    {
+        return;
+    }
+
+    training_config_defaults(config);
+    config->model_kind = model_kind;
+    if (model_kind == MODEL_SKIP_GRAM)
+    {
+        config->initial_learning_rate = 0.025f;
+    }
 }
 
 Status vocab_config_validate(const VocabularyConfig *config)

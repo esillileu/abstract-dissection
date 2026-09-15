@@ -41,7 +41,7 @@ Status huffman_assign(Vocabulary *vocab)
     }
     for (size_t index = leaf_count; index < node_count; index++)
     {
-        counts[index] = UINT64_MAX;
+        counts[index] = UINT64_C(1000000000000000);
     }
 
     size_t next_leaf = leaf_count;
