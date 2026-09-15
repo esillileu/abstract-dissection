@@ -1,6 +1,32 @@
 //! Context traversal and objective arithmetic from the modular C oracle.
-use crate::{atomic_float, config::Real, random::Rng};
+use crate::{atomic_float, config::Real, random::Rng, trainer::Trainer};
 use std::sync::atomic::AtomicU32;
+
+mod cbow;
+mod hierarchical_softmax;
+mod negative_sampling;
+mod objective;
+mod skip_gram;
+
+pub use cbow::train as cbow_train;
+pub use hierarchical_softmax::train as hierarchical_softmax_train;
+pub use negative_sampling::train as negative_sampling_train;
+pub use objective::train as objective_train;
+pub use skip_gram::train as skip_gram_train;
+
+/// The per-target contract needed by both model kinds. Stage 6 owns the
+/// sentence and scratch buffers and creates a step for each trained target.
+pub struct ModelStep<'t, 'a, 'w> {
+    pub trainer: &'t Trainer<'a>,
+    pub target_token: usize,
+    pub learning_rate: Real,
+    pub sentence: &'w [usize],
+    pub sentence_position: usize,
+    pub hidden: &'w mut [Real],
+    pub hidden_gradient: &'w mut [Real],
+    pub window_rng: &'w mut Rng,
+    pub negative_rng: &'w mut Rng,
+}
 
 pub fn context_position(
     sentence_length: usize,
