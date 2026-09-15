@@ -7,6 +7,7 @@ mod hierarchical_softmax;
 mod negative_sampling;
 mod objective;
 mod skip_gram;
+pub mod worker;
 
 pub use cbow::train as cbow_train;
 pub use hierarchical_softmax::train as hierarchical_softmax_train;
