@@ -88,28 +88,46 @@ fn c_defaults_and_model_specific_rate() {
 
 #[test]
 fn c_validation_boundaries() {
-    let mut vocab = VocabularyConfig::default();
-    vocab.initial_capacity = 0;
+    let vocab = VocabularyConfig {
+        initial_capacity: 0,
+        ..VocabularyConfig::default()
+    };
     assert_eq!(vocab.validate(), Status::InvalidArgument);
-    vocab = VocabularyConfig::default();
-    vocab.hash_capacity = 1;
+    let vocab = VocabularyConfig {
+        hash_capacity: 1,
+        ..VocabularyConfig::default()
+    };
     assert_eq!(vocab.validate(), Status::InvalidArgument);
-    vocab = VocabularyConfig::default();
-    vocab.min_count = 0;
+    let vocab = VocabularyConfig {
+        min_count: 0,
+        ..VocabularyConfig::default()
+    };
     assert_eq!(vocab.validate(), Status::InvalidArgument);
 
-    let mut config = TrainingConfig::default();
-    config.window_radius = usize::MAX;
+    let config = TrainingConfig {
+        window_radius: usize::MAX,
+        ..TrainingConfig::default()
+    };
     assert_eq!(config.validate(), Status::InvalidArgument);
-    config = TrainingConfig::default();
-    config.initial_learning_rate = f32::NAN;
+    let config = TrainingConfig {
+        initial_learning_rate: f32::NAN,
+        ..TrainingConfig::default()
+    };
     assert_eq!(config.validate(), Status::InvalidArgument);
-    config = TrainingConfig::default();
-    config.subsampling_threshold = -1.0;
+    let config = TrainingConfig {
+        subsampling_threshold: -1.0,
+        ..TrainingConfig::default()
+    };
     assert_eq!(config.validate(), Status::InvalidArgument);
-    config = TrainingConfig::default();
-    config.negative_sample_count = 0;
+    let config = TrainingConfig {
+        negative_sample_count: 0,
+        ..TrainingConfig::default()
+    };
     assert_eq!(config.validate(), Status::InvalidArgument);
-    config.objective_kind = ObjectiveKind::HierarchicalSoftmax;
+    let config = TrainingConfig {
+        objective_kind: ObjectiveKind::HierarchicalSoftmax,
+        negative_sample_count: 0,
+        ..TrainingConfig::default()
+    };
     assert_eq!(config.validate(), Status::Ok);
 }

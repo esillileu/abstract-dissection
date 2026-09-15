@@ -1,11 +1,12 @@
 //! Shared types and public contracts for the modular word2vec port.
 //!
-//! This first stage fixes ownership and configuration semantics. Constructors
-//! and algorithm implementations are added in later stages.
+//! Configuration is fixed in stage 1; stage 2 adds independent primitives.
 
+pub mod atomic_float;
 pub mod config;
 pub mod corpus;
 pub mod model;
+pub mod random;
 pub mod trainer;
 pub mod vocab;
 
