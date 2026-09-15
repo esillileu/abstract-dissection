@@ -39,21 +39,27 @@ void skip_gram_train(ModelStep *step)
     Worker *worker = step->worker;
     size_t dimension = model->embedding_dimension;
     size_t radius = context_radius(step);
+    size_t center_token = step->target_token;
 
     for (size_t offset = 0; offset <= radius * 2; offset++)
     {
         size_t position;
         if (context_position(worker, radius, offset, &position))
         {
-            size_t token = worker->sentence[position];
+            size_t context_token = worker->sentence[position];
+            ModelStep context_step = *step;
+            context_step.target_token = context_token;
 
-            copy_input(model, token, worker->hidden);
+            copy_input(model, center_token, worker->hidden);
             memset(
                 worker->hidden_gradient,
                 0,
                 dimension * sizeof(*worker->hidden_gradient));
-            objective_train(step, worker->hidden, worker->hidden_gradient);
-            update_input(model, token, worker->hidden_gradient);
+            objective_train(
+                &context_step,
+                worker->hidden,
+                worker->hidden_gradient);
+            update_input(model, center_token, worker->hidden_gradient);
         }
     }
 }
