@@ -1,0 +1,7 @@
+*.o
+*.d
+libw2v.a
+tests/test_w2v
+tests/test_public_api
+tests/test_w2v_sanitize
+tests/test_w2v_tsan
