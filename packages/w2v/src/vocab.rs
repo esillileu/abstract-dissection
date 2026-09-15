@@ -1,7 +1,16 @@
 use crate::{
-    config::{MAX_CODE_LENGTH, Status},
+    config::{MAX_CODE_LENGTH, Status, VocabularyConfig},
+    corpus::Corpus,
     random::Rng,
 };
+
+fn token_hash(token: &[u8], capacity: usize) -> usize {
+    let mut hash = 0u64;
+    for &byte in token {
+        hash = hash.wrapping_mul(257).wrapping_add(byte as u64);
+    }
+    (hash % capacity as u64) as usize
+}
 
 /// Token bytes remain bytes: the C tokenizer does not require UTF-8.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -25,6 +34,152 @@ pub struct NegativeSampler {
 }
 
 impl Vocabulary {
+    pub fn find(&self, token: &[u8]) -> Option<usize> {
+        let capacity = self.hash_slots.len();
+        if capacity == 0 {
+            return None;
+        }
+        let mut slot = token_hash(token, capacity);
+        for _ in 0..capacity {
+            match self.hash_slots[slot] {
+                None => return None,
+                Some(index) if index < self.entries.len() && self.entries[index].token == token => {
+                    return Some(index);
+                }
+                _ => slot = (slot + 1) % capacity,
+            }
+        }
+        None
+    }
+
+    fn rebuild_hash(&mut self) -> Status {
+        self.hash_slots.fill(None);
+        let capacity = self.hash_slots.len();
+        for (index, entry) in self.entries.iter().enumerate() {
+            let mut slot = token_hash(&entry.token, capacity);
+            let mut probes = 0;
+            while self.hash_slots[slot].is_some() && probes < capacity {
+                slot = (slot + 1) % capacity;
+                probes += 1;
+            }
+            if probes >= capacity {
+                return Status::OutOfMemory;
+            }
+            self.hash_slots[slot] = Some(index);
+        }
+        Status::Ok
+    }
+
+    fn add_token(&mut self, token: &[u8]) -> Result<usize, Status> {
+        if self.entries.len() >= self.hash_slots.len() {
+            return Err(Status::InvalidArgument);
+        }
+        if let Some(index) = self.find(token) {
+            return Ok(index);
+        }
+        if self.entries.len() == self.entries.capacity() {
+            self.entries
+                .try_reserve_exact(1000)
+                .map_err(|_| Status::OutOfMemory)?;
+        }
+        let mut owned_token = Vec::new();
+        owned_token
+            .try_reserve_exact(token.len())
+            .map_err(|_| Status::OutOfMemory)?;
+        owned_token.extend_from_slice(token);
+        let index = self.entries.len();
+        self.entries.push(VocabularyEntry {
+            token: owned_token,
+            count: 0,
+            huffman_path: Vec::new(),
+            huffman_bits: Vec::new(),
+        });
+        let capacity = self.hash_slots.len();
+        let mut slot = token_hash(token, capacity);
+        while self.hash_slots[slot].is_some() {
+            slot = (slot + 1) % capacity;
+        }
+        self.hash_slots[slot] = Some(index);
+        Ok(index)
+    }
+
+    fn prune(&mut self, threshold: u64) -> Status {
+        let mut index = 0;
+        self.entries.retain(|entry| {
+            let keep = index == 0 || entry.count > threshold;
+            index += 1;
+            keep
+        });
+        self.rebuild_hash()
+    }
+
+    pub fn build(corpus: &Corpus, config: &VocabularyConfig) -> Result<Self, Status> {
+        if config.validate() != Status::Ok {
+            return Err(Status::InvalidArgument);
+        }
+        let mut entries = Vec::new();
+        entries
+            .try_reserve_exact(config.initial_capacity)
+            .map_err(|_| Status::OutOfMemory)?;
+        let mut hash_slots = Vec::new();
+        hash_slots
+            .try_reserve_exact(config.hash_capacity)
+            .map_err(|_| Status::OutOfMemory)?;
+        hash_slots.resize(config.hash_capacity, None);
+        let mut vocab = Self {
+            entries,
+            hash_slots,
+            retained_token_count: 0,
+        };
+        vocab.add_token(b"</s>")?;
+        let mut tokenizer = corpus.tokenizer(0)?;
+        let mut prune_threshold = 1u64;
+        loop {
+            let read = tokenizer.read_token()?;
+            if read.at_eof {
+                break;
+            }
+            let index = match vocab.find(&read.token) {
+                Some(index) => index,
+                None => vocab.add_token(&read.token)?,
+            };
+            vocab.entries[index].count = vocab.entries[index].count.wrapping_add(1);
+            let capacity = config.hash_capacity;
+            let crowded_limit = (capacity / 10) * 7 + ((capacity % 10) * 7) / 10;
+            if vocab.entries.len() > crowded_limit {
+                let status = vocab.prune(prune_threshold);
+                if status != Status::Ok {
+                    return Err(status);
+                }
+                prune_threshold = prune_threshold.wrapping_add(1);
+            }
+        }
+        if vocab.entries.len() > 1 {
+            // Equal-count qsort ties are platform-specific. The supported C
+            // fixture preserves encounter order, so preserve it here too.
+            vocab.entries[1..].sort_by_key(|entry| std::cmp::Reverse(entry.count));
+        }
+        let mut index = 0;
+        vocab.entries.retain(|entry| {
+            let keep = index == 0 || entry.count >= config.min_count;
+            index += 1;
+            keep
+        });
+        vocab.retained_token_count = vocab
+            .entries
+            .iter()
+            .fold(0u64, |total, entry| total.wrapping_add(entry.count));
+        let status = vocab.rebuild_hash();
+        if status != Status::Ok {
+            return Err(status);
+        }
+        let status = vocab.assign_huffman();
+        if status != Status::Ok {
+            return Err(status);
+        }
+        Ok(vocab)
+    }
+
     /// Assign the same parent-node paths and bits as the modular C oracle.
     pub fn assign_huffman(&mut self) -> Status {
         let leaf_count = self.entries.len();

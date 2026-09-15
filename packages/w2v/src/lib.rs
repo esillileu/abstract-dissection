@@ -8,6 +8,7 @@ pub mod corpus;
 pub mod model;
 pub mod random;
 pub mod trainer;
+pub mod training;
 pub mod vocab;
 
 pub use config::{
