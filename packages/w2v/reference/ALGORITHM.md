@@ -121,6 +121,10 @@ changed to resemble `z_original_w2v.c`:
 - independent RNG streams are derived from a root seed, worker, and purpose;
 - hierarchical softmax and negative sampling are mutually exclusive objectives;
 - a negative draw equal to the positive target is rejected without redraw;
+- Skip-gram predicts context words from the center word ($w_{\text{center}} \to w_{\text{context}}$)
+  following original literature (Mikolov et al., 2013), departing from the
+  upstream C snapshot (`z_original_w2v.c`) which computed
+  $w_{\text{context}} \to w_{\text{center}}$;
 - the modular tokenizer and pruning behavior define the accepted-input
   semantics.
 
