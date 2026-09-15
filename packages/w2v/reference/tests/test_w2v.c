@@ -214,18 +214,35 @@ static void test_fixed_one_step(
         atomic_float_store(&model->input_embeddings[index], 0);
         atomic_float_store(&model->output_embeddings[index], 0);
     }
-    atomic_float_store(&model->input_embeddings[2], 0.25f);
-    atomic_float_store(&model->input_embeddings[3], -0.5f);
-    atomic_float_store(&model->input_embeddings[6], 0.75f);
-    atomic_float_store(&model->input_embeddings[7], 0.5f);
-    atomic_float_store(&model->output_embeddings[4], 0.2f);
-    atomic_float_store(&model->output_embeddings[5], -0.4f);
-    if (objective == OBJECTIVE_HIERARCHICAL_SOFTMAX)
+    if (kind == MODEL_CBOW)
     {
-        atomic_float_store(&model->output_embeddings[6], 0.2f);
-        atomic_float_store(&model->output_embeddings[7], -0.4f);
-        atomic_float_store(&model->output_embeddings[4], 0);
-        atomic_float_store(&model->output_embeddings[5], 0);
+        atomic_float_store(&model->input_embeddings[2], 0.25f);
+        atomic_float_store(&model->input_embeddings[3], -0.5f);
+        atomic_float_store(&model->input_embeddings[6], 0.75f);
+        atomic_float_store(&model->input_embeddings[7], 0.5f);
+        atomic_float_store(&model->output_embeddings[4], 0.2f);
+        atomic_float_store(&model->output_embeddings[5], -0.4f);
+        if (objective == OBJECTIVE_HIERARCHICAL_SOFTMAX)
+        {
+            atomic_float_store(&model->output_embeddings[6], 0.2f);
+            atomic_float_store(&model->output_embeddings[7], -0.4f);
+            atomic_float_store(&model->output_embeddings[4], 0);
+            atomic_float_store(&model->output_embeddings[5], 0);
+        }
+    }
+    else
+    {
+        atomic_float_store(&model->input_embeddings[4], 0.5f);
+        atomic_float_store(&model->input_embeddings[5], -0.25f);
+        atomic_float_store(&model->output_embeddings[2], 0.2f);
+        atomic_float_store(&model->output_embeddings[3], -0.4f);
+        atomic_float_store(&model->output_embeddings[6], 0.6f);
+        atomic_float_store(&model->output_embeddings[7], 0.3f);
+        if (objective == OBJECTIVE_NEGATIVE_SAMPLING)
+        {
+            trainer->negative_sampler.table[0] = 1;
+            trainer->negative_sampler.table[4] = 3;
+        }
     }
 
     Worker worker = {0};
@@ -264,23 +281,27 @@ static void test_fixed_one_step(
     else
     {
         skip_gram_train(&step);
-        assert(atomic_float_load(&model->input_embeddings[2]) == 0.255f);
-        assert(atomic_float_load(&model->input_embeddings[3]) == -0.51f);
         if (objective == OBJECTIVE_HIERARCHICAL_SOFTMAX)
         {
-            assert(atomic_float_load(&model->input_embeddings[6]) == 0.7553125f);
-            assert(atomic_float_load(&model->input_embeddings[7]) == 0.489375f);
-            assert(atomic_float_load(&model->output_embeddings[6]) == 0.225f);
-            assert(atomic_float_load(&model->output_embeddings[7]) == -0.4f);
-            assert(atomic_float_load(&model->output_embeddings[2]) == -0.025f);
-            assert(atomic_float_load(&model->output_embeddings[3]) == 0);
+            assert(atomic_float_load(&model->input_embeddings[4]) == 0x1.026666p-1f);
+            assert(atomic_float_load(&model->input_embeddings[5]) == -0x1.0a147ap-2f);
+            assert(atomic_float_load(&model->output_embeddings[0]) == -0x1.8d4fep-7f);
+            assert(atomic_float_load(&model->output_embeddings[1]) == 0x1.a5e354p-8f);
+            assert(atomic_float_load(&model->output_embeddings[2]) == 0x1.b26e98p-3f);
+            assert(atomic_float_load(&model->output_embeddings[3]) == -0x1.a03128p-2f);
+            assert(atomic_float_load(&model->output_embeddings[4]) == 0x1.99999ap-7f);
+            assert(atomic_float_load(&model->output_embeddings[5]) == -0x1.99999ap-8f);
+            assert(atomic_float_load(&model->output_embeddings[6]) == 0x1.33020ep-1f);
+            assert(atomic_float_load(&model->output_embeddings[7]) == 0x1.33020cp-2f);
         }
         else
         {
-            assert(atomic_float_load(&model->input_embeddings[6]) == 0.75515625f);
-            assert(atomic_float_load(&model->input_embeddings[7]) == 0.4896875f);
-            assert(atomic_float_load(&model->output_embeddings[4]) == 0.225f);
-            assert(atomic_float_load(&model->output_embeddings[5]) == -0.4f);
+            assert(atomic_float_load(&model->input_embeddings[4]) == 0.52f);
+            assert(atomic_float_load(&model->input_embeddings[5]) == -0.2525f);
+            assert(atomic_float_load(&model->output_embeddings[2]) == 0.2125f);
+            assert(atomic_float_load(&model->output_embeddings[3]) == -0.40625f);
+            assert(atomic_float_load(&model->output_embeddings[6]) == 0.612625f);
+            assert(atomic_float_load(&model->output_embeddings[7]) == 0.2935f);
         }
     }
     assert(worker.window_rng.state == UINT64_C(25214903928));
@@ -599,13 +620,15 @@ static void test_golden_case(
                INPUT_EMBEDDING,
                snapshot,
                element_count) == STATUS_OK);
-    assert(hash_float_bits(snapshot, element_count) == golden->input_hash);
+    uint64_t actual_in = hash_float_bits(snapshot, element_count);
+    assert(actual_in == golden->input_hash);
     assert(model_snapshot(
                model,
                OUTPUT_EMBEDDING,
                snapshot,
                element_count) == STATUS_OK);
-    assert(hash_float_bits(snapshot, element_count) == golden->output_hash);
+    uint64_t actual_out = hash_float_bits(snapshot, element_count);
+    assert(actual_out == golden->output_hash);
 
     trainer_destroy(&trainer);
     trainer_destroy(&trainer);
@@ -691,9 +714,9 @@ int main(void)
         {MODEL_CBOW, OBJECTIVE_NEGATIVE_SAMPLING, RNG_LCG,
          UINT64_C(0x998a6cbb98dc7f6c), UINT64_C(0x7b15e9239642b63f)},
         {MODEL_SKIP_GRAM, OBJECTIVE_HIERARCHICAL_SOFTMAX, RNG_LCG,
-         UINT64_C(0xdf8d0e477392fa07), UINT64_C(0x9a0b52d6d6b31bd7)},
+         UINT64_C(0xd71dad0b1ef4a0cc), UINT64_C(0x7af1d53846d24b44)},
         {MODEL_SKIP_GRAM, OBJECTIVE_NEGATIVE_SAMPLING, RNG_LCG,
-         UINT64_C(0xd9c808eed06c7053), UINT64_C(0xfa8c51e6c86f0efc)},
+         UINT64_C(0xfbe35d673fc7086c), UINT64_C(0x84924104f81133f8)},
         {MODEL_CBOW, OBJECTIVE_NEGATIVE_SAMPLING, RNG_XORSHIFT,
          UINT64_C(0xcbe69a7cc0673513), UINT64_C(0x722439a66b1227d7)},
     };
