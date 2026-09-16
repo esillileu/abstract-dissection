@@ -57,6 +57,20 @@ All AI agents working in this repository MUST adhere to the following 6 golden r
   just check
   ```
   Ensure all 500+ tests pass and linter/formatter have 0 errors.
+* **Environment-failure stop rule:** If the verification command cannot start or
+  complete because of an environment or infrastructure problem rather than a
+  code/test failure (for example: a missing executable, broken virtual
+  environment, dependency-sync problem, unavailable service, credentials,
+  permissions, network, GPU, or production database configuration), report the
+  failure and **stop immediately**.
+  * Do **not** run `uv sync`, install/reinstall packages, mutate `.venv`, change
+    credentials or environment variables, start services, apply migrations, or
+    retry against another environment unless the user explicitly authorizes it.
+  * Do **not** run tests when the active environment points at production or
+    shared external services. Treat this as an environment failure and stop.
+  * Never attempt to repair the environment merely to satisfy the verification
+    gate. Record the command, the environmental cause, and which checks did or
+    did not run.
 
 ---
 
