@@ -3,8 +3,9 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
+from dlfs.analysis.core import write_summary
 from dlfs.analysis.input import histories_from_artifact
-from repro_core.analysis.core import aggregate, mark_empty, save_figure, write_summary
+from repro_core.analysis.core import aggregate, mark_empty, save_figure
 
 from .common import runs
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from .store import ArtifactReference, MetricSeries, NativeRunResult
+from repro_core.results.store import ArtifactReference, MetricSeries, NativeRunResult
 
 
 class MlflowResultStore:

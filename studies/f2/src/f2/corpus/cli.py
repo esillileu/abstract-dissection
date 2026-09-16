@@ -14,13 +14,18 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
+from repro_io.checksum import sha256_file
+from repro_io.commoncrawl.cdx import CDXBlockLocator, CDXIndexReader
+from repro_io.commoncrawl.fetcher import RangeFetcher
+from repro_io.http.download import BandwidthScheduler
+from repro_io.s3 import S3ObjectStore
 
+from f2.corpus.object_store import s3_config_from_environment
 from repro_core.context.paths import RuntimePaths
 
 from .analysis import FeasibilityAnalyzer
 from .calibration import CalibrationAndPreFetchAnalyzer
-from .canonical import BandwidthScheduler, iter_shard_text, sha256_file
-from .cdx import CDXBlockLocator, CDXIndexReader
+from .canonical import iter_shard_text
 from .db.migrations.runner import run_migrations
 from .db.repository import CorpusStateRepository
 from .db.session import get_connection
@@ -29,7 +34,6 @@ from .discovery import (
     SequentialAuditSampler,
     TwoStageProbabilitySampler,
 )
-from .fetcher import RangeFetcher
 from .lifecycle import (
     acquire_source,
     catalog_sources,
@@ -41,7 +45,6 @@ from .lifecycle import (
     process_normalized_source,
     tool_versions,
 )
-from .object_store import S3Config, S3ObjectStore
 from .pipeline import PipelineRunner
 from .sources import (
     SOURCE_BOUNDARY_POLICIES,
@@ -78,9 +81,9 @@ def _selected(source: str) -> list:
 
 def _store(restricted: bool = False) -> S3ObjectStore:
     cfg = (
-        S3Config.from_environment(restricted=True)
+        s3_config_from_environment(restricted=True)
         if restricted
-        else S3Config.from_environment()
+        else s3_config_from_environment()
     )
     return S3ObjectStore(cfg)
 
@@ -967,7 +970,9 @@ def sample_corpus(
 
         text_writer = CleanTextWriter(output_dir / "clean_shards")
         fetcher = RangeFetcher(
-            bandwidth_mbps=bandwidth_limit, max_concurrency=concurrency
+            user_agent="abstract-dissection-repro/0.1 (Research reproduction study)",
+            bandwidth_mbps=bandwidth_limit,
+            max_concurrency=concurrency,
         )
         runner = PipelineRunner()
 

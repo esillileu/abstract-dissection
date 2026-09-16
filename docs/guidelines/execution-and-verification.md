@@ -82,3 +82,10 @@ The repository maintains four levels of automated verification (500+ tests):
 4. **Catalog 1-Update Smoke Execution Tests:**
    * Automatically iterates through all 27 experiment YAML specs in `studies/dlfs/` (15 in DS1, 12 in DS2).
    * Executes 1 update in memory to ensure forward, backward, loss, and optimizer steps work without runtime errors.
+
+
+F2 DB verification requires only F2_TEST_DATABASE_URL or an available rootless
+Podman/Docker runtime for a disposable PostgreSQL 18 instance. Missing DB capability
+is a failure, not a skip. Ordinary .env database settings are never used by fixtures.
+The complete gate remains `just check`, including network smoke tests. Independent
+repro-io verification is documented in its package README.

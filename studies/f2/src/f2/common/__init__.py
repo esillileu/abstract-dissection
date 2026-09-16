@@ -1,4 +1,4 @@
-"""Common infrastructure, networking, storage, statistics, and analysis standards for F2."""
+"""Shared F2 composition, statistics and analysis standards."""
 
 from .adapters import CheckpointAdapter
 from .analysis import (
@@ -10,7 +10,6 @@ from .analysis import (
     StudyDeclaration,
     apply_f2_plot_theme,
 )
-from .network import FetchResult, RangeFetcher, TokenBucketLimiter
 from .paths import (
     get_benchmark_data_dir,
     get_corpus_data_dir,
@@ -28,7 +27,6 @@ from .stats import (
     bootstrap_confidence_interval,
     optimal_threshold_search,
 )
-from .storage import CleanTextWriter, ExportableRepository, ProvenanceExporter
 
 __all__ = [
     "W2V_COLORS",
@@ -36,17 +34,11 @@ __all__ = [
     "BootstrapVarianceEngine",
     "CheckpointAdapter",
     "ClassificationMetrics",
-    "CleanTextWriter",
     "ConditionDeclaration",
-    "ExportableRepository",
-    "FetchResult",
     "MetricDeclaration",
     "NormalizedMetricSummary",
-    "ProvenanceExporter",
-    "RangeFetcher",
     "StratumResidualEstimate",
     "StudyDeclaration",
-    "TokenBucketLimiter",
     "TwoPhaseStratifiedDifferenceEstimator",
     "apply_f2_plot_theme",
     "binary_classification_metrics",

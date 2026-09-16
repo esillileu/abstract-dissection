@@ -8,20 +8,22 @@ This document specifies the exact lifecycle, storage tiers, and path resolution 
 
 | Variable | Value and ownership | Consumer |
 | :--- | :--- | :--- |
-| `F1_MLFLOW_TRACKING_URI` | F1 MLflow HTTP(S) endpoint | DLFS run, check, analyze, and tracked profile workflows |
+| `F1_MLFLOW_TRACKING_URI` | Externally operated F1 MLflow HTTP(S) endpoint | DLFS run, check, analyze, and tracked profile workflows |
 | `F1_MLFLOW_DATABASE_URL` | F1 MLflow PostgreSQL backend credentials | Infrastructure operators only; application code must not read it |
-| `F2_MLFLOW_TRACKING_URI` | F2 MLflow HTTP(S) endpoint | F2 tracked workflows |
+| `F2_MLFLOW_TRACKING_URI` | Externally operated F2 MLflow HTTP(S) endpoint | F2 tracked workflows |
 | `F2_MLFLOW_DATABASE_URL` | F2 MLflow PostgreSQL backend credentials | Infrastructure operators only; application code must not read it |
-| `F2_DATABASE_URL` | Unified F2 PostgreSQL application database (contains `catalog` & `corpus` schemas) | F2 catalog CLI & F2 corpus CLI |
+| `F2_DATABASE_URL` | Externally operated PostgreSQL instance; F2 owns only its `catalog` and `corpus` schemas | F2 catalog CLI & F2 corpus CLI |
 | `F2_CORPUS_DATABASE_URL` | F2 corpus PostgreSQL connection URL (legacy alias, routes to `f2` corpus schema) | F2 corpus CLI |
 | `F2_CATALOG_DATABASE_URL` | F2 catalog PostgreSQL connection URL (legacy alias, routes to `f2` catalog schema) | F2 catalog CLI |
 
 A tracking URI is an HTTP(S) application endpoint used by an MLflow client. A
 database URL is a privileged direct PostgreSQL connection string; it must never
-be substituted for a tracking URI or consumed by study runtime code. F1 owns the
-DLFS tracking service, while F2 owns its campaign tracking service and unified
-application database (`f2`, partitioned logically into `catalog` and `corpus`
-schemas). There is no cross-study or generic fallback.
+be substituted for a tracking URI or consumed by study runtime code. MLflow,
+PostgreSQL, and S3-compatible services are operated outside this repository.
+Neither this repository nor a study owns their service deployment, server-side
+schemas, roles, buckets, backups, or availability. A study owns its client
+connection contract and research-specific schemas and migrations only. There is
+no cross-study or generic fallback.
 
 For a tracked study command, resolution is `--tracking-uri`, then that study's
 dedicated environment variable, then a clear error. Resolution trims whitespace
@@ -90,10 +92,11 @@ flowchart TD
 
 ---
 
-## 3. MLflow Server & Database as Single Sources of Truth
+## 3. External services and study-owned data contracts
 
 **1) Externally managed MLflow services:**
-All production run artifacts, checkpoints, manifests, and time-series metrics are uploaded to the study-owned MLflow service.
+All production run artifacts, checkpoints, manifests, and time-series metrics are
+uploaded to an externally operated MLflow endpoint selected by the study contract.
 
 * The project root filesystem does **NOT** store raw run dumps during production runs.
 * MLflow stores:
@@ -114,12 +117,12 @@ All production run artifacts, checkpoints, manifests, and time-series metrics ar
 * Upload verification (`_verify_uploaded_manifest`) ensures that runs are only marked `result.durable_complete = true` when all artifacts are durable in MLflow.
 
 **2) PostgreSQL Databases:**
-* **`F2_DATABASE_URL`:** Unified PostgreSQL database (`f2`) partitioned logically into `catalog` and `corpus` schemas.
+* **`F2_DATABASE_URL`:** Externally operated PostgreSQL database; F2 owns the definitions and migrations of its `catalog` and `corpus` schemas only.
   * **Schema `corpus`:** Transaction-safe operational state storage for Common Crawl candidate sampling, feature extraction diagnostics, gold human audit labels, generic acquisition runs, immutable artifact metadata, multi-hop processing DAG lineage, and validation evidence.
   * **Schema `catalog`:** Reproduction catalog database tracking papers, targets, experiment specifications, resource lineage/substitutions, execution plan revisions, and planned run slots.
-* **Corpus Artifact Object Storage (SeaweedFS S3):** Actual corpus binary files, raw archive dumps, intermediate extracts, and canonical tokenized/sharded text files reside in S3-compatible object storage (SeaweedFS S3, bucket `f2-corpus`). PostgreSQL `f2` acts strictly as the Single Source of Truth (SSOT) for metadata, object URIs (`s3://...`), SHA-256 digests, byte/token counts, multi-hop processing lineage, and validation evidence.
+* **Corpus Artifact Object Storage (S3-compatible):** Actual corpus binary files, raw archive dumps, intermediate extracts, and canonical tokenized/sharded text files reside in an externally operated object store. F2 defines logical key layout and records object identities, hashes, counts, lineage, and validation evidence in its own schemas; it does not operate the store.
   * **S3 URI Layout:** `raw/<source>/<release>/...`, `processed/<source>/canonical/shard-XXXXX.txt.zst`, `processed/<source>/normalized/shard-XXXXX.txt.zst`, `manifests/<source>/...`.
-  * **Remote Worker Tailscale HTTPS:** Exposed over Tailnet via Tailscale Serve at `https://esillileu-server.tail4941d3.ts.net:9000` (`F2_CORPUS_S3_ACCESS_KEY` / `F2_CORPUS_S3_SECRET_KEY`, path-style addressing).
+  * **Remote Worker Tailscale HTTPS:** Exposed over Tailnet via Tailscale Serve at `https://<tailnet-host>:9000` (`F2_CORPUS_S3_ACCESS_KEY` / `F2_CORPUS_S3_SECRET_KEY`, path-style addressing).
 * **`F2_CORPUS_DATABASE_URL` / `F2_CATALOG_DATABASE_URL`:** Backward-compatible legacy aliases routing transparently to `f2` with dedicated schema search paths.
 
 ---
@@ -162,3 +165,32 @@ All storage roots can be overridden via environment variables for CI, remote clu
 | `REPRO_CACHE_ROOT` | `./.cache` | Reconstructible cache storage |
 | `REPRO_STAGING_ROOT` | `./.staging` | Ephemeral scratch directory |
 | `REPRO_REFERENCES_ROOT` | `./references` | Upstream vendored baselines |
+
+
+## Database and corpus I/O configuration
+
+Explicit connection_url bypasses environment resolution. Without it, an existing
+non-empty F2_DATABASE_URL wins immediately. Otherwise load_dotenv(override=True)
+is attempted using its existing discovery behavior, then F2_DATABASE_URL or the
+subsystem legacy alias is read; finally the legacy environment alias is checked.
+This preserves the existing precedence, including dotenv overriding an existing
+legacy alias when unified configuration was initially absent. Missing configuration
+now raises DatabaseConfigError or CatalogDatabaseConfigError; there are no built-in
+localhost credentials. An unavailable dotenv loader does not suppress the final error.
+
+F2_TEST_DATABASE_URL is read only by test fixtures, never from dotenv. Without it,
+tests create and clean up a temporary PostgreSQL 18 Podman/Docker container. They
+bootstrap catalog before corpus and fail if no test DB can be started; DB tests do
+not skip or fall back to application settings. A supplied test URL must identify a
+dedicated test database; test data and migrations are written there.
+
+F2_CORPUS_S3_{ENDPOINT,ROOT,ACCESS_KEY,SECRET_KEY,REGION} configures general corpus
+storage. F2_GIGAWORD_S3 uses the same suffixes for restricted storage. ENDPOINT,
+ROOT, ACCESS_KEY and SECRET_KEY are required; ROOT must begin with s3://; REGION
+alone defaults to us-east-1. F2 interprets these variables and selects restricted
+access; repro-io receives only explicit S3Config values. No secrets belong in artifacts.
+
+Run records belong to MLflow, corpus bytes to object storage, and F2 metadata to
+PostgreSQL. Dataset paths and existing cache/staging locations are unchanged.
+See [infra handoff](../../infra/README.md) for the external operator interface.
+The repository does not deploy, administer, back up, or restore these services.

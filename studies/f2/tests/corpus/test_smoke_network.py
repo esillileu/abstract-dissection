@@ -6,16 +6,17 @@ import uuid
 from pathlib import Path
 
 import pytest
+from repro_io.archive import ARCParser
+from repro_io.commoncrawl.cdx import CDXBlockLocator, CDXIndexReader
+from repro_io.commoncrawl.fetcher import RangeFetcher
 
-from f2.common.storage import CleanTextWriter, ProvenanceExporter
 from f2.corpus.analysis import FeasibilityAnalyzer
-from f2.corpus.cdx import CDXBlockLocator, CDXIndexReader
 from f2.corpus.db.migrations.runner import run_migrations
 from f2.corpus.db.repository import CorpusStateRepository
-from f2.corpus.db.session import get_connection, get_db_url
+from f2.corpus.db.session import get_connection
 from f2.corpus.discovery import TwoStageProbabilitySampler
-from f2.corpus.fetcher import RangeFetcher
-from f2.corpus.pipeline import ARCParser, PipelineRunner
+from f2.corpus.pipeline import PipelineRunner
+from f2.corpus.storage import CleanTextWriter, ProvenanceExporter
 
 
 @pytest.mark.network
@@ -54,8 +55,8 @@ def test_live_common_crawl_2009_2010_range_fetch():
 
 
 @pytest.mark.network
-def test_live_end_to_end_smoke_with_postgres(tmp_path: Path):
-    db_url = get_db_url()
+def test_live_end_to_end_smoke_with_postgres(tmp_path: Path, f2_test_database):
+    db_url = f2_test_database
 
     run_id = f"smoke_{uuid.uuid4().hex[:8]}"
     fetcher = RangeFetcher(bandwidth_mbps=20.0, max_concurrency=2)

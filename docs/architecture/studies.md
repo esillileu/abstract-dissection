@@ -41,17 +41,15 @@ studies/
         ├── plugin.py                  # Plugin entrypoint (registers `repro f2 ...`)
         ├── cli.py                     # Root CLI dispatcher (`repro f2 corpus ...`, `repro f2 catalog ...`)
         ├── definition.py              # F2 ExecutionDefinitions registry
-        ├── common/                    # Shared network, storage, statistics, analysis & adapters
+        ├── common/                    # Shared statistics, analysis & adapters
         │   ├── paths.py               # RuntimePaths centralized helper
-        │   ├── network/               # TokenBucketLimiter, RangeFetcher
-        │   ├── storage/               # TableExporter (Parquet/JSONL), CleanTextWriter
         │   ├── stats/                 # BootstrapVarianceEngine, DifferenceEstimator, ClassifierMetrics
         │   ├── analysis/              # Theme, declarations, BaseAnalysisOrchestrator
         │   └── adapters/              # CheckpointAdapter
         ├── corpus/                    # Common Crawl extraction pipeline & operational DB
-        │   ├── cdx.py, discovery.py, pipeline.py, fetcher.py, storage.py, analysis.py, calibration.py
+        │   ├── discovery.py, pipeline.py, storage.py, analysis.py, calibration.py
         │   ├── cli.py                 # `repro f2 corpus ...`
-        │   └── db/                    # Corpus operational state PostgreSQL DB
+        │   └── db/                    # F2-owned schemas on external PostgreSQL
         ├── catalog/                   # Reproduction catalog, resource tracking & execution plans
         │   ├── schema.dbml            # DBML architectural schema specification
         │   ├── materializer.py        # Planned run slot materializer from repro-core Planner
@@ -134,3 +132,14 @@ def get_executor(kind: str):
 
 When `run_config` or `run_yaml` executes, it dynamically dispatches to the specified `executor_module`, ensuring complete isolation across studies.
 
+
+
+F2 keeps extraction options, text filters/counters, sampling, auditing, estimation,
+normalization, record-preserving sharding and manifests because these determine
+research inputs and measurements. `corpus/storage.py` owns DOC serialization and
+provenance export. Catalog DBML, repositories and both migration trees remain in F2.
+F2 owns only these research-domain schemas and migrations; the PostgreSQL instance,
+roles, backups, upgrades, and availability remain external responsibilities.
+Small session/migration helpers do not justify another generic package. The actual
+feasibility estimator is in corpus/analysis.py; common/stats contains supporting
+research calculations. No Rust engine interface is predeclared by this refactor.

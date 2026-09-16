@@ -38,7 +38,7 @@ The `packages/` directory houses independent, reusable Python libraries. Each pa
 ---
 
 ### 3) `repro-mlflow` (`packages/repro-mlflow`)
-* **Role:** MLflow integration, durable tracking, artifact upload/download pipelines, and lineage validation.
+* **Role:** MLflow client integration, durable tracking protocols, artifact upload/download pipelines, and lineage validation.
 * **Dependencies:** `repro-core`, `mlflow>=2.10.0`.
 * **Responsibilities:**
   * **Schema Enforcement:** Standardized tag and metric namespaces (`SchemaV1Run`).
@@ -46,8 +46,10 @@ The `packages/` directory houses independent, reusable Python libraries. Each pa
   * **Verification:** Integrity checksum verification (`_verify_uploaded_manifest`) before marking runs as durable.
   * **Artifact Caching:** Transparent local caching of remote checkpoints and metric payloads (`.cache/mlflow_artifact/`).
   * **YAML Runner:** CLI run orchestration with metadata validation (`run_yaml`).
-* **Non-Goals:** Does not operate MLflow infrastructure, transfer historical runs,
-  or maintain server-side checkpoints.
+* **Non-Goals:** Does not operate MLflow infrastructure, own its server-side
+  database/schema, administer credentials or buckets, transfer historical runs,
+  or maintain server-side checkpoints. Endpoints and credentials come from
+  external operators through the connection contract.
 
 ---
 
@@ -76,3 +78,23 @@ Architecture boundaries are strictly tested across all packages in [`tests/test_
    Scans `checkpoint.py` and asserts **0 occurrences** of deep learning parameter or buffer manipulation tokens (`named_parameters`, `named_buffers`, `save_params_npz`, `load_params_npz`).
 5. **`repro-mlflow` Independence Check:**
    Scans all Python files in `packages/repro-mlflow/src` and asserts **0 occurrences** of `deepscratch` or `dlfs`.
+
+
+## Acquisition I/O and semantic ownership
+
+`repro-io` is the fourth independent package. It owns HTTP range/resume/retry,
+bandwidth mechanisms, SHA-256, explicit S3/SigV4, Common Crawl indexes and ARC
+parsing. Dependencies are requests and warcio; it cannot import other workspace
+packages or studies, and cannot read F2 configuration or define research domains.
+F2 composes it with source releases, original User-Agents and transfer settings.
+
+Core analysis retains Curve, aggregation and plot helpers. DLFS analysis owns run
+selection/cache, book smoothing, history assembly, summary and model-parameter
+reports. `repro_mlflow.results.MlflowResultStore` owns MLflow result loading and
+`repro_mlflow.analysis.mlflow_client` creates clients. Old import facades are removed.
+
+`tests/test_workspace_ownership.py` supplements the original architecture tests:
+it discovers every workspace package, checks source and independent unit-test
+imports and dependency declarations, forbids direct MLflow in core, checks I/O
+research coupling, and protects F2 SQL/DBML checksums and DDL ownership.
+See [ownership inventory](ownership-inventory.md) for the component decisions.

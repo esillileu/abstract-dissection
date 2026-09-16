@@ -11,8 +11,8 @@ from mlflow.exceptions import MlflowException
 from dlfs.identity import Variant
 from dlfs.tracking import tracking_uri
 from repro_core.context.paths import WorkspacePaths
-from repro_core.results import MlflowResultStore
 from repro_mlflow.artifact_cache import MlflowArtifactCache
+from repro_mlflow.results import MlflowResultStore
 
 
 def load_native_result(client, run_id, declarations, *, artifact_cache=None):

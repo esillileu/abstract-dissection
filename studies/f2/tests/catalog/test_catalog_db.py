@@ -11,20 +11,17 @@ import pytest
 
 from f2.catalog.db.migrations.runner import run_catalog_migrations
 from f2.catalog.db.repository import CatalogRepository
-from f2.catalog.db.session import get_catalog_db_url, get_connection
+from f2.catalog.db.session import get_connection
 from f2.catalog.materializer import CatalogPlanMaterializer
 from repro_core.execution.definition import RunPlan
 
 
 @pytest.fixture
-def catalog_db_conn():
-    url = get_catalog_db_url()
-    try:
-        with get_connection(url) as conn:
-            run_catalog_migrations(conn)
-            yield conn
-    except Exception as exc:
-        pytest.skip(f"F2 Catalog DB connection not available: {exc}")
+def catalog_db_conn(f2_test_database):
+    url = f2_test_database
+    with get_connection(url) as conn:
+        run_catalog_migrations(conn)
+        yield conn
 
 
 @pytest.fixture

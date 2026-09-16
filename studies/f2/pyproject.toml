@@ -11,7 +11,8 @@ dependencies = [
     "repro-core",
     "sqlalchemy>=2.0.0",
     "trafilatura>=1.8.0",
-    "warcio>=0.2.1",
+    "repro-io",
+    "python-dotenv>=1.0",
 ]
 
 [project.entry-points."repro.studies"]

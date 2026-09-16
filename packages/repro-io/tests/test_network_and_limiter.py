@@ -1,10 +1,10 @@
-"""Tests for TokenBucketLimiter and RangeFetcher in f2.common.network."""
+"""Tests for TokenBucketLimiter and RangeFetcher in repro_io.http."""
 
 from __future__ import annotations
 
 import time
 
-from f2.common.network import RangeFetcher, TokenBucketLimiter
+from repro_io.http import RangeFetcher, TokenBucketLimiter
 
 
 def test_token_bucket_limiter():
@@ -20,6 +20,11 @@ def test_token_bucket_limiter():
 
 
 def test_range_fetcher_initialization():
-    fetcher = RangeFetcher(bandwidth_mbps=20.0, max_concurrency=2, max_retries=3)
+    fetcher = RangeFetcher(
+        base_url="https://data.commoncrawl.org",
+        bandwidth_mbps=20.0,
+        max_concurrency=2,
+        max_retries=3,
+    )
     assert fetcher.base_url == "https://data.commoncrawl.org"
     assert fetcher.max_retries == 3

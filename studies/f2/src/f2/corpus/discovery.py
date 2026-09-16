@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
 
-from .cdx import CDXBlockLocator, CDXIndexReader, CDXRecord
+from repro_io.commoncrawl.cdx import CDXBlockLocator, CDXIndexReader, CDXRecord
 
 
 class DomainStratum(StrEnum):

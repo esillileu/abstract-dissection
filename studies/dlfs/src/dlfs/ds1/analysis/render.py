@@ -6,7 +6,8 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 
-from repro_core.analysis.core import save_figure, write_summary
+from dlfs.analysis.core import write_summary
+from repro_core.analysis.core import save_figure
 
 from . import (
     e01_optimizer,

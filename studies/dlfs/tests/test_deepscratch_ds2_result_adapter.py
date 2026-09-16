@@ -2,9 +2,7 @@ from pathlib import Path
 
 from mlflow.exceptions import MlflowException
 
-from dlfs.ds2.original.result_adapter import (
-    _word2vec_checkpoint_projection,
-)
+from dlfs.ds2.original.result_adapter import _word2vec_checkpoint_projection
 
 
 def test_missing_legacy_checkpoint_does_not_abort_analysis(

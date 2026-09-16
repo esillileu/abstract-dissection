@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from repro_core.analysis.core import RunRef, artifact_file
+from dlfs.analysis.core import RunRef, artifact_file
 
 PARAMETER_MANIFEST_PATH = "model/parameter_manifest.json"
 

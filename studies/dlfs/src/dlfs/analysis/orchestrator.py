@@ -17,10 +17,7 @@ from repro_core.context.paths import StateCoordinate, StateOwner, WorkspacePaths
 from repro_core.execution import RunOptions, RunSelection
 from repro_core.execution.planning import Planner
 from repro_core.results import ArtifactReference, MetricSeries, NativeRunResult
-from repro_mlflow.artifact_cache import (
-    artifact_download_progress,
-    tracking_uri_key,
-)
+from repro_mlflow.artifact_cache import artifact_download_progress, tracking_uri_key
 
 from ..definition import DEFINITION
 from ..execution.selection import CanonicalAttemptSelector

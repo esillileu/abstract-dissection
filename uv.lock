@@ -9,6 +9,7 @@ members = [
     "dlfs",
     "f2",
     "repro-core",
+    "repro-io",
     "repro-mlflow",
 ]
 
@@ -615,10 +616,11 @@ dependencies = [
     { name = "langdetect" },
     { name = "psycopg", extra = ["binary"] },
     { name = "pyarrow" },
+    { name = "python-dotenv" },
     { name = "repro-core" },
+    { name = "repro-io" },
     { name = "sqlalchemy" },
     { name = "trafilatura" },
-    { name = "warcio" },
 ]
 
 [package.metadata]
@@ -627,10 +629,11 @@ requires-dist = [
     { name = "langdetect", specifier = ">=1.0.9" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.1.0" },
     { name = "pyarrow", specifier = ">=15.0.0" },
+    { name = "python-dotenv", specifier = ">=1.0" },
     { name = "repro-core", editable = "packages/repro-core" },
+    { name = "repro-io", editable = "packages/repro-io" },
     { name = "sqlalchemy", specifier = ">=2.0.0" },
     { name = "trafilatura", specifier = ">=1.8.0" },
-    { name = "warcio", specifier = ">=0.2.1" },
 ]
 
 [[package]]
@@ -1867,6 +1870,21 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6.0.0" },
     { name = "tqdm", specifier = ">=4.68.0" },
     { name = "typer", specifier = ">=0.27.0" },
+]
+
+[[package]]
+name = "repro-io"
+version = "0.1.0"
+source = { editable = "packages/repro-io" }
+dependencies = [
+    { name = "requests" },
+    { name = "warcio" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "requests", specifier = ">=2.31" },
+    { name = "warcio", specifier = ">=0.2.1" },
 ]
 
 [[package]]

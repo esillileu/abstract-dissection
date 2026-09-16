@@ -7,6 +7,14 @@ import numpy as np
 import pytest
 from matplotlib import rcParams
 
+from dlfs.analysis.core import (
+    AnalysisClient,
+    cached_analysis_console_output,
+    cached_analysis_outputs,
+    completed_seed_runs,
+    parse_experiment_selection,
+    write_analysis_cache,
+)
 from dlfs.analysis.declarations import StudyDeclaration
 from dlfs.analysis.input import AnalysisRun, StudyAnalysisInput
 from dlfs.analysis.orchestrator import _render_studies
@@ -14,16 +22,7 @@ from dlfs.ds1 import result_schema as ds1_result_schema
 from dlfs.ds2.analysis import render as ds2_render
 from dlfs.execution.selection import CanonicalAttemptSelector
 from dlfs.identity import Variant, Volume
-from repro_core.analysis.core import (
-    AnalysisClient,
-    aggregate,
-    cached_analysis_console_output,
-    cached_analysis_outputs,
-    completed_seed_runs,
-    parse_experiment_selection,
-    plot_curve,
-    write_analysis_cache,
-)
+from repro_core.analysis.core import aggregate, plot_curve
 from repro_core.plotting.theme import (
     ACCENT_COLORS,
     BACKGROUND,

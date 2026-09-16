@@ -9,21 +9,19 @@ from unittest.mock import MagicMock, patch
 
 import psycopg
 import pytest
+from repro_io.http import FetchResult
 from typer.testing import CliRunner
 
-from f2.common.network import FetchResult
 from f2.corpus.cli import app, ensure_cluster_index
 from f2.corpus.db.migrations.runner import run_migrations
-from f2.corpus.db.session import get_connection, get_db_url
+from f2.corpus.db.session import get_connection
 
 runner = CliRunner()
 
 
 @pytest.fixture
-def db_ready():
-    url = get_db_url()
-    if not url:
-        pytest.skip("F2 database URL environment variable is not set")
+def db_ready(f2_test_database):
+    url = f2_test_database
     with get_connection(url) as conn:
         run_migrations(conn)
         yield conn

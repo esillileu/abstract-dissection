@@ -6,8 +6,9 @@ from collections import defaultdict
 import matplotlib.pyplot as plt
 import numpy as np
 
+from dlfs.analysis.core import write_summary
 from dlfs.analysis.input import artifact_file, artifact_rows
-from repro_core.analysis.core import Curve, save_figure, write_summary
+from repro_core.analysis.core import Curve, save_figure
 
 from .common import runs
 
