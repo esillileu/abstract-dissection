@@ -1,0 +1,89 @@
+//! Context traversal and objective arithmetic from the modular C oracle.
+use crate::{atomic_float, config::Real, random::Rng, trainer::Trainer};
+use std::sync::atomic::AtomicU32;
+
+mod cbow;
+mod hierarchical_softmax;
+mod negative_sampling;
+mod objective;
+mod skip_gram;
+pub mod worker;
+
+pub use cbow::train as cbow_train;
+pub use hierarchical_softmax::train as hierarchical_softmax_train;
+pub use negative_sampling::train as negative_sampling_train;
+pub use objective::train as objective_train;
+pub use skip_gram::train as skip_gram_train;
+
+/// The per-target contract needed by both model kinds. Stage 6 owns the
+/// sentence and scratch buffers and creates a step for each trained target.
+pub struct ModelStep<'t, 'a, 'w> {
+    pub trainer: &'t Trainer<'a>,
+    pub target_token: usize,
+    pub learning_rate: Real,
+    pub sentence: &'w [usize],
+    pub sentence_position: usize,
+    pub hidden: &'w mut [Real],
+    pub hidden_gradient: &'w mut [Real],
+    pub window_rng: &'w mut Rng,
+    pub negative_rng: &'w mut Rng,
+}
+
+pub fn context_position(
+    sentence_length: usize,
+    sentence_position: usize,
+    radius: usize,
+    offset: usize,
+) -> Option<usize> {
+    if offset == radius {
+        return None;
+    }
+    if offset < radius {
+        let left_distance = radius - offset;
+        if sentence_position < left_distance {
+            None
+        } else {
+            Some(sentence_position - left_distance)
+        }
+    } else {
+        let right_distance = offset - radius;
+        if right_distance >= sentence_length - sentence_position {
+            None
+        } else {
+            Some(sentence_position + right_distance)
+        }
+    }
+}
+
+pub fn context_radius(window_rng: &mut Rng, window_radius: usize) -> usize {
+    let shrink = window_rng.next_u64() % window_radius as u64;
+    window_radius - shrink as usize
+}
+
+pub fn objective_score(hidden: &[Real], output_row: &[AtomicU32]) -> Real {
+    assert_eq!(hidden.len(), output_row.len());
+    let mut score = 0.0;
+    for coordinate in 0..hidden.len() {
+        let output_value = atomic_float::load(&output_row[coordinate]);
+        score += hidden[coordinate] * output_value;
+    }
+    score
+}
+
+pub fn objective_apply_update(
+    hidden: &[Real],
+    hidden_gradient: &mut [Real],
+    output_row: &[AtomicU32],
+    gradient_scale: Real,
+) {
+    assert_eq!(hidden.len(), output_row.len());
+    assert_eq!(hidden_gradient.len(), hidden.len());
+    for coordinate in 0..hidden.len() {
+        let output_value = atomic_float::load(&output_row[coordinate]);
+        hidden_gradient[coordinate] += gradient_scale * output_value;
+    }
+    for coordinate in 0..hidden.len() {
+        let delta = gradient_scale * hidden[coordinate];
+        atomic_float::add(&output_row[coordinate], delta);
+    }
+}

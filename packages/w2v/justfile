@@ -1,0 +1,8 @@
+test:
+    make -C reference test
+
+check:
+    make -C reference test
+
+sanitize:
+    make -C reference sanitize
