@@ -1,8 +1,7 @@
-"""DS2's language/sequence projection of trainer events to raw records."""
+"""DS2Records dataclass — accumulates training events and writes CSV artifacts."""
 
 from __future__ import annotations
 
-import csv
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -14,6 +13,8 @@ from repro_core.context.events import (
     TrainingWindowEvent,
     UpdateEvent,
 )
+
+from ._csv import append_csv, csv_value, materialize_scalars, source_curve_metric_name
 
 
 @dataclass
@@ -38,11 +39,19 @@ class DS2Records:
     _written_root: Path | None = None
     _materialized_rows: dict[str, int] = field(default_factory=dict)
 
+    # ------------------------------------------------------------------ #
+    # Lifecycle
+    # ------------------------------------------------------------------ #
+
     def bind_artifact_root(self, artifact_root: Path) -> None:
         if self._written_root != artifact_root:
             self._written_rows.clear()
             self._written_root = artifact_root
         self.artifact_root = artifact_root
+
+    # ------------------------------------------------------------------ #
+    # Event handlers
+    # ------------------------------------------------------------------ #
 
     def on_update(self, event: UpdateEvent) -> None:
         self.updates.append(
@@ -170,6 +179,10 @@ class DS2Records:
         self.attention_render = value
         self._mark_dirty()
 
+    # ------------------------------------------------------------------ #
+    # MLflow serialization
+    # ------------------------------------------------------------------ #
+
     def mlflow_metric_rows(self) -> tuple[tuple[int, str, float], ...]:
         self._materialize_pending_scalars()
         rows: list[tuple[int, str, float]] = []
@@ -194,7 +207,7 @@ class DS2Records:
                 )
             )
         for row in self.source_curves:
-            metric_name = _source_curve_metric_name(str(row.get("metric", "")))
+            metric_name = source_curve_metric_name(str(row.get("metric", "")))
             if metric_name is not None:
                 rows.append((int(row["plot_index"]), metric_name, float(row["value"])))
         for window in self.timing_windows:
@@ -230,6 +243,10 @@ class DS2Records:
                     )
                 )
         return tuple(rows)
+
+    # ------------------------------------------------------------------ #
+    # CSV artifact writing
+    # ------------------------------------------------------------------ #
 
     def write_csv(self, artifact_root: Path) -> None:
         if self._written_root != artifact_root:
@@ -364,6 +381,10 @@ class DS2Records:
             )
         self._pending_rows = 0
 
+    # ------------------------------------------------------------------ #
+    # Internal helpers
+    # ------------------------------------------------------------------ #
+
     def flush(self) -> None:
         if self.artifact_root is not None:
             self.write_csv(self.artifact_root)
@@ -389,7 +410,7 @@ class DS2Records:
                 if row.get(key) is not None
             )
             self._materialized_rows[name] = len(rows)
-        self._materialize_scalars(entries)
+        materialize_scalars(entries)
 
     def _append(
         self,
@@ -399,58 +420,14 @@ class DS2Records:
         *,
         columns: list[str],
     ) -> None:
-        initialized = name in self._written_rows
-        start = self._written_rows.get(name, 0)
-        if not initialized or not path.exists():
-            start = 0
-        pending = rows[start:]
-        if initialized and not pending and path.exists():
-            return
-        path.parent.mkdir(parents=True, exist_ok=True)
-        mode = "a" if initialized and path.exists() else "w"
-        with path.open(mode, newline="") as file:
-            writer = csv.DictWriter(file, fieldnames=columns)
-            if mode == "w":
-                writer.writeheader()
-            for row in pending:
-                writer.writerow(
-                    {key: self._csv_value(row.get(key, "")) for key in columns}
-                )
-        self._written_rows[name] = len(rows)
+        append_csv(name, path, rows, columns=columns, written_rows=self._written_rows)
 
     @staticmethod
-    def _materialize_scalars(entries: list[tuple[dict[str, object], str]]) -> None:
-        groups: dict[
-            int, tuple[object, list[tuple[dict[str, object], str, object]]]
-        ] = {}
-        for row, key in entries:
-            value = row.get(key)
-            if not hasattr(value, "backend") or not hasattr(value, "data"):
-                continue
-            group = groups.setdefault(id(value.backend), (value.backend, []))
-            group[1].append((row, key, value))
-        for backend, values in groups.values():
-            stacked = backend.xp.stack(
-                [value.data.reshape(()) for _, _, value in values]
-            )
-            host_values = backend.to_numpy(stacked)
-            for (row, key, _), host_value in zip(values, host_values, strict=True):
-                row[key] = float(host_value)
+    def _materialize_scalars(
+        entries: list[tuple[dict[str, object], str]],
+    ) -> None:
+        materialize_scalars(entries)
 
     @staticmethod
     def _csv_value(value: object) -> object:
-        if hasattr(value, "backend") and hasattr(value, "data"):
-            return value.backend.scalar_to_float(value.data)
-        return value
-
-
-def _source_curve_metric_name(metric: str) -> str | None:
-    if metric == "loss":
-        return "series/train/loss"
-    if metric == "book_loss":
-        return "series/train/book_loss"
-    if metric == "perplexity":
-        return "series/train/perplexity"
-    if metric == "exact_match_accuracy":
-        return "series/eval_test/exact_match_accuracy"
-    return None
+        return csv_value(value)
