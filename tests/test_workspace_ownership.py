@@ -106,3 +106,20 @@ def test_retired_import_modules_are_absent():
         assert not path.is_file()
         if path.is_dir():
             assert not list(path.glob("*.py"))
+
+
+def test_production_code_does_not_import_one_time_maintenance():
+    for root in (ROOT / "packages", ROOT / "studies"):
+        for source in root.rglob("*.py"):
+            assert "maintenance" not in set(imports(source)), source
+
+    corpus_cli = (ROOT / "studies/f2/src/f2/corpus/cli.py").read_text()
+    for command in ("integration", "backfill", "cleanup-plan", "cleanup"):
+        assert f'command("{command}")' not in corpus_cli
+
+
+def test_f2_uses_only_the_unified_database_environment_key():
+    for source in (ROOT / "studies/f2/src").rglob("*.py"):
+        text = source.read_text()
+        assert "F2_CORPUS_DATABASE_URL" not in text, source
+        assert "F2_CATALOG_DATABASE_URL" not in text, source
