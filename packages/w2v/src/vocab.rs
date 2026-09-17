@@ -28,12 +28,75 @@ pub struct Vocabulary {
     pub retained_token_count: u64,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VocabularyState {
+    pub entries: Vec<VocabularyEntry>,
+    pub hash_capacity: usize,
+    pub retained_token_count: u64,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct NegativeSampler {
     pub table: Vec<usize>,
 }
 
 impl Vocabulary {
+    pub fn export_state(&self) -> VocabularyState {
+        VocabularyState {
+            entries: self.entries.clone(),
+            hash_capacity: self.hash_slots.len(),
+            retained_token_count: self.retained_token_count,
+        }
+    }
+
+    pub fn restore(state: &VocabularyState) -> Result<Self, Status> {
+        if state.entries.is_empty()
+            || state.hash_capacity < state.entries.len()
+            || state.entries.iter().any(|entry| {
+                entry.token.is_empty()
+                    || entry.huffman_path.len() != entry.huffman_bits.len()
+                    || entry.huffman_bits.iter().any(|bit| *bit > 1)
+            })
+        {
+            return Err(Status::CorruptData);
+        }
+        let retained = state
+            .entries
+            .iter()
+            .try_fold(0u64, |total, entry| total.checked_add(entry.count))
+            .ok_or(Status::CorruptData)?;
+        if retained != state.retained_token_count {
+            return Err(Status::CorruptData);
+        }
+        let mut vocabulary = Self {
+            entries: state.entries.clone(),
+            hash_slots: vec![None; state.hash_capacity],
+            retained_token_count: state.retained_token_count,
+        };
+        let status = vocabulary.rebuild_hash();
+        if status != Status::Ok {
+            return Err(status);
+        }
+        Ok(vocabulary)
+    }
+
+    pub fn digest(&self) -> String {
+        let mut hash = crate::identity::StableDigest::new();
+        hash.value(self.retained_token_count);
+        hash.value(self.hash_slots.len() as u64);
+        for entry in &self.entries {
+            hash.value(entry.token.len() as u64);
+            hash.update(&entry.token);
+            hash.value(entry.count);
+            hash.value(entry.huffman_path.len() as u64);
+            for value in &entry.huffman_path {
+                hash.value(*value as u64);
+            }
+            hash.update(&entry.huffman_bits);
+        }
+        hash.finish()
+    }
+
     pub fn find(&self, token: &[u8]) -> Option<usize> {
         let capacity = self.hash_slots.len();
         if capacity == 0 {

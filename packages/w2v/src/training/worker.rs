@@ -24,6 +24,17 @@ pub struct Worker {
     tokenizer: Tokenizer<File>,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct WorkerState {
+    pub worker_id: usize,
+    pub local_token_count: u64,
+    pub last_learning_rate_update_count: u64,
+    pub learning_rate: Real,
+    pub window_rng_state: u64,
+    pub subsampling_rng_state: u64,
+    pub negative_rng_state: u64,
+}
+
 impl Worker {
     pub fn initialize(trainer: &Trainer<'_>, worker_id: usize) -> Result<Self, Status> {
         if worker_id >= trainer.config.thread_count {
@@ -72,6 +83,35 @@ impl Worker {
         self.epoch_token_count = 0;
         self.tokenizer = trainer.corpus.tokenizer(self.shard_start)?;
         Ok(())
+    }
+
+    pub fn export_state(&self) -> WorkerState {
+        WorkerState {
+            worker_id: self.worker_id,
+            local_token_count: self.local_token_count,
+            last_learning_rate_update_count: self.last_learning_rate_update_count,
+            learning_rate: self.learning_rate,
+            window_rng_state: self.window_rng.state,
+            subsampling_rng_state: self.subsampling_rng.state,
+            negative_rng_state: self.negative_rng.state,
+        }
+    }
+
+    pub fn restore_state(&mut self, state: &WorkerState) -> Status {
+        if state.worker_id != self.worker_id
+            || !state.learning_rate.is_finite()
+            || state.learning_rate <= 0.0
+            || state.last_learning_rate_update_count > state.local_token_count
+        {
+            return Status::InvalidState;
+        }
+        self.local_token_count = state.local_token_count;
+        self.last_learning_rate_update_count = state.last_learning_rate_update_count;
+        self.learning_rate = state.learning_rate;
+        self.window_rng.state = state.window_rng_state;
+        self.subsampling_rng.state = state.subsampling_rng_state;
+        self.negative_rng.state = state.negative_rng_state;
+        Status::Ok
     }
 
     pub fn fill_sentence(&mut self, trainer: &Trainer<'_>) -> Result<bool, Status> {
@@ -144,21 +184,19 @@ impl Worker {
         }
     }
 
-    pub fn run(&mut self, trainer: &Trainer<'_>) -> Result<(), Status> {
-        for epoch in 0..trainer.config.epochs {
-            if epoch > 0 {
-                self.reset_epoch(trainer)?;
+    pub fn run_epoch(&mut self, trainer: &Trainer<'_>, reset: bool) -> Result<(), Status> {
+        if reset {
+            self.reset_epoch(trainer)?;
+        }
+        let mut finished = false;
+        while !finished {
+            finished = self.fill_sentence(trainer)?;
+            let limit = trainer.vocab.retained_token_count / trainer.config.thread_count as u64;
+            if self.epoch_token_count > limit {
+                finished = true;
             }
-            let mut finished = false;
-            while !finished {
-                finished = self.fill_sentence(trainer)?;
-                let limit = trainer.vocab.retained_token_count / trainer.config.thread_count as u64;
-                if self.epoch_token_count > limit {
-                    finished = true;
-                }
-                if !finished {
-                    self.train_sentence(trainer);
-                }
+            if !finished {
+                self.train_sentence(trainer);
             }
         }
         Ok(())

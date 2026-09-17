@@ -14,6 +14,9 @@ pub enum Status {
     IoError = 3,
     CorruptData = 4,
     ThreadError = 5,
+    SchemaMismatch = 6,
+    IdentityMismatch = 7,
+    InvalidState = 8,
 }
 impl Status {
     pub const fn as_str(self) -> &'static str {
@@ -24,6 +27,9 @@ impl Status {
             Self::IoError => "I/O error",
             Self::CorruptData => "corrupt data",
             Self::ThreadError => "thread error",
+            Self::SchemaMismatch => "schema mismatch",
+            Self::IdentityMismatch => "identity mismatch",
+            Self::InvalidState => "invalid state",
         }
     }
 }
