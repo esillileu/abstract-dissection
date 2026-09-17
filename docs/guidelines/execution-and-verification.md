@@ -34,16 +34,18 @@ uv run repro dlfs check ds2 -e 01
 # -------------------------------------------------------------
 # B. F2 Campaign Suite (Corpus Pipeline & Reproduction Catalog)
 # -------------------------------------------------------------
-# 1. Corpus Operational Database Migrations & Pipeline
-uv run repro f2 corpus migrate
-uv run repro f2 corpus analyze
-uv run repro f2 corpus calibrate
-uv run repro f2 corpus process --limit 10000
+# 1. Independent Common Crawl producer
+uv run repro f2-cc migrate
+uv run repro f2-cc corpus sample --run-id <run-id>
+uv run repro f2-cc corpus analyze --manifest <provenance.parquet>
+uv run repro f2-cc corpus calibrate --manifest <provenance.parquet> --audit-file <audit.jsonl>
 
-# 2. Reproduction Catalog Database & Execution Plan Management
+# 2. F2 reproduction catalog and completed-source preparation
 uv run repro f2 catalog migrate
+uv run repro f2 catalog load-manifest studies/f2/catalog/w2v.json
 uv run repro f2 catalog status
 uv run repro f2 catalog matrix
+uv run repro f2 corpus sources status
 ```
 
 Tracked DLFS commands require `F1_MLFLOW_TRACKING_URI` unless `--tracking-uri`
@@ -84,8 +86,9 @@ The repository maintains four levels of automated verification (500+ tests):
    * Executes 1 update in memory to ensure forward, backward, loss, and optimizer steps work without runtime errors.
 
 
-F2 DB verification requires only F2_TEST_DATABASE_URL or an available rootless
-Podman/Docker runtime for a disposable PostgreSQL 18 instance. Missing DB capability
-is a failure, not a skip. Ordinary .env database settings are never used by fixtures.
-The complete gate remains `just check`, including network smoke tests. Independent
-repro-io verification is documented in its package README.
+Database integration tests are marked `database` and are excluded from the default
+`just check` gate. Run them explicitly with `just test-db`; they require the study's
+dedicated test URL or an available rootless Podman/Docker runtime for a disposable
+PostgreSQL 18 instance. Ordinary `.env` database settings are never used by fixtures.
+Network smoke tests remain separately marked `network` and excluded by default.
+Independent repro-io verification is documented in its package README.

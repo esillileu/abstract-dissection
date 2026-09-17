@@ -22,6 +22,10 @@ linecheck:
 test *args:
     uv run pytest {{args}}
 
+# Run database integration tests against an explicit test DB or disposable container
+test-db:
+    uv run pytest -q -o addopts="" -m "database and not network"
+
 # Run repro CLI
 repro *args:
     uv run repro {{args}}

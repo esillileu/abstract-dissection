@@ -23,7 +23,10 @@ Reproduces the canonical "Deep Learning from Scratch" curriculum (Volumes 1 & 2)
 
 ### 2) F2 Research Campaign Suite (`studies/f2`)
 A comprehensive reproduction and analysis campaign comprising **8~10 distinct sub-studies**:
-* **Corpus Pipeline (`f2 corpus` / Pre-requisite Phase 0):** Common Crawl web-scale sampling, auditing, two-phase difference estimation, and corpus extraction for Word2Vec 33B / 1B pretraining.
+* **F2-CC producer (`f2-cc corpus` / Pre-requisite Phase 0):** Independent
+  Common Crawl sampling, auditing, estimation, and release publication.
+* **Corpus preparation (`f2 corpus`):** Acquisition, normalization, and
+  validation of completed releases consumed by Word2Vec experiments.
 * **Corpus-Dependent Studies (2 Studies):** Word2Vec pretraining dynamics, vocabulary scaling, and representation evaluations trained directly on the constructed corpus.
 * **Independent Studies (5 Studies):** Dedicated theoretical, architecture, and embedding benchmark studies.
 
@@ -35,8 +38,13 @@ studies/
 │       ├── ds1/                       # Volume 1: Vision & Feedforward
 │       ├── ds2/                       # Volume 2: NLP & Sequence Modeling
 │       └── adapters/
+├── f2_cc/                             # Independent Common Crawl producer
+│   └── src/f2_cc/
+│       ├── corpus/                    # Sampling, audit, analysis, release creation
+│       └── db/                        # Dedicated f2_cc operational schema
 └── f2/                                # F2 Research & Benchmark Campaign
     ├── pyproject.toml
+    ├── catalog/w2v.json               # W2V1/W2V2 catalog input
     └── src/f2/
         ├── plugin.py                  # Plugin entrypoint (registers `repro f2 ...`)
         ├── cli.py                     # Root CLI dispatcher (`repro f2 corpus ...`, `repro f2 catalog ...`)
@@ -46,10 +54,9 @@ studies/
         │   ├── stats/                 # BootstrapVarianceEngine, DifferenceEstimator, ClassifierMetrics
         │   ├── analysis/              # Theme, declarations, BaseAnalysisOrchestrator
         │   └── adapters/              # CheckpointAdapter
-        ├── corpus/                    # Common Crawl extraction pipeline & operational DB
-        │   ├── discovery.py, pipeline.py, storage.py, analysis.py, calibration.py
-        │   ├── cli.py                 # `repro f2 corpus ...`
-        │   └── db/                    # F2-owned schemas on external PostgreSQL
+        ├── corpus/                    # Completed-source preparation and validation
+        │   ├── cli.py                 # `repro f2 corpus sources ...`
+        │   └── db/                    # F2-owned release metadata schema
         ├── catalog/                   # Reproduction catalog, resource tracking & execution plans
         │   ├── schema.dbml            # DBML architectural schema specification
         │   ├── materializer.py        # Planned run slot materializer from repro-core Planner

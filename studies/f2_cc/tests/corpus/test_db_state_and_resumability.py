@@ -15,6 +15,8 @@ from f2_cc.db.migrations import run_migrations
 from f2_cc.db.repository import CorpusStateRepository
 from f2_cc.db.session import get_connection
 
+pytestmark = pytest.mark.database
+
 
 @pytest.fixture
 def db_conn(f2_test_database):
@@ -28,6 +30,25 @@ def test_migrations_and_idempotency(db_conn: psycopg.Connection):
     # Running migrations again should be a clean no-op
     applied = run_migrations(db_conn)
     assert applied == []
+
+    tables = {
+        row[0]
+        for row in db_conn.execute(
+            "SELECT table_name FROM information_schema.tables WHERE table_schema='cc'"
+        )
+    }
+    assert "analysis_profiles" not in tables
+    release_columns = {
+        row[0]
+        for row in db_conn.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_schema='cc' AND table_name='releases'"
+        )
+    }
+    assert "profile_key" not in release_columns
+    assert {"release_id", "source_run_id", "manifest_uri", "manifest_sha256"} <= (
+        release_columns
+    )
 
 
 def test_repository_run_lifecycle_and_resumability(

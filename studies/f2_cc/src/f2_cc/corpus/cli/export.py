@@ -22,7 +22,9 @@ def export_run(
 ) -> None:
     """Export provenance records for a given run from PostgreSQL to Parquet and JSONL."""
     paths = RuntimePaths.from_environment()
-    target_output_dir = output_dir or (paths.staging_root / "exp" / "f2" / "export")
+    target_output_dir = output_dir or (
+        paths.staging_root / "exp" / "f2_cc" / run_id / "export"
+    )
     target_output_dir.mkdir(parents=True, exist_ok=True)
     with get_connection() as conn:
         repo = CorpusStateRepository(conn)

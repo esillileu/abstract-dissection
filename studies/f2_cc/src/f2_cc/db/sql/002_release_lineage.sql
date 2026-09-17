@@ -1,5 +1,5 @@
 CREATE TABLE releases (
-    release_id TEXT PRIMARY KEY, profile_key TEXT NOT NULL, source_run_id VARCHAR(64) NOT NULL REFERENCES pipeline_runs,
+    release_id TEXT PRIMARY KEY, source_run_id VARCHAR(64) NOT NULL REFERENCES pipeline_runs,
     manifest_uri TEXT NOT NULL UNIQUE, manifest_sha256 VARCHAR(64) NOT NULL, status TEXT NOT NULL,
     statistics JSONB NOT NULL DEFAULT '{}'::jsonb, published_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()

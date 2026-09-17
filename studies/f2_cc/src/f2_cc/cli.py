@@ -18,7 +18,6 @@ TABLES = (
     "candidate_records",
     "processing_results",
     "audit_assignments",
-    "analysis_profiles",
 )
 
 

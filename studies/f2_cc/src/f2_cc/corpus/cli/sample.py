@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import subprocess
 import uuid
 from pathlib import Path
 from typing import Annotated
@@ -47,19 +46,14 @@ def sample_corpus(
 ) -> None:
     """Execute bounded, rate-limited probability sample against Common Crawl backed by PostgreSQL."""
     paths = RuntimePaths.from_environment()
-    target_output_dir = output_dir or (paths.staging_root / "exp" / "f2" / "sample")
-    target_output_dir.mkdir(parents=True, exist_ok=True)
     active_run_id = run_id or f"run_{seed}_{uuid.uuid4().hex[:8]}"
+    target_output_dir = output_dir or (
+        paths.staging_root / "exp" / "f2_cc" / active_run_id
+    )
+    target_output_dir.mkdir(parents=True, exist_ok=True)
 
     crawl_list = [c.strip() for c in crawls.split(",") if c.strip()]
     per_crawl_target = max(1, sample_size // len(crawl_list))
-
-    try:
-        exec_sha = subprocess.check_output(
-            ["git", "rev-parse", "HEAD"], text=True
-        ).strip()
-    except Exception:
-        exec_sha = "unknown"
 
     config_dict = {
         "seed": seed,
@@ -74,16 +68,9 @@ def sample_corpus(
         json.dumps(config_dict, sort_keys=True).encode()
     ).hexdigest()[:16]
 
-    run_meta = {
-        "baseline_10k_commit_sha": "f3dee9676517d9a7506b162aff83a111f45209dc",
-        "execution_50k_commit_sha": exec_sha,
-        "config_hash": config_hash,
-        "frozen_parameters": config_dict,
-    }
+    run_meta = {"config_hash": config_hash, "frozen_parameters": config_dict}
 
     typer.echo(f"Initializing run '{active_run_id}' in PostgreSQL...")
-    typer.echo(f"  - Baseline SHA: {run_meta['baseline_10k_commit_sha']}")
-    typer.echo(f"  - Execution SHA: {run_meta['execution_50k_commit_sha']}")
     typer.echo(f"  - Config Hash: {config_hash}")
 
     execute_sampling(
@@ -97,6 +84,5 @@ def sample_corpus(
         prefetch_rule=prefetch_rule,
         reject_exploration_rate=reject_exploration_rate,
         target_output_dir=target_output_dir,
-        output_dir=output_dir,
         run_meta=run_meta,
     )

@@ -46,3 +46,24 @@ word-count validation.
 The existing validation data is therefore evidence for planning, not a source
 corpus. A fresh production run starts with a new run ID and a new release
 manifest.
+
+## Fresh-run interface
+
+F2-CC has no canonical-profile table and no built-in historical run IDs. Every
+operation that consumes run state selects it explicitly with `--run-id`; analysis
+and calibration consume explicit `--manifest` and `--audit-file` paths. Default
+staging output is isolated under `.staging/exp/f2_cc/<run-id>/`.
+
+```bash
+uv run repro f2-cc migrate
+uv run repro f2-cc corpus sample --run-id <new-run-id> --output-dir <staging-dir>
+uv run repro f2-cc corpus audit --run-id <new-run-id>
+uv run repro f2-cc corpus audit-review --run-id <new-run-id> --output-file <review.jsonl>
+uv run repro f2-cc corpus audit-record --run-id <new-run-id> --audit-file <annotated.jsonl>
+uv run repro f2-cc corpus analyze --manifest <provenance.parquet> --audit-file <annotated.jsonl>
+uv run repro f2-cc corpus calibrate --manifest <provenance.parquet> --audit-file <annotated.jsonl>
+```
+
+A completed production release is handed to F2 as an immutable manifest URI and
+SHA-256. F2 records that pair as a catalog resource version; it does not read
+F2-CC operational tables or infer a release from a profile name.

@@ -26,7 +26,6 @@ def execute_sampling(
     prefetch_rule: str,
     reject_exploration_rate: float,
     target_output_dir: Path,
-    output_dir: Path | None,
     run_meta: dict[str, object],
 ) -> None:
     from f2_cc.corpus import cli
@@ -52,7 +51,7 @@ def execute_sampling(
                 f"Resuming run: found {len(completed_candidate_ids)} already completed candidates in DB."
             )
 
-        text_writer = CleanTextWriter(output_dir / "clean_shards")
+        text_writer = CleanTextWriter(target_output_dir / "clean_shards")
         fetcher = cli.RangeFetcher(
             user_agent="abstract-dissection-repro/0.1 (Research reproduction study)",
             bandwidth_mbps=bandwidth_limit,

@@ -6,8 +6,6 @@ from typing import Annotated
 
 import typer
 
-from repro_core.context.paths import RuntimePaths
-
 from ...db.repository import CorpusStateRepository
 from ...db.session import get_connection
 from ..discovery import SequentialAuditSampler
@@ -50,34 +48,18 @@ def record_audit(
         str, typer.Option("--run-id", "-r", help="Run ID to record audit labels for")
     ],
     audit_file: Annotated[
-        Path | None,
+        Path,
         typer.Option("--audit-file", "-a", help="Path to annotated audit JSONL"),
-    ] = None,
+    ],
 ) -> None:
     """Record completed audit gold labels into PostgreSQL from an annotated JSONL file."""
-    paths = RuntimePaths.from_environment()
-    target_audit_file = audit_file
-    if target_audit_file is None:
-        candidate_audits = [
-            paths.staging_root
-            / "exp"
-            / "f2"
-            / "00_corpus_audit_set_50k_400_annotated.jsonl",
-            paths.staging_root / "exp" / "f2" / "audit_set_50k_400_annotated.jsonl",
-            paths.analysis_output("f2") / "00_corpus_audit_set_50k_400_annotated.jsonl",
-            paths.analysis_output("f2") / "audit_set_50k_400_annotated.jsonl",
-        ]
-        target_audit_file = next(
-            (p for p in candidate_audits if p.exists()), candidate_audits[0]
-        )
-
-    if not target_audit_file.exists():
-        typer.echo(f"Audit file not found: {target_audit_file}")
+    if not audit_file.exists():
+        typer.echo(f"Audit file not found: {audit_file}")
         return
 
     annotated_records = [
         json.loads(line)
-        for line in target_audit_file.read_text(encoding="utf-8").splitlines()
+        for line in audit_file.read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
     with get_connection() as conn:

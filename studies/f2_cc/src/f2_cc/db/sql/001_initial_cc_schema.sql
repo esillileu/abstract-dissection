@@ -36,13 +36,6 @@ CREATE TABLE audit_assignments (
     FOREIGN KEY(run_id,candidate_id) REFERENCES candidate_records ON DELETE CASCADE,
     UNIQUE(run_id,candidate_id)
 );
-CREATE TABLE analysis_profiles (
-    profile_key VARCHAR(64) NOT NULL, revision INT NOT NULL, purpose VARCHAR(32) NOT NULL,
-    run_id VARCHAR(64) NOT NULL REFERENCES pipeline_runs ON DELETE RESTRICT, rationale TEXT NOT NULL,
-    is_active BOOLEAN NOT NULL DEFAULT TRUE, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    PRIMARY KEY(profile_key,revision), CHECK(purpose IN ('analysis','calibration'))
-);
-CREATE UNIQUE INDEX uq_cc_active_profile ON analysis_profiles(profile_key) WHERE is_active;
 CREATE INDEX idx_cc_candidates_run ON candidate_records(run_id);
 CREATE INDEX idx_cc_results_run ON processing_results(run_id);
 CREATE INDEX idx_cc_audit_run ON audit_assignments(run_id,priority_order);

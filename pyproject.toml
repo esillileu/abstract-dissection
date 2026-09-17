@@ -42,7 +42,7 @@ extend-exclude = [
 
 [tool.pytest.ini_options]
 testpaths = ["packages", "studies", "tests"]
-addopts = "-m 'not network'"
+addopts = "-m 'not network and not database'"
 norecursedirs = [
     "references",
     "data",
@@ -54,6 +54,7 @@ norecursedirs = [
 ]
 markers = [
     "network: marks tests as requiring external network access",
+    "database: marks tests as requiring a disposable or explicitly configured database",
 ]
 
 [tool.ruff.lint]

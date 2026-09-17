@@ -16,7 +16,7 @@ def validate_connection(conn, **_kwargs):
 
 def ensure_cluster_index(crawl_id: str) -> CDXIndexReader:
     """Ensure Common Crawl CDX cluster index is available in cache and return indexed reader."""
-    cache_dir = RuntimePaths.from_environment().cache_root / "f2" / crawl_id
+    cache_dir = RuntimePaths.from_environment().cache_root / "f2_cc" / crawl_id
     cache_dir.mkdir(parents=True, exist_ok=True)
     idx_path = cache_dir / "cluster.idx"
 

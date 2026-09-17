@@ -1,4 +1,4 @@
-"""Pipeline run lifecycle and analysis profile resolution."""
+"""Pipeline run lifecycle."""
 
 from __future__ import annotations
 
@@ -10,35 +10,7 @@ from .base import BaseRepository
 
 
 class RunsRepositoryMixin(BaseRepository):
-    """Operations for creating pipeline runs and resolving analysis profiles."""
-
-    def resolve_analysis_run(
-        self, *, profile: str | None = None, run_id: str | None = None
-    ) -> str:
-        """Resolve exactly one explicit or canonical analysis input run."""
-        if profile and run_id:
-            raise ValueError("profile and run_id are mutually exclusive")
-        if run_id:
-            with self.conn.cursor() as cur:
-                cur.execute(
-                    "SELECT run_id FROM pipeline_runs WHERE run_id = %s", (run_id,)
-                )
-                if cur.fetchone() is None:
-                    raise ValueError(f"unknown corpus run: {run_id}")
-            return run_id
-        selected = profile or "confirmatory-50k"
-        with self.conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT run_id FROM analysis_profiles
-                WHERE profile_key = %s AND is_active
-                """,
-                (selected,),
-            )
-            row = cur.fetchone()
-        if row is None:
-            raise ValueError(f"no active analysis profile: {selected}")
-        return row[0]
+    """Operations for creating pipeline runs."""
 
     def create_run(
         self,

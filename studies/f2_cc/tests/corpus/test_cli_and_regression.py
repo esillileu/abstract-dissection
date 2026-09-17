@@ -26,6 +26,7 @@ def db_ready(f2_test_database):
         yield conn
 
 
+@pytest.mark.database
 def test_cli_sample_accepts_http_206_and_produces_non_empty_provenance(
     db_ready: psycopg.Connection, tmp_path: Path
 ):
@@ -140,13 +141,16 @@ def test_ensure_cluster_index_cached(tmp_path: Path):
     )
     # Pad to > 10,000 bytes to simulate real index file
     padded = sample_cluster_idx + ("# comment\n" * 1500)
-    cache_file = tmp_path / "cluster.idx"
-    cache_file.write_text(padded, encoding="utf-8")
-
-    with patch("repro_core.context.paths.RuntimePaths.from_environment") as mock_paths:
-        mock_paths.return_value.cache_root = tmp_path.parent
+    with (
+        patch("repro_core.context.paths.RuntimePaths.from_environment") as mock_paths,
+        patch(
+            "f2_cc.corpus.cli.index.urllib.request.urlopen",
+            side_effect=AssertionError("cache hit must not access the network"),
+        ),
+    ):
+        mock_paths.return_value.cache_root = tmp_path
         # Create expected directory structure
-        crawl_dir = tmp_path.parent / "f2" / "CC-MAIN-2012"
+        crawl_dir = tmp_path / "f2_cc" / "CC-MAIN-2012"
         crawl_dir.mkdir(parents=True, exist_ok=True)
         (crawl_dir / "cluster.idx").write_text(padded, encoding="utf-8")
 

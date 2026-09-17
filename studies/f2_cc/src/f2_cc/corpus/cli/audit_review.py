@@ -22,6 +22,13 @@ def review_audit(
         Path | None,
         typer.Option("--output-file", "-o", help="Audit review JSONL output path"),
     ] = None,
+    shard_dir: Annotated[
+        Path | None,
+        typer.Option(
+            "--shard-dir",
+            help="Optional clean-text shard directory for review snippets",
+        ),
+    ] = None,
     blind: Annotated[
         bool,
         typer.Option(
@@ -33,7 +40,7 @@ def review_audit(
     """Export the audit assignments with text for manual labeling (supports double-blind mode)."""
     paths = RuntimePaths.from_environment()
     target_output_file = output_file or (
-        paths.staging_root / "exp" / "f2" / "00_corpus_audit_set_50k_400_blind.jsonl"
+        paths.staging_root / "exp" / "f2_cc" / run_id / "audit_review.jsonl"
     )
     target_output_file.parent.mkdir(parents=True, exist_ok=True)
     with get_connection() as conn:
@@ -45,18 +52,8 @@ def review_audit(
             )
             return
 
-        # Map URLs to clean text snippet if shards exist
-        shard_candidates = [
-            paths.staging_root / "exp" / "f2" / "confirmatory_50k" / "clean_shards",
-            paths.staging_root / "exp" / "f2" / "sample_10k" / "clean_shards",
-            paths.staging_root / "exp" / "f2" / "sample" / "clean_shards",
-        ]
-        shard_dir = next(
-            (p for p in shard_candidates if p.exists()), shard_candidates[0]
-        )
-
         url_to_text: dict[str, str] = {}
-        if shard_dir.exists():
+        if shard_dir is not None and shard_dir.exists():
             for sf in shard_dir.glob("*.txt"):
                 docs = re.findall(
                     r'<DOC url="(.*?)" words="(\d+)">\n(.*?)\n</DOC>',
@@ -133,7 +130,7 @@ def review_audit(
                 f.write(json.dumps(review_entry, default=str) + "\n")
 
         # Also write Markdown Review Dossier
-        md_file = target_output_file.parent / "00_corpus_audit_set_50k_400_review.md"
+        md_file = target_output_file.with_suffix(".md")
         mode_tag = "Double-Blind Mode" if blind else "Unblinded Control Mode"
         md_lines = [
             f"# Phase-2 8-Stratum Gold Audit Set ({len(audit_items)} Documents) — Run `{run_id}` ({mode_tag})",
