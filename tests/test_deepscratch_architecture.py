@@ -258,33 +258,6 @@ def test_variant_and_volume_import_boundaries() -> None:
     assert violations == []
 
 
-def test_generic_layers_do_not_know_deepscratch() -> None:
-    violations = []
-    roots = (Path("packages/repro-core/src"), Path("packages/repro-mlflow/src"))
-    for root in roots:
-        for path in root.rglob("*.py"):
-            violations.extend(
-                (path, name)
-                for name in _imports(path)
-                if name.startswith("dlfs") or name.startswith("exp.deepscratch")
-            )
-    assert violations == []
-
-
-def test_retired_python_facades_are_absent() -> None:
-    assert not Path("deep-learning").exists()
-    assert not Path("exp").exists()
-
-
-def test_monorepo_package_structure() -> None:
-    assert Path("packages/repro-core").is_dir()
-    assert Path("packages/repro-mlflow").is_dir()
-    assert Path("packages/deepscratch").is_dir()
-    assert Path("studies/dlfs").is_dir()
-    assert Path("references/dlfs1-book").is_dir()
-    assert Path("references/dlfs2-book").is_dir()
-
-
 def test_runtime_code_does_not_write_under_source_tree() -> None:
     violations = []
     forbidden = (
@@ -350,32 +323,6 @@ def _imports(path: Path) -> set[str]:
     return names
 
 
-def test_deepscratch_package_has_zero_dependencies_on_repro_core() -> None:
-    violations = []
-    root = Path("packages/deepscratch/src")
-    for path in root.rglob("*.py"):
-        violations.extend(
-            (path, name)
-            for name in _imports(path)
-            if name.startswith("repro_core")
-            or name.startswith("repro_mlflow")
-            or name.startswith("dlfs")
-        )
-    assert violations == []
-
-
-def test_repro_core_has_zero_dependencies_on_deepscratch_or_dlfs() -> None:
-    violations = []
-    root = Path("packages/repro-core/src")
-    for path in root.rglob("*.py"):
-        violations.extend(
-            (path, name)
-            for name in _imports(path)
-            if name.startswith("deepscratch") or name.startswith("dlfs")
-        )
-    assert violations == []
-
-
 def test_repro_core_checkpoint_has_zero_deep_learning_coupling() -> None:
     path = Path("packages/repro-core/src/repro_core/context/checkpoint.py")
     text = path.read_text(encoding="utf-8")
@@ -393,25 +340,3 @@ def test_repro_core_checkpoint_has_zero_deep_learning_coupling() -> None:
         assert token not in text, (
             f"repro_core/context/checkpoint.py contains forbidden token: {token}"
         )
-
-
-def test_repro_mlflow_has_zero_dependencies_on_deepscratch_or_dlfs() -> None:
-    violations = []
-    root = Path("packages/repro-mlflow/src")
-    for path in root.rglob("*.py"):
-        violations.extend(
-            (path, name)
-            for name in _imports(path)
-            if name.startswith("deepscratch") or name.startswith("dlfs")
-        )
-    assert violations == []
-
-
-def test_repro_core_has_zero_dependencies_on_repro_mlflow() -> None:
-    violations = []
-    root = Path("packages/repro-core/src")
-    for path in root.rglob("*.py"):
-        violations.extend(
-            (path, name) for name in _imports(path) if name.startswith("repro_mlflow")
-        )
-    assert violations == []

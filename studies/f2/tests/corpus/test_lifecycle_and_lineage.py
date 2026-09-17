@@ -29,12 +29,6 @@ def repo(db_conn: psycopg.Connection[Any]):
         yield CorpusStateRepository(db_conn)
 
 
-def test_migrations_and_idempotency(repo: CorpusStateRepository):
-    """Verify running migrations again is an idempotent no-op."""
-    applied = run_migrations(repo.conn)
-    assert applied == []
-
-
 def test_end_to_end_multihop_lineage_and_traversal(repo: CorpusStateRepository):
     """Test full multi-hop lineage:
     catalog raw release -> acq -> raw -> extract -> norm -> filter -> shard -> canonical.

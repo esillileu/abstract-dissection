@@ -71,8 +71,27 @@ def test_cli_sample_accepts_http_206_and_produces_non_empty_provenance(
         elapsed_sec=0.01,
     )
 
+    from repro_io.commoncrawl.cdx import CDXBlockLocator, CDXIndexReader
+
+    mock_reader = CDXIndexReader(
+        [
+            CDXBlockLocator(
+                surt_key="com,reuters)/",
+                timestamp="20120101",
+                filename="cdx-00000.gz",
+                offset=0,
+                length=len(cdx_block_bytes),
+                block_index=i,
+            )
+            for i in range(5)
+        ]
+    )
+
     out_dir = tmp_path / "sample_out"
-    with patch("f2.corpus.cli.RangeFetcher", return_value=mock_fetcher):
+    with (
+        patch("f2.corpus.cli.RangeFetcher", return_value=mock_fetcher),
+        patch("f2.corpus.cli.ensure_cluster_index", return_value=mock_reader),
+    ):
         result = runner.invoke(
             app,
             [
