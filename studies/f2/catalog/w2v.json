@@ -1,0 +1,1373 @@
+{
+  "schema_version": 1,
+  "papers": [
+    {
+      "paper_id": "w2v1",
+      "title": "Efficient Estimation of Word Representations in Vector Space",
+      "citation_key": "mikolov2013efficient",
+      "version": "arXiv:1301.3781v3 (2013-09-07); listed in ICLR 2013 Workshop Proceedings",
+      "source_url": "https://arxiv.org/pdf/1301.3781v3",
+      "notes": "Reproduction target is pinned to arXiv v3 because this is the version containing Tables 1-8 and the large-scale/qualitative results used in the project."
+    },
+    {
+      "paper_id": "w2v2",
+      "title": "Distributed Representations of Words and Phrases and their Compositionality",
+      "citation_key": "mikolov2013distributed",
+      "version": "NeurIPS 2013 proceedings paper; arXiv:1310.4546v1",
+      "source_url": "https://papers.neurips.cc/paper_files/paper/2013/file/9aa42b31882ec039965f3c4923ce901b-Paper.pdf",
+      "notes": "Official NeurIPS proceedings PDF is used as the primary source."
+    }
+  ],
+  "targets": [
+    {
+      "target_id": "w2v1-figure-1",
+      "paper_id": "w2v1",
+      "location_type": "figure",
+      "location_label": "Figure 1",
+      "ordinal": 1,
+      "target_type": "qualitative",
+      "description": "Reproduce/verify the stated CBOW and Skip-gram architecture: CBOW predicts the center word from surrounding context; Skip-gram predicts surrounding words from the center word.",
+      "source_locator": "§3.1-3.2, printed p.5 (PDF page 5/12)",
+      "notes": "Architecture target, not a numeric benchmark."
+    },
+    {
+      "target_id": "w2v1-table-1",
+      "paper_id": "w2v1",
+      "location_type": "table",
+      "location_label": "Table 1",
+      "ordinal": 1,
+      "target_type": "qualitative",
+      "description": "Verify the Semantic-Syntactic Word Relationship test-set taxonomy: 5 semantic and 9 syntactic relation types and the representative examples.",
+      "source_locator": "§4.1, printed p.6",
+      "notes": "The full test set is stated to contain 8,869 semantic and 10,675 syntactic questions."
+    },
+    {
+      "target_id": "w2v1-table-2",
+      "paper_id": "w2v1",
+      "location_type": "table",
+      "location_label": "Table 2",
+      "ordinal": 2,
+      "target_type": "metric",
+      "description": "Reproduce CBOW accuracy scaling over training words [24M,49M,98M,196M,391M,783M] and dimensions [50,100,300,600], restricted to questions whose words are in the top-30K vocabulary. Reference rows: 50d=[13.4,15.7,18.6,19.1,22.5,23.2], 100d=[19.4,23.1,27.8,28.7,33.4,32.2], 300d=[23.2,29.2,35.3,38.6,43.7,45.9], 600d=[24.0,30.1,36.5,40.8,46.6,50.4].",
+      "source_locator": "§4.2, printed pp.6-7",
+      "notes": null
+    },
+    {
+      "target_id": "w2v1-table-3",
+      "paper_id": "w2v1",
+      "location_type": "table",
+      "location_label": "Table 3",
+      "ordinal": 3,
+      "target_type": "metric",
+      "description": "Reproduce the 640-dimensional architecture comparison on the same 320M-word/82K-vocabulary LDC data. Reference (semantic, syntactic, MSR syntactic-relatedness): RNNLM=(9,36,35), NNLM=(23,53,47), CBOW=(24,64,61), Skip-gram=(55,59,56). RNNLM is a reported external/pre-existing baseline; the project scope directly implements NNLM, CBOW, and Skip-gram.",
+      "source_locator": "§4.3, printed p.7",
+      "notes": null
+    },
+    {
+      "target_id": "w2v1-table-4",
+      "paper_id": "w2v1",
+      "location_type": "table",
+      "location_label": "Table 4",
+      "ordinal": 4,
+      "target_type": "metric",
+      "description": "Reproduce the full-vocabulary analogy comparison. Project-trained rows of primary interest: Our NNLM 20d/6B=(12.9,26.4,20.3), 50d/6B=(27.9,55.8,43.2), 100d/6B=(34.2,64.5,50.8); CBOW 300d/783M=(15.5,53.1,36.1); Skip-gram 300d/783M=(50.0,55.9,53.3). External published vectors remain reference baselines.",
+      "source_locator": "§4.3, printed p.8",
+      "notes": null
+    },
+    {
+      "target_id": "w2v1-table-5",
+      "paper_id": "w2v1",
+      "location_type": "table",
+      "location_label": "Table 5",
+      "ordinal": 5,
+      "target_type": "metric",
+      "description": "Reproduce the epoch/data/dimension trade-off. Reference total accuracies/training times: CBOW 300d 783M 3ep=36.1/1d; SG 300d 783M 3ep=53.3/3d; CBOW 300d 783M 1ep=33.6/0.3d; CBOW 300d 1.6B 1ep=36.1/0.6d; CBOW 600d 783M 1ep=36.2/0.7d; SG 300d 783M 1ep=49.2/1d; SG 300d 1.6B 1ep=53.8/2d; SG 600d 783M 1ep=55.5/2.5d.",
+      "source_locator": "§4.3, printed p.8",
+      "notes": "Training-time reproduction should be interpreted relative to available hardware as well as raw wall time."
+    },
+    {
+      "target_id": "w2v1-table-6",
+      "paper_id": "w2v1",
+      "location_type": "table",
+      "location_label": "Table 6",
+      "ordinal": 6,
+      "target_type": "metric",
+      "description": "Reproduce/compare the 6B-word DistBelief large-scale results: NNLM 100d total=50.8, 14d×180 CPU cores; CBOW 1000d total=63.7, 2d×140; Skip-gram 1000d total=65.6, 2.5d×125.",
+      "source_locator": "§4.4, printed p.9",
+      "notes": "Exact DistBelief/50-100-replica environment is unavailable; catalog records the original specification, while an execution surrogate has not yet been canonically bound."
+    },
+    {
+      "target_id": "w2v1-table-7",
+      "paper_id": "w2v1",
+      "location_type": "table",
+      "location_label": "Table 7",
+      "ordinal": 7,
+      "target_type": "metric",
+      "description": "Reproduce the Microsoft Sentence Completion Challenge result for Skip-gram and the reported combination: Skip-gram=48.0%; Skip-gram+RNNLMs=58.9% overall (59.2% dev, 58.7% test).",
+      "source_locator": "§4.5, printed p.9",
+      "notes": "Project scope directly trains the Skip-gram component; the RNNLM combination is a reference/composite result."
+    },
+    {
+      "target_id": "w2v1-table-8",
+      "paper_id": "w2v1",
+      "location_type": "table",
+      "location_label": "Table 8",
+      "ordinal": 8,
+      "target_type": "qualitative",
+      "description": "Reproduce the listed word-relation analogies using the Table-4 best Skip-gram vectors (300d, 783M words), including relation examples such as France-Paris, big-bigger, Miami-Florida, Einstein-scientist, and Microsoft-Windows.",
+      "source_locator": "§5, printed p.10",
+      "notes": "The paper notes that exact-match scoring of these examples is only about 60%."
+    },
+    {
+      "target_id": "w2v1-text-multi-example-relation",
+      "paper_id": "w2v1",
+      "location_type": "text",
+      "location_label": "§5 multi-example relation vector claim",
+      "ordinal": 9,
+      "target_type": "metric",
+      "description": "Verify the reported claim that using ten examples instead of one to form the relation vector improves the best model by about 10 percentage points absolute on the semantic-syntactic test.",
+      "source_locator": "§5, printed p.10",
+      "notes": null
+    },
+    {
+      "target_id": "w2v2-figure-1",
+      "paper_id": "w2v2",
+      "location_type": "figure",
+      "location_label": "Figure 1",
+      "ordinal": 1,
+      "target_type": "qualitative",
+      "description": "Verify the Skip-gram architecture and nearby-word prediction objective.",
+      "source_locator": "§1-2, printed p.2",
+      "notes": null
+    },
+    {
+      "target_id": "w2v2-figure-2",
+      "paper_id": "w2v2",
+      "location_type": "figure",
+      "location_label": "Figure 2",
+      "ordinal": 2,
+      "target_type": "qualitative",
+      "description": "Reproduce the two-dimensional PCA projection of 1000-dimensional Skip-gram vectors for countries and their capital cities, preserving the qualitative parallel relationship structure.",
+      "source_locator": "§2.2, printed p.4",
+      "notes": "The figure caption gives dimensionality but does not fully specify the training corpus/objective used for this exact plot."
+    },
+    {
+      "target_id": "w2v2-table-1",
+      "paper_id": "w2v2",
+      "location_type": "table",
+      "location_label": "Table 1",
+      "ordinal": 1,
+      "target_type": "metric",
+      "description": "Reproduce 300d Skip-gram objective/subsampling comparison on the word analogy task. No-subsampling rows (time min, syntactic, semantic, total): NEG-5=(38,63,54,59), NEG-15=(97,63,58,61), HS-Huffman=(41,53,40,47), NCE-5=(38,60,45,53). With 1e-5 subsampling: NEG-5=(14,61,58,60), NEG-15=(36,61,61,61), HS-Huffman=(21,52,59,55).",
+      "source_locator": "§2.3-3, printed p.5",
+      "notes": null
+    },
+    {
+      "target_id": "w2v2-table-2",
+      "paper_id": "w2v2",
+      "location_type": "table",
+      "location_label": "Table 2",
+      "ordinal": 2,
+      "target_type": "qualitative",
+      "description": "Verify the five phrase-analogy categories and examples in the 3,218-example phrase analogy test set. The table caption states a best-model accuracy of 72%.",
+      "source_locator": "§4, printed p.6",
+      "notes": "The 72% best model is specified later in the body as the ~33B-word, 1000d, HS, full-sentence-context model."
+    },
+    {
+      "target_id": "w2v2-table-3",
+      "paper_id": "w2v2",
+      "location_type": "table",
+      "location_label": "Table 3",
+      "ordinal": 3,
+      "target_type": "metric",
+      "description": "Reproduce phrase analogy accuracies for ~1B-word phrase corpus, 300d, context size 5. No-subsampling / 1e-5-subsampling: NEG-5=24/27, NEG-15=27/42, HS-Huffman=19/47.",
+      "source_locator": "§4.1, printed p.6",
+      "notes": null
+    },
+    {
+      "target_id": "w2v2-table-4",
+      "paper_id": "w2v2",
+      "location_type": "table",
+      "location_label": "Table 4",
+      "ordinal": 4,
+      "target_type": "qualitative",
+      "description": "Reproduce the nearest-entity comparison for infrequent short phrases under NEG-15+1e-5 subsampling versus HS+1e-5 subsampling.",
+      "source_locator": "§4.1, printed p.7",
+      "notes": null
+    },
+    {
+      "target_id": "w2v2-table-5",
+      "paper_id": "w2v2",
+      "location_type": "table",
+      "location_label": "Table 5",
+      "ordinal": 5,
+      "target_type": "qualitative",
+      "description": "Reproduce additive compositionality examples by element-wise vector addition, reporting the four nearest tokens for examples such as Czech+currency, Vietnam+capital, German+airlines, Russian+river, and French+actress.",
+      "source_locator": "§5, printed p.7",
+      "notes": null
+    },
+    {
+      "target_id": "w2v2-text-33b-vs-6b",
+      "paper_id": "w2v2",
+      "location_type": "text",
+      "location_label": "§4.1 large-data phrase result",
+      "ordinal": 6,
+      "target_type": "metric",
+      "description": "Reproduce the large-corpus phrase analogy result: ~33B training words, hierarchical softmax, 1000 dimensions, whole-sentence context -> 72% accuracy; reducing training data to 6B -> 66%.",
+      "source_locator": "§4.1, printed p.7",
+      "notes": null
+    },
+    {
+      "target_id": "w2v2-table-6",
+      "paper_id": "w2v2",
+      "location_type": "table",
+      "location_label": "Table 6",
+      "ordinal": 6,
+      "target_type": "qualitative",
+      "description": "Reproduce/compare nearest tokens for rare words across published vectors and the large Skip-Phrase model. The Skip-Phrase row is 1000d, about one day training time, and trained on over 30B words.",
+      "source_locator": "§6, printed p.8",
+      "notes": "External published-vector rows are reference baselines, not necessarily retrained."
+    }
+  ],
+  "experiment_specs": [
+    {
+      "experiment_spec_id": "w2v1-table2-cbow",
+      "paper_id": "w2v1",
+      "name": "W2V1 Table 2 CBOW data/dimension scaling",
+      "run_type": "trained",
+      "provenance_status": "partially_specified",
+      "specification": {
+        "architecture": "cbow",
+        "objective": "hierarchical_softmax_huffman",
+        "dimensions": [
+          50,
+          100,
+          300,
+          600
+        ],
+        "window": {
+          "history": 4,
+          "future": 4,
+          "aggregation": "average"
+        },
+        "negative_samples": 0,
+        "epochs": 3,
+        "optimizer": "stochastic_gradient_descent_backpropagation",
+        "learning_rate": {
+          "start": 0.025,
+          "schedule": "linear_to_approximately_zero"
+        },
+        "vocabulary": "top 30,000 words for both model/evaluation restriction in Table 2",
+        "subsampling": null,
+        "training_words": [
+          24000000,
+          49000000,
+          98000000,
+          196000000,
+          391000000,
+          783000000
+        ],
+        "evaluation": [
+          "semantic_syntactic_word_relationship_subset_top30k"
+        ]
+      },
+      "source_locator": "§2.1, §3.1, §4.2; printed pp.3-7",
+      "notes": "Dimensions, corpus sizes, 3 epochs, SGD, and LR schedule are explicit. HS-Huffman is stated globally for the paper's models rather than repeated in Table 2. No subsampling parameter is specified in W2V1."
+    },
+    {
+      "experiment_spec_id": "w2v1-table3-cbow",
+      "paper_id": "w2v1",
+      "name": "W2V1 Table 3 CBOW on 320M LDC data",
+      "run_type": "trained",
+      "provenance_status": "partially_specified",
+      "specification": {
+        "architecture": "cbow",
+        "objective": "hierarchical_softmax_huffman",
+        "dimensions": 640,
+        "window": {
+          "history": 4,
+          "future": 4,
+          "aggregation": "average"
+        },
+        "negative_samples": 0,
+        "epochs": null,
+        "optimizer": "stochastic_gradient_descent",
+        "learning_rate": null,
+        "vocabulary": 82000,
+        "subsampling": null,
+        "training_words": 320000000,
+        "evaluation": [
+          "semantic_syntactic_word_relationship_full",
+          "msr_syntactic_word_relationship_test"
+        ]
+      },
+      "source_locator": "§3.1, §4.3; printed pp.4,7",
+      "notes": "Table 3 does not explicitly state epoch count or learning rate."
+    },
+    {
+      "experiment_spec_id": "w2v1-table3-skipgram",
+      "paper_id": "w2v1",
+      "name": "W2V1 Table 3 Skip-gram on 320M LDC data",
+      "run_type": "trained",
+      "provenance_status": "partially_specified",
+      "specification": {
+        "architecture": "skipgram",
+        "objective": "hierarchical_softmax_huffman",
+        "dimensions": 640,
+        "window": {
+          "max_distance": 10,
+          "sampling": "sample R uniformly from 1..C, use R words on each side"
+        },
+        "negative_samples": 0,
+        "epochs": null,
+        "optimizer": "stochastic_gradient_descent",
+        "learning_rate": null,
+        "vocabulary": 82000,
+        "subsampling": null,
+        "training_words": 320000000,
+        "evaluation": [
+          "semantic_syntactic_word_relationship_full",
+          "msr_syntactic_word_relationship_test"
+        ]
+      },
+      "source_locator": "§3.2, §4.3; printed pp.4-5,7",
+      "notes": "C=10 is explicitly stated for the following experiments; epoch count and LR for Table 3 are not stated."
+    },
+    {
+      "experiment_spec_id": "w2v1-table3-nnlm",
+      "paper_id": "w2v1",
+      "name": "W2V1 Table 3 feed-forward NNLM",
+      "run_type": "trained",
+      "provenance_status": "partially_specified",
+      "specification": {
+        "architecture": "feedforward_nnlm",
+        "objective": "hierarchical_softmax_huffman",
+        "dimensions": 640,
+        "history": 8,
+        "hidden_units": 640,
+        "projection_shape": "640 x 8",
+        "negative_samples": 0,
+        "epochs": null,
+        "optimizer": "DistBelief mini-batch asynchronous gradient descent with Adagrad",
+        "learning_rate": null,
+        "vocabulary": 82000,
+        "subsampling": null,
+        "training_words": 320000000,
+        "evaluation": [
+          "semantic_syntactic_word_relationship_full",
+          "msr_syntactic_word_relationship_test"
+        ]
+      },
+      "source_locator": "§2.1, §2.3, §4.3; printed pp.3-4,7",
+      "notes": "History=8 and 640 hidden units are explicit; epoch count and concrete LR are not reported."
+    },
+    {
+      "experiment_spec_id": "w2v1-google-news-cbow-scale",
+      "paper_id": "w2v1",
+      "name": "W2V1 Google News CBOW Table 4/5 variants",
+      "run_type": "trained",
+      "provenance_status": "partially_specified",
+      "specification": {
+        "architecture": "cbow",
+        "objective": "hierarchical_softmax_huffman",
+        "window": {
+          "history": 4,
+          "future": 4,
+          "aggregation": "average"
+        },
+        "negative_samples": 0,
+        "optimizer": "stochastic_gradient_descent_backpropagation",
+        "learning_rate": {
+          "start_for_table4_and_3epoch_condition": 0.025,
+          "schedule": "linear_to_approximately_zero",
+          "start_for_1epoch_conditions": null
+        },
+        "vocabulary": "full model vocabulary; paper earlier states a 1M-word cap for the 6B Google News setup, but Table 4/5 do not restate the exact subset vocabulary",
+        "subsampling": null,
+        "variants": [
+          {
+            "dimensions": 300,
+            "training_words": 783000000,
+            "epochs": 3
+          },
+          {
+            "dimensions": 300,
+            "training_words": 783000000,
+            "epochs": 1
+          },
+          {
+            "dimensions": 300,
+            "training_words": 1600000000,
+            "epochs": 1
+          },
+          {
+            "dimensions": 600,
+            "training_words": 783000000,
+            "epochs": 1
+          }
+        ],
+        "evaluation": [
+          "semantic_syntactic_word_relationship_full"
+        ]
+      },
+      "source_locator": "§4.2-4.3; printed pp.7-8",
+      "notes": "The paper explicitly gives LR=0.025->0 for Tables 2 and 4 and says later one-epoch experiments again linearly decay LR, but does not restate the one-epoch starting LR."
+    },
+    {
+      "experiment_spec_id": "w2v1-google-news-skipgram-scale",
+      "paper_id": "w2v1",
+      "name": "W2V1 Google News Skip-gram Table 4/5 variants",
+      "run_type": "trained",
+      "provenance_status": "partially_specified",
+      "specification": {
+        "architecture": "skipgram",
+        "objective": "hierarchical_softmax_huffman",
+        "window": {
+          "max_distance": 10,
+          "sampling": "sample R uniformly from 1..C, use R words on each side"
+        },
+        "negative_samples": 0,
+        "optimizer": "stochastic_gradient_descent_backpropagation",
+        "learning_rate": {
+          "start_for_table4_and_3epoch_condition": 0.025,
+          "schedule": "linear_to_approximately_zero",
+          "start_for_1epoch_conditions": null
+        },
+        "vocabulary": "full model vocabulary; exact effective vocabulary for each subset is not restated",
+        "subsampling": null,
+        "variants": [
+          {
+            "dimensions": 300,
+            "training_words": 783000000,
+            "epochs": 3
+          },
+          {
+            "dimensions": 300,
+            "training_words": 783000000,
+            "epochs": 1
+          },
+          {
+            "dimensions": 300,
+            "training_words": 1600000000,
+            "epochs": 1
+          },
+          {
+            "dimensions": 600,
+            "training_words": 783000000,
+            "epochs": 1
+          }
+        ],
+        "evaluation": [
+          "semantic_syntactic_word_relationship_full"
+        ]
+      },
+      "source_locator": "§3.2, §4.2-4.3; printed pp.4-5,7-8",
+      "notes": "No negative sampling or subsampling is part of W2V1; the output approximation is HS-Huffman."
+    },
+    {
+      "experiment_spec_id": "w2v1-google-news-nnlm-6b",
+      "paper_id": "w2v1",
+      "name": "W2V1 Google News feed-forward NNLM 6B",
+      "run_type": "trained",
+      "provenance_status": "partially_specified",
+      "specification": {
+        "architecture": "feedforward_nnlm",
+        "objective": "hierarchical_softmax_huffman",
+        "dimensions": [
+          20,
+          50,
+          100
+        ],
+        "history": null,
+        "hidden_units": null,
+        "negative_samples": 0,
+        "epochs": null,
+        "optimizer": "DistBelief mini-batch asynchronous gradient descent with Adagrad",
+        "learning_rate": null,
+        "vocabulary": "up to 1M most frequent words",
+        "subsampling": null,
+        "training_words": 6000000000,
+        "evaluation": [
+          "semantic_syntactic_word_relationship_full"
+        ]
+      },
+      "source_locator": "§2.3, Table 4, §4.4/Table 6; printed pp.4,8-9",
+      "notes": "The 100d row is reused in Table 6 with 14 days x 180 CPU cores. Table 4 does not fully restate NNLM history/hidden-size/training details for the 6B runs."
+    },
+    {
+      "experiment_spec_id": "w2v1-table6-cbow-6b",
+      "paper_id": "w2v1",
+      "name": "W2V1 Table 6 distributed CBOW",
+      "run_type": "trained",
+      "provenance_status": "partially_specified",
+      "specification": {
+        "architecture": "cbow",
+        "objective": "hierarchical_softmax_huffman",
+        "dimensions": 1000,
+        "window": {
+          "history": 4,
+          "future": 4,
+          "aggregation": "average"
+        },
+        "negative_samples": 0,
+        "epochs": 1,
+        "optimizer": "DistBelief mini-batch asynchronous gradient descent with Adagrad",
+        "learning_rate": null,
+        "vocabulary": "1M most frequent words",
+        "subsampling": null,
+        "training_words": 6000000000,
+        "replicas": "50-100",
+        "reported_cpu_cores": 140,
+        "reported_training_days": 2,
+        "evaluation": [
+          "semantic_syntactic_word_relationship_full"
+        ]
+      },
+      "source_locator": "§2.3, §4.4/Table 6; printed pp.4,8-9",
+      "notes": "Exact replica count per row and concrete Adagrad LR settings are not reported."
+    },
+    {
+      "experiment_spec_id": "w2v1-table6-skipgram-6b",
+      "paper_id": "w2v1",
+      "name": "W2V1 Table 6 distributed Skip-gram",
+      "run_type": "trained",
+      "provenance_status": "partially_specified",
+      "specification": {
+        "architecture": "skipgram",
+        "objective": "hierarchical_softmax_huffman",
+        "dimensions": 1000,
+        "window": {
+          "max_distance": 10,
+          "sampling": "sample R uniformly from 1..C, use R words on each side"
+        },
+        "negative_samples": 0,
+        "epochs": 1,
+        "optimizer": "DistBelief mini-batch asynchronous gradient descent with Adagrad",
+        "learning_rate": null,
+        "vocabulary": "1M most frequent words",
+        "subsampling": null,
+        "training_words": 6000000000,
+        "replicas": "50-100",
+        "reported_cpu_cores": 125,
+        "reported_training_days": 2.5,
+        "evaluation": [
+          "semantic_syntactic_word_relationship_full"
+        ]
+      },
+      "source_locator": "§2.3, §3.2, §4.4/Table 6; printed pp.4-5,8-9",
+      "notes": "Exact replica count per row and concrete Adagrad LR settings are not reported."
+    },
+    {
+      "experiment_spec_id": "w2v1-msr-sentence-skipgram",
+      "paper_id": "w2v1",
+      "name": "W2V1 Microsoft Sentence Completion Skip-gram",
+      "run_type": "trained",
+      "provenance_status": "partially_specified",
+      "specification": {
+        "architecture": "skipgram",
+        "objective": "hierarchical_softmax_huffman",
+        "dimensions": 640,
+        "window": {
+          "max_distance": 10,
+          "training_sampling": "sample R uniformly from 1..C, use R words on each side",
+          "evaluation_scoring": "use candidate missing word as input and sum predictions of all surrounding words in the sentence"
+        },
+        "negative_samples": 0,
+        "epochs": 1,
+        "optimizer": "stochastic_gradient_descent",
+        "learning_rate": {
+          "schedule": "linear_to_approximately_zero",
+          "start": null
+        },
+        "vocabulary": null,
+        "subsampling": null,
+        "training_words": 50000000,
+        "evaluation": [
+          "msr_sentence_completion_1040_questions"
+        ]
+      },
+      "source_locator": "§3.2, §4.3-4.5; printed pp.4-5,8-9",
+      "notes": "The paper states 640d and 50M training words; exact vocabulary and one-epoch starting LR are not restated."
+    },
+    {
+      "experiment_spec_id": "w2v2-word-skipgram-1b-objectives",
+      "paper_id": "w2v2",
+      "name": "W2V2 word Skip-gram objective/subsampling ablation",
+      "run_type": "trained",
+      "provenance_status": "partially_specified",
+      "specification": {
+        "architecture": "skipgram",
+        "objective": [
+          "negative_sampling",
+          "hierarchical_softmax_huffman",
+          "nce"
+        ],
+        "dimensions": 300,
+        "window": 5,
+        "negative_samples": [
+          5,
+          15
+        ],
+        "nce_samples": 5,
+        "noise_distribution": "unigram^0.75/Z for NEG/NCE (paper's selected distribution; Table 1 does not restate it)",
+        "epochs": null,
+        "optimizer": null,
+        "learning_rate": null,
+        "vocabulary": {
+          "min_count": 5,
+          "size": 692000
+        },
+        "subsampling": [
+          null,
+          1e-05
+        ],
+        "training_words": 1000000000,
+        "evaluation": [
+          "questions_words_analogy"
+        ]
+      },
+      "source_locator": "§2.2-3, printed pp.3-5",
+      "notes": "1B internal news corpus, min_count=5, 692K vocabulary, 300d and Table-1 objectives are explicit. Context size 5 is supported indirectly by §4.1 saying 'As before ... context size 5'. Epoch count, optimizer, and LR are not reported in the paper."
+    },
+    {
+      "experiment_spec_id": "w2v2-phrase-skipgram-1b-objectives",
+      "paper_id": "w2v2",
+      "name": "W2V2 phrase Skip-gram objective/subsampling ablation",
+      "run_type": "trained",
+      "provenance_status": "partially_specified",
+      "specification": {
+        "architecture": "skipgram_phrase_tokens",
+        "objective": [
+          "negative_sampling",
+          "hierarchical_softmax_huffman"
+        ],
+        "dimensions": 300,
+        "window": 5,
+        "negative_samples": [
+          5,
+          15
+        ],
+        "epochs": null,
+        "optimizer": null,
+        "learning_rate": null,
+        "vocabulary": null,
+        "subsampling": [
+          null,
+          1e-05
+        ],
+        "training_words": 1000000000,
+        "phrase_detection": {
+          "score": "(count(w_i w_j) - delta) / (count(w_i) * count(w_j))",
+          "delta": null,
+          "threshold": null,
+          "passes": "typically 2-4 with decreasing threshold"
+        },
+        "evaluation": [
+          "questions_phrases_3218"
+        ]
+      },
+      "source_locator": "§4-4.1, printed pp.6-7",
+      "notes": "Phrase-scoring formula is explicit, but delta, thresholds, exact number of passes, epoch count, optimizer, and LR are not fully specified."
+    },
+    {
+      "experiment_spec_id": "w2v2-large-phrase-skipgram",
+      "paper_id": "w2v2",
+      "name": "W2V2 large-corpus phrase Skip-gram",
+      "run_type": "trained",
+      "provenance_status": "partially_specified",
+      "specification": {
+        "architecture": "skipgram_phrase_tokens",
+        "objective": "hierarchical_softmax_huffman",
+        "dimensions": 1000,
+        "window": "entire sentence",
+        "negative_samples": 0,
+        "epochs": null,
+        "optimizer": null,
+        "learning_rate": null,
+        "vocabulary": null,
+        "subsampling": null,
+        "training_words": [
+          6000000000,
+          33000000000
+        ],
+        "phrase_detection": {
+          "score": "(count(w_i w_j) - delta) / (count(w_i) * count(w_j))",
+          "delta": null,
+          "threshold": null,
+          "passes": "typically 2-4 with decreasing threshold"
+        },
+        "evaluation": [
+          "questions_phrases_3218"
+        ],
+        "reference_accuracy": {
+          "33000000000": 0.72,
+          "6000000000": 0.66
+        }
+      },
+      "source_locator": "§4-4.1 and Table 6 discussion; printed pp.6-8",
+      "notes": "33B/6B sizes, HS, 1000d, whole-sentence context, and 72%/66% are explicit. Exact corpus identity/composition, subsampling, epochs, optimizer, LR, and phrase thresholds are not reported."
+    }
+  ],
+  "target_experiments": [
+    {
+      "target_id": "w2v1-table-2",
+      "experiment_spec_id": "w2v1-table2-cbow",
+      "role": "primary"
+    },
+    {
+      "target_id": "w2v1-table-3",
+      "experiment_spec_id": "w2v1-table3-cbow",
+      "role": "primary"
+    },
+    {
+      "target_id": "w2v1-table-3",
+      "experiment_spec_id": "w2v1-table3-skipgram",
+      "role": "primary"
+    },
+    {
+      "target_id": "w2v1-table-3",
+      "experiment_spec_id": "w2v1-table3-nnlm",
+      "role": "primary"
+    },
+    {
+      "target_id": "w2v1-table-4",
+      "experiment_spec_id": "w2v1-google-news-cbow-scale",
+      "role": "primary"
+    },
+    {
+      "target_id": "w2v1-table-4",
+      "experiment_spec_id": "w2v1-google-news-skipgram-scale",
+      "role": "primary"
+    },
+    {
+      "target_id": "w2v1-table-4",
+      "experiment_spec_id": "w2v1-google-news-nnlm-6b",
+      "role": "primary"
+    },
+    {
+      "target_id": "w2v1-table-5",
+      "experiment_spec_id": "w2v1-google-news-cbow-scale",
+      "role": "primary"
+    },
+    {
+      "target_id": "w2v1-table-5",
+      "experiment_spec_id": "w2v1-google-news-skipgram-scale",
+      "role": "primary"
+    },
+    {
+      "target_id": "w2v1-table-6",
+      "experiment_spec_id": "w2v1-table6-cbow-6b",
+      "role": "primary"
+    },
+    {
+      "target_id": "w2v1-table-6",
+      "experiment_spec_id": "w2v1-table6-skipgram-6b",
+      "role": "primary"
+    },
+    {
+      "target_id": "w2v1-table-6",
+      "experiment_spec_id": "w2v1-google-news-nnlm-6b",
+      "role": "primary"
+    },
+    {
+      "target_id": "w2v1-table-7",
+      "experiment_spec_id": "w2v1-msr-sentence-skipgram",
+      "role": "primary"
+    },
+    {
+      "target_id": "w2v1-table-8",
+      "experiment_spec_id": "w2v1-google-news-skipgram-scale",
+      "role": "primary"
+    },
+    {
+      "target_id": "w2v1-text-multi-example-relation",
+      "experiment_spec_id": "w2v1-google-news-skipgram-scale",
+      "role": "primary"
+    },
+    {
+      "target_id": "w2v2-table-1",
+      "experiment_spec_id": "w2v2-word-skipgram-1b-objectives",
+      "role": "primary"
+    },
+    {
+      "target_id": "w2v2-table-3",
+      "experiment_spec_id": "w2v2-phrase-skipgram-1b-objectives",
+      "role": "primary"
+    },
+    {
+      "target_id": "w2v2-table-4",
+      "experiment_spec_id": "w2v2-phrase-skipgram-1b-objectives",
+      "role": "primary"
+    },
+    {
+      "target_id": "w2v2-table-5",
+      "experiment_spec_id": "w2v2-phrase-skipgram-1b-objectives",
+      "role": "primary"
+    },
+    {
+      "target_id": "w2v2-text-33b-vs-6b",
+      "experiment_spec_id": "w2v2-large-phrase-skipgram",
+      "role": "primary"
+    },
+    {
+      "target_id": "w2v2-table-6",
+      "experiment_spec_id": "w2v2-large-phrase-skipgram",
+      "role": "primary"
+    }
+  ],
+  "resources": [
+    {
+      "resource_id": "w2v1-google-news-6b",
+      "kind": "dataset",
+      "name": "Google News corpus (~6B tokens)",
+      "description": "Original W2V1 training corpus. Table 2 uses 24M/49M/98M/196M/391M/783M subsets; Tables 4-5 also use 783M and 1.6B; Table 6 uses 6B.",
+      "access_status": "unavailable",
+      "acquisition_status": "unresolved",
+      "readiness_status": "blocked",
+      "canonical_version_id": null,
+      "notes": "Exact original corpus is not public; reproduction requires surrogate/reconstructed corpora."
+    },
+    {
+      "resource_id": "w2v1-ldc-320m",
+      "kind": "dataset",
+      "name": "Several LDC corpora, 320M words / 82K vocabulary",
+      "description": "Original Table-3 training data, described by W2V1 via its reference [18].",
+      "access_status": "restricted",
+      "acquisition_status": "unresolved",
+      "readiness_status": "blocked",
+      "canonical_version_id": null,
+      "notes": "Exact composition remains unresolved in the current reproduction catalog."
+    },
+    {
+      "resource_id": "w2v1-msr-syntactic-word-relations",
+      "kind": "dataset",
+      "name": "MSR syntactic word relationship test set",
+      "description": "Secondary syntactic relationship evaluation used in W2V1 Table 3.",
+      "access_status": "unknown",
+      "acquisition_status": "unresolved",
+      "readiness_status": "blocked",
+      "canonical_version_id": null,
+      "notes": "Distinct from the MSR Sentence Completion Challenge."
+    },
+    {
+      "resource_id": "w2v1-msr-sentence-completion",
+      "kind": "dataset",
+      "name": "Microsoft Research Sentence Completion Challenge",
+      "description": "W2V1 Table-7 resource. The benchmark has 1,040 sentence-completion questions; W2V1 states that its Skip-gram model is trained on 50M words provided with/reference [32].",
+      "access_status": "public",
+      "acquisition_status": "located",
+      "readiness_status": "download",
+      "canonical_version_id": "w2v1-msr-sentence-completion-official",
+      "notes": null
+    },
+    {
+      "resource_id": "w2v-questions-words",
+      "kind": "dataset",
+      "name": "questions-words.txt",
+      "description": "Original word analogy evaluation set used by W2V1 and W2V2; 19,544 analogy questions in W2V1's count (8,869 semantic + 10,675 syntactic).",
+      "access_status": "public",
+      "acquisition_status": "located",
+      "readiness_status": "download",
+      "canonical_version_id": "w2v-questions-words-google-code-export",
+      "notes": "Canonical source is the Google word2vec project; GitHub repository is an export from code.google.com."
+    },
+    {
+      "resource_id": "w2v2-google-news-1b",
+      "kind": "dataset",
+      "name": "Internal Google news dataset (~1B words)",
+      "description": "Original W2V2 word and initial phrase experiments. Words with count <5 are discarded, yielding a 692K vocabulary for the word experiments.",
+      "access_status": "unavailable",
+      "acquisition_status": "unresolved",
+      "readiness_status": "blocked",
+      "canonical_version_id": null,
+      "notes": "Exact original corpus is internal and unavailable."
+    },
+    {
+      "resource_id": "w2v2-large-phrase-corpus-33b",
+      "kind": "dataset",
+      "name": "W2V2 large phrase training corpus (~33B words)",
+      "description": "Original large-corpus phrase experiment; the paper only identifies the size (~33B) and compares a 6B reduction. The exact corpus identity/composition is not specified.",
+      "access_status": "unavailable",
+      "acquisition_status": "unresolved",
+      "readiness_status": "blocked",
+      "canonical_version_id": null,
+      "notes": "Do not assume this corpus is exactly the W2V1 Google News corpus or that it is entirely news unless separately evidenced."
+    },
+    {
+      "resource_id": "w2v-questions-phrases",
+      "kind": "dataset",
+      "name": "questions-phrases.txt",
+      "description": "Original W2V2 phrase analogy evaluation set with 3,218 examples across five categories.",
+      "access_status": "public",
+      "acquisition_status": "located",
+      "readiness_status": "download",
+      "canonical_version_id": "w2v-questions-phrases-google-code-export",
+      "notes": "Canonical source is the Google word2vec project; GitHub repository is an export from code.google.com."
+    },
+    {
+      "resource_id": "surrogate-lm1b-train",
+      "kind": "dataset",
+      "name": "One Billion Word Benchmark training partition",
+      "description": "Public surrogate corpus condition. Current project scope uses the training partition only (829,250,940 words in the previously cataloged count) and excludes held-out data.",
+      "access_status": "public",
+      "acquisition_status": "located",
+      "readiness_status": "preprocess",
+      "canonical_version_id": null,
+      "notes": "Independent surrogate condition; not treated as an exact reconstruction of Google News."
+    },
+    {
+      "resource_id": "surrogate-wmt-news",
+      "kind": "dataset",
+      "name": "WMT English News Crawl",
+      "description": "Public news-text surrogate condition; project plan targets English news material from the relevant historical range.",
+      "access_status": "public",
+      "acquisition_status": "located",
+      "readiness_status": "preprocess",
+      "canonical_version_id": null,
+      "notes": "Independent surrogate condition; exact release/file list should be pinned before binding."
+    },
+    {
+      "resource_id": "surrogate-gigaword5",
+      "kind": "dataset",
+      "name": "English Gigaword Fifth Edition (LDC2011T07)",
+      "description": "News corpus surrogate candidate.",
+      "access_status": "restricted",
+      "acquisition_status": "blocked",
+      "readiness_status": "blocked",
+      "canonical_version_id": null,
+      "notes": "Blocked by paid LDC access in the current project."
+    },
+    {
+      "resource_id": "surrogate-umbc-webbase",
+      "kind": "dataset",
+      "name": "UMBC WebBase Corpus",
+      "description": "Public web-text surrogate condition using webbase_all/*.txt as the canonical source form.",
+      "access_status": "public",
+      "acquisition_status": "located",
+      "readiness_status": "preprocess",
+      "canonical_version_id": null,
+      "notes": "Independent surrogate condition."
+    },
+    {
+      "resource_id": "surrogate-wikipedia-2012",
+      "kind": "dataset",
+      "name": "English Wikipedia 2012 dump",
+      "description": "Historical Wikipedia surrogate target. Current preprocessing plan excludes redirects and removes markup.",
+      "access_status": "public",
+      "acquisition_status": "reconstructed",
+      "readiness_status": "preprocess",
+      "canonical_version_id": null,
+      "notes": "The originally targeted historical dump URL is no longer directly available and no official hash was found; the project therefore treats this as a reconstructed historical source rather than an exact-file recovery."
+    },
+    {
+      "resource_id": "surrogate-commoncrawl-2009-2012",
+      "kind": "dataset",
+      "name": "Common Crawl 2009-2012",
+      "description": "Historical web-crawl surrogate/reconstruction source for large-scale 1B/6B/33B materializations. The latest project feasibility analysis estimated enough usable text for these scales (approximately 450.74B words at the analyzed population level).",
+      "access_status": "public",
+      "acquisition_status": "feasibility_validated",
+      "readiness_status": "collect",
+      "canonical_version_id": null,
+      "notes": "Use crawl-period provenance and independent probability sampling. Do not assume the W2V2 33B original corpus was news solely from size or chronology."
+    },
+    {
+      "resource_id": "w2v-public-normalization-v1",
+      "kind": "preprocessing_spec",
+      "name": "word2vec public-corpus normalization v1",
+      "description": "Project preprocessing pipeline: raw -> source-canonical -> training form; lowercase, quote/punctuation separation, and number removal are part of the current normalization. min_count, subsampling, phrase detection, and Skip-gram windowing remain downstream training-adapter operations.",
+      "access_status": "internal",
+      "acquisition_status": "defined",
+      "readiness_status": "implementation_in_progress",
+      "canonical_version_id": null,
+      "notes": "Source-specific canonicalization is kept separate from model-training transformations."
+    }
+  ],
+  "resource_versions": [
+    {
+      "resource_version_id": "w2v-questions-words-google-code-export",
+      "resource_id": "w2v-questions-words",
+      "version_label": "tmikolov/word2vec Google Code export, master",
+      "uri": "https://github.com/tmikolov/word2vec/blob/master/questions-words.txt",
+      "local_path": null,
+      "checksum_algo": "sha256",
+      "checksum": null,
+      "size_bytes": null,
+      "metadata": {
+        "line_count": 19558,
+        "semantic_questions_paper_count": 8869,
+        "syntactic_questions_paper_count": 10675
+      },
+      "is_verified": false,
+      "notes": "Located but not yet pinned to a commit/hash in this catalog."
+    },
+    {
+      "resource_version_id": "w2v-questions-phrases-google-code-export",
+      "resource_id": "w2v-questions-phrases",
+      "version_label": "tmikolov/word2vec Google Code export, master",
+      "uri": "https://github.com/tmikolov/word2vec/blob/master/questions-phrases.txt",
+      "local_path": null,
+      "checksum_algo": "sha256",
+      "checksum": null,
+      "size_bytes": null,
+      "metadata": {
+        "question_count_paper": 3218
+      },
+      "is_verified": false,
+      "notes": "Located but not yet pinned to a commit/hash in this catalog."
+    },
+    {
+      "resource_version_id": "w2v1-msr-sentence-completion-official",
+      "resource_id": "w2v1-msr-sentence-completion",
+      "version_label": "Microsoft Research official challenge resource",
+      "uri": "https://www.microsoft.com/en-us/research/project/msr-sentence-completion-challenge/",
+      "local_path": null,
+      "checksum_algo": "sha256",
+      "checksum": null,
+      "size_bytes": null,
+      "metadata": {
+        "test_questions": 1040,
+        "training_words_w2v1_reported": 50000000
+      },
+      "is_verified": false,
+      "notes": "Official page located; concrete downloaded files/hashes are not yet recorded here."
+    }
+  ],
+  "requirements": [
+    {
+      "requirement_id": "w2v1-table2-train-data",
+      "experiment_spec_id": "w2v1-table2-cbow",
+      "role": "train_data",
+      "required_resource_id": "w2v1-google-news-6b",
+      "requirement_spec": {
+        "subset_word_counts": [
+          24000000,
+          49000000,
+          98000000,
+          196000000,
+          391000000,
+          783000000
+        ]
+      },
+      "required": true,
+      "notes": "Exact resource unavailable; execution will require a surrogate binding while preserving word-count conditions."
+    },
+    {
+      "requirement_id": "w2v1-table2-eval",
+      "experiment_spec_id": "w2v1-table2-cbow",
+      "role": "evaluation_data",
+      "required_resource_id": "w2v-questions-words",
+      "requirement_spec": {
+        "filter": "questions whose words are all within the top-30K vocabulary"
+      },
+      "required": true,
+      "notes": null
+    },
+    {
+      "requirement_id": "w2v1-table3-cbow-train",
+      "experiment_spec_id": "w2v1-table3-cbow",
+      "role": "train_data",
+      "required_resource_id": "w2v1-ldc-320m",
+      "requirement_spec": {
+        "word_count": 320000000,
+        "vocabulary_size": 82000
+      },
+      "required": true,
+      "notes": "Original exact data composition remains unresolved."
+    },
+    {
+      "requirement_id": "w2v1-table3-sg-train",
+      "experiment_spec_id": "w2v1-table3-skipgram",
+      "role": "train_data",
+      "required_resource_id": "w2v1-ldc-320m",
+      "requirement_spec": {
+        "word_count": 320000000,
+        "vocabulary_size": 82000
+      },
+      "required": true,
+      "notes": "Original exact data composition remains unresolved."
+    },
+    {
+      "requirement_id": "w2v1-table3-nnlm-train",
+      "experiment_spec_id": "w2v1-table3-nnlm",
+      "role": "train_data",
+      "required_resource_id": "w2v1-ldc-320m",
+      "requirement_spec": {
+        "word_count": 320000000,
+        "vocabulary_size": 82000
+      },
+      "required": true,
+      "notes": "Original exact data composition remains unresolved."
+    },
+    {
+      "requirement_id": "w2v1-table3-cbow-word-eval",
+      "experiment_spec_id": "w2v1-table3-cbow",
+      "role": "evaluation_data",
+      "required_resource_id": "w2v-questions-words",
+      "requirement_spec": {
+        "scope": "full semantic/syntactic test"
+      },
+      "required": true,
+      "notes": null
+    },
+    {
+      "requirement_id": "w2v1-table3-sg-word-eval",
+      "experiment_spec_id": "w2v1-table3-skipgram",
+      "role": "evaluation_data",
+      "required_resource_id": "w2v-questions-words",
+      "requirement_spec": {
+        "scope": "full semantic/syntactic test"
+      },
+      "required": true,
+      "notes": null
+    },
+    {
+      "requirement_id": "w2v1-table3-nnlm-word-eval",
+      "experiment_spec_id": "w2v1-table3-nnlm",
+      "role": "evaluation_data",
+      "required_resource_id": "w2v-questions-words",
+      "requirement_spec": {
+        "scope": "full semantic/syntactic test"
+      },
+      "required": true,
+      "notes": null
+    },
+    {
+      "requirement_id": "w2v1-table3-cbow-msr-eval",
+      "experiment_spec_id": "w2v1-table3-cbow",
+      "role": "evaluation_data",
+      "required_resource_id": "w2v1-msr-syntactic-word-relations",
+      "requirement_spec": null,
+      "required": true,
+      "notes": null
+    },
+    {
+      "requirement_id": "w2v1-table3-sg-msr-eval",
+      "experiment_spec_id": "w2v1-table3-skipgram",
+      "role": "evaluation_data",
+      "required_resource_id": "w2v1-msr-syntactic-word-relations",
+      "requirement_spec": null,
+      "required": true,
+      "notes": null
+    },
+    {
+      "requirement_id": "w2v1-table3-nnlm-msr-eval",
+      "experiment_spec_id": "w2v1-table3-nnlm",
+      "role": "evaluation_data",
+      "required_resource_id": "w2v1-msr-syntactic-word-relations",
+      "requirement_spec": null,
+      "required": true,
+      "notes": null
+    },
+    {
+      "requirement_id": "w2v1-cbow-scale-train",
+      "experiment_spec_id": "w2v1-google-news-cbow-scale",
+      "role": "train_data",
+      "required_resource_id": "w2v1-google-news-6b",
+      "requirement_spec": {
+        "word_counts": [
+          783000000,
+          1600000000
+        ]
+      },
+      "required": true,
+      "notes": "Exact resource unavailable; surrogate binding not yet canonicalized."
+    },
+    {
+      "requirement_id": "w2v1-sg-scale-train",
+      "experiment_spec_id": "w2v1-google-news-skipgram-scale",
+      "role": "train_data",
+      "required_resource_id": "w2v1-google-news-6b",
+      "requirement_spec": {
+        "word_counts": [
+          783000000,
+          1600000000
+        ]
+      },
+      "required": true,
+      "notes": "Exact resource unavailable; surrogate binding not yet canonicalized."
+    },
+    {
+      "requirement_id": "w2v1-nnlm-6b-train",
+      "experiment_spec_id": "w2v1-google-news-nnlm-6b",
+      "role": "train_data",
+      "required_resource_id": "w2v1-google-news-6b",
+      "requirement_spec": {
+        "word_count": 6000000000
+      },
+      "required": true,
+      "notes": "Exact resource unavailable; surrogate binding not yet canonicalized."
+    },
+    {
+      "requirement_id": "w2v1-table6-cbow-train",
+      "experiment_spec_id": "w2v1-table6-cbow-6b",
+      "role": "train_data",
+      "required_resource_id": "w2v1-google-news-6b",
+      "requirement_spec": {
+        "word_count": 6000000000
+      },
+      "required": true,
+      "notes": "Exact resource unavailable; surrogate binding not yet canonicalized."
+    },
+    {
+      "requirement_id": "w2v1-table6-sg-train",
+      "experiment_spec_id": "w2v1-table6-skipgram-6b",
+      "role": "train_data",
+      "required_resource_id": "w2v1-google-news-6b",
+      "requirement_spec": {
+        "word_count": 6000000000
+      },
+      "required": true,
+      "notes": "Exact resource unavailable; surrogate binding not yet canonicalized."
+    },
+    {
+      "requirement_id": "w2v1-google-news-eval-cbow",
+      "experiment_spec_id": "w2v1-google-news-cbow-scale",
+      "role": "evaluation_data",
+      "required_resource_id": "w2v-questions-words",
+      "requirement_spec": {
+        "scope": "full semantic/syntactic test"
+      },
+      "required": true,
+      "notes": null
+    },
+    {
+      "requirement_id": "w2v1-google-news-eval-sg",
+      "experiment_spec_id": "w2v1-google-news-skipgram-scale",
+      "role": "evaluation_data",
+      "required_resource_id": "w2v-questions-words",
+      "requirement_spec": {
+        "scope": "full semantic/syntactic test"
+      },
+      "required": true,
+      "notes": null
+    },
+    {
+      "requirement_id": "w2v1-google-news-eval-nnlm",
+      "experiment_spec_id": "w2v1-google-news-nnlm-6b",
+      "role": "evaluation_data",
+      "required_resource_id": "w2v-questions-words",
+      "requirement_spec": {
+        "scope": "full semantic/syntactic test"
+      },
+      "required": true,
+      "notes": null
+    },
+    {
+      "requirement_id": "w2v1-table6-cbow-eval",
+      "experiment_spec_id": "w2v1-table6-cbow-6b",
+      "role": "evaluation_data",
+      "required_resource_id": "w2v-questions-words",
+      "requirement_spec": {
+        "scope": "full semantic/syntactic test"
+      },
+      "required": true,
+      "notes": null
+    },
+    {
+      "requirement_id": "w2v1-table6-sg-eval",
+      "experiment_spec_id": "w2v1-table6-skipgram-6b",
+      "role": "evaluation_data",
+      "required_resource_id": "w2v-questions-words",
+      "requirement_spec": {
+        "scope": "full semantic/syntactic test"
+      },
+      "required": true,
+      "notes": null
+    },
+    {
+      "requirement_id": "w2v1-msr-sentence-train",
+      "experiment_spec_id": "w2v1-msr-sentence-skipgram",
+      "role": "train_data",
+      "required_resource_id": "w2v1-msr-sentence-completion",
+      "requirement_spec": {
+        "word_count": 50000000
+      },
+      "required": true,
+      "notes": null
+    },
+    {
+      "requirement_id": "w2v1-msr-sentence-eval",
+      "experiment_spec_id": "w2v1-msr-sentence-skipgram",
+      "role": "evaluation_data",
+      "required_resource_id": "w2v1-msr-sentence-completion",
+      "requirement_spec": {
+        "question_count": 1040
+      },
+      "required": true,
+      "notes": null
+    },
+    {
+      "requirement_id": "w2v2-word-1b-train",
+      "experiment_spec_id": "w2v2-word-skipgram-1b-objectives",
+      "role": "train_data",
+      "required_resource_id": "w2v2-google-news-1b",
+      "requirement_spec": {
+        "word_count": 1000000000
+      },
+      "required": true,
+      "notes": "Exact resource unavailable; planned reproduction must use surrogate/reconstructed data."
+    },
+    {
+      "requirement_id": "w2v2-word-analogy-eval",
+      "experiment_spec_id": "w2v2-word-skipgram-1b-objectives",
+      "role": "evaluation_data",
+      "required_resource_id": "w2v-questions-words",
+      "requirement_spec": null,
+      "required": true,
+      "notes": null
+    },
+    {
+      "requirement_id": "w2v2-phrase-1b-train",
+      "experiment_spec_id": "w2v2-phrase-skipgram-1b-objectives",
+      "role": "train_data",
+      "required_resource_id": "w2v2-google-news-1b",
+      "requirement_spec": {
+        "word_count": 1000000000,
+        "requires_phrase_materialization": true
+      },
+      "required": true,
+      "notes": "Exact resource unavailable; phrase detector parameters are also only partially specified."
+    },
+    {
+      "requirement_id": "w2v2-phrase-1b-eval",
+      "experiment_spec_id": "w2v2-phrase-skipgram-1b-objectives",
+      "role": "evaluation_data",
+      "required_resource_id": "w2v-questions-phrases",
+      "requirement_spec": {
+        "question_count": 3218
+      },
+      "required": true,
+      "notes": null
+    },
+    {
+      "requirement_id": "w2v2-large-phrase-train",
+      "experiment_spec_id": "w2v2-large-phrase-skipgram",
+      "role": "train_data",
+      "required_resource_id": "w2v2-large-phrase-corpus-33b",
+      "requirement_spec": {
+        "word_counts": [
+          6000000000,
+          33000000000
+        ],
+        "requires_phrase_materialization": true
+      },
+      "required": true,
+      "notes": "Exact original corpus identity is unspecified/unavailable; surrogate binding is required."
+    },
+    {
+      "requirement_id": "w2v2-large-phrase-eval",
+      "experiment_spec_id": "w2v2-large-phrase-skipgram",
+      "role": "evaluation_data",
+      "required_resource_id": "w2v-questions-phrases",
+      "requirement_spec": {
+        "question_count": 3218
+      },
+      "required": true,
+      "notes": null
+    }
+  ],
+  "execution_plans": [],
+  "plan_experiments": [],
+  "resource_bindings": [],
+  "planned_run_slots": []
+}

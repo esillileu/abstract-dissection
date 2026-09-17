@@ -1,0 +1,104 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from unittest.mock import MagicMock, call
+
+import pytest
+
+from f2.catalog.manifest import load_manifest, read_manifest
+
+F2_ROOT = Path(__file__).resolve().parents[2]
+
+
+def test_manifest_requires_current_schema_version(tmp_path):
+    path = tmp_path / "catalog.json"
+    path.write_text(json.dumps({"schema_version": 2}), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="schema_version must be 1"):
+        read_manifest(path)
+
+
+def test_w2v_catalog_manifest_is_self_consistent():
+    payload = read_manifest(F2_ROOT / "catalog" / "w2v.json")
+
+    assert {paper["paper_id"] for paper in payload["papers"]} == {"w2v1", "w2v2"}
+    assert len(payload["targets"]) == 19
+    assert len(payload["experiment_specs"]) == 13
+
+
+def test_manifest_rejects_unknown_references(tmp_path):
+    path = tmp_path / "catalog.json"
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "targets": [
+                    {
+                        "target_id": "target",
+                        "paper_id": "missing",
+                        "location_type": "table",
+                        "location_label": "Table 1",
+                        "target_type": "metric",
+                        "description": "value",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="unknown paper_id 'missing'"):
+        read_manifest(path)
+
+
+def test_resource_version_is_loaded_before_canonical_pointer_is_set():
+    repo = MagicMock()
+    payload = {
+        "schema_version": 1,
+        "resources": [
+            {
+                "resource_id": "corpus",
+                "kind": "dataset",
+                "name": "Corpus",
+                "access_status": "private",
+                "acquisition_status": "verified",
+                "readiness_status": "ready",
+                "canonical_version_id": "corpus-v1",
+            }
+        ],
+        "resource_versions": [
+            {
+                "resource_version_id": "corpus-v1",
+                "resource_id": "corpus",
+                "uri": "s3://bucket/release.json",
+                "checksum_algo": "sha256",
+                "checksum": "a" * 64,
+                "is_verified": True,
+            }
+        ],
+    }
+
+    counts = load_manifest(repo, payload)
+
+    assert repo.method_calls[:3] == [
+        call.upsert_resource(
+            resource_id="corpus",
+            kind="dataset",
+            name="Corpus",
+            access_status="private",
+            acquisition_status="verified",
+            readiness_status="ready",
+            canonical_version_id=None,
+        ),
+        call.upsert_resource_version(
+            resource_version_id="corpus-v1",
+            resource_id="corpus",
+            uri="s3://bucket/release.json",
+            checksum_algo="sha256",
+            checksum="a" * 64,
+            is_verified=True,
+        ),
+        call.set_resource_canonical_version("corpus", "corpus-v1"),
+    ]
+    assert counts["resources"] == counts["resource_versions"] == 1
