@@ -1,89 +1,17 @@
-"""Reusable synchronized microbenchmark and runtime-estimation primitives."""
+"""Synchronized benchmark execution runner."""
 
 from __future__ import annotations
 
-from collections import defaultdict
-from collections.abc import Callable, Iterator
-from contextlib import contextmanager
-from dataclasses import asdict, dataclass
-from statistics import mean, stdev
+from statistics import mean
 from time import perf_counter
 
-from .utils import summarize_values
-
-Operation = Callable[[], object]
-Prepare = Callable[[], object]
-
-
-@dataclass(frozen=True)
-class TimingStats:
-    count: int
-    mean_ms: float
-    stdev_ms: float
-    min_ms: float
-    max_ms: float
-    p50_ms: float
-    p95_ms: float
-
-    @classmethod
-    def from_values(cls, values: list[float]) -> TimingStats:
-        if not values:
-            raise ValueError("at least one timing sample is required")
-        summary = summarize_values(values)
-        return cls(
-            count=len(values),
-            mean_ms=mean(values),
-            stdev_ms=stdev(values) if len(values) > 1 else 0.0,
-            min_ms=min(values),
-            max_ms=max(values),
-            p50_ms=float(summary["p50"]),
-            p95_ms=float(summary["p95"]),
-        )
-
-
-@dataclass(frozen=True)
-class BenchmarkResult:
-    name: str
-    warmup_iterations: int
-    measured_iterations: int
-    repetitions: int
-    warmup_total_ms: float
-    warmup_mean_ms: float
-    timing: TimingStats
-
-    def to_dict(self) -> dict[str, object]:
-        return asdict(self)
-
-
-@dataclass(frozen=True)
-class UpdateBenchmarkResult:
-    """Cold, individual steady-state, and continuous-window update timings."""
-
-    name: str
-    cold_ms: float
-    warmup_iterations: int
-    measured_iterations: int
-    repetitions: int
-    warmup_total_ms: float
-    warmup_mean_ms: float
-    event_timing: TimingStats
-    timing: TimingStats
-
-    def to_dict(self) -> dict[str, object]:
-        return asdict(self)
-
-
-@dataclass(frozen=True)
-class TrainingTimeEstimate:
-    updates_per_epoch: int
-    epochs: int
-    mean_seconds_per_epoch: float
-    repeat_stdev_seconds_per_epoch: float
-    mean_seconds_total: float
-    repeat_stdev_seconds_total: float
-
-    def to_dict(self) -> dict[str, object]:
-        return asdict(self)
+from .results import (
+    BenchmarkResult,
+    Operation,
+    Prepare,
+    TimingStats,
+    UpdateBenchmarkResult,
+)
 
 
 class BenchmarkRunner:
@@ -275,61 +203,4 @@ class BenchmarkRunner:
             raise ValueError("repetitions must be positive")
 
 
-class SectionRecorder:
-    """Record explicitly marked model or operation sections."""
-
-    def __init__(self, backend) -> None:
-        self.backend = backend
-        self.values_ms: dict[str, list[float]] = defaultdict(list)
-
-    @contextmanager
-    def section(self, name: str) -> Iterator[None]:
-        self.backend.synchronize()
-        started = perf_counter()
-        with self.backend.range(name):
-            yield
-        self.backend.synchronize()
-        self.values_ms[name].append((perf_counter() - started) * 1_000)
-
-    def stats(self) -> dict[str, TimingStats]:
-        return {
-            name: TimingStats.from_values(values)
-            for name, values in self.values_ms.items()
-        }
-
-
-def estimate_training_time(
-    update_timing: TimingStats,
-    *,
-    dataset_samples: int,
-    batch_size: int,
-    epochs: int,
-    drop_last: bool = True,
-    cold_update_ms: float | None = None,
-) -> TrainingTimeEstimate:
-    """Extrapolate update timing, optionally charging one cold update once."""
-    if min(dataset_samples, batch_size, epochs) < 1:
-        raise ValueError("dataset_samples, batch_size, and epochs must be positive")
-    updates_per_epoch = (
-        dataset_samples // batch_size
-        if drop_last
-        else (dataset_samples + batch_size - 1) // batch_size
-    )
-    total_updates = updates_per_epoch * epochs
-    if cold_update_ms is None:
-        steady_updates = total_updates
-        mean_total_ms = update_timing.mean_ms * steady_updates
-    else:
-        if cold_update_ms < 0:
-            raise ValueError("cold_update_ms must be non-negative")
-        steady_updates = max(total_updates - 1, 0)
-        mean_total_ms = cold_update_ms + update_timing.mean_ms * steady_updates
-    repeat_stdev_total_ms = update_timing.stdev_ms * steady_updates
-    return TrainingTimeEstimate(
-        updates_per_epoch=updates_per_epoch,
-        epochs=epochs,
-        mean_seconds_per_epoch=mean_total_ms / epochs / 1_000,
-        repeat_stdev_seconds_per_epoch=(repeat_stdev_total_ms / epochs / 1_000),
-        mean_seconds_total=mean_total_ms / 1_000,
-        repeat_stdev_seconds_total=repeat_stdev_total_ms / 1_000,
-    )
+__all__ = ["BenchmarkRunner"]
