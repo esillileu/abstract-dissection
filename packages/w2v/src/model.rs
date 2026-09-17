@@ -4,7 +4,7 @@ use crate::{
     random::{Rng, RngPurpose, derive_seed},
     vocab::Vocabulary,
 };
-use std::sync::atomic::AtomicU32;
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 #[repr(i32)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -19,6 +19,7 @@ pub struct Model {
     pub output_embeddings: Vec<AtomicU32>,
     pub vocab_size: usize,
     pub embedding_dimension: usize,
+    training: AtomicBool,
 }
 impl Model {
     pub fn create(
@@ -53,6 +54,7 @@ impl Model {
             output_embeddings,
             vocab_size: vocab.entries.len(),
             embedding_dimension,
+            training: AtomicBool::new(false),
         })
     }
 
@@ -70,6 +72,58 @@ impl Model {
             *destination = atomic_float::load(coordinate);
         }
         Status::Ok
+    }
+
+    pub fn restore_from(&self, kind: EmbeddingKind, source: &[Real]) -> Status {
+        let required_count = self.vocab_size * self.embedding_dimension;
+        if self.training.load(Ordering::Acquire)
+            || source.len() != required_count
+            || source.iter().any(|value| !value.is_finite())
+        {
+            return Status::InvalidState;
+        }
+        let destination = if kind == EmbeddingKind::Input {
+            &self.input_embeddings
+        } else {
+            &self.output_embeddings
+        };
+        for (coordinate, value) in destination.iter().zip(source.iter()) {
+            atomic_float::store(coordinate, *value);
+        }
+        Status::Ok
+    }
+
+    pub fn restore_embeddings(&self, input: &[Real], output: &[Real]) -> Status {
+        let required_count = self.vocab_size * self.embedding_dimension;
+        if input.len() != required_count
+            || output.len() != required_count
+            || input.iter().chain(output).any(|value| !value.is_finite())
+            || self.begin_training() != Status::Ok
+        {
+            return Status::InvalidState;
+        }
+        for (coordinate, value) in self.input_embeddings.iter().zip(input.iter()) {
+            atomic_float::store(coordinate, *value);
+        }
+        for (coordinate, value) in self.output_embeddings.iter().zip(output.iter()) {
+            atomic_float::store(coordinate, *value);
+        }
+        self.end_training();
+        Status::Ok
+    }
+
+    pub(crate) fn begin_training(&self) -> Status {
+        match self
+            .training
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+        {
+            Ok(_) => Status::Ok,
+            Err(_) => Status::InvalidState,
+        }
+    }
+
+    pub(crate) fn end_training(&self) {
+        self.training.store(false, Ordering::Release);
     }
 }
 

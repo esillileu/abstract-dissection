@@ -34,6 +34,20 @@ impl Corpus {
             .map_err(|_| Status::IoError)?;
         Ok(Tokenizer::new(file))
     }
+
+    pub fn digest(&self) -> Result<String, Status> {
+        let mut file = File::open(&self.path).map_err(|_| Status::IoError)?;
+        let mut hash = crate::identity::StableDigest::new();
+        let mut buffer = [0u8; 64 * 1024];
+        loop {
+            let count = file.read(&mut buffer).map_err(|_| Status::IoError)?;
+            if count == 0 {
+                break;
+            }
+            hash.update(&buffer[..count]);
+        }
+        Ok(hash.finish())
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

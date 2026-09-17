@@ -5,6 +5,7 @@
 pub mod atomic_float;
 pub mod config;
 pub mod corpus;
+mod identity;
 pub mod model;
 pub mod random;
 pub mod trainer;
@@ -17,5 +18,6 @@ pub use config::{
 };
 pub use corpus::Corpus;
 pub use model::{EmbeddingKind, Model, SigmoidTable};
-pub use trainer::Trainer;
-pub use vocab::{NegativeSampler, Vocabulary, VocabularyEntry};
+pub use trainer::{EpochReport, StateDescriptor, Trainer, TrainingSession, TrainingState};
+pub use training::worker::WorkerState;
+pub use vocab::{NegativeSampler, Vocabulary, VocabularyEntry, VocabularyState};

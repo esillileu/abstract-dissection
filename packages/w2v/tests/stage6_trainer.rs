@@ -1,7 +1,7 @@
 use std::{fs, sync::atomic::Ordering};
 use w2v::{
     Corpus, EmbeddingKind, Model, ModelKind, ObjectiveKind, RngAlgorithm, Trainer, TrainingConfig,
-    Vocabulary, VocabularyConfig, training::worker::Worker,
+    TrainingSession, Vocabulary, VocabularyConfig, training::worker::Worker,
 };
 
 fn fixture() -> (Corpus, Vocabulary) {
@@ -141,6 +141,93 @@ fn c_learning_rate_interval() {
     trainer.processed_tokens.store(8, Ordering::Relaxed);
     worker.update_learning_rate(&trainer);
     assert!(worker.learning_rate < updated);
+    fs::remove_file(&corpus.path).unwrap();
+}
+
+#[test]
+fn single_thread_epoch_resume_matches_continuous_training() {
+    let (corpus, vocab) = fixture();
+    let mut config = TrainingConfig::for_model(ModelKind::SkipGram);
+    config.embedding_dimension = 8;
+    config.window_radius = 2;
+    config.epochs = 3;
+    config.thread_count = 1;
+    config.subsampling_threshold = 0.0;
+    config.negative_sample_count = 2;
+    config.negative_table_size = 257;
+    config.sigmoid_table_size = 101;
+
+    let continuous_model =
+        Model::create(&vocab, 8, config.root_seed, config.rng_algorithm).unwrap();
+    let continuous_trainer = Trainer::create(&corpus, &vocab, &continuous_model, &config).unwrap();
+    continuous_trainer.train().unwrap();
+
+    let checkpoint_model =
+        Model::create(&vocab, 8, config.root_seed, config.rng_algorithm).unwrap();
+    let checkpoint_trainer = Trainer::create(&corpus, &vocab, &checkpoint_model, &config).unwrap();
+    let mut first_session = checkpoint_trainer.session().unwrap();
+    first_session.train_epoch().unwrap();
+    let state = first_session.export_state().unwrap();
+    assert_eq!(state.completed_epochs, 1);
+
+    let resumed_model = Model::create(&vocab, 8, config.root_seed, config.rng_algorithm).unwrap();
+    let resumed_trainer = Trainer::create(&corpus, &vocab, &resumed_model, &config).unwrap();
+    let mut resumed_session = TrainingSession::restore(&resumed_trainer, &state).unwrap();
+    while !resumed_session.is_complete() {
+        resumed_session.train_epoch().unwrap();
+    }
+
+    assert_eq!(
+        resumed_trainer.processed_tokens(),
+        continuous_trainer.processed_tokens()
+    );
+    for kind in [EmbeddingKind::Input, EmbeddingKind::Output] {
+        let mut expected = vec![0.0; vocab.entries.len() * config.embedding_dimension];
+        let mut actual = vec![0.0; expected.len()];
+        assert_eq!(
+            continuous_model.snapshot_into(kind, &mut expected),
+            w2v::Status::Ok
+        );
+        assert_eq!(
+            resumed_model.snapshot_into(kind, &mut actual),
+            w2v::Status::Ok
+        );
+        assert_eq!(actual, expected, "embedding parity for {kind:?}");
+    }
+    fs::remove_file(&corpus.path).unwrap();
+}
+
+#[test]
+fn training_state_rejects_identity_and_schema_mismatches() {
+    let (corpus, vocab) = fixture();
+    let mut config = TrainingConfig::for_model(ModelKind::Cbow);
+    config.embedding_dimension = 4;
+    config.window_radius = 2;
+    config.epochs = 2;
+    config.thread_count = 1;
+    config.subsampling_threshold = 0.0;
+    config.negative_sample_count = 2;
+    config.negative_table_size = 257;
+    config.sigmoid_table_size = 101;
+
+    let model = Model::create(&vocab, 4, config.root_seed, config.rng_algorithm).unwrap();
+    let trainer = Trainer::create(&corpus, &vocab, &model, &config).unwrap();
+    let mut session = trainer.session().unwrap();
+    session.train_epoch().unwrap();
+    let mut state = session.export_state().unwrap();
+
+    state.descriptor.schema_version += 1;
+    assert!(matches!(
+        TrainingSession::restore(&trainer, &state),
+        Err(w2v::Status::SchemaMismatch)
+    ));
+
+    let mut state = session.export_state().unwrap();
+    state.descriptor.config_digest.push('x');
+    assert!(matches!(
+        TrainingSession::restore(&trainer, &state),
+        Err(w2v::Status::IdentityMismatch)
+    ));
     fs::remove_file(&corpus.path).unwrap();
 }
 
