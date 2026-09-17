@@ -2,18 +2,17 @@
 
 from __future__ import annotations
 
+from f2_cc.corpus.discovery import (
+    CandidateRecord,
+    SequentialAuditSampler,
+    TwoStageProbabilitySampler,
+    is_news_path_heuristic,
+)
 from repro_io.commoncrawl.cdx import (
     CDXIndexReader,
     CDXRecord,
     domain_to_surt_prefix,
     url_to_surt,
-)
-
-from f2.corpus.discovery import (
-    CandidateRecord,
-    SequentialAuditSampler,
-    TwoStageProbabilitySampler,
-    is_news_path_heuristic,
 )
 
 

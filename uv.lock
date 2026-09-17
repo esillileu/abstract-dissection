@@ -8,6 +8,7 @@ members = [
     "deepscratch",
     "dlfs",
     "f2",
+    "f2-cc",
     "repro-core",
     "repro-io",
     "repro-mlflow",
@@ -633,6 +634,33 @@ requires-dist = [
     { name = "repro-core", editable = "packages/repro-core" },
     { name = "repro-io", editable = "packages/repro-io" },
     { name = "sqlalchemy", specifier = ">=2.0.0" },
+    { name = "trafilatura", specifier = ">=1.8.0" },
+]
+
+[[package]]
+name = "f2-cc"
+version = "0.1.0"
+source = { editable = "studies/f2_cc" }
+dependencies = [
+    { name = "duckdb" },
+    { name = "langdetect" },
+    { name = "psycopg", extra = ["binary"] },
+    { name = "pyarrow" },
+    { name = "python-dotenv" },
+    { name = "repro-core" },
+    { name = "repro-io" },
+    { name = "trafilatura" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "duckdb", specifier = ">=1.0.0" },
+    { name = "langdetect", specifier = ">=1.0.9" },
+    { name = "psycopg", extras = ["binary"], specifier = ">=3.1.0" },
+    { name = "pyarrow", specifier = ">=15.0.0" },
+    { name = "python-dotenv", specifier = ">=1.0" },
+    { name = "repro-core", editable = "packages/repro-core" },
+    { name = "repro-io", editable = "packages/repro-io" },
     { name = "trafilatura", specifier = ">=1.8.0" },
 ]
 

@@ -7,14 +7,13 @@ from pathlib import Path
 
 import psycopg
 import pytest
-
-from f2.corpus.analysis import FeasibilityAnalyzer
-from f2.corpus.db.migrations.runner import run_migrations
-from f2.corpus.db.repository import CorpusStateRepository
-from f2.corpus.db.session import get_connection
-from f2.corpus.discovery import CandidateRecord
-from f2.corpus.pipeline import ProcessedDocumentResult
-from f2.corpus.storage import ProvenanceExporter
+from f2_cc.corpus.analysis import FeasibilityAnalyzer
+from f2_cc.corpus.discovery import CandidateRecord
+from f2_cc.corpus.pipeline import ProcessedDocumentResult
+from f2_cc.corpus.storage import ProvenanceExporter
+from f2_cc.db.migrations import run_migrations
+from f2_cc.db.repository import CorpusStateRepository
+from f2_cc.db.session import get_connection
 
 
 @pytest.fixture

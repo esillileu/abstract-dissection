@@ -9,12 +9,11 @@ from unittest.mock import MagicMock, patch
 
 import psycopg
 import pytest
+from f2_cc.corpus.cli import app, ensure_cluster_index
+from f2_cc.db.migrations import run_migrations
+from f2_cc.db.session import get_connection
 from repro_io.http import FetchResult
 from typer.testing import CliRunner
-
-from f2.corpus.cli import app, ensure_cluster_index
-from f2.corpus.db.migrations.runner import run_migrations
-from f2.corpus.db.session import get_connection
 
 runner = CliRunner()
 
@@ -89,8 +88,8 @@ def test_cli_sample_accepts_http_206_and_produces_non_empty_provenance(
 
     out_dir = tmp_path / "sample_out"
     with (
-        patch("f2.corpus.cli.RangeFetcher", return_value=mock_fetcher),
-        patch("f2.corpus.cli.ensure_cluster_index", return_value=mock_reader),
+        patch("f2_cc.corpus.cli.RangeFetcher", return_value=mock_fetcher),
+        patch("f2_cc.corpus.cli.ensure_cluster_index", return_value=mock_reader),
     ):
         result = runner.invoke(
             app,

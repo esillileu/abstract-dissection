@@ -1,10 +1,10 @@
-"""Tests for CleanTextWriter and storage helpers in f2.corpus.storage."""
+"""Tests for CleanTextWriter and storage helpers in f2_cc.corpus.storage."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from f2.corpus.storage import CleanTextWriter
+from f2_cc.corpus.storage import CleanTextWriter
 
 
 def test_clean_text_writer(tmp_path: Path):

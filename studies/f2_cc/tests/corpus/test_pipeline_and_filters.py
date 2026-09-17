@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-from repro_io.archive import ARCParser
-
-from f2.corpus.pipeline import (
+from f2_cc.corpus.pipeline import (
     LanguageFilter,
     NewsClassifier,
     PipelineRunner,
@@ -12,6 +10,7 @@ from f2.corpus.pipeline import (
     ValidityFilter,
     WordCounter,
 )
+from repro_io.archive import ARCParser
 
 
 def test_arc_parser_and_text_extractor(sample_arc_bytes: bytes):
