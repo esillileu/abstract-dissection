@@ -99,6 +99,40 @@ def _validate_references(payload: dict[str, Any]) -> None:
     for row in payload.get("planned_run_slots", []):
         require("planned_run_slots", row, "plan_experiment_id", plan_experiments)
 
+    bindings = {
+        (row["plan_experiment_id"], row["requirement_id"]): row
+        for row in payload.get("resource_bindings", [])
+    }
+    slots_by_experiment: dict[str, list[dict[str, Any]]] = {}
+    for row in payload.get("planned_run_slots", []):
+        slots_by_experiment.setdefault(row["plan_experiment_id"], []).append(row)
+    for plan_experiment_id in slots_by_experiment:
+        plan_experiment = plan_experiments[plan_experiment_id]
+        plan = plans[plan_experiment["execution_plan_id"]]
+        if not plan_experiment.get("enabled", True) or plan.get("status") != "runnable":
+            raise ValueError(
+                f"planned slots require an enabled runnable plan experiment: "
+                f"{plan_experiment_id!r}"
+            )
+        required = [
+            row
+            for row in payload.get("requirements", [])
+            if row["experiment_spec_id"] == plan_experiment["experiment_spec_id"]
+            and row.get("required", True)
+        ]
+        for requirement in required:
+            binding = bindings.get((plan_experiment_id, requirement["requirement_id"]))
+            if binding is None:
+                raise ValueError(
+                    f"planned slots require binding {requirement['requirement_id']!r}"
+                )
+            version = versions[binding["resource_version_id"]]
+            if not version.get("is_verified") or not version.get("checksum"):
+                raise ValueError(
+                    "planned slots require a verified immutable resource version: "
+                    f"{version['resource_version_id']!r}"
+                )
+
 
 def read_manifest(path: Path) -> dict[str, Any]:
     payload = json.loads(path.read_text(encoding="utf-8"))

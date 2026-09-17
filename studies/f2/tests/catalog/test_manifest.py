@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, call
 
 import pytest
 
-from f2.catalog.manifest import load_manifest, read_manifest
+from f2.catalog.manifest import digest_manifest, load_manifest, read_manifest
 
 F2_ROOT = Path(__file__).resolve().parents[2]
 
@@ -25,6 +25,33 @@ def test_w2v_catalog_manifest_is_self_consistent():
     assert {paper["paper_id"] for paper in payload["papers"]} == {"w2v1", "w2v2"}
     assert len(payload["targets"]) == 19
     assert len(payload["experiment_specs"]) == 13
+    assert payload["resource_bindings"]
+    assert payload["planned_run_slots"]
+    assert digest_manifest(payload) == digest_manifest(
+        read_manifest(F2_ROOT / "catalog" / "w2v.json")
+    )
+
+
+def test_planned_slots_require_all_verified_resource_bindings(tmp_path):
+    payload = read_manifest(F2_ROOT / "catalog" / "w2v.json")
+    for version in payload["resource_versions"]:
+        if version["resource_version_id"] == "w2v-questions-words-google-code-export":
+            version["is_verified"] = False
+    path = tmp_path / "catalog.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="verified immutable resource"):
+        read_manifest(path)
+
+
+def test_planned_slots_reject_missing_required_binding(tmp_path):
+    payload = read_manifest(F2_ROOT / "catalog" / "w2v.json")
+    payload["resource_bindings"] = payload["resource_bindings"][:1]
+    path = tmp_path / "catalog.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="require binding"):
+        read_manifest(path)
 
 
 def test_manifest_rejects_unknown_references(tmp_path):

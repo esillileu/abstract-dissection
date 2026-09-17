@@ -971,6 +971,39 @@
       "notes": "Use crawl-period provenance and independent probability sampling. Do not assume the W2V2 33B original corpus was news solely from size or chronology."
     },
     {
+      "resource_id": "f2-wmt-normalized",
+      "kind": "dataset",
+      "name": "WMT News Crawl English 2007-2012, Word2Vec-normalized",
+      "description": "Verified reconstructed training corpus with deterministic record-preserving shard order.",
+      "access_status": "public",
+      "acquisition_status": "verified",
+      "readiness_status": "ready",
+      "canonical_version_id": "f2-wmt-news-2007-2012-normalized-v1",
+      "notes": "Domain/time substitute for unavailable Google News and LDC training corpora; never classified as exact reproduction."
+    },
+    {
+      "resource_id": "f2-lm1b-normalized",
+      "kind": "dataset",
+      "name": "One Billion Word Benchmark, Word2Vec-normalized",
+      "description": "Verified reconstructed training corpus with deterministic record-preserving shard order.",
+      "access_status": "public",
+      "acquisition_status": "verified",
+      "readiness_status": "ready",
+      "canonical_version_id": "f2-lm1b-r13output-normalized-v1",
+      "notes": "Available canonical reconstruction resource; not selected by the minimal W2V1 revision."
+    },
+    {
+      "resource_id": "f2-umbc-normalized",
+      "kind": "dataset",
+      "name": "UMBC WebBase 2013, Word2Vec-normalized",
+      "description": "Verified reconstructed training corpus with deterministic record-preserving shard order.",
+      "access_status": "public",
+      "acquisition_status": "verified",
+      "readiness_status": "ready",
+      "canonical_version_id": "f2-umbc-webbase-normalized-v1",
+      "notes": "Available web-domain reconstruction resource; not selected by the minimal W2V1 revision."
+    },
+    {
       "resource_id": "w2v-public-normalization-v1",
       "kind": "preprocessing_spec",
       "name": "word2vec public-corpus normalization v1",
@@ -984,36 +1017,105 @@
   ],
   "resource_versions": [
     {
+      "resource_version_id": "f2-wmt-news-2007-2012-normalized-v1",
+      "resource_id": "f2-wmt-normalized",
+      "version_label": "v1",
+      "uri": "s3://f2-corpus/processed/wmt/normalized/",
+      "local_path": null,
+      "checksum_algo": "sha256-ordered-shard-manifest-v1",
+      "checksum": "8c15bd7dd9007924c727a30eda61309c57c7379e65af03a1a0795b9ac346b276",
+      "size_bytes": 2393739624,
+      "metadata": {
+        "representation": "normalized",
+        "shard_count": 165,
+        "shard_order": "ascending shard_index 0..164",
+        "lexical_words": 1646423517,
+        "training_token_budget": 1646423517,
+        "boundary_policy": "sentence_per_line",
+        "validation_profile": "word2vec-2013-compatibility-v1",
+        "validation_verdict": "PASS",
+        "paper_compatibility": "compatible_reconstruction"
+      },
+      "is_verified": true,
+      "notes": "Digest covers ordered shard index, URI, object SHA-256, byte size, word count, and document count."
+    },
+    {
+      "resource_version_id": "f2-lm1b-r13output-normalized-v1",
+      "resource_id": "f2-lm1b-normalized",
+      "version_label": "v1",
+      "uri": "s3://f2-corpus/processed/lm1b/normalized/",
+      "local_path": null,
+      "checksum_algo": "sha256-ordered-shard-manifest-v1",
+      "checksum": "f4e16b78b98cff999f7e6590a020fe6f1fd8d882bdd385bca81a3c7da520efdb",
+      "size_bytes": 1153703165,
+      "metadata": {
+        "representation": "normalized",
+        "shard_count": 80,
+        "shard_order": "ascending shard_index 0..79",
+        "lexical_words": 791844834,
+        "training_token_budget": 822145862,
+        "boundary_policy": "sentence_per_line",
+        "validation_profile": "word2vec-2013-compatibility-v1",
+        "validation_verdict": "PASS",
+        "paper_compatibility": "compatible_reconstruction"
+      },
+      "is_verified": true,
+      "notes": "Digest covers ordered shard index, URI, object SHA-256, byte size, word count, and document count."
+    },
+    {
+      "resource_version_id": "f2-umbc-webbase-normalized-v1",
+      "resource_id": "f2-umbc-normalized",
+      "version_label": "v1",
+      "uri": "s3://f2-corpus/processed/umbc/normalized/",
+      "local_path": null,
+      "checksum_algo": "sha256-ordered-shard-manifest-v1",
+      "checksum": "a5b7ac1e3054670502adb00ebe097d94aa5e881a65b464f22a1c5f665f983dcc",
+      "size_bytes": 4285053224,
+      "metadata": {
+        "representation": "normalized",
+        "shard_count": 340,
+        "shard_order": "ascending shard_index 0..339",
+        "lexical_words": 3398076749,
+        "training_token_budget": 3438683491,
+        "boundary_policy": "document_paragraph_lines",
+        "validation_profile": "word2vec-2013-compatibility-v1",
+        "validation_verdict": "PASS",
+        "paper_compatibility": "compatible_reconstruction"
+      },
+      "is_verified": true,
+      "notes": "Digest covers ordered shard index, URI, object SHA-256, byte size, word count, and document count."
+    },
+    {
       "resource_version_id": "w2v-questions-words-google-code-export",
       "resource_id": "w2v-questions-words",
-      "version_label": "tmikolov/word2vec Google Code export, master",
-      "uri": "https://github.com/tmikolov/word2vec/blob/master/questions-words.txt",
+      "version_label": "tmikolov/word2vec 20c129af10659f7c50e86e3be406df663beff438",
+      "uri": "https://raw.githubusercontent.com/tmikolov/word2vec/20c129af10659f7c50e86e3be406df663beff438/questions-words.txt",
       "local_path": null,
       "checksum_algo": "sha256",
-      "checksum": null,
-      "size_bytes": null,
+      "checksum": "8c29b3332afc46f3fb8be04cb5297bf96f39aa7131272dff57869b4485b22a36",
+      "size_bytes": 603955,
       "metadata": {
         "line_count": 19558,
         "semantic_questions_paper_count": 8869,
         "syntactic_questions_paper_count": 10675
       },
-      "is_verified": false,
-      "notes": "Located but not yet pinned to a commit/hash in this catalog."
+      "is_verified": true,
+      "notes": "Pinned to the upstream repository commit and verified byte-for-byte."
     },
     {
       "resource_version_id": "w2v-questions-phrases-google-code-export",
       "resource_id": "w2v-questions-phrases",
-      "version_label": "tmikolov/word2vec Google Code export, master",
-      "uri": "https://github.com/tmikolov/word2vec/blob/master/questions-phrases.txt",
+      "version_label": "tmikolov/word2vec 20c129af10659f7c50e86e3be406df663beff438",
+      "uri": "https://raw.githubusercontent.com/tmikolov/word2vec/20c129af10659f7c50e86e3be406df663beff438/questions-phrases.txt",
       "local_path": null,
       "checksum_algo": "sha256",
-      "checksum": null,
-      "size_bytes": null,
+      "checksum": "55cfc0894d0fe6cf974d106da3e09b5fb2fa6125b6ddc633d06e298dc5aa7901",
+      "size_bytes": 168209,
       "metadata": {
         "question_count_paper": 3218
       },
-      "is_verified": false,
-      "notes": "Located but not yet pinned to a commit/hash in this catalog."
+      "is_verified": true,
+      "notes": "Pinned to the upstream repository commit and verified byte-for-byte."
     },
     {
       "resource_version_id": "w2v1-msr-sentence-completion-official",
@@ -1366,8 +1468,86 @@
       "notes": null
     }
   ],
-  "execution_plans": [],
-  "plan_experiments": [],
-  "resource_bindings": [],
-  "planned_run_slots": []
+  "execution_plans": [
+    {
+      "execution_plan_id": "w2v1-reconstruction-r1",
+      "plan_key": "w2v1",
+      "revision": 1,
+      "status": "runnable",
+      "source_ref": "studies/f2/catalog/w2v.json",
+      "source_hash": "8c15bd7dd9007924c727a30eda61309c57c7379e65af03a1a0795b9ac346b276",
+      "is_canonical": true,
+      "notes": "Minimal vertical-slice revision. WMT is an explicit reconstructed substitute for unavailable Google News."
+    }
+  ],
+  "plan_experiments": [
+    {
+      "plan_experiment_id": "w2v1-reconstruction-r1-table2-cbow",
+      "execution_plan_id": "w2v1-reconstruction-r1",
+      "experiment_spec_id": "w2v1-table2-cbow",
+      "enabled": true,
+      "parameters": {
+        "provenance_status": "reconstructed",
+        "corpus_resource_version_id": "f2-wmt-news-2007-2012-normalized-v1",
+        "corpus_manifest_digest": "8c15bd7dd9007924c727a30eda61309c57c7379e65af03a1a0795b9ac346b276",
+        "shard_order": "ascending shard_index",
+        "early_stop": "stop before the first token that would exceed the lexical-word budget",
+        "seed_policy": {
+          "parity": [1],
+          "throughput": []
+        },
+        "runtime_policy": {
+          "device": "cpu",
+          "threads": 1,
+          "mode": "single_thread_parity"
+        },
+        "evaluation_policy": {
+          "metric": "word_analogy_accuracy",
+          "direction": "maximize",
+          "oov": "exclude question and report coverage",
+          "best_tie_breaker": "earliest_epoch",
+          "confidence_interval": "seed_percentile_95_when_repetitions_ge_2"
+        }
+      },
+      "notes": "The first runnable slot intentionally fixes the parity seed before throughput repetitions are added."
+    }
+  ],
+  "resource_bindings": [
+    {
+      "plan_experiment_id": "w2v1-reconstruction-r1-table2-cbow",
+      "requirement_id": "w2v1-table2-train-data",
+      "resource_version_id": "f2-wmt-news-2007-2012-normalized-v1",
+      "binding_type": "substitute",
+      "justification": "The original Google News corpus is unavailable; WMT News 2007-2012 is an immutable, validated news-domain reconstruction with sufficient tokens.",
+      "notes": "Domain, time range, and source composition differ from the paper corpus."
+    },
+    {
+      "plan_experiment_id": "w2v1-reconstruction-r1-table2-cbow",
+      "requirement_id": "w2v1-table2-eval",
+      "resource_version_id": "w2v-questions-words-google-code-export",
+      "binding_type": "exact",
+      "justification": "Pinned upstream questions-words dataset used by the public Word2Vec evaluation.",
+      "notes": null
+    }
+  ],
+  "planned_run_slots": [
+    {
+      "planned_run_slot_id": "w2v1-reconstruction-r1-table2-cbow-d50-w24m-s1",
+      "plan_experiment_id": "w2v1-reconstruction-r1-table2-cbow",
+      "slot_key": "d50-w24m-s1",
+      "atomic_run_id": "d50-w24m",
+      "variant_key": "cbow-hs-d50-w24m",
+      "seed": 1,
+      "parameters": {
+        "dimension": 50,
+        "training_words": 24000000,
+        "epochs": 3,
+        "device": "cpu",
+        "threads": 1
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "P8 local vertical slice and P9 tracked-resume candidate."
+    }
+  ]
 }
