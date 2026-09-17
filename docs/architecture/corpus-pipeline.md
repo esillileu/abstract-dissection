@@ -30,7 +30,7 @@ studies/f2/
             │   ├── 003_corpus_lifecycle_lineage_and_validation.sql
             │   └── runner.py
             ├── repository.py          # CorpusStateRepository (sampling, auditing, lifecycle DAG lineage & validation)
-            └── session.py             # Connection/transaction lifecycle (F2_DATABASE_URL / F2_CORPUS_DATABASE_URL)
+            └── session.py             # Connection/transaction lifecycle (F2_DATABASE_URL)
 ```
 
 ---

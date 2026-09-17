@@ -62,6 +62,11 @@ studies/
 
 ## 3. Separation of Responsibilities: Adapters vs. Executors
 
+`studies/f2_cc` is an independent corpus-producer study backed by its own
+`f2_cc` database. It owns Common Crawl discovery, range acquisition, extraction,
+sampling, audit, and feasibility analysis. `studies/f2` owns catalog management
+and preprocessing of completed corpus releases only.
+
 | Layer | Location | Responsibilities | Forbidden Patterns |
 | :--- | :--- | :--- | :--- |
 | **Translation Adapters** | `studies/*/adapters/`, `studies/*/implemented/adapters/` | * Construct engine models, loss functions, optimizers, batch adapters.<br>* Inject `RuntimePaths` into dataset loaders.<br>* Serialize/restore engine checkpoint states. | ❌ Must NOT contain training loops, evaluation scheduling, metric calculations, or plotting logic. |
