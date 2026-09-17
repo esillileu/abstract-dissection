@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -10,9 +9,11 @@ from typing import Any
 
 import psycopg
 
+from .contract import resolve_url, validate_connection
+
 
 class DatabaseConfigError(Exception):
-    """Raised when F2_DATABASE_URL or F2_CORPUS_DATABASE_URL is missing or invalid."""
+    """Raised when F2_DATABASE_URL is missing or invalid."""
 
 
 @dataclass(frozen=True)
@@ -21,24 +22,12 @@ class DatabaseConfig:
 
     @classmethod
     def from_environment(cls) -> DatabaseConfig:
-        url = os.getenv("F2_DATABASE_URL")
-        if not url:
-            try:
-                from dotenv import load_dotenv
-
-                load_dotenv(override=True)
-                url = os.getenv("F2_DATABASE_URL") or os.getenv(
-                    "F2_CORPUS_DATABASE_URL"
-                )
-            except Exception:
-                pass
-        if not url:
-            url = os.getenv("F2_CORPUS_DATABASE_URL")
-        if not url:
-            raise DatabaseConfigError(
-                "F2_DATABASE_URL or F2_CORPUS_DATABASE_URL is required"
+        return cls(
+            connection_url=resolve_url(
+                None,
+                error_type=DatabaseConfigError,
             )
-        return cls(connection_url=url)
+        )
 
 
 def get_db_url() -> str:
@@ -48,17 +37,33 @@ def get_db_url() -> str:
 @contextmanager
 def get_connection(
     connection_url: str | None = None,
+    *,
+    validate_contract: bool = False,
 ) -> Generator[psycopg.Connection[Any], None, None]:
     url = connection_url or get_db_url()
     with psycopg.connect(url, options="-c search_path=corpus,public") as conn:
+        if validate_contract:
+            validate_connection(
+                conn,
+                schema="corpus",
+                latest_migration="006_remove_common_crawl_operational_state",
+            )
         yield conn
 
 
 @contextmanager
 def transaction(
     connection_url: str | None = None,
+    *,
+    validate_contract: bool = False,
 ) -> Generator[psycopg.Connection[Any], None, None]:
     url = connection_url or get_db_url()
     with psycopg.connect(url, options="-c search_path=corpus,public") as conn:
+        if validate_contract:
+            validate_connection(
+                conn,
+                schema="corpus",
+                latest_migration="006_remove_common_crawl_operational_state",
+            )
         with conn.transaction():
             yield conn

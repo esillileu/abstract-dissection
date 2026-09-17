@@ -1,7 +1,7 @@
 [project]
 name = "f2"
 version = "0.1.0"
-description = "Word2Vec 2013 paper reproduction & Common Crawl corpus feasibility study"
+description = "Word2Vec 2013 reproduction, corpus preprocessing, and catalog study"
 requires-python = ">=3.11, <3.12"
 dependencies = [
     "duckdb>=1.0.0",

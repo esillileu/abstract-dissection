@@ -11,7 +11,7 @@ import typer
 from repro_core.execution.definition import RunOrder
 
 from .catalog.cli import app as catalog_app
-from .corpus.cli import app as corpus_app
+from .corpus.preprocessing_cli import app as corpus_app
 from .definition import DEFINITION
 
 P = ParamSpec("P")

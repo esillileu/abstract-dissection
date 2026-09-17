@@ -3,5 +3,7 @@
   "studies/f2/src/f2/catalog/schema.dbml": "fa30928a944608feccaf7cbb52c19b93793fd90a49644795bc9c115424e148d4",
   "studies/f2/src/f2/corpus/db/migrations/001_initial_schema.sql": "3af75b113f2f8e7dc967e4f440576ae278aac13ac6fb9ba45dcf07616495f295",
   "studies/f2/src/f2/corpus/db/migrations/002_add_prefetch_reject_stream.sql": "bddb22a22cab966c192fd0ad70989f6f5e6a79477e04e7c2c28987fb8e34635a",
-  "studies/f2/src/f2/corpus/db/migrations/003_corpus_lifecycle_lineage_and_validation.sql": "864a33ebebfb0b2cb95783ffce67939e1410e161f136124c7f4e47252c49ef32"
+  "studies/f2/src/f2/corpus/db/migrations/003_corpus_lifecycle_lineage_and_validation.sql": "864a33ebebfb0b2cb95783ffce67939e1410e161f136124c7f4e47252c49ef32",
+  "studies/f2/src/f2/corpus/db/migrations/004_canonical_analysis_profiles.sql": "cf3d0ce854d7b96ab94bb57ea526441fbeda6f7b8fc6bfcb7c1cc1fdb6828171",
+  "studies/f2/src/f2/corpus/db/migrations/005_enforce_canonical_analysis_profile_contract.sql": "8161b5e1cbe0dcac7c3ba111de715b4dd45c7c018b7fb4349befe484a3446709"
 }
