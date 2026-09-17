@@ -4,18 +4,18 @@ from __future__ import annotations
 
 import typer
 
-from .sources_cli.acquire import import_gigaword, sources_acquire
-from .sources_cli.catalog import sources_catalog, sources_preflight, sources_status
-from .sources_cli.common import (
+from .acquire import import_gigaword, sources_acquire
+from .catalog import sources_catalog, sources_preflight, sources_status
+from .common import (
     _BW_OFFPEAK_DEFAULT,
     _BW_PEAK_DEFAULT,
     _bandwidth,
     _selected,
     _store,
 )
-from .sources_cli.orchestration import sources_run
-from .sources_cli.process import _canonical_inputs, _raw_inputs, sources_process
-from .sources_cli.validate import sources_validate
+from .orchestration import sources_run
+from .process import _canonical_inputs, _raw_inputs, sources_process
+from .validate import sources_validate
 
 app = typer.Typer(
     name="corpus",
