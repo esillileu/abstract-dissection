@@ -1,118 +1,25 @@
-"""Materialized, canonical input for DeepScratch study renderers.
-
-Renderers consume this model instead of querying MLflow or knowing whether a
-selected run came from the canonical or quarantined legacy namespace.
-"""
+"""StudyAnalysisInput: Materialized, canonical input for DeepScratch study renderers."""
 
 from __future__ import annotations
 
 import csv
-import hashlib
-import json
-import marshal
-import shutil
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
 
-from repro_core.analysis.core import Curve, aggregate
-from repro_core.context.paths import WorkspacePaths
-from repro_core.results import NativeRunResult
 from repro_mlflow.artifact_cache import MlflowArtifactCache
 
-from ..identity import Variant
-from .declarations import StudyDeclaration
-
-
-@dataclass(frozen=True)
-class AnalysisRun:
-    run_id: str
-    canonical_condition_id: str
-    native_condition_id: str
-    seed: str
-    variant: Variant
-    result: NativeRunResult
-    local_artifact_root: Path | None = None
-
-
-class PreparedAnalysisStore:
-    """Materialize and replay the renderer-facing analysis inputs."""
-
-    SCHEMA_VERSION = 1
-
-    def __init__(self, root: Path, *, refresh: bool = False) -> None:
-        self.root = root
-        self.index_path = root / "prepared_analysis.json"
-        self._entries: dict[str, object] = {}
-        self._dirty = False
-        if not refresh:
-            try:
-                payload = json.loads(self.index_path.read_text(encoding="utf-8"))
-                if payload.get("schema_version") == self.SCHEMA_VERSION:
-                    self._entries = dict(payload["entries"])
-            except (KeyError, OSError, TypeError, json.JSONDecodeError):
-                pass
-
-    def key(self, operation: str, payload: object) -> str:
-        encoded = json.dumps(
-            {"operation": operation, "payload": payload},
-            sort_keys=True,
-            separators=(",", ":"),
-        ).encode("utf-8")
-        return f"{operation}:{hashlib.sha256(encoded).hexdigest()}"
-
-    def get(self, key: str) -> object | None:
-        return self._entries.get(key)
-
-    def contains(self, key: str) -> bool:
-        return key in self._entries
-
-    def put(self, key: str, value: object) -> None:
-        self._entries[key] = value
-        self._dirty = True
-
-    def materialize_file(self, key: str, source: Path) -> Path:
-        digest = key.rsplit(":", 1)[-1]
-        target = self.root / "files" / digest / source.name
-        if source.is_dir():
-            if target.exists():
-                shutil.rmtree(target)
-            target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copytree(source, target)
-        else:
-            target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(source, target)
-        self.put(key, {"path": str(target.relative_to(self.root))})
-        return target
-
-    def cached_file(self, key: str) -> Path | None:
-        entry = self.get(key)
-        if not isinstance(entry, dict) or "path" not in entry:
-            return None
-        path = self.root / str(entry["path"])
-        return path if path.exists() else None
-
-    def commit(self) -> None:
-        if not self._dirty:
-            return
-        self.root.mkdir(parents=True, exist_ok=True)
-        temporary = self.index_path.with_suffix(".json.tmp")
-        temporary.write_text(
-            json.dumps(
-                {
-                    "schema_version": self.SCHEMA_VERSION,
-                    "entries": self._entries,
-                },
-                indent=2,
-                sort_keys=True,
-            )
-            + "\n",
-            encoding="utf-8",
-        )
-        temporary.replace(self.index_path)
-        self._dirty = False
+from ...identity import Variant
+from ..declarations import StudyDeclaration
+from ._model import AnalysisRun
+from ._serde import (
+    callable_fingerprint,
+    decode_history,
+    encode_history,
+    seed_key,
+)
+from ._store import PreparedAnalysisStore
 
 
 class StudyAnalysisInput:
@@ -170,7 +77,7 @@ class StudyAnalysisInput:
                     for run in self._runs
                     if run.canonical_condition_id == condition.canonical_id
                 ),
-                key=lambda run: _seed_key(run.seed),
+                key=lambda run: seed_key(run.seed),
             )
         return output
 
@@ -202,9 +109,6 @@ class StudyAnalysisInput:
             candidate = run.local_artifact_root / native_path
             if candidate.is_file():
                 return candidate
-        # Raw downloads are keyed only by the MLflow store and run ID. Changes
-        # to analysis declarations or renderer options must not force an
-        # unchanged run's artifacts to be fetched again.
         try:
             cache_key = (run.run_id, native_path)
             if self._refresh_raw and cache_key not in self._refreshed_artifacts:
@@ -258,14 +162,14 @@ class StudyAnalysisInput:
                 "artifact_path": artifact_path,
                 "x": x,
                 "y": y,
-                "row_filter": _callable_fingerprint(row_filter),
-                "x_value": _callable_fingerprint(x_value),
-                "y_value": _callable_fingerprint(y_value),
+                "row_filter": callable_fingerprint(row_filter),
+                "x_value": callable_fingerprint(x_value),
+                "y_value": callable_fingerprint(y_value),
             },
         )
         cached = None if self._prepared is None else self._prepared.get(prepared_key)
         if isinstance(cached, list):
-            return [_decode_history(history) for history in cached]
+            return [decode_history(history) for history in cached]
         histories = []
         for run in runs:
             history: dict[float, float] = {}
@@ -283,7 +187,7 @@ class StudyAnalysisInput:
                 histories.append(history)
         if self._prepared is not None:
             self._prepared.put(
-                prepared_key, [_encode_history(history) for history in histories]
+                prepared_key, [encode_history(history) for history in histories]
             )
         return histories
 
@@ -296,7 +200,7 @@ class StudyAnalysisInput:
         )
         cached = None if self._prepared is None else self._prepared.get(prepared_key)
         if isinstance(cached, list):
-            return [_decode_history(history) for history in cached]
+            return [decode_history(history) for history in cached]
         histories = []
         for run in runs:
             series = run.result.metric(metric_id)
@@ -313,7 +217,7 @@ class StudyAnalysisInput:
                 histories.append(history)
         if self._prepared is not None:
             self._prepared.put(
-                prepared_key, [_encode_history(history) for history in histories]
+                prepared_key, [encode_history(history) for history in histories]
             )
         return histories
 
@@ -343,90 +247,3 @@ class StudyAnalysisInput:
         if self._prepared is None:
             return operation
         return self._prepared.key(operation, payload)
-
-
-def artifact_file(data: StudyAnalysisInput, run: AnalysisRun, artifact_path: str):
-    return data.artifact_file(run, artifact_path)
-
-
-def artifact_rows(data: StudyAnalysisInput, run: AnalysisRun, artifact_path: str):
-    return data.artifact_rows(run, artifact_path)
-
-
-def histories_from_artifact(data: StudyAnalysisInput, runs, **kwargs):
-    return data.histories_from_artifact(runs, **kwargs)
-
-
-def metric_histories(data: StudyAnalysisInput, runs, metric: str):
-    return data.metric_histories(runs, metric)
-
-
-def curve_from_artifact(data: StudyAnalysisInput, runs, **kwargs) -> Curve:
-    return aggregate(data.histories_from_artifact(runs, **kwargs))
-
-
-def local_artifact_root(client, run_id: str) -> Path | None:
-    """Resolve only the canonical staging location advertised by run tags."""
-    run = client.get_run(run_id)
-    tags = run.data.tags
-    run_key = tags.get("run.key")
-    required = (
-        tags.get("domain.name"),
-        tags.get("suite.name"),
-        tags.get("experiment.id"),
-        tags.get("implementation.variant"),
-        run_key,
-    )
-    if not all(required):
-        return None
-    path = (
-        WorkspacePaths.from_environment(Path.cwd()).run_staging(
-            domain=str(required[0]),
-            suite=str(required[1]),
-            study=str(required[2]),
-            variant=str(required[3]),
-            run_key=str(required[4]),
-        )
-        / "record"
-    )
-    return path if path.is_dir() else None
-
-
-def _seed_key(value: str) -> tuple[int, str]:
-    return (0, f"{int(value):020d}") if value.isdigit() else (1, value)
-
-
-def _encode_history(history: Mapping[float, float]) -> list[list[float]]:
-    return [[float(step), float(value)] for step, value in history.items()]
-
-
-def _decode_history(payload: object) -> dict[float, float]:
-    if not isinstance(payload, list):
-        return {}
-    return {float(item[0]): float(item[1]) for item in payload}
-
-
-def _callable_fingerprint(function: Callable | None) -> str | None:
-    if function is None:
-        return None
-    code = getattr(function, "__code__", None)
-    if code is None:
-        return repr(function)
-    closure = tuple(
-        repr(cell.cell_contents)
-        for cell in (getattr(function, "__closure__", None) or ())
-    )
-    payload = marshal.dumps(code) + repr(closure).encode("utf-8")
-    return hashlib.sha256(payload).hexdigest()
-
-
-__all__ = [
-    "AnalysisRun",
-    "StudyAnalysisInput",
-    "artifact_file",
-    "artifact_rows",
-    "curve_from_artifact",
-    "histories_from_artifact",
-    "local_artifact_root",
-    "metric_histories",
-]

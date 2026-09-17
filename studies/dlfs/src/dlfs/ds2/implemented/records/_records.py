@@ -1,8 +1,7 @@
-"""DS2Records dataclass — accumulates training events and writes CSV artifacts."""
+"""DS2Records dataclass — accumulates training events and coordinates artifact writing."""
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -14,7 +13,9 @@ from repro_core.context.events import (
     UpdateEvent,
 )
 
-from ._csv import append_csv, csv_value, materialize_scalars, source_curve_metric_name
+from ._csv import csv_value, materialize_scalars
+from ._mlflow import records_mlflow_metric_rows
+from ._writer import append_csv, write_records_csv
 
 
 @dataclass
@@ -180,206 +181,14 @@ class DS2Records:
         self._mark_dirty()
 
     # ------------------------------------------------------------------ #
-    # MLflow serialization
+    # MLflow serialization & CSV writing delegation
     # ------------------------------------------------------------------ #
 
     def mlflow_metric_rows(self) -> tuple[tuple[int, str, float], ...]:
-        self._materialize_pending_scalars()
-        rows: list[tuple[int, str, float]] = []
-        for row in self.updates:
-            rows.append((int(row["update"]), "update/train/loss", float(row["loss"])))
-            if row.get("book_loss") is not None:
-                rows.append(
-                    (
-                        int(row["update"]),
-                        "update/train/book_loss",
-                        float(row["book_loss"]),
-                    )
-                )
-            if isinstance(row["lr"], float):
-                rows.append((int(row["update"]), "update/train/lr", row["lr"]))
-        for row in self.evaluations:
-            rows.append(
-                (
-                    int(row["axis_step"]),
-                    f"{row['axis']}/eval_{row['split']}/{row['metric']}",
-                    float(row["value"]),
-                )
-            )
-        for row in self.source_curves:
-            metric_name = source_curve_metric_name(str(row.get("metric", "")))
-            if metric_name is not None:
-                rows.append((int(row["plot_index"]), metric_name, float(row["value"])))
-        for window in self.timing_windows:
-            rows.append(
-                (
-                    window.end_update,
-                    "update/runtime/window/train_wall_time_ms",
-                    window.train_wall_time_ns / 1_000_000,
-                )
-            )
-            if window.train_device_time_ns is not None:
-                rows.append(
-                    (
-                        window.end_update,
-                        "update/runtime/window/train_device_time_ms",
-                        window.train_device_time_ns / 1_000_000,
-                    )
-                )
-            if window.eval_wall_time_ns is not None:
-                rows.append(
-                    (
-                        window.end_update,
-                        "update/runtime/window/eval_wall_time_ms",
-                        window.eval_wall_time_ns / 1_000_000,
-                    )
-                )
-            if window.eval_device_time_ns is not None:
-                rows.append(
-                    (
-                        window.end_update,
-                        "update/runtime/window/eval_device_time_ms",
-                        window.eval_device_time_ns / 1_000_000,
-                    )
-                )
-        return tuple(rows)
-
-    # ------------------------------------------------------------------ #
-    # CSV artifact writing
-    # ------------------------------------------------------------------ #
+        return records_mlflow_metric_rows(self)
 
     def write_csv(self, artifact_root: Path) -> None:
-        if self._written_root != artifact_root:
-            self._written_rows.clear()
-            self._written_root = artifact_root
-        self.artifact_root = artifact_root
-        artifact_root.mkdir(parents=True, exist_ok=True)
-        self._materialize_pending_scalars()
-        self._append(
-            "updates",
-            artifact_root / "updates.csv",
-            self.updates,
-            columns=["update", "epoch", "batch_size", "loss", "book_loss", "lr"],
-        )
-        self._append(
-            "evaluations",
-            artifact_root / "evaluations.csv",
-            self.evaluations,
-            columns=[
-                "axis",
-                "axis_step",
-                "update",
-                "epoch",
-                "evaluation_set_id",
-                "split",
-                "unit",
-                "unit_count",
-                "metric",
-                "value",
-            ],
-        )
-        self._append(
-            "checkpoints",
-            artifact_root / "checkpoints.csv",
-            self.checkpoints,
-            columns=[
-                "update",
-                "epoch",
-                "kind",
-                "path",
-                "sha256",
-                "checkpoint_id",
-                "selection_metric",
-                "selection_value",
-            ],
-        )
-        self._append(
-            "timing_windows",
-            artifact_root / "timing_windows.csv",
-            [
-                {
-                    "start_update": item.start_update,
-                    "end_update": item.end_update,
-                    "update_count": item.update_count,
-                    "closed_by": item.closed_by,
-                    "train_wall_time_ns": item.train_wall_time_ns,
-                    "train_device_time_ns": item.train_device_time_ns,
-                    "eval_wall_time_ns": item.eval_wall_time_ns,
-                    "eval_device_time_ns": item.eval_device_time_ns,
-                }
-                for item in self.timing_windows
-            ],
-            columns=[
-                "start_update",
-                "end_update",
-                "update_count",
-                "closed_by",
-                "train_wall_time_ns",
-                "train_device_time_ns",
-                "eval_wall_time_ns",
-                "eval_device_time_ns",
-            ],
-        )
-        observations = artifact_root / "observations"
-        observations.mkdir(exist_ok=True)
-        self._append(
-            "source_samples",
-            observations / "source_objectives.csv",
-            self.source_samples,
-            columns=[
-                "update",
-                "epoch",
-                "local_iteration",
-                "objective",
-                "book_objective",
-                "unit_count",
-            ],
-        )
-        self._append(
-            "source_curves",
-            observations / "source_curves.csv",
-            self.source_curves,
-            columns=[
-                "series_id",
-                "plot_index",
-                "update_start",
-                "update_end",
-                "epoch_start",
-                "epoch_end",
-                "unit",
-                "unit_count",
-                "metric",
-                "reducer",
-                "value",
-            ],
-        )
-        self._append(
-            "predictions",
-            observations / "predictions.csv",
-            self.predictions,
-            columns=[
-                "epoch",
-                "example_id",
-                "source",
-                "target",
-                "prediction",
-                "exact_match",
-                "token_correct",
-                "token_count",
-            ],
-        )
-        self._append(
-            "attention",
-            observations / "attention.csv",
-            self.attention,
-            columns=["example_id", "decode_step", "encoder_position", "weight"],
-        )
-        if self.attention_render is not None:
-            (observations / "attention_render.json").write_text(
-                json.dumps(self.attention_render, indent=2, sort_keys=True),
-                encoding="utf-8",
-            )
-        self._pending_rows = 0
+        write_records_csv(self, artifact_root)
 
     # ------------------------------------------------------------------ #
     # Internal helpers
