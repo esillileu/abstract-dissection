@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from functools import wraps
 from typing import Annotated, ParamSpec, TypeVar
@@ -56,6 +57,15 @@ app = typer.Typer(
 
 app.add_typer(corpus_app, name="corpus")
 app.add_typer(catalog_app, name="catalog")
+
+
+@app.command("preflight")
+@cli_errors
+def preflight() -> None:
+    """Read-only validation of F2 database, corpus store, and MLflow targets."""
+    from .preflight import run_preflight
+
+    typer.echo(json.dumps(run_preflight(), indent=2, sort_keys=True))
 
 
 @app.command("suites")

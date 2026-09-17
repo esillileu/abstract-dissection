@@ -24,6 +24,26 @@ analysis belong to the independent `f2_cc` producer.
 
 ## 2. CLI Usage (`repro f2`)
 
+Before any tracked run, validate all three external service identities with a
+read-only preflight:
+
+```bash
+uv run repro f2 preflight
+```
+
+The command accepts only the canonical PostgreSQL database name `f2`, either a
+local corpus endpoint (`http://localhost:9000` or `:19000`, including loopback IP variants)
+or an HTTPS Tailscale Serve endpoint (`*.ts.net`), and an HTTP(S) F2 MLflow
+tracking endpoint. Its output contains scheme, host, database/bucket identity
+only; URLs, usernames, access keys, and secrets are never emitted.
+
+Every tracked execution attempt requires a planned slot ID, plan revision,
+resolved config digest, corpus resource version, and corpus manifest digest.
+Retries and resumes create a new MLflow run tagged with `f2.attempt` and
+`f2.predecessor_run_id`; the catalog slot is linked only after the final attempt
+has passed durable artifact verification. Failed attempts remain in MLflow and
+never count as completed slots.
+
 ### A. Word2Vec Corpus Source Commands (`repro f2 corpus sources`)
 ```bash
 # Inspect inventory and acquisition/readiness status across all sources

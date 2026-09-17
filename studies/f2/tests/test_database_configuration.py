@@ -30,14 +30,16 @@ def test_database_resolution(config, error, monkeypatch):
 
     def load(**kwargs):
         assert kwargs == {"override": True}
-        monkeypatch.setenv("F2_DATABASE_URL", "postgresql://dotenv/example")
+        monkeypatch.setenv("F2_DATABASE_URL", "postgresql://dotenv/f2")
 
     monkeypatch.setattr(dotenv, "load_dotenv", load)
-    assert config.from_environment().connection_url == "postgresql://dotenv/example"
-    monkeypatch.setenv("F2_DATABASE_URL", "postgresql://explicit-env/example")
-    assert (
-        config.from_environment().connection_url == "postgresql://explicit-env/example"
-    )
+    assert config.from_environment().connection_url == "postgresql://dotenv/f2"
+    monkeypatch.setenv("F2_DATABASE_URL", "postgresql://explicit-env/f2")
+    assert config.from_environment().connection_url == "postgresql://explicit-env/f2"
+
+    monkeypatch.setenv("F2_DATABASE_URL", "postgresql://explicit-env/f2_db")
+    with pytest.raises(error, match="canonical 'f2'"):
+        config.from_environment()
 
 
 @pytest.mark.parametrize("module", ["f2.catalog.db.session", "f2.corpus.db.session"])
@@ -48,9 +50,9 @@ def test_explicit_connection_url_bypasses_environment(module, monkeypatch):
     session = importlib.import_module(module)
     connect = MagicMock()
     monkeypatch.setattr(session.psycopg, "connect", connect)
-    with session.get_connection("postgresql://explicit/example"):
+    with session.get_connection("postgresql://explicit/f2_test"):
         pass
-    assert connect.call_args.args == ("postgresql://explicit/example",)
+    assert connect.call_args.args == ("postgresql://explicit/f2_test",)
 
 
 @pytest.mark.parametrize(
