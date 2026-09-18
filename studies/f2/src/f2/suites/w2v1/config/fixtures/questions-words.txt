@@ -1,0 +1,4 @@
+: capital-common-countries
+paris france berlin germany
+: gram8-plural
+walk walking run running

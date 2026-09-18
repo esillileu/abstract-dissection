@@ -42,4 +42,13 @@ class F2Definition:
 
 DEFINITION = F2Definition()
 
+
+def _register_builtin_suites() -> None:
+    from .suites.w2v1 import DEFINITION as w2v1_definition
+
+    DEFINITION.register_suite("w2v1", w2v1_definition)
+
+
+_register_builtin_suites()
+
 __all__ = ["DEFINITION", "F2Definition"]

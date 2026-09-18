@@ -1,0 +1,42 @@
+domain: f2.w2v1
+kind: word2vec
+execution: {mode: seeded, default_device: cpu}
+seed_policy: {seed_set: research_v1, seed_count: 1}
+identity:
+  execution_plan_id: w2v1-reconstruction-r1
+  planned_run_slot_id: w2v1-reconstruction-r1-table2-cbow-d50-w24m-s1
+  resource_version: f2-wmt-news-2007-2012-normalized-v1
+  corpus_manifest_digest: 8c15bd7dd9007924c727a30eda61309c57c7379e65af03a1a0795b9ac346b276
+  seed: 1
+corpus:
+  path: studies/f2/src/f2/suites/w2v1/config/fixtures/corpus.txt
+vocabulary: {initial_capacity: 16, hash_capacity: 128, min_count: 1}
+training:
+  model_kind: cbow
+  objective_kind: hierarchical_softmax
+  embedding_dimension: 50
+  window_radius: 5
+  epochs: 3
+  thread_count: 1
+  learning_rate_update_interval: 100
+  observation_interval: 2
+  initial_learning_rate: 0.05
+  subsampling_threshold: 0.0
+  negative_sample_count: 0
+  rng_algorithm: lcg
+  negative_table_size: 100
+  sigmoid_table_size: 1000
+  sigmoid_max: 6.0
+  hs_out_of_range_policy: skip
+evaluation:
+  questions_path: studies/f2/src/f2/suites/w2v1/config/fixtures/questions-words.txt
+checkpoint: {save_latest: true, save_final: true, best_payload: full}
+tracking: {experiment: f2.w2v1}
+variants:
+  local-smoke:
+    identity:
+      planned_run_slot_id: w2v1-local-smoke-s1
+      resource_version: w2v1-local-fixture-v1
+      corpus_manifest_digest: eed121d55c0454b0dc21c7339cd1be3a9e509c9e8fa5630bf00d6a2f926c89de
+    training: {embedding_dimension: 8, window_radius: 2, epochs: 2}
+  d50-w24m: {}

@@ -144,6 +144,42 @@ def run(
     from repro_core.cli.commands import run_command
 
     suite_def = DEFINITION.get_suite(suite)
+    if tracking_uri is None and suite == "w2v1":
+        from repro_core.execution.definition import RunOptions, RunSelection
+        from repro_core.execution.parsing import parse_overrides
+        from repro_core.execution.planning import Planner
+        from repro_core.execution.runner import print_plans, run_config
+
+        options = RunOptions(
+            device=device,
+            overrides=parse_overrides(override_values or []),
+            order=order,
+        )
+        plans = Planner(suite_def).build(
+            RunSelection(
+                tuple(experiment or ()),
+                all_experiments,
+                tuple(atomic_run or ()),
+                tuple(exclude_atomic_run or ()),
+                seed,
+                seed_set,
+            ),
+            options,
+        )
+        print_plans(plans)
+        if dry_run:
+            return
+        for selected in plans:
+            spec = suite_def.load_run_spec(
+                selected.path,
+                atomic_run_id=selected.atomic_run_id,
+                overrides=options.overrides,
+            )
+            result = run_config(
+                spec.to_executor_config(), executor_module=suite_def.executor_module
+            )
+            typer.echo(f"completed: {result.report}")
+        return
     run_command(
         suite_def,
         experiments=experiment or [],
@@ -175,6 +211,11 @@ def analyze(
     if suite == "corpus":
         typer.echo("For corpus pipeline analysis, use: repro f2 corpus analyze --help")
         return
+    if suite == "w2v1":
+        from .suites.w2v1.validation import analyze_latest
+
+        typer.echo(analyze_latest())
+        return
     typer.echo(f"Analysis orchestration for F2 suite '{suite}' is initialized.")
 
 
@@ -196,6 +237,11 @@ def check(
     tracking_uri: Annotated[str | None, typer.Option("--tracking-uri")] = None,
 ) -> None:
     """Compare declared plans with recorded F2 run state in MLflow."""
+    if suite == "w2v1" and tracking_uri is None:
+        from .suites.w2v1.validation import check_latest
+
+        typer.echo(check_latest())
+        return
     typer.echo(f"Checking run state for F2 suite '{suite}'...")
 
 
