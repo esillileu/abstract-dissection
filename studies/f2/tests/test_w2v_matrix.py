@@ -30,13 +30,46 @@ def test_canonical_matrix_has_explicit_cost_and_approval_policy() -> None:
 
 
 def test_suite_plans_match_canonical_matrix() -> None:
-    for suite, expected in (("w2v1", 72), ("w2v2", 18)):
+    for suite, expected in (("w2v1", 216), ("w2v2", 54)):
         plans = Planner(DEFINITION.get_suite(suite)).build(
             RunSelection(all_experiments=True), RunOptions()
         )
         canonical = [plan for plan in plans if plan.atomic_run_id != "local-smoke"]
         assert len(canonical) == expected
         assert {plan.seed for plan in canonical} == set(CANONICAL_SEEDS)
+
+
+def test_each_available_corpus_has_a_separate_runtime_identity() -> None:
+    expectations = {
+        "w2v1": {
+            "e01": "f2-wmt-news-2007-2012-normalized-v1",
+            "e02": "f2-lm1b-r13output-normalized-v1",
+            "e03": "f2-umbc-webbase-normalized-v1",
+        },
+        "w2v2": {
+            "e01": "f2-wmt-news-2007-2012-normalized-v1",
+            "e02": "f2-lm1b-r13output-normalized-v1",
+            "e03": "f2-umbc-webbase-normalized-v1",
+        },
+    }
+    for suite, resources in expectations.items():
+        definition = DEFINITION.get_suite(suite)
+        for experiment_id, resource_version in resources.items():
+            atomic_run_id = "d50-w24m" if suite == "w2v1" else "neg5-no-subsampling"
+            plans = Planner(definition).build(
+                RunSelection(
+                    experiment_ids=(experiment_id,),
+                    atomic_run_ids=(atomic_run_id,),
+                    seed_values="1",
+                ),
+                RunOptions(),
+            )
+            spec = definition.load_run_spec(
+                plans[0].path,
+                atomic_run_id=plans[0].atomic_run_id,
+                overrides={},
+            ).with_seed(1)
+            assert spec.identity["resource_version"] == resource_version
 
 
 def test_selected_seed_is_part_of_runtime_identity() -> None:

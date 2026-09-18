@@ -1482,6 +1482,224 @@
       "notes": null
     }
   ],
+  "requirement_candidates": [
+    {
+      "requirement_id": "w2v1-table2-train-data",
+      "resource_id": "f2-wmt-normalized",
+      "candidate_type": "substitute",
+      "status": "selected",
+      "justification": "Verified 1.646B-word news-domain corpus supports every 24M-783M prefix condition.",
+      "notes": "Canonical W2V1 reconstruction binding. Prefixes are materialized in manifest order without exceeding the requested lexical-token budget."
+    },
+    {
+      "requirement_id": "w2v1-table2-train-data",
+      "resource_id": "f2-lm1b-normalized",
+      "candidate_type": "substitute",
+      "status": "selected",
+      "justification": "Verified 791,844,834-word corpus supports every 24M-783M prefix condition.",
+      "notes": "Bound to the separate runnable LM1B reconstruction plan."
+    },
+    {
+      "requirement_id": "w2v1-table2-train-data",
+      "resource_id": "f2-umbc-normalized",
+      "candidate_type": "substitute",
+      "status": "selected",
+      "justification": "Verified 3.398B-word web corpus supports every 24M-783M prefix condition.",
+      "notes": "Bound to the separate runnable UMBC reconstruction plan."
+    },
+    {
+      "requirement_id": "w2v1-table3-cbow-train",
+      "resource_id": "f2-wmt-normalized",
+      "candidate_type": "substitute",
+      "status": "proposed",
+      "justification": "Verified corpus supports a deterministic 320M-word prefix.",
+      "notes": "The unresolved MSR syntactic evaluation resource still blocks a runnable Table 3 plan."
+    },
+    {
+      "requirement_id": "w2v1-table3-cbow-train",
+      "resource_id": "f2-lm1b-normalized",
+      "candidate_type": "substitute",
+      "status": "proposed",
+      "justification": "Verified corpus supports a deterministic 320M-word prefix.",
+      "notes": "The unresolved MSR syntactic evaluation resource still blocks a runnable Table 3 plan."
+    },
+    {
+      "requirement_id": "w2v1-table3-cbow-train",
+      "resource_id": "f2-umbc-normalized",
+      "candidate_type": "substitute",
+      "status": "proposed",
+      "justification": "Verified corpus supports a deterministic 320M-word prefix.",
+      "notes": "The unresolved MSR syntactic evaluation resource still blocks a runnable Table 3 plan."
+    },
+    {
+      "requirement_id": "w2v1-table3-sg-train",
+      "resource_id": "f2-wmt-normalized",
+      "candidate_type": "substitute",
+      "status": "proposed",
+      "justification": "Verified corpus supports a deterministic 320M-word prefix.",
+      "notes": "Training settings and the MSR syntactic evaluation resource remain unresolved."
+    },
+    {
+      "requirement_id": "w2v1-table3-sg-train",
+      "resource_id": "f2-lm1b-normalized",
+      "candidate_type": "substitute",
+      "status": "proposed",
+      "justification": "Verified corpus supports a deterministic 320M-word prefix.",
+      "notes": "Training settings and the MSR syntactic evaluation resource remain unresolved."
+    },
+    {
+      "requirement_id": "w2v1-table3-sg-train",
+      "resource_id": "f2-umbc-normalized",
+      "candidate_type": "substitute",
+      "status": "proposed",
+      "justification": "Verified corpus supports a deterministic 320M-word prefix.",
+      "notes": "Training settings and the MSR syntactic evaluation resource remain unresolved."
+    },
+    {
+      "requirement_id": "w2v1-table3-nnlm-train",
+      "resource_id": "f2-wmt-normalized",
+      "candidate_type": "substitute",
+      "status": "proposed",
+      "justification": "Verified corpus supports a deterministic 320M-word prefix.",
+      "notes": "Corpus-ready only; the feed-forward NNLM engine is not implemented."
+    },
+    {
+      "requirement_id": "w2v1-table3-nnlm-train",
+      "resource_id": "f2-lm1b-normalized",
+      "candidate_type": "substitute",
+      "status": "proposed",
+      "justification": "Verified corpus supports a deterministic 320M-word prefix.",
+      "notes": "Corpus-ready only; the feed-forward NNLM engine is not implemented."
+    },
+    {
+      "requirement_id": "w2v1-table3-nnlm-train",
+      "resource_id": "f2-umbc-normalized",
+      "candidate_type": "substitute",
+      "status": "proposed",
+      "justification": "Verified corpus supports a deterministic 320M-word prefix.",
+      "notes": "Corpus-ready only; the feed-forward NNLM engine is not implemented."
+    },
+    {
+      "requirement_id": "w2v1-cbow-scale-train",
+      "resource_id": "f2-wmt-normalized",
+      "candidate_type": "substitute",
+      "status": "proposed",
+      "justification": "Verified 1.646B-word corpus supports both 783M and 1.6B conditions.",
+      "notes": "A separate CBOW scale suite and plan are still required."
+    },
+    {
+      "requirement_id": "w2v1-cbow-scale-train",
+      "resource_id": "f2-lm1b-normalized",
+      "candidate_type": "substitute",
+      "status": "proposed",
+      "justification": "Verified corpus supports the 783M condition but not the 1.6B condition.",
+      "notes": "Partial candidate; it must not generate a 1.6B slot."
+    },
+    {
+      "requirement_id": "w2v1-cbow-scale-train",
+      "resource_id": "f2-umbc-normalized",
+      "candidate_type": "substitute",
+      "status": "proposed",
+      "justification": "Verified 3.398B-word corpus supports both 783M and 1.6B conditions.",
+      "notes": "A separate CBOW scale suite and plan are still required."
+    },
+    {
+      "requirement_id": "w2v1-sg-scale-train",
+      "resource_id": "f2-wmt-normalized",
+      "candidate_type": "substitute",
+      "status": "proposed",
+      "justification": "Verified 1.646B-word corpus supports both 783M and 1.6B conditions.",
+      "notes": "A separate Skip-gram scale suite and plan are still required."
+    },
+    {
+      "requirement_id": "w2v1-sg-scale-train",
+      "resource_id": "f2-lm1b-normalized",
+      "candidate_type": "substitute",
+      "status": "proposed",
+      "justification": "Verified corpus supports the 783M condition but not the 1.6B condition.",
+      "notes": "Partial candidate; it must not generate a 1.6B slot."
+    },
+    {
+      "requirement_id": "w2v1-sg-scale-train",
+      "resource_id": "f2-umbc-normalized",
+      "candidate_type": "substitute",
+      "status": "proposed",
+      "justification": "Verified 3.398B-word corpus supports both 783M and 1.6B conditions.",
+      "notes": "A separate Skip-gram scale suite and plan are still required."
+    },
+    {
+      "requirement_id": "w2v1-msr-sentence-train",
+      "resource_id": "f2-wmt-normalized",
+      "candidate_type": "substitute",
+      "status": "proposed",
+      "justification": "Verified corpus can provide a deterministic 50M-word training prefix.",
+      "notes": "Domain-substitution candidate only; the official challenge evaluation files remain unverified."
+    },
+    {
+      "requirement_id": "w2v1-msr-sentence-train",
+      "resource_id": "f2-lm1b-normalized",
+      "candidate_type": "substitute",
+      "status": "proposed",
+      "justification": "Verified corpus can provide a deterministic 50M-word training prefix.",
+      "notes": "Domain-substitution candidate only; the official challenge evaluation files remain unverified."
+    },
+    {
+      "requirement_id": "w2v1-msr-sentence-train",
+      "resource_id": "f2-umbc-normalized",
+      "candidate_type": "substitute",
+      "status": "proposed",
+      "justification": "Verified corpus can provide a deterministic 50M-word training prefix.",
+      "notes": "Domain-substitution candidate only; the official challenge evaluation files remain unverified."
+    },
+    {
+      "requirement_id": "w2v2-word-1b-train",
+      "resource_id": "f2-wmt-normalized",
+      "candidate_type": "substitute",
+      "status": "proposed",
+      "justification": "Verified corpus supports a deterministic 1B-word prefix.",
+      "notes": "The word-only W2V2 suite and objective matrix are not yet bound."
+    },
+    {
+      "requirement_id": "w2v2-word-1b-train",
+      "resource_id": "f2-lm1b-normalized",
+      "candidate_type": "substitute",
+      "status": "proposed",
+      "justification": "Verified corpus provides 791,844,834 lexical words, below the 1B target.",
+      "notes": "Partial candidate; use only in an explicitly labeled reduced-corpus condition."
+    },
+    {
+      "requirement_id": "w2v2-word-1b-train",
+      "resource_id": "f2-umbc-normalized",
+      "candidate_type": "substitute",
+      "status": "proposed",
+      "justification": "Verified corpus supports a deterministic 1B-word prefix.",
+      "notes": "The word-only W2V2 suite and objective matrix are not yet bound."
+    },
+    {
+      "requirement_id": "w2v2-phrase-1b-train",
+      "resource_id": "f2-wmt-normalized",
+      "candidate_type": "substitute",
+      "status": "selected",
+      "justification": "Verified corpus supports the 1B-word source prefix and deterministic phrase materialization.",
+      "notes": "Canonical W2V2 phrase reconstruction binding."
+    },
+    {
+      "requirement_id": "w2v2-phrase-1b-train",
+      "resource_id": "f2-lm1b-normalized",
+      "candidate_type": "substitute",
+      "status": "selected",
+      "justification": "Verified corpus provides 791,844,834 lexical words, below the 1B target.",
+      "notes": "Bound to a separate runnable reduced-corpus plan; never reported as 1B."
+    },
+    {
+      "requirement_id": "w2v2-phrase-1b-train",
+      "resource_id": "f2-umbc-normalized",
+      "candidate_type": "substitute",
+      "status": "selected",
+      "justification": "Verified corpus supports the 1B-word source prefix and deterministic phrase materialization.",
+      "notes": "Bound to the separate runnable UMBC reconstruction plan."
+    }
+  ],
   "execution_plans": [
     {
       "execution_plan_id": "w2v1-reconstruction-r2",
@@ -1502,6 +1720,46 @@
       "source_hash": "85aa4668eca1dd348072ec5e59f910312deffdcaa6b5de274e73cf43066b2f9f",
       "is_canonical": true,
       "notes": "Approved execution is required for every large slot; manifest materialization does not start training."
+    },
+    {
+      "execution_plan_id": "w2v1-lm1b-reconstruction-r1",
+      "plan_key": "w2v1-lm1b",
+      "revision": 1,
+      "status": "runnable",
+      "source_ref": "studies/f2/catalog/w2v.json",
+      "source_hash": "2611612926f7900a47b8c93c9eabaeaddaaa60e3b8577679f1a71ee17d91fd71",
+      "is_canonical": true,
+      "notes": "LM1B reconstruction; every large slot requires explicit approval."
+    },
+    {
+      "execution_plan_id": "w2v1-umbc-reconstruction-r1",
+      "plan_key": "w2v1-umbc",
+      "revision": 1,
+      "status": "runnable",
+      "source_ref": "studies/f2/catalog/w2v.json",
+      "source_hash": "537f85253b886a8110333405e0acc11d1f12e2ec5b8ae027c07a24d2496e6c10",
+      "is_canonical": true,
+      "notes": "UMBC reconstruction; every large slot requires explicit approval."
+    },
+    {
+      "execution_plan_id": "w2v2-lm1b-reduced-r1",
+      "plan_key": "w2v2-lm1b-reduced",
+      "revision": 1,
+      "status": "runnable",
+      "source_ref": "studies/f2/catalog/w2v.json",
+      "source_hash": "de2775f315bf4d8690d96a4bb164be4f65c350f12172936ebbed2e990d161608",
+      "is_canonical": true,
+      "notes": "Explicit 791,844,834-word reduced-corpus comparison; never a nominal 1B slot."
+    },
+    {
+      "execution_plan_id": "w2v2-umbc-reconstruction-r1",
+      "plan_key": "w2v2-umbc",
+      "revision": 1,
+      "status": "runnable",
+      "source_ref": "studies/f2/catalog/w2v.json",
+      "source_hash": "905d700276ec7ec54a16d58bb78df0dded5700a46a554aa9687258a923825b0b",
+      "is_canonical": true,
+      "notes": "UMBC 1B phrase reconstruction; every large slot requires explicit approval."
     }
   ],
   "plan_experiments": [
@@ -1558,6 +1816,38 @@
         }
       },
       "notes": "Original corpus is unavailable; verified WMT is an explicit substitute."
+    },
+    {
+      "plan_experiment_id": "w2v1-lm1b-reconstruction-r1-w2v1-table2-cbow",
+      "execution_plan_id": "w2v1-lm1b-reconstruction-r1",
+      "experiment_spec_id": "w2v1-table2-cbow",
+      "enabled": true,
+      "parameters": {"classification": "reconstruction", "corpus": "lm1b", "seed_policy": {"repetitions": [1, 7, 19]}, "runtime_policy": {"device": "cpu", "threads": 1}, "approval_policy": "explicit approval required before large execution"},
+      "notes": "All Table 2 budgets use deterministic prefixes of verified LM1B."
+    },
+    {
+      "plan_experiment_id": "w2v1-umbc-reconstruction-r1-w2v1-table2-cbow",
+      "execution_plan_id": "w2v1-umbc-reconstruction-r1",
+      "experiment_spec_id": "w2v1-table2-cbow",
+      "enabled": true,
+      "parameters": {"classification": "reconstruction", "corpus": "umbc", "seed_policy": {"repetitions": [1, 7, 19]}, "runtime_policy": {"device": "cpu", "threads": 1}, "approval_policy": "explicit approval required before large execution"},
+      "notes": "All Table 2 budgets use deterministic prefixes of verified UMBC."
+    },
+    {
+      "plan_experiment_id": "w2v2-lm1b-reduced-r1-w2v2-phrase-skipgram-1b-objectives",
+      "execution_plan_id": "w2v2-lm1b-reduced-r1",
+      "experiment_spec_id": "w2v2-phrase-skipgram-1b-objectives",
+      "enabled": true,
+      "parameters": {"classification": "reconstruction", "corpus": "lm1b", "training_tokens": 791844834, "seed_policy": {"repetitions": [1, 7, 19]}, "runtime_policy": {"device": "cpu", "threads": 1}, "approval_policy": "explicit approval required before large execution"},
+      "notes": "Reduced-corpus comparison with the actual LM1B lexical-word count."
+    },
+    {
+      "plan_experiment_id": "w2v2-umbc-reconstruction-r1-w2v2-phrase-skipgram-1b-objectives",
+      "execution_plan_id": "w2v2-umbc-reconstruction-r1",
+      "experiment_spec_id": "w2v2-phrase-skipgram-1b-objectives",
+      "enabled": true,
+      "parameters": {"classification": "reconstruction", "corpus": "umbc", "training_tokens": 1000000000, "seed_policy": {"repetitions": [1, 7, 19]}, "runtime_policy": {"device": "cpu", "threads": 1}, "approval_policy": "explicit approval required before large execution"},
+      "notes": "One-billion-word deterministic prefix of verified UMBC."
     }
   ],
   "resource_bindings": [
@@ -1592,6 +1882,122 @@
       "binding_type": "exact",
       "justification": "Pinned verified resource used by the canonical reconstruction.",
       "notes": null
+    },
+    {
+      "plan_experiment_id": "w2v1-lm1b-reconstruction-r1-w2v1-table2-cbow",
+      "requirement_id": "w2v1-table2-train-data",
+      "resource_version_id": "f2-lm1b-r13output-normalized-v1",
+      "binding_type": "substitute",
+      "justification": "Verified LM1B supports every Table 2 lexical-token budget.",
+      "notes": null
+    },
+    {
+      "plan_experiment_id": "w2v1-lm1b-reconstruction-r1-w2v1-table2-cbow",
+      "requirement_id": "w2v1-table2-eval",
+      "resource_version_id": "w2v-questions-words-google-code-export",
+      "binding_type": "exact",
+      "justification": "Pinned verified evaluation resource.",
+      "notes": null
+    },
+    {
+      "plan_experiment_id": "w2v1-umbc-reconstruction-r1-w2v1-table2-cbow",
+      "requirement_id": "w2v1-table2-train-data",
+      "resource_version_id": "f2-umbc-webbase-normalized-v1",
+      "binding_type": "substitute",
+      "justification": "Verified UMBC supports every Table 2 lexical-token budget.",
+      "notes": null
+    },
+    {
+      "plan_experiment_id": "w2v1-umbc-reconstruction-r1-w2v1-table2-cbow",
+      "requirement_id": "w2v1-table2-eval",
+      "resource_version_id": "w2v-questions-words-google-code-export",
+      "binding_type": "exact",
+      "justification": "Pinned verified evaluation resource.",
+      "notes": null
+    },
+    {
+      "plan_experiment_id": "w2v2-lm1b-reduced-r1-w2v2-phrase-skipgram-1b-objectives",
+      "requirement_id": "w2v2-phrase-1b-train",
+      "resource_version_id": "f2-lm1b-r13output-normalized-v1",
+      "binding_type": "substitute",
+      "justification": "Verified LM1B is bound as an explicitly reduced 791,844,834-word comparison.",
+      "notes": "This binding must not be reported as satisfying the nominal 1B corpus size."
+    },
+    {
+      "plan_experiment_id": "w2v2-lm1b-reduced-r1-w2v2-phrase-skipgram-1b-objectives",
+      "requirement_id": "w2v2-phrase-1b-eval",
+      "resource_version_id": "w2v-questions-phrases-google-code-export",
+      "binding_type": "exact",
+      "justification": "Pinned verified evaluation resource.",
+      "notes": null
+    },
+    {
+      "plan_experiment_id": "w2v2-umbc-reconstruction-r1-w2v2-phrase-skipgram-1b-objectives",
+      "requirement_id": "w2v2-phrase-1b-train",
+      "resource_version_id": "f2-umbc-webbase-normalized-v1",
+      "binding_type": "substitute",
+      "justification": "Verified UMBC supports the nominal 1B lexical-token budget.",
+      "notes": null
+    },
+    {
+      "plan_experiment_id": "w2v2-umbc-reconstruction-r1-w2v2-phrase-skipgram-1b-objectives",
+      "requirement_id": "w2v2-phrase-1b-eval",
+      "resource_version_id": "w2v-questions-phrases-google-code-export",
+      "binding_type": "exact",
+      "justification": "Pinned verified evaluation resource.",
+      "notes": null
+    }
+  ],
+  "planned_run_matrices": [
+    {
+      "plan_experiment_id": "w2v1-lm1b-reconstruction-r1-w2v1-table2-cbow",
+      "execution_plan_id": "w2v1-lm1b-reconstruction-r1",
+      "classification": "reconstruction",
+      "dimensions": [50, 100, 300, 600],
+      "training_token_budgets": [24000000, 49000000, 98000000, 196000000, 391000000, 783000000],
+      "epochs": 3,
+      "seeds": [1, 7, 19],
+      "device": "cpu",
+      "threads": 1,
+      "notes": "Large LM1B reconstruction slot; planning is not execution approval."
+    },
+    {
+      "plan_experiment_id": "w2v1-umbc-reconstruction-r1-w2v1-table2-cbow",
+      "execution_plan_id": "w2v1-umbc-reconstruction-r1",
+      "classification": "reconstruction",
+      "dimensions": [50, 100, 300, 600],
+      "training_token_budgets": [24000000, 49000000, 98000000, 196000000, 391000000, 783000000],
+      "epochs": 3,
+      "seeds": [1, 7, 19],
+      "device": "cpu",
+      "threads": 1,
+      "notes": "Large UMBC reconstruction slot; planning is not execution approval."
+    },
+    {
+      "plan_experiment_id": "w2v2-lm1b-reduced-r1-w2v2-phrase-skipgram-1b-objectives",
+      "execution_plan_id": "w2v2-lm1b-reduced-r1",
+      "classification": "reconstruction",
+      "atomic_run_ids": ["neg5-no-subsampling", "neg15-no-subsampling", "hs-no-subsampling", "neg5-subsampling", "neg15-subsampling", "hs-subsampling"],
+      "training_tokens": 791844834,
+      "embedding_dimension": 300,
+      "epochs": 3,
+      "seeds": [1, 7, 19],
+      "device": "cpu",
+      "threads": 1,
+      "notes": "Large reduced LM1B slot; planning is not execution approval."
+    },
+    {
+      "plan_experiment_id": "w2v2-umbc-reconstruction-r1-w2v2-phrase-skipgram-1b-objectives",
+      "execution_plan_id": "w2v2-umbc-reconstruction-r1",
+      "classification": "reconstruction",
+      "atomic_run_ids": ["neg5-no-subsampling", "neg15-no-subsampling", "hs-no-subsampling", "neg5-subsampling", "neg15-subsampling", "hs-subsampling"],
+      "training_tokens": 1000000000,
+      "embedding_dimension": 300,
+      "epochs": 3,
+      "seeds": [1, 7, 19],
+      "device": "cpu",
+      "threads": 1,
+      "notes": "Large UMBC reconstruction slot; planning is not execution approval."
     }
   ],
   "planned_run_slots": [

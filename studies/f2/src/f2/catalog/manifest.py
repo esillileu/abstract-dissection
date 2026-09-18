@@ -17,6 +17,7 @@ SECTIONS = (
     "resources",
     "resource_versions",
     "requirements",
+    "requirement_candidates",
     "execution_plans",
     "plan_experiments",
     "resource_bindings",
@@ -31,6 +32,7 @@ IDENTITY_FIELDS = {
     "resources": ("resource_id",),
     "resource_versions": ("resource_version_id",),
     "requirements": ("requirement_id",),
+    "requirement_candidates": ("requirement_id", "resource_id"),
     "execution_plans": ("execution_plan_id",),
     "plan_experiments": ("plan_experiment_id",),
     "resource_bindings": ("plan_experiment_id", "requirement_id"),
@@ -40,6 +42,79 @@ IDENTITY_FIELDS = {
 
 def _index(rows: list[dict[str, Any]], field: str) -> dict[str, dict[str, Any]]:
     return {row[field]: row for row in rows}
+
+
+def _expand_planned_run_matrices(payload: dict[str, Any]) -> None:
+    """Expand compact, explicit condition/seed matrices into immutable slots."""
+    matrices = payload.pop("planned_run_matrices", [])
+    if not isinstance(matrices, list):
+        raise ValueError(
+            "catalog manifest section 'planned_run_matrices' must be a list"
+        )
+    slots = payload.setdefault("planned_run_slots", [])
+    if not isinstance(slots, list):
+        raise ValueError("catalog manifest section 'planned_run_slots' must be a list")
+    for matrix in matrices:
+        plan_experiment_id = str(matrix["plan_experiment_id"])
+        execution_plan_id = str(matrix["execution_plan_id"])
+        seeds = matrix.get("seeds")
+        conditions = matrix.get("conditions")
+        if conditions is None and matrix.get("dimensions") is not None:
+            conditions = [
+                {
+                    "atomic_run_id": f"d{int(dimension)}-w{int(tokens) // 1_000_000}m",
+                    "training_tokens": int(tokens),
+                    "embedding_dimension": int(dimension),
+                    "epochs": int(matrix["epochs"]),
+                }
+                for dimension in matrix["dimensions"]
+                for tokens in matrix["training_token_budgets"]
+            ]
+        if conditions is None and matrix.get("atomic_run_ids") is not None:
+            conditions = [
+                {
+                    "atomic_run_id": str(atomic_run_id),
+                    "training_tokens": int(matrix["training_tokens"]),
+                    "embedding_dimension": int(matrix["embedding_dimension"]),
+                    "epochs": int(matrix["epochs"]),
+                }
+                for atomic_run_id in matrix["atomic_run_ids"]
+            ]
+        if not isinstance(seeds, list) or not seeds:
+            raise ValueError("planned run matrix requires non-empty seeds")
+        if not isinstance(conditions, list) or not conditions:
+            raise ValueError("planned run matrix requires non-empty conditions")
+        for condition in conditions:
+            atomic_run_id = str(condition["atomic_run_id"])
+            for seed_value in seeds:
+                seed = int(seed_value)
+                parameters = {
+                    "classification": str(matrix["classification"]),
+                    "training_tokens": int(condition["training_tokens"]),
+                    "embedding_dimension": int(condition["embedding_dimension"]),
+                    "epochs": int(condition["epochs"]),
+                    "estimated_token_updates": int(condition["training_tokens"])
+                    * int(condition["epochs"]),
+                    "device": str(matrix.get("device", "cpu")),
+                    "threads": int(matrix.get("threads", 1)),
+                    "requires_approval": True,
+                }
+                slots.append(
+                    {
+                        "planned_run_slot_id": (
+                            f"{execution_plan_id}-{atomic_run_id}-s{seed}"
+                        ),
+                        "plan_experiment_id": plan_experiment_id,
+                        "slot_key": f"{atomic_run_id}-s{seed}",
+                        "atomic_run_id": atomic_run_id,
+                        "variant_key": atomic_run_id,
+                        "seed": seed,
+                        "parameters": parameters,
+                        "expected": True,
+                        "reference_mlflow_run_id": None,
+                        "notes": str(matrix["notes"]),
+                    }
+                )
 
 
 def _validate_references(payload: dict[str, Any]) -> None:
@@ -77,6 +152,9 @@ def _validate_references(payload: dict[str, Any]) -> None:
     for row in payload.get("requirements", []):
         require("requirements", row, "experiment_spec_id", experiments)
         require("requirements", row, "required_resource_id", resources)
+    for row in payload.get("requirement_candidates", []):
+        require("requirement_candidates", row, "requirement_id", requirements)
+        require("requirement_candidates", row, "resource_id", resources)
     for row in payload.get("plan_experiments", []):
         require("plan_experiments", row, "execution_plan_id", plans)
         require("plan_experiments", row, "experiment_spec_id", experiments)
@@ -140,9 +218,12 @@ def read_manifest(path: Path) -> dict[str, Any]:
         raise ValueError("catalog manifest must be a JSON object")
     if payload.get("schema_version") != 1:
         raise ValueError("catalog manifest schema_version must be 1")
-    unknown = set(payload) - ({"schema_version"} | set(SECTIONS))
+    unknown = set(payload) - (
+        {"schema_version", "planned_run_matrices"} | set(SECTIONS)
+    )
     if unknown:
         raise ValueError(f"unknown catalog manifest sections: {sorted(unknown)}")
+    _expand_planned_run_matrices(payload)
     for section in SECTIONS:
         rows = payload.get(section, [])
         if not isinstance(rows, list):
@@ -170,6 +251,7 @@ def load_manifest(repo: CatalogRepository, payload: dict[str, Any]) -> dict[str,
         "experiment_specs": repo.upsert_experiment_spec,
         "target_experiments": repo.link_target_experiment,
         "requirements": repo.upsert_requirement,
+        "requirement_candidates": repo.upsert_requirement_candidate,
         "execution_plans": repo.upsert_execution_plan,
         "plan_experiments": repo.upsert_plan_experiment,
         "resource_bindings": repo.bind_plan_requirement,

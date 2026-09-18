@@ -11,6 +11,11 @@ analysis belong to the independent `f2_cc` producer.
 * **Primary Objective**: Track the two Word2Vec papers' reproduction targets,
   resources, specifications, and execution plans, then prepare verified corpus
   releases for downstream experiments.
+
+The all-eligible-corpus comparison policy is maintained in
+[`catalog/CORPUS_SUBSTITUTIONS.md`](catalog/CORPUS_SUBSTITUTIONS.md). Evaluation
+data, engines, suites and analysis work that is not a corpus problem is tracked
+separately in [`catalog/NON_CORPUS_RESOURCES.md`](catalog/NON_CORPUS_RESOURCES.md).
 * **Subsystems & Architecture**:
   * **Common Infrastructure (`f2/common/`)**: Shared research statistics,
     analysis declarations, and study adapters.

@@ -25,16 +25,46 @@ def test_w2v_catalog_manifest_is_self_consistent():
     assert {paper["paper_id"] for paper in payload["papers"]} == {"w2v1", "w2v2"}
     assert len(payload["targets"]) == 19
     assert len(payload["experiment_specs"]) == 13
-    assert len(payload["execution_plans"]) == 2
-    assert len(payload["resource_bindings"]) == 4
-    assert len(payload["planned_run_slots"]) == 90
+    assert len(payload["execution_plans"]) == 6
+    assert len(payload["plan_experiments"]) == 6
+    assert len(payload["requirement_candidates"]) == 27
+    assert len(payload["resource_bindings"]) == 12
+    assert len(payload["planned_run_slots"]) == 270
     assert {slot["seed"] for slot in payload["planned_run_slots"]} == {1, 7, 19}
     assert all(
         slot["parameters"]["requires_approval"] for slot in payload["planned_run_slots"]
     )
+    lm1b_reduced = [
+        slot
+        for slot in payload["planned_run_slots"]
+        if slot["planned_run_slot_id"].startswith("w2v2-lm1b-reduced-r1-")
+    ]
+    assert len(lm1b_reduced) == 18
+    assert {slot["parameters"]["training_tokens"] for slot in lm1b_reduced} == {
+        791_844_834
+    }
     assert digest_manifest(payload) == digest_manifest(
         read_manifest(F2_ROOT / "catalog" / "w2v.json")
     )
+
+    corpus_candidates = {
+        row["resource_id"] for row in payload["requirement_candidates"]
+    }
+    assert corpus_candidates == {
+        "f2-wmt-normalized",
+        "f2-lm1b-normalized",
+        "f2-umbc-normalized",
+    }
+
+
+def test_manifest_rejects_unknown_requirement_candidate_resource(tmp_path):
+    payload = read_manifest(F2_ROOT / "catalog" / "w2v.json")
+    payload["requirement_candidates"][0]["resource_id"] = "missing"
+    path = tmp_path / "catalog.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="unknown resource_id 'missing'"):
+        read_manifest(path)
 
 
 def test_planned_slots_require_all_verified_resource_bindings(tmp_path):

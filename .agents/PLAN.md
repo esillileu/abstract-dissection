@@ -14,8 +14,9 @@
 | P7 | 완료 | 2026-09-18 | byte-token similarity, 3CosAdd semantic/syntactic analogy, sentence completion scorer, explicit OOV/coverage, deterministic best selection, target/CI report schema. |
 | P8 | 완료 | 2026-09-18 | `f2.suites.w2v1` config/spec/executor 등록, local immutable fixture의 2 epoch 실행과 checkpoint resume bit parity, evaluation/check/analysis artifact 검증. F2 W2V targeted 20 tests 통과. |
 | P9 | 완료 | 2026-09-18 | F2 전용 tracked runner, canonical corpus materialization, two-attempt epoch resume, remote manifest 검증, durable 이후 catalog link를 구현. 축소 외부 E2E에서 attempt 1 KILLED → attempt 2 FINISHED 및 predecessor/durable 검증. |
-| P10 | 진행 전 |  |  |
-| P11 | 진행 전 |  |  |
+| P10 | 완료 | 2026-09-18 | deterministic byte-token phrase materialization/lineage, W2V2 NEG-5/15·HS/full-sentence translation, phrase analogy와 nearest/additive/PCA 평가, 공통 W2V executor 기반 suite, checkpoint resume/mmap lookup 검증. |
+| P11 | 완료 | 2026-09-18 | W2V1 24조건×3 seeds와 W2V2 6조건×3 seeds canonical matrix, immutable seed/slot identity, 비용·CPU/thread·승인 정책, target disposition 및 explicit revision/slot/run 보고서 계약. |
+| P12 | 완료 | 2026-09-18 | W2V1/W2V2 공통 local/tracked runner, canonical W2V2 tracked lifecycle, 명시적 대규모 실행 승인 gate, corpus shard·phrase pass·epoch·artifact progress, streaming phrase materialization과 전체 smoke 검증. |
 
 P0 구현 메모:
 
@@ -132,6 +133,46 @@ P9 구현 메모:
   canonical에 상속되던 문제를 분리했다. 비용이 큰 full canonical 학습은 이 단계의
   외부 lifecycle 검증에 사용하지 않았다.
 
+P10 구현 메모:
+
+- classic word2phrase score를 문서 경계별 왼쪽 우선으로 적용하며 pass 수, threshold,
+  min count와 byte separator를 policy digest 및 derived-corpus lineage에 고정한다.
+- `w2v2`는 공통 checkpoint/lookup/evaluation과 W2V1 epoch executor를 재사용하고,
+  phrase materialization 정책만 실행 전에 합성한다.
+- NEG-5/NEG-15/HS와 whole-sentence window 변형을 직접 engine config로 번역한다.
+  미지원 NCE는 NEG로 대체하지 않고 config validation에서 명시적으로 거부한다.
+- phrase analogy는 기존 byte-token 3CosAdd 계약을 사용하며 nearest entity,
+  additive composition 및 sign-stable PCA projection을 공통 평가 모듈에 추가했다.
+
+P11 구현 메모:
+
+- canonical catalog은 W2V1 Table 2의 24개 dimension/token 조건과 W2V2 phrase
+  objective/subsampling 6개 조건을 seeds 1/7/19로 확장한 90개 slot을 고정한다.
+- 각 slot은 예상 token update, CPU 단일 thread, 대규모 실행 전 명시적 승인 필요 여부를
+  기록한다. plan materialization이나 검증 과정은 실제 대규모 학습을 시작하지 않는다.
+- 원 자원 부재는 reconstruction으로 명시하고, 비교 전용 external baseline과 현재
+  unsupported target을 별도 disposition으로 유지한다. exact reproduction 분류도 계약에
+  포함하되 현재 runnable matrix에는 원 corpus 부재로 해당 slot이 없다.
+- planner-selected seed가 runtime config, planned slot, MLflow lineage에 동일하게 반영되며
+  plan revision은 execution plan identity에서 파생한다.
+- 분석 보고서는 explicit plan revision/planned slot/MLflow run ID를 요구하며 target CI,
+  coverage, throughput 및 hardware identity를 Markdown/CSV로 출력한다.
+
+P12 구현 메모:
+
+- W2V1에 묶여 있던 tracked lifecycle을 공통 W2V 책임으로 이동하고 W2V2 canonical
+  실행도 동일한 preflight, corpus binding, attempt resume, durable artifact, catalog link를
+  사용한다.
+- local fixture도 공통 Runner를 사용하므로 run/epoch progress가 표시되며 seed별 staging
+  identity가 분리된다.
+- canonical 학습은 `--approve-large-run`을 명시해야만 시작한다. dry-run과 local smoke는
+  승인이 필요 없다.
+- corpus shard/token, phrase pass/document, epoch token/loss/throughput, artifact publish가
+  progress output에 나타난다. phrase materialization은 전체 corpus를 메모리에 적재하지
+  않고 두 번의 streaming scan으로 처리한다.
+- local W2V1/W2V2 CLI smoke, smoke marker 12개, F2 non-external 92개, DB 4개, network
+  3개, external read-only preflight와 root `just check` 633개를 모두 통과했다.
+
 ## 1. 목표와 완료 상태
 
 이 계획은 다음 두 문서를 하나의 실행 순서로 통합한다.
@@ -202,11 +243,8 @@ catalog의 canonical plan 선택
 
 현재 남은 핵심 공백:
 
-- P1 최소 canonical binding/slot은 존재하지만 전체 `w2v1`/`w2v2` matrix는 아직
-  materialize하지 않았다.
-- `f2.suites.w2v2`와 phrase pipeline 구현은 남아 있다.
-- 외부 S3/DB/MLflow read-only preflight와 run lifecycle 계약은 완료됐지만 tracked
-  write/resume E2E는 P9에서 검증해야 한다.
+- 구현·스모크 기준의 공백은 없다. 남은 작업은 승인할 canonical slot을 선택해 실제
+  비용이 드는 학습 matrix를 실행하고 결과를 분석하는 운영 단계다.
 
 ## 4. 의존성 그래프
 
