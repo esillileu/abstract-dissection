@@ -85,8 +85,6 @@ def parse_run_spec(
     if missing := sorted(required - identity.keys()):
         raise ValueError(f"W2V1 identity is missing: {', '.join(missing)}")
     training = mapping(raw, "training")
-    if int(training.get("thread_count", 0)) != 1:
-        raise ValueError("W2V1 parity configuration requires one training thread")
     return RunSpec(
         atomic_run_id=str(raw["atomic_run_id"]),
         identity=identity,

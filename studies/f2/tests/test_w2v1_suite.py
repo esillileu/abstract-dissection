@@ -96,6 +96,7 @@ def test_canonical_table2_training_conditions(atomic_run_id: str) -> None:
         overrides={},
     ).to_executor_config()
     assert config["training"]["initial_learning_rate"] == 0.025
+    assert config["training"]["thread_count"] == 10
     assert config["training"]["window_radius"] == 4
     assert config["training"]["context_policy"] == "fixed"
     assert config["vocabulary"]["min_count"] == 1

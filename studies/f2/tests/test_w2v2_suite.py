@@ -123,6 +123,17 @@ def test_w2v2_rejects_nce_substitution():
         )
 
 
+def test_canonical_phrase_training_uses_ten_workers() -> None:
+    definition = DEFINITION.get_suite("w2v2")
+    config = definition.load_run_spec(
+        definition.config_root / "e02_table3_phrase_skipgram.yaml",
+        atomic_run_id="wmt--neg5-subsampling",
+        overrides={},
+    ).to_executor_config()
+
+    assert config["training"]["thread_count"] == 10
+
+
 def test_evaluation_resources_do_not_change_w2v2_training_identity() -> None:
     definition = DEFINITION.get_suite("w2v2")
     source = definition.config_root / "e02_table3_phrase_skipgram.yaml"
