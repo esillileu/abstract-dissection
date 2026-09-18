@@ -7,7 +7,10 @@ use crate::{
     vocab::{NegativeSampler, Vocabulary, VocabularyState},
 };
 use std::{
-    sync::atomic::{AtomicU64, Ordering},
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
     thread,
     time::Instant,
 };
@@ -43,18 +46,18 @@ pub struct EpochReport {
     pub tokens_per_second: f64,
 }
 
-pub struct Trainer<'a> {
-    pub corpus: &'a Corpus,
-    pub vocab: &'a Vocabulary,
-    pub model: &'a Model,
+pub struct Trainer {
+    pub corpus: Arc<Corpus>,
+    pub vocab: Arc<Vocabulary>,
+    pub model: Arc<Model>,
     pub negative_sampler: NegativeSampler,
     pub sigmoid_table: SigmoidTable,
     pub config: TrainingConfig,
     pub processed_tokens: AtomicU64,
 }
 
-pub struct TrainingSession<'a> {
-    trainer: &'a Trainer<'a>,
+pub struct TrainingSession {
+    trainer: Arc<Trainer>,
     workers: Vec<Worker>,
     completed_epochs: usize,
     running: bool,
@@ -93,11 +96,11 @@ fn config_digest(config: &TrainingConfig) -> String {
     hash.finish()
 }
 
-impl<'a> Trainer<'a> {
+impl Trainer {
     pub fn create(
-        corpus: &'a Corpus,
-        vocab: &'a Vocabulary,
-        model: &'a Model,
+        corpus: Arc<Corpus>,
+        vocab: Arc<Vocabulary>,
+        model: Arc<Model>,
         config: &TrainingConfig,
     ) -> Result<Self, Status> {
         if config.validate() != Status::Ok
@@ -110,7 +113,7 @@ impl<'a> Trainer<'a> {
         let sigmoid_table =
             SigmoidTable::initialize(config.sigmoid_table_size, config.sigmoid_max)?;
         let negative_sampler = if config.objective_kind == ObjectiveKind::NegativeSampling {
-            NegativeSampler::initialize(vocab, config.negative_table_size)?
+            NegativeSampler::initialize(&vocab, config.negative_table_size)?
         } else {
             NegativeSampler::default()
         };
@@ -138,11 +141,11 @@ impl<'a> Trainer<'a> {
         })
     }
 
-    pub fn session(&'a self) -> Result<TrainingSession<'a>, Status> {
-        TrainingSession::create(self)
+    pub fn session(self: &Arc<Self>) -> Result<TrainingSession, Status> {
+        TrainingSession::create(Arc::clone(self))
     }
 
-    pub fn train(&'a self) -> Result<(), Status> {
+    pub fn train(self: &Arc<Self>) -> Result<(), Status> {
         let mut session = self.session()?;
         while !session.is_complete() {
             session.train_epoch()?;
@@ -151,15 +154,15 @@ impl<'a> Trainer<'a> {
     }
 }
 
-impl<'a> TrainingSession<'a> {
-    pub fn create(trainer: &'a Trainer<'a>) -> Result<Self, Status> {
+impl TrainingSession {
+    pub fn create(trainer: Arc<Trainer>) -> Result<Self, Status> {
         trainer.processed_tokens.store(0, Ordering::Relaxed);
         let mut workers = Vec::new();
         workers
             .try_reserve_exact(trainer.config.thread_count)
             .map_err(|_| Status::OutOfMemory)?;
         for worker_id in 0..trainer.config.thread_count {
-            workers.push(Worker::initialize(trainer, worker_id)?);
+            workers.push(Worker::initialize(&trainer, worker_id)?);
         }
         Ok(Self {
             trainer,
@@ -169,7 +172,7 @@ impl<'a> TrainingSession<'a> {
         })
     }
 
-    pub fn restore(trainer: &'a Trainer<'a>, state: &TrainingState) -> Result<Self, Status> {
+    pub fn restore(trainer: Arc<Trainer>, state: &TrainingState) -> Result<Self, Status> {
         if state.descriptor.schema_version != TRAINING_STATE_SCHEMA_VERSION {
             return Err(Status::SchemaMismatch);
         }
@@ -189,7 +192,7 @@ impl<'a> TrainingSession<'a> {
         {
             return Err(Status::InvalidState);
         }
-        let mut session = Self::create(trainer)?;
+        let mut session = Self::create(Arc::clone(&trainer))?;
         session.completed_epochs = state.completed_epochs;
         trainer
             .processed_tokens
@@ -218,22 +221,22 @@ impl<'a> TrainingSession<'a> {
         if self.trainer.model.begin_training() != Status::Ok {
             return Err(Status::InvalidState);
         }
-        let _guard = TrainingGuard(self.trainer.model);
+        let _guard = TrainingGuard(&self.trainer.model);
         self.running = true;
         let started = Instant::now();
         let before = self.trainer.processed_tokens();
         let reset = self.completed_epochs > 0;
         let result = if self.workers.len() == 1 {
-            self.workers[0].run_epoch(self.trainer, reset)
+            self.workers[0].run_epoch(&self.trainer, reset)
         } else {
-            let trainer = self.trainer;
             thread::scope(|scope| {
                 let mut handles = Vec::new();
                 handles
                     .try_reserve_exact(self.workers.len())
                     .map_err(|_| Status::OutOfMemory)?;
                 for worker in &mut self.workers {
-                    handles.push(scope.spawn(move || worker.run_epoch(trainer, reset)));
+                    let trainer = Arc::clone(&self.trainer);
+                    handles.push(scope.spawn(move || worker.run_epoch(&trainer, reset)));
                 }
                 let mut result = Ok(());
                 for handle in handles {

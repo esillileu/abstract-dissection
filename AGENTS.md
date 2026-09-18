@@ -28,7 +28,7 @@ All AI agents working in this repository MUST adhere to the following 6 golden r
 ### 1) Strict Hermetic Python (`uv run`)
 * **Rule:** NEVER execute bare system commands such as `python`, `pip`, `pytest`, or `ruff`.
 * **Standard:** ALWAYS prefix Python executions and tools with `uv run` (e.g., `uv run pytest`, `uv run repro ...`, `uv run python -c "..."`).
-* **Environment:** Python 3.11.11 managed via root [`pyproject.toml`](file:///home/esillileu/abstract-dissection/pyproject.toml) and [`uv.lock`](file:///home/esillileu/abstract-dissection/uv.lock).
+* **Environment:** Python 3.12.14 managed via root [`pyproject.toml`](file:///home/esillileu/abstract-dissection/pyproject.toml) and [`uv.lock`](file:///home/esillileu/abstract-dissection/uv.lock).
 
 ### 2) Zero-Dependency Invariants & Package Isolation
 * **`deepscratch`:** 100% standalone deep learning library. NEVER import `repro_core`, `repro_mlflow`, or studies (`dlfs`, `f2`). Allowed: `numpy`, `psutil`, (optional: `cupy`).

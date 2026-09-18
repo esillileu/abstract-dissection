@@ -5,7 +5,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import Iterator
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, TypeAlias
+from typing import TYPE_CHECKING, Any
 
 from deepscratch.core import Backend, get_default_backend, resolve_backend
 
@@ -21,8 +21,8 @@ from .traversal import (
 if TYPE_CHECKING:
     from deepscratch.core import Tensor
 
-NamedParameter: TypeAlias = tuple[str, Parameter]
-NamedParameters: TypeAlias = list[NamedParameter]
+type NamedParameter = tuple[str, Parameter]
+type NamedParameters = list[NamedParameter]
 
 
 class Layer(ABC):

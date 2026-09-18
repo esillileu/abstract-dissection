@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from functools import wraps
-from typing import Annotated, ParamSpec, TypeVar
+from typing import Annotated
 
 import typer
 
@@ -14,9 +14,6 @@ from repro_core.execution.definition import RunOrder
 from .catalog.cli import app as catalog_app
 from .corpus.preprocessing_cli import app as corpus_app
 from .definition import DEFINITION
-
-P = ParamSpec("P")
-T = TypeVar("T")
 
 Experiments = Annotated[
     list[str] | None,
@@ -36,7 +33,7 @@ Overrides = Annotated[
 ]
 
 
-def cli_errors(function: Callable[P, T]) -> Callable[P, T]:
+def cli_errors[**P, T](function: Callable[P, T]) -> Callable[P, T]:
     """Wrap CLI callbacks to format value/runtime errors cleanly."""
 
     @wraps(function)

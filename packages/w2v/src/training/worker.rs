@@ -36,7 +36,7 @@ pub struct WorkerState {
 }
 
 impl Worker {
-    pub fn initialize(trainer: &Trainer<'_>, worker_id: usize) -> Result<Self, Status> {
+    pub fn initialize(trainer: &Trainer, worker_id: usize) -> Result<Self, Status> {
         if worker_id >= trainer.config.thread_count {
             return Err(Status::InvalidArgument);
         }
@@ -79,7 +79,7 @@ impl Worker {
         })
     }
 
-    pub fn reset_epoch(&mut self, trainer: &Trainer<'_>) -> Result<(), Status> {
+    pub fn reset_epoch(&mut self, trainer: &Trainer) -> Result<(), Status> {
         self.epoch_token_count = 0;
         self.tokenizer = trainer.corpus.tokenizer(self.shard_start)?;
         Ok(())
@@ -114,7 +114,7 @@ impl Worker {
         Status::Ok
     }
 
-    pub fn fill_sentence(&mut self, trainer: &Trainer<'_>) -> Result<bool, Status> {
+    pub fn fill_sentence(&mut self, trainer: &Trainer) -> Result<bool, Status> {
         self.sentence.clear();
         let mut finished = false;
         while self.sentence.len() < MAX_SENTENCE_LENGTH {
@@ -149,7 +149,7 @@ impl Worker {
         Ok(finished)
     }
 
-    pub fn update_learning_rate(&mut self, trainer: &Trainer<'_>) {
+    pub fn update_learning_rate(&mut self, trainer: &Trainer) {
         let since_update = self.local_token_count - self.last_learning_rate_update_count;
         if since_update <= trainer.config.learning_rate_update_interval as u64 {
             return;
@@ -163,7 +163,7 @@ impl Worker {
         self.last_learning_rate_update_count = self.local_token_count;
     }
 
-    pub fn train_sentence(&mut self, trainer: &Trainer<'_>) {
+    pub fn train_sentence(&mut self, trainer: &Trainer) {
         for position in 0..self.sentence.len() {
             self.update_learning_rate(trainer);
             let mut step = ModelStep {
@@ -184,7 +184,7 @@ impl Worker {
         }
     }
 
-    pub fn run_epoch(&mut self, trainer: &Trainer<'_>, reset: bool) -> Result<(), Status> {
+    pub fn run_epoch(&mut self, trainer: &Trainer, reset: bool) -> Result<(), Status> {
         if reset {
             self.reset_epoch(trainer)?;
         }

@@ -5,7 +5,7 @@ use crate::{
 };
 
 pub fn train(
-    trainer: &Trainer<'_>,
+    trainer: &Trainer,
     target_token: usize,
     learning_rate: Real,
     hidden: &[Real],

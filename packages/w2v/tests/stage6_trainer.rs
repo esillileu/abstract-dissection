@@ -1,10 +1,13 @@
-use std::{fs, sync::atomic::Ordering};
+use std::{
+    fs,
+    sync::{Arc, atomic::Ordering},
+};
 use w2v::{
     Corpus, EmbeddingKind, Model, ModelKind, ObjectiveKind, RngAlgorithm, Trainer, TrainingConfig,
     TrainingSession, Vocabulary, VocabularyConfig, training::worker::Worker,
 };
 
-fn fixture() -> (Corpus, Vocabulary) {
+fn fixture() -> (Arc<Corpus>, Arc<Vocabulary>) {
     let path = std::env::temp_dir().join(format!(
         "w2v-stage6-{}-{}",
         std::process::id(),
@@ -15,16 +18,18 @@ fn fixture() -> (Corpus, Vocabulary) {
         b"alpha beta alpha gamma\nbeta alpha delta\ngamma beta alpha\n",
     )
     .unwrap();
-    let corpus = Corpus::create(&path).unwrap();
-    let vocab = Vocabulary::build(
-        &corpus,
-        &VocabularyConfig {
-            initial_capacity: 2,
-            hash_capacity: 17,
-            min_count: 1,
-        },
-    )
-    .unwrap();
+    let corpus = Arc::new(Corpus::create(&path).unwrap());
+    let vocab = Arc::new(
+        Vocabulary::build(
+            &corpus,
+            &VocabularyConfig {
+                initial_capacity: 2,
+                hash_capacity: 17,
+                min_count: 1,
+            },
+        )
+        .unwrap(),
+    );
     (corpus, vocab)
 }
 
@@ -89,8 +94,16 @@ fn c_single_thread_golden_cases() {
         config.negative_sample_count = 2;
         config.negative_table_size = 257;
         config.sigmoid_table_size = 101;
-        let model = Model::create(&vocab, 8, config.root_seed, algorithm).unwrap();
-        let trainer = Trainer::create(&corpus, &vocab, &model, &config).unwrap();
+        let model = Arc::new(Model::create(&vocab, 8, config.root_seed, algorithm).unwrap());
+        let trainer = Arc::new(
+            Trainer::create(
+                Arc::clone(&corpus),
+                Arc::clone(&vocab),
+                Arc::clone(&model),
+                &config,
+            )
+            .unwrap(),
+        );
         trainer.train().unwrap();
         assert_eq!(trainer.processed_tokens(), 26);
         let mut snapshot = vec![0.0; vocab.entries.len() * 8];
@@ -119,8 +132,14 @@ fn c_learning_rate_interval() {
         negative_table_size: 7,
         ..TrainingConfig::default()
     };
-    let model = Model::create(&vocab, 2, config.root_seed, config.rng_algorithm).unwrap();
-    let trainer = Trainer::create(&corpus, &vocab, &model, &config).unwrap();
+    let model = Arc::new(Model::create(&vocab, 2, config.root_seed, config.rng_algorithm).unwrap());
+    let trainer = Trainer::create(
+        Arc::clone(&corpus),
+        Arc::clone(&vocab),
+        Arc::clone(&model),
+        &config,
+    )
+    .unwrap();
     let mut worker = Worker::initialize(&trainer, 0).unwrap();
     for count in [2, 3] {
         worker.local_token_count = count;
@@ -158,21 +177,47 @@ fn single_thread_epoch_resume_matches_continuous_training() {
     config.sigmoid_table_size = 101;
 
     let continuous_model =
-        Model::create(&vocab, 8, config.root_seed, config.rng_algorithm).unwrap();
-    let continuous_trainer = Trainer::create(&corpus, &vocab, &continuous_model, &config).unwrap();
+        Arc::new(Model::create(&vocab, 8, config.root_seed, config.rng_algorithm).unwrap());
+    let continuous_trainer = Arc::new(
+        Trainer::create(
+            Arc::clone(&corpus),
+            Arc::clone(&vocab),
+            Arc::clone(&continuous_model),
+            &config,
+        )
+        .unwrap(),
+    );
     continuous_trainer.train().unwrap();
 
     let checkpoint_model =
-        Model::create(&vocab, 8, config.root_seed, config.rng_algorithm).unwrap();
-    let checkpoint_trainer = Trainer::create(&corpus, &vocab, &checkpoint_model, &config).unwrap();
+        Arc::new(Model::create(&vocab, 8, config.root_seed, config.rng_algorithm).unwrap());
+    let checkpoint_trainer = Arc::new(
+        Trainer::create(
+            Arc::clone(&corpus),
+            Arc::clone(&vocab),
+            Arc::clone(&checkpoint_model),
+            &config,
+        )
+        .unwrap(),
+    );
     let mut first_session = checkpoint_trainer.session().unwrap();
     first_session.train_epoch().unwrap();
     let state = first_session.export_state().unwrap();
     assert_eq!(state.completed_epochs, 1);
 
-    let resumed_model = Model::create(&vocab, 8, config.root_seed, config.rng_algorithm).unwrap();
-    let resumed_trainer = Trainer::create(&corpus, &vocab, &resumed_model, &config).unwrap();
-    let mut resumed_session = TrainingSession::restore(&resumed_trainer, &state).unwrap();
+    let resumed_model =
+        Arc::new(Model::create(&vocab, 8, config.root_seed, config.rng_algorithm).unwrap());
+    let resumed_trainer = Arc::new(
+        Trainer::create(
+            Arc::clone(&corpus),
+            Arc::clone(&vocab),
+            Arc::clone(&resumed_model),
+            &config,
+        )
+        .unwrap(),
+    );
+    let mut resumed_session =
+        TrainingSession::restore(Arc::clone(&resumed_trainer), &state).unwrap();
     while !resumed_session.is_complete() {
         resumed_session.train_epoch().unwrap();
     }
@@ -210,22 +255,30 @@ fn training_state_rejects_identity_and_schema_mismatches() {
     config.negative_table_size = 257;
     config.sigmoid_table_size = 101;
 
-    let model = Model::create(&vocab, 4, config.root_seed, config.rng_algorithm).unwrap();
-    let trainer = Trainer::create(&corpus, &vocab, &model, &config).unwrap();
+    let model = Arc::new(Model::create(&vocab, 4, config.root_seed, config.rng_algorithm).unwrap());
+    let trainer = Arc::new(
+        Trainer::create(
+            Arc::clone(&corpus),
+            Arc::clone(&vocab),
+            Arc::clone(&model),
+            &config,
+        )
+        .unwrap(),
+    );
     let mut session = trainer.session().unwrap();
     session.train_epoch().unwrap();
     let mut state = session.export_state().unwrap();
 
     state.descriptor.schema_version += 1;
     assert!(matches!(
-        TrainingSession::restore(&trainer, &state),
+        TrainingSession::restore(Arc::clone(&trainer), &state),
         Err(w2v::Status::SchemaMismatch)
     ));
 
     let mut state = session.export_state().unwrap();
     state.descriptor.config_digest.push('x');
     assert!(matches!(
-        TrainingSession::restore(&trainer, &state),
+        TrainingSession::restore(Arc::clone(&trainer), &state),
         Err(w2v::Status::IdentityMismatch)
     ));
     fs::remove_file(&corpus.path).unwrap();
@@ -241,8 +294,14 @@ fn subsampling_is_applied_after_counting_and_before_sentence_storage() {
         subsampling_threshold: 0.0,
         ..TrainingConfig::default()
     };
-    let model = Model::create(&vocab, 2, base.root_seed, base.rng_algorithm).unwrap();
-    let disabled = Trainer::create(&corpus, &vocab, &model, &base).unwrap();
+    let model = Arc::new(Model::create(&vocab, 2, base.root_seed, base.rng_algorithm).unwrap());
+    let disabled = Trainer::create(
+        Arc::clone(&corpus),
+        Arc::clone(&vocab),
+        Arc::clone(&model),
+        &base,
+    )
+    .unwrap();
     let mut worker = Worker::initialize(&disabled, 0).unwrap();
     assert!(!worker.fill_sentence(&disabled).unwrap());
     assert_eq!(worker.sentence.len(), 4);
@@ -254,7 +313,13 @@ fn subsampling_is_applied_after_counting_and_before_sentence_storage() {
         subsampling_threshold: 1e-9,
         ..base
     };
-    let enabled = Trainer::create(&corpus, &vocab, &model, &enabled_config).unwrap();
+    let enabled = Trainer::create(
+        Arc::clone(&corpus),
+        Arc::clone(&vocab),
+        Arc::clone(&model),
+        &enabled_config,
+    )
+    .unwrap();
     let mut worker = Worker::initialize(&enabled, 0).unwrap();
     assert!(!worker.fill_sentence(&enabled).unwrap());
     assert!(worker.sentence.is_empty());
@@ -278,8 +343,17 @@ fn parallel_training_completes_with_finite_embeddings() {
         sigmoid_table_size: 101,
         ..TrainingConfig::default()
     };
-    let model = Model::create(&vocab, 16, config.root_seed, config.rng_algorithm).unwrap();
-    let trainer = Trainer::create(&corpus, &vocab, &model, &config).unwrap();
+    let model =
+        Arc::new(Model::create(&vocab, 16, config.root_seed, config.rng_algorithm).unwrap());
+    let trainer = Arc::new(
+        Trainer::create(
+            Arc::clone(&corpus),
+            Arc::clone(&vocab),
+            Arc::clone(&model),
+            &config,
+        )
+        .unwrap(),
+    );
     trainer.train().unwrap();
     assert!(trainer.processed_tokens() > 0);
     let mut snapshot = vec![0.0; vocab.entries.len() * 16];

@@ -1,8 +1,8 @@
 use super::{ModelStep, context_position, context_radius, objective};
 use crate::atomic_float;
 
-pub fn train(step: &mut ModelStep<'_, '_, '_>) {
-    let model = step.trainer.model;
+pub fn train(step: &mut ModelStep<'_, '_>) {
+    let model = &step.trainer.model;
     let dimension = model.embedding_dimension;
     let radius = context_radius(step.window_rng, step.trainer.config.window_radius);
     let center_token = step.target_token;

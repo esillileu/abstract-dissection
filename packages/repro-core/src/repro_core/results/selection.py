@@ -3,9 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
-from typing import TypeVar
-
-T = TypeVar("T")
 
 
 def attempt_priority(
@@ -27,7 +24,7 @@ def attempt_priority(
     return rank, -start_time
 
 
-def select_first(
+def select_first[T](
     candidates: Iterable[T],
     *,
     priority: Callable[[T], tuple[object, ...]],

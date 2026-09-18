@@ -1,0 +1,15 @@
+[build-system]
+requires = ["maturin>=1.8,<2"]
+build-backend = "maturin"
+
+[project]
+name = "w2v"
+version = "0.1.0"
+description = "Rust Word2Vec engine with a NumPy Python binding"
+requires-python = ">=3.12, <3.13"
+dependencies = ["numpy>=2.0.0"]
+
+[tool.maturin]
+features = ["python"]
+module-name = "w2v"
+bindings = "pyo3"

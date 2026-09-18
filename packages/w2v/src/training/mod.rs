@@ -17,8 +17,8 @@ pub use skip_gram::train as skip_gram_train;
 
 /// The per-target contract needed by both model kinds. Stage 6 owns the
 /// sentence and scratch buffers and creates a step for each trained target.
-pub struct ModelStep<'t, 'a, 'w> {
-    pub trainer: &'t Trainer<'a>,
+pub struct ModelStep<'t, 'w> {
+    pub trainer: &'t Trainer,
     pub target_token: usize,
     pub learning_rate: Real,
     pub sentence: &'w [usize],

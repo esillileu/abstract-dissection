@@ -1,4 +1,7 @@
-use std::{path::PathBuf, sync::atomic::AtomicU64};
+use std::{
+    path::PathBuf,
+    sync::{Arc, atomic::AtomicU64},
+};
 use w2v::{
     Corpus, EmbeddingKind, HsOutOfRangePolicy, Model, ModelKind, NegativeSampler, ObjectiveKind,
     RngAlgorithm, SigmoidTable, Trainer, TrainingConfig, Vocabulary, VocabularyEntry, atomic_float,
@@ -36,12 +39,12 @@ struct StepOutput {
     negative_state: u64,
 }
 fn run_fixed_step(kind: ModelKind, objective: ObjectiveKind) -> StepOutput {
-    let corpus = Corpus {
+    let corpus = Arc::new(Corpus {
         path: PathBuf::new(),
         byte_size: 0,
-    };
-    let vocab = fixture_vocab();
-    let model = Model::create(&vocab, 2, 1, RngAlgorithm::Lcg).unwrap();
+    });
+    let vocab = Arc::new(fixture_vocab());
+    let model = Arc::new(Model::create(&vocab, 2, 1, RngAlgorithm::Lcg).unwrap());
     let mut config = TrainingConfig::for_model(kind);
     config.embedding_dimension = 2;
     config.objective_kind = objective;
@@ -65,9 +68,9 @@ fn run_fixed_step(kind: ModelKind, objective: ObjectiveKind) -> StepOutput {
         negative_sampler.table[4] = 3;
     }
     let trainer = Trainer {
-        corpus: &corpus,
-        vocab: &vocab,
-        model: &model,
+        corpus: Arc::clone(&corpus),
+        vocab: Arc::clone(&vocab),
+        model: Arc::clone(&model),
         negative_sampler,
         sigmoid_table,
         config,
@@ -190,21 +193,21 @@ fn c_fixed_skip_gram_hs_and_negative() {
 
 #[test]
 fn c_hs_boundary_policy() {
-    let corpus = Corpus {
+    let corpus = Arc::new(Corpus {
         path: PathBuf::new(),
         byte_size: 0,
-    };
-    let vocab = fixture_vocab();
-    let model = Model::create(&vocab, 2, 1, RngAlgorithm::Lcg).unwrap();
+    });
+    let vocab = Arc::new(fixture_vocab());
+    let model = Arc::new(Model::create(&vocab, 2, 1, RngAlgorithm::Lcg).unwrap());
     let config = TrainingConfig {
         embedding_dimension: 2,
         objective_kind: ObjectiveKind::HierarchicalSoftmax,
         ..TrainingConfig::default()
     };
     let trainer = Trainer {
-        corpus: &corpus,
-        vocab: &vocab,
-        model: &model,
+        corpus: Arc::clone(&corpus),
+        vocab: Arc::clone(&vocab),
+        model: Arc::clone(&model),
         negative_sampler: NegativeSampler::default(),
         sigmoid_table: SigmoidTable::initialize(1000, 6.0).unwrap(),
         config,
@@ -237,12 +240,12 @@ fn c_hs_boundary_policy() {
 
 #[test]
 fn c_negative_boundary_fallback() {
-    let corpus = Corpus {
+    let corpus = Arc::new(Corpus {
         path: PathBuf::new(),
         byte_size: 0,
-    };
-    let vocab = fixture_vocab();
-    let model = Model::create(&vocab, 2, 1, RngAlgorithm::Lcg).unwrap();
+    });
+    let vocab = Arc::new(fixture_vocab());
+    let model = Arc::new(Model::create(&vocab, 2, 1, RngAlgorithm::Lcg).unwrap());
     for coordinate in &model.output_embeddings {
         atomic_float::store(coordinate, 0.0);
     }
@@ -252,9 +255,9 @@ fn c_negative_boundary_fallback() {
         ..TrainingConfig::default()
     };
     let trainer = Trainer {
-        corpus: &corpus,
-        vocab: &vocab,
-        model: &model,
+        corpus: Arc::clone(&corpus),
+        vocab: Arc::clone(&vocab),
+        model: Arc::clone(&model),
         negative_sampler: NegativeSampler { table: vec![0; 7] },
         sigmoid_table: SigmoidTable {
             values: vec![0.5; 3],

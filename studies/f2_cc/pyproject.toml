@@ -2,7 +2,7 @@
 name = "f2-cc"
 version = "0.1.0"
 description = "Common Crawl corpus acquisition study for F2"
-requires-python = ">=3.11, <3.12"
+requires-python = ">=3.12, <3.13"
 dependencies = [
     "duckdb>=1.0.0",
     "langdetect>=1.0.9",

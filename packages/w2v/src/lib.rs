@@ -12,6 +12,9 @@ pub mod trainer;
 pub mod training;
 pub mod vocab;
 
+#[cfg(feature = "python")]
+mod python;
+
 pub use config::{
     HsOutOfRangePolicy, ModelKind, ObjectiveKind, RngAlgorithm, Status, TrainingConfig,
     VocabularyConfig,
@@ -21,3 +24,6 @@ pub use model::{EmbeddingKind, Model, SigmoidTable};
 pub use trainer::{EpochReport, StateDescriptor, Trainer, TrainingSession, TrainingState};
 pub use training::worker::WorkerState;
 pub use vocab::{NegativeSampler, Vocabulary, VocabularyEntry, VocabularyState};
+
+#[cfg(feature = "python")]
+pub use python::*;

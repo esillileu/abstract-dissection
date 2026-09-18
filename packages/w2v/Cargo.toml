@@ -4,3 +4,11 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+numpy = { version = "0.24", optional = true }
+pyo3 = { version = "0.24", features = ["extension-module"], optional = true }
+
+[features]
+python = ["dep:numpy", "dep:pyo3"]
+
+[lib]
+crate-type = ["rlib", "cdylib"]

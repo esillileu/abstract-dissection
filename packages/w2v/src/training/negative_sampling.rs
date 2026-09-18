@@ -2,7 +2,7 @@ use super::{objective_apply_update, objective_score};
 use crate::{config::Real, random::Rng, trainer::Trainer};
 
 pub fn train(
-    trainer: &Trainer<'_>,
+    trainer: &Trainer,
     target_token: usize,
     learning_rate: Real,
     negative_rng: &mut Rng,
