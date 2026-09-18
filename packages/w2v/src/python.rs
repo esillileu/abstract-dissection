@@ -1,9 +1,11 @@
 use crate::{
     Corpus, EmbeddingKind, EpochReport, HsOutOfRangePolicy, Model, ModelKind, ObjectiveKind,
     RngAlgorithm, Status, Trainer, TrainingConfig, TrainingSession, TrainingState, Vocabulary,
-    VocabularyConfig,
+    VocabularyConfig, VocabularyEntry, VocabularyState,
 };
-use numpy::{IntoPyArray, PyArray1, PyArray2, PyReadonlyArray2, PyUntypedArrayMethods};
+use numpy::{
+    IntoPyArray, PyArray1, PyArray2, PyReadonlyArray1, PyReadonlyArray2, PyUntypedArrayMethods,
+};
 use pyo3::{
     exceptions::{PyRuntimeError, PyValueError},
     prelude::*,
@@ -137,6 +139,124 @@ pub struct PyVocabulary {
     inner: Arc<Vocabulary>,
 }
 
+#[pyclass(name = "VocabularyState", frozen)]
+pub struct PyVocabularyState {
+    inner: VocabularyState,
+}
+
+type VocabularyArrays<'py> = (
+    Bound<'py, PyArray1<u8>>,
+    Bound<'py, PyArray1<u64>>,
+    Bound<'py, PyArray1<u64>>,
+    Bound<'py, PyArray1<u64>>,
+    Bound<'py, PyArray1<u64>>,
+    Bound<'py, PyArray1<u8>>,
+);
+
+fn vocabulary_arrays<'py>(py: Python<'py>, state: &VocabularyState) -> VocabularyArrays<'py> {
+    let mut token_bytes = Vec::new();
+    let mut token_offsets = vec![0u64];
+    let mut counts = Vec::with_capacity(state.entries.len());
+    let mut huffman_offsets = vec![0u64];
+    let mut huffman_paths = Vec::new();
+    let mut huffman_bits = Vec::new();
+    for entry in &state.entries {
+        token_bytes.extend_from_slice(&entry.token);
+        token_offsets.push(token_bytes.len() as u64);
+        counts.push(entry.count);
+        huffman_paths.extend(entry.huffman_path.iter().map(|&value| value as u64));
+        huffman_bits.extend_from_slice(&entry.huffman_bits);
+        huffman_offsets.push(huffman_paths.len() as u64);
+    }
+    (
+        token_bytes.into_pyarray(py),
+        token_offsets.into_pyarray(py),
+        counts.into_pyarray(py),
+        huffman_offsets.into_pyarray(py),
+        huffman_paths.into_pyarray(py),
+        huffman_bits.into_pyarray(py),
+    )
+}
+
+fn contiguous_slice<'a, T>(array: &'a PyReadonlyArray1<'_, T>) -> PyResult<&'a [T]>
+where
+    T: numpy::Element,
+{
+    array
+        .as_slice()
+        .map_err(|_| PyValueError::new_err("vocabulary state arrays must be C-contiguous"))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn vocabulary_state_from_arrays(
+    token_bytes: &PyReadonlyArray1<'_, u8>,
+    token_offsets: &PyReadonlyArray1<'_, u64>,
+    counts: &PyReadonlyArray1<'_, u64>,
+    huffman_offsets: &PyReadonlyArray1<'_, u64>,
+    huffman_paths: &PyReadonlyArray1<'_, u64>,
+    huffman_bits: &PyReadonlyArray1<'_, u8>,
+    hash_capacity: usize,
+    retained_token_count: u64,
+) -> PyResult<VocabularyState> {
+    let token_bytes = contiguous_slice(token_bytes)?;
+    let token_offsets = contiguous_slice(token_offsets)?;
+    let counts = contiguous_slice(counts)?;
+    let huffman_offsets = contiguous_slice(huffman_offsets)?;
+    let huffman_paths = contiguous_slice(huffman_paths)?;
+    let huffman_bits = contiguous_slice(huffman_bits)?;
+    if token_offsets.len() != counts.len() + 1
+        || huffman_offsets.len() != counts.len() + 1
+        || token_offsets.first() != Some(&0)
+        || huffman_offsets.first() != Some(&0)
+        || token_offsets.last() != Some(&(token_bytes.len() as u64))
+        || huffman_offsets.last() != Some(&(huffman_paths.len() as u64))
+        || huffman_paths.len() != huffman_bits.len()
+        || hash_capacity < counts.len()
+    {
+        return Err(status_error(Status::CorruptData));
+    }
+
+    let mut entries = Vec::with_capacity(counts.len());
+    for index in 0..counts.len() {
+        let token_start =
+            usize::try_from(token_offsets[index]).map_err(|_| status_error(Status::CorruptData))?;
+        let token_end = usize::try_from(token_offsets[index + 1])
+            .map_err(|_| status_error(Status::CorruptData))?;
+        let path_start = usize::try_from(huffman_offsets[index])
+            .map_err(|_| status_error(Status::CorruptData))?;
+        let path_end = usize::try_from(huffman_offsets[index + 1])
+            .map_err(|_| status_error(Status::CorruptData))?;
+        if token_start >= token_end
+            || token_end > token_bytes.len()
+            || path_start > path_end
+            || path_end > huffman_paths.len()
+            || huffman_bits[path_start..path_end]
+                .iter()
+                .any(|bit| *bit > 1)
+        {
+            return Err(status_error(Status::CorruptData));
+        }
+        let paths = huffman_paths[path_start..path_end]
+            .iter()
+            .map(|&value| usize::try_from(value))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| status_error(Status::CorruptData))?;
+        entries.push(VocabularyEntry {
+            token: token_bytes[token_start..token_end].to_vec(),
+            count: counts[index],
+            huffman_path: paths,
+            huffman_bits: huffman_bits[path_start..path_end].to_vec(),
+        });
+    }
+    let state = VocabularyState {
+        entries,
+        hash_capacity,
+        retained_token_count,
+    };
+    Vocabulary::restore(&state).map_err(status_error)?;
+    Ok(state)
+}
+
 #[pymethods]
 impl PyVocabulary {
     #[classmethod]
@@ -194,6 +314,84 @@ impl PyVocabulary {
             .map(|entry| entry.count)
             .collect::<Vec<_>>()
             .into_pyarray(py)
+    }
+
+    fn export_state(&self) -> PyVocabularyState {
+        PyVocabularyState {
+            inner: self.inner.export_state(),
+        }
+    }
+
+    #[classmethod]
+    fn restore_state(_cls: &Bound<'_, PyType>, state: &PyVocabularyState) -> PyResult<Self> {
+        Ok(Self {
+            inner: Arc::new(Vocabulary::restore(&state.inner).map_err(status_error)?),
+        })
+    }
+}
+
+#[pymethods]
+impl PyVocabularyState {
+    #[getter]
+    fn hash_capacity(&self) -> usize {
+        self.inner.hash_capacity
+    }
+
+    #[getter]
+    fn retained_token_count(&self) -> u64 {
+        self.inner.retained_token_count
+    }
+
+    #[getter]
+    fn size(&self) -> usize {
+        self.inner.entries.len()
+    }
+
+    fn digest(&self) -> PyResult<String> {
+        Ok(Vocabulary::restore(&self.inner)
+            .map_err(status_error)?
+            .digest())
+    }
+
+    fn arrays<'py>(&self, py: Python<'py>) -> VocabularyArrays<'py> {
+        vocabulary_arrays(py, &self.inner)
+    }
+
+    #[classmethod]
+    #[pyo3(signature = (
+        token_bytes,
+        token_offsets,
+        counts,
+        huffman_offsets,
+        huffman_paths,
+        huffman_bits,
+        hash_capacity,
+        retained_token_count
+    ))]
+    #[allow(clippy::too_many_arguments)]
+    fn from_arrays(
+        _cls: &Bound<'_, PyType>,
+        token_bytes: PyReadonlyArray1<'_, u8>,
+        token_offsets: PyReadonlyArray1<'_, u64>,
+        counts: PyReadonlyArray1<'_, u64>,
+        huffman_offsets: PyReadonlyArray1<'_, u64>,
+        huffman_paths: PyReadonlyArray1<'_, u64>,
+        huffman_bits: PyReadonlyArray1<'_, u8>,
+        hash_capacity: usize,
+        retained_token_count: u64,
+    ) -> PyResult<Self> {
+        Ok(Self {
+            inner: vocabulary_state_from_arrays(
+                &token_bytes,
+                &token_offsets,
+                &counts,
+                &huffman_offsets,
+                &huffman_paths,
+                &huffman_bits,
+                hash_capacity,
+                retained_token_count,
+            )?,
+        })
     }
 }
 
@@ -343,6 +541,11 @@ impl PyModel {
         if shape != [self.inner.vocab_size, self.inner.embedding_dimension] {
             return Err(status_error(Status::InvalidArgument));
         }
+        if !values.is_c_contiguous() {
+            return Err(PyValueError::new_err(
+                "embedding array must be C-contiguous and float32",
+            ));
+        }
         let values = values.as_slice().map_err(|_| {
             PyValueError::new_err("embedding array must be C-contiguous and float32")
         })?;
@@ -418,6 +621,12 @@ impl PyTrainingState {
             self.embedding_dimension,
         )
     }
+
+    fn vocabulary_state(&self) -> PyVocabularyState {
+        PyVocabularyState {
+            inner: self.inner.vocabulary.clone(),
+        }
+    }
 }
 
 #[pyclass(name = "TrainingSession")]
@@ -487,10 +696,31 @@ impl PyTrainingSession {
         self.inner.is_complete()
     }
 
-    fn train_epoch(&mut self, py: Python<'_>) -> PyResult<PyEpochReport> {
-        py.allow_threads(|| self.inner.train_epoch())
-            .map(PyEpochReport::from)
-            .map_err(status_error)
+    #[pyo3(signature = (callback=None))]
+    fn train_epoch(
+        &mut self,
+        py: Python<'_>,
+        callback: Option<Py<PyAny>>,
+    ) -> PyResult<PyEpochReport> {
+        let report = py
+            .allow_threads(|| self.inner.train_epoch())
+            .map_err(status_error)?;
+        let report = PyEpochReport::from(report);
+        if let Some(callback) = callback {
+            let callback_report = Py::new(
+                py,
+                PyEpochReport {
+                    epoch: report.epoch,
+                    epoch_tokens: report.epoch_tokens,
+                    processed_tokens: report.processed_tokens,
+                    learning_rate: report.learning_rate,
+                    elapsed_seconds: report.elapsed_seconds,
+                    tokens_per_second: report.tokens_per_second,
+                },
+            )?;
+            callback.call1(py, (callback_report,))?;
+        }
+        Ok(report)
     }
 
     fn export_state(&self) -> PyResult<PyTrainingState> {
@@ -507,6 +737,7 @@ fn w2v(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyCorpus>()?;
     m.add_class::<PyVocabularyConfig>()?;
     m.add_class::<PyVocabulary>()?;
+    m.add_class::<PyVocabularyState>()?;
     m.add_class::<PyTrainingConfig>()?;
     m.add_class::<PyModel>()?;
     m.add_class::<PyEpochReport>()?;
