@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from functools import wraps
+from pathlib import Path
 from typing import Annotated
 
 import typer
@@ -54,6 +55,33 @@ app = typer.Typer(
 
 app.add_typer(corpus_app, name="corpus")
 app.add_typer(catalog_app, name="catalog")
+
+
+@app.command("evaluate")
+@cli_errors
+def evaluate(
+    suite: Annotated[str, typer.Argument(help="Evaluation policy: w2v1 or w2v2.")],
+    lookup: Annotated[Path, typer.Option(help="Saved lookup artifact directory.")],
+    questions: Annotated[Path, typer.Option(help="Analogy questions file.")],
+    output: Annotated[Path, typer.Option(help="New evaluation report JSON path.")],
+    phrase_separator: Annotated[
+        str, typer.Option(help="W2V2 phrase token separator.")
+    ] = "_",
+) -> None:
+    """Evaluate a saved model artifact independently of training."""
+    from .suites.w2v.evaluate import (
+        evaluate_lookup_artifact,
+        write_evaluation_report,
+    )
+
+    try:
+        separator = phrase_separator.encode("ascii")
+    except UnicodeEncodeError as exc:
+        raise ValueError("phrase separator must be ASCII") from exc
+    payload = evaluate_lookup_artifact(
+        suite, lookup, questions, phrase_separator=separator
+    )
+    typer.echo(f"Evaluation report written: {write_evaluation_report(payload, output)}")
 
 
 @app.command("preflight")
@@ -233,4 +261,4 @@ def check(
     typer.echo(f"Checking run state for F2 suite '{suite}'...")
 
 
-__all__ = ["analyze", "app", "check", "list_suites", "plan", "run"]
+__all__ = ["analyze", "app", "check", "evaluate", "list_suites", "plan", "run"]

@@ -60,19 +60,17 @@ Training code exists today for these WMT-bound plans:
 - W2V2 1B phrase Skip-gram: six objective/subsampling conditions × the same seeds.
 
 They can start through the tracked runner after F2 database, corpus S3 and MLflow
-preflight and explicit large-run approval. However, the canonical YAML currently
-uses small checked-in evaluation fixtures rather than the pinned full evaluation
-files. The engine training and durable checkpoint lifecycle are runnable, but the
-result is not yet a complete paper evaluation until that evaluation-resource work
-is finished.
+preflight and explicit large-run approval. Training ends after durable checkpoint,
+lookup, observation and lineage publication; it does not resolve or read an
+evaluation dataset. Full paper evaluation remains a later, independent operation
+against the saved lookup artifact.
 
 Corpus-specific execution-plan bindings, immutable slot IDs and runtime configs
 for WMT, LM1B and UMBC are now materialized. The catalog contains 270 slots:
 216 W2V1 slots and 54 W2V2 slots. LM1B W2V2 uses a separate 791,844,834-word
 reduced plan and is never placed in the nominal 1B plan.
 
-The remaining gate before execution is external: the corpus S3/DB/MLflow
-preflight must pass and `--approve-large-run` must be supplied. Full paper
-evaluation still needs the non-corpus resources listed separately; until then,
-the checked-in evaluation fixtures make these training-ready smoke/evaluation
-runs, not final paper-result runs.
+The remaining training gate is external: the corpus S3/DB/MLflow preflight must
+pass and `--approve-large-run` must be supplied. Full paper evaluation still
+needs the non-corpus resources listed separately. Checked-in question fixtures
+are used only to test the standalone artifact evaluator, not canonical training.

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import json
 import shutil
 from pathlib import Path
 
 import numpy as np
 import pytest
+from typer.testing import CliRunner
 from w2v import (
     Corpus,
     Model,
@@ -14,6 +16,7 @@ from w2v import (
     VocabularyConfig,
 )
 
+from f2.cli import app
 from f2.suites.w2v.artifacts import (
     CHECKPOINT_FORMAT,
     create_checkpoint_manager,
@@ -138,6 +141,56 @@ def test_lookup_is_mmap_backed_and_indexes_byte_tokens(tmp_path: Path) -> None:
         lookup.vector(b"alpha"), lookup.embeddings[lookup.row(b"alpha")]
     )
     assert lookup.vector(b"missing") is None
+
+
+def test_saved_lookup_can_be_evaluated_without_training_or_overwrite(
+    tmp_path: Path,
+) -> None:
+    *_, session = _session(tmp_path / "evaluation-corpus.txt", epochs=1)
+    session.train_epoch()
+    artifact = tmp_path / "lookup"
+    save_lookup_artifact(
+        session.export_state(), artifact, resource_version="fixture-v1"
+    )
+    questions = tmp_path / "questions.txt"
+    questions.write_bytes(b": relation\nalpha beta gamma delta\n")
+    output = tmp_path / "reports" / "evaluation.json"
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "evaluate",
+            "w2v1",
+            "--lookup",
+            str(artifact),
+            "--questions",
+            str(questions),
+            "--output",
+            str(output),
+        ],
+    )
+    assert result.exit_code == 0
+    report = json.loads(output.read_text())
+    assert report["suite"] == "w2v1"
+    assert report["lookup_identity"]["resource_version"] == "fixture-v1"
+    assert report["analogy"]["overall"]["total_count"] == 1
+    assert (artifact / "manifest.json").is_file()
+
+    repeated = CliRunner().invoke(
+        app,
+        [
+            "evaluate",
+            "w2v1",
+            "--lookup",
+            str(artifact),
+            "--questions",
+            str(questions),
+            "--output",
+            str(output),
+        ],
+    )
+    assert repeated.exit_code == 2
+    assert "evaluation report already exists" in repeated.output
 
 
 class _DownloadClient:

@@ -10,6 +10,7 @@ from f2.suites.w2v.artifacts import (
     load_checkpoint,
     load_lookup_artifact,
 )
+from f2.suites.w2v.evaluate import evaluate_lookup_artifact
 from f2.suites.w2v.evaluation import (
     additive_composition,
     nearest_tokens,
@@ -80,13 +81,22 @@ def test_w2v2_local_phrase_run_resume_lookup_and_reports(tmp_path):
     state = load_checkpoint(result.checkpoint)
     assert state.completed_epochs == 2
     assert (result.root / "phrase_lineage.json").is_file()
-    assert (result.root / "phrase_evaluation.json").is_file()
+    assert not (result.root / "phrase_evaluation.json").exists()
     lookup = load_lookup_artifact(result.lookup)
     assert lookup.row(b"new_york") is not None
     assert nearest_tokens(lookup, b"new_york", limit=2)
     assert additive_composition(lookup, [b"new_york", b"city"], limit=2)
     projection = pca_projection(lookup, [b"new_york", b"city_san", b"francisco"])
     assert set(projection) == {b"new_york", b"city_san", b"francisco"}
+    evaluation = evaluate_lookup_artifact(
+        "w2v2",
+        result.lookup,
+        definition.config_root / "fixtures/questions-phrases.txt",
+    )
+    assert evaluation["analogy"]["overall"]["total_count"] > 0
+    assert evaluation["phrase"]["nearest_entities"]
+    assert evaluation["phrase"]["additive_composition"]["tokens"]
+    assert evaluation["phrase"]["pca"]
 
     interrupted_config = dict(config)
     phrase_path = (
@@ -111,3 +121,20 @@ def test_w2v2_rejects_nce_substitution():
             atomic_run_id="local-smoke",
             overrides={"training": {"objective_kind": "nce"}},
         )
+
+
+def test_evaluation_resources_do_not_change_w2v2_training_identity() -> None:
+    definition = DEFINITION.get_suite("w2v2")
+    source = definition.config_root / "e01_phrase_skipgram.yaml"
+    first = definition.load_run_spec(
+        source,
+        atomic_run_id="local-smoke",
+        overrides={"evaluation": {"questions_path": "first.txt"}},
+    ).to_executor_config()
+    second = definition.load_run_spec(
+        source,
+        atomic_run_id="local-smoke",
+        overrides={"evaluation": {"questions_path": "second.txt"}},
+    ).to_executor_config()
+    assert "evaluation" not in first
+    assert first["identity"]["config_digest"] == second["identity"]["config_digest"]
