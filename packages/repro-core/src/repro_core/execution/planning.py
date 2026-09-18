@@ -74,6 +74,12 @@ class Planner:
                 execution = atomic.get("execution", {})
                 if not isinstance(execution, dict):
                     raise ValueError(f"execution must be a mapping: {path}")
+                if (
+                    selection.all_experiments
+                    and not included
+                    and execution.get("include_in_all", True) is False
+                ):
+                    continue
                 mode = str(execution.get("mode", "seeded"))
                 if mode not in {"seeded", "single"}:
                     raise ValueError(f"unsupported execution.mode in {path}: {mode}")

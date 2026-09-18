@@ -26,6 +26,25 @@ def test_suite_plans_match_canonical_matrix() -> None:
         assert {plan.seed for plan in canonical} == canonical_seeds
 
 
+def test_local_smoke_is_explicit_single_run() -> None:
+    for suite, experiment_id in (("w2v1", "e01"), ("w2v2", "e02")):
+        definition = DEFINITION.get_suite(suite)
+        all_plans = Planner(definition).build(
+            RunSelection(all_experiments=True), RunOptions()
+        )
+        assert all(plan.atomic_run_id != "local-smoke" for plan in all_plans)
+
+        smoke_plans = Planner(definition).build(
+            RunSelection(
+                experiment_ids=(experiment_id,), atomic_run_ids=("local-smoke",)
+            ),
+            RunOptions(),
+        )
+        assert [(plan.atomic_run_id, plan.seed) for plan in smoke_plans] == [
+            ("local-smoke", None)
+        ]
+
+
 def test_each_available_corpus_has_a_separate_runtime_identity() -> None:
     expectations = {
         "w2v1": {
