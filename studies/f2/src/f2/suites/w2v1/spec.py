@@ -22,7 +22,6 @@ class RunSpec:
     corpus: dict[str, object]
     vocabulary: dict[str, object]
     training: dict[str, object]
-    evaluation: dict[str, object]
     checkpoint: dict[str, object]
     tracking: dict[str, object]
     path: Path
@@ -46,7 +45,6 @@ class RunSpec:
             corpus=self.corpus,
             vocabulary=self.vocabulary,
             training=self.training,
-            evaluation=self.evaluation,
             checkpoint=self.checkpoint,
             tracking=self.tracking,
             path=self.path,
@@ -57,7 +55,6 @@ class RunSpec:
             "corpus": self.corpus,
             "vocabulary": self.vocabulary,
             "training": self.training,
-            "evaluation": self.evaluation,
         }
         return {
             "kind": "word2vec",
@@ -97,7 +94,6 @@ def parse_run_spec(
         corpus=mapping(raw, "corpus"),
         vocabulary=mapping(raw, "vocabulary"),
         training=training,
-        evaluation=mapping(raw, "evaluation"),
         checkpoint=mapping(raw, "checkpoint"),
         tracking=mapping(raw, "tracking"),
         path=path,

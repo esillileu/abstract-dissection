@@ -32,8 +32,8 @@ def check_latest(paths: RuntimePaths | None = None) -> str:
     load_lookup_artifact(lookup)
     if not metrics.is_file() or metrics.stat().st_size == 0:
         raise ValueError("W2V1 dense observations are missing")
-    if report["evaluation"]["total_count"] < 1:
-        raise ValueError("W2V1 evaluation contains no questions")
+    if not report["complete"]:
+        raise ValueError("W2V1 training is incomplete")
     return f"W2V1 local result complete: {report_path}"
 
 
@@ -41,15 +41,12 @@ def analyze_latest(paths: RuntimePaths | None = None) -> str:
     paths = paths or RuntimePaths.from_environment()
     check_latest(paths)
     report = json.loads((_root(paths) / "result.json").read_text())
-    evaluation = report["evaluation"]
     output = paths.analysis_output("f2", "w2v1") / "summary.md"
     output.write_text(
         "# W2V1 local vertical slice\n\n"
         f"- Slot: `{SLOT_ID}`\n"
         f"- Epochs: {len(report['epochs'])}\n"
-        f"- Analogy accuracy: {evaluation['score']:.6f}\n"
-        f"- Coverage: {report['coverage']:.6f}\n"
-        f"- Valid questions: {evaluation['valid_count']}/{evaluation['total_count']}\n"
+        "- Training artifacts: complete\n"
     )
     return f"W2V1 analysis written: {output}"
 

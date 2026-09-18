@@ -19,7 +19,6 @@ class RunSpec(CommonRunSpec):
                 "corpus",
                 "vocabulary",
                 "training",
-                "evaluation",
                 "phrase_detection",
             )
         }
@@ -70,7 +69,6 @@ def parse_run_spec(
         corpus=mapping(raw, "corpus"),
         vocabulary=mapping(raw, "vocabulary"),
         training=training,
-        evaluation=mapping(raw, "evaluation"),
         checkpoint=mapping(raw, "checkpoint"),
         tracking=mapping(raw, "tracking"),
         path=path,

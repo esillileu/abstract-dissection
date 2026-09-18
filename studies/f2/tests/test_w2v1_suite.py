@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from contextlib import contextmanager
 
 import numpy as np
@@ -77,6 +78,63 @@ def test_local_smoke_seeds_have_distinct_staging_identities() -> None:
     )
     assert spec.with_seed(1).identity["planned_run_slot_id"] == "w2v1-local-smoke-s1"
     assert spec.with_seed(7).identity["planned_run_slot_id"] == "w2v1-local-smoke-s7"
+
+
+@pytest.mark.parametrize(
+    "config_name",
+    (
+        "e01_table2_cbow.yaml",
+        "e02_table2_cbow_lm1b.yaml",
+        "e03_table2_cbow_umbc.yaml",
+    ),
+)
+def test_canonical_table2_training_conditions(config_name: str) -> None:
+    definition = DEFINITION.get_suite("w2v1")
+    config = definition.load_run_spec(
+        definition.config_root / config_name,
+        atomic_run_id="d50-w24m",
+        overrides={},
+    ).to_executor_config()
+    assert config["training"]["initial_learning_rate"] == 0.025
+    assert config["training"]["window_radius"] == 4
+    assert config["training"]["context_policy"] == "fixed"
+    assert config["vocabulary"]["min_count"] == 1
+    assert config["vocabulary"]["max_lexical_words"] == 30_000
+    assert "evaluation" not in config
+
+
+def test_evaluation_resources_do_not_change_training_identity() -> None:
+    definition = DEFINITION.get_suite("w2v1")
+    source = definition.config_root / "e01_table2_cbow.yaml"
+    first = definition.load_run_spec(
+        source,
+        atomic_run_id="local-smoke",
+        overrides={"evaluation": {"questions_path": "first.txt"}},
+    ).to_executor_config()
+    second = definition.load_run_spec(
+        source,
+        atomic_run_id="local-smoke",
+        overrides={"evaluation": {"questions_path": "second.txt"}},
+    ).to_executor_config()
+    assert first["identity"]["config_digest"] == second["identity"]["config_digest"]
+
+
+def test_training_completes_without_evaluation_dataset(tmp_path) -> None:
+    definition = DEFINITION.get_suite("w2v1")
+    spec = definition.load_run_spec(
+        definition.config_root / "e01_table2_cbow.yaml",
+        atomic_run_id="local-smoke",
+        overrides={"evaluation": {"questions_path": str(tmp_path / "missing.txt")}},
+    )
+    result = run_config(
+        spec.to_executor_config(),
+        ExperimentContext(paths=_paths(tmp_path)),
+        executor_module=definition.executor_module,
+    )
+    report = json.loads(result.report.read_text())
+    assert report["complete"] is True
+    assert "evaluation" not in report
+    assert load_checkpoint(result.checkpoint).completed_epochs == 2
 
 
 def test_canonical_cli_requires_explicit_large_run_approval() -> None:

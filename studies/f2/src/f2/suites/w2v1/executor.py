@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import shutil
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -20,10 +20,8 @@ from w2v import (
 from f2.suites.w2v.artifacts import (
     create_checkpoint_manager,
     load_checkpoint,
-    load_lookup_artifact,
     save_lookup_artifact,
 )
-from f2.suites.w2v.evaluation import evaluate_analogies, parse_analogy_questions
 from f2.suites.w2v.observations import DenseObservationWriter
 from repro_core.context import ExperimentContext
 
@@ -125,18 +123,9 @@ class W2V1Executor:
         save_lookup_artifact(
             state, lookup_path, resource_version=str(identity["resource_version"])
         )
-        lookup = load_lookup_artifact(lookup_path)
-        questions_path = Path(str(_mapping(config, "evaluation")["questions_path"]))
-        if not questions_path.is_absolute():
-            questions_path = context.paths.repo_root / questions_path
-        evaluation = evaluate_analogies(
-            lookup, parse_analogy_questions(questions_path.read_bytes().splitlines())
-        ).overall
         report = {
             "identity": identity,
             "epochs": reports,
-            "evaluation": asdict(evaluation),
-            "coverage": evaluation.coverage,
             "complete": session.is_complete,
             "artifacts": {
                 "checkpoint": str(final.path.relative_to(root)),

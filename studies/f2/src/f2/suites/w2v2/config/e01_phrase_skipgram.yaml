@@ -28,8 +28,6 @@ training:
   sigmoid_table_size: 1000
   sigmoid_max: 6.0
   hs_out_of_range_policy: skip
-evaluation:
-  questions_path: studies/f2/src/f2/suites/w2v2/config/fixtures/questions-phrases.txt
 checkpoint: {save_latest: true, save_final: true, best_payload: full}
 tracking: {experiment: f2.w2v2}
 variants:

@@ -4,17 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import asdict
 from pathlib import Path
 
-from f2.suites.w2v.artifacts import load_lookup_artifact
-from f2.suites.w2v.evaluation import (
-    additive_composition,
-    evaluate_analogies,
-    nearest_tokens,
-    parse_analogy_questions,
-    pca_projection,
-)
 from f2.suites.w2v.phrases import PhrasePolicy, materialize_phrase_corpus
 from f2.suites.w2v1.executor import W2V1Executor, W2V1Result, _mapping
 from repro_core.context import ExperimentContext
@@ -62,73 +53,10 @@ class W2V2Executor(W2V1Executor):
         result = super().run(resolved, context)
         lineage_target = result.root / "phrase_lineage.json"
         lineage_target.write_bytes(phrase.path.with_suffix(".txt.json").read_bytes())
-        self._write_phrase_report(resolved, result, context, policy)
-        return result
-
-    @staticmethod
-    def _write_phrase_report(
-        config: dict[str, object],
-        result: W2V1Result,
-        context: ExperimentContext,
-        policy: PhrasePolicy,
-    ) -> None:
-        lookup = load_lookup_artifact(result.lookup)
-        evaluation = _mapping(config, "evaluation")
-        questions_path = Path(str(evaluation["questions_path"]))
-        if not questions_path.is_absolute():
-            questions_path = context.paths.repo_root / questions_path
-        analogy = evaluate_analogies(
-            lookup, parse_analogy_questions(questions_path.read_bytes().splitlines())
-        )
-        phrase_tokens = [
-            bytes(
-                lookup.token_bytes[
-                    lookup.token_offsets[row] : lookup.token_offsets[row + 1]
-                ]
-            )
-            for row in range(lookup.counts.size)
-            if policy.separator
-            in bytes(
-                lookup.token_bytes[
-                    lookup.token_offsets[row] : lookup.token_offsets[row + 1]
-                ]
-            )
-        ][:8]
-        neighbors = {
-            token.hex(): [
-                asdict(item) | {"token": item.token.hex()}
-                for item in nearest_tokens(lookup, token, limit=5)
-            ]
-            for token in phrase_tokens
-        }
-        composition_tokens = phrase_tokens[:2]
-        composition = [
-            asdict(item) | {"token": item.token.hex()}
-            for item in additive_composition(lookup, composition_tokens, limit=5)
-        ]
-        projection = {
-            token.hex(): point
-            for token, point in pca_projection(lookup, phrase_tokens).items()
-        }
-        payload = {
-            "analogy": {
-                "overall": asdict(analogy.overall),
-                "categories": [asdict(category) for category in analogy.categories],
-            },
-            "nearest_entities": neighbors,
-            "additive_composition": {
-                "tokens": [token.hex() for token in composition_tokens],
-                "neighbors": composition,
-            },
-            "pca": projection,
-            "token_encoding": "hex",
-        }
-        path = result.root / "phrase_evaluation.json"
-        path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
         report = json.loads(result.report.read_text())
-        report["phrase_evaluation"] = "phrase_evaluation.json"
         report["artifacts"]["phrase_lineage"] = "phrase_lineage.json"
         result.report.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
+        return result
 
 
 EXECUTORS = {"word2vec": W2V2Executor()}
