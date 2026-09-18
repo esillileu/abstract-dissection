@@ -81,18 +81,18 @@ def test_local_smoke_seeds_have_distinct_staging_identities() -> None:
 
 
 @pytest.mark.parametrize(
-    "config_name",
+    "atomic_run_id",
     (
-        "e01_table2_cbow.yaml",
-        "e02_table2_cbow_lm1b.yaml",
-        "e03_table2_cbow_umbc.yaml",
+        "wmt--d50-w24m",
+        "lm1b--d50-w24m",
+        "umbc--d50-w24m",
     ),
 )
-def test_canonical_table2_training_conditions(config_name: str) -> None:
+def test_canonical_table2_training_conditions(atomic_run_id: str) -> None:
     definition = DEFINITION.get_suite("w2v1")
     config = definition.load_run_spec(
-        definition.config_root / config_name,
-        atomic_run_id="d50-w24m",
+        definition.config_root / "e01_table2_cbow.yaml",
+        atomic_run_id=atomic_run_id,
         overrides={},
     ).to_executor_config()
     assert config["training"]["initial_learning_rate"] == 0.025
@@ -147,7 +147,7 @@ def test_canonical_cli_requires_explicit_large_run_approval() -> None:
             "-e",
             "01",
             "-a",
-            "d50-w24m",
+            "wmt--d50-w24m",
             "--seed",
             "1",
             "--tracking-uri",
@@ -182,13 +182,13 @@ def test_w2v1_check_and_analysis_detect_complete_result(tmp_path):
         (
             "w2v1",
             "e01_table2_cbow.yaml",
-            "d50-w24m",
+            "wmt--d50-w24m",
             "w2v1-reconstruction-r2-d50-w24m-s1",
         ),
         (
             "w2v2",
-            "e01_phrase_skipgram.yaml",
-            "neg5-subsampling",
+            "e02_table3_phrase_skipgram.yaml",
+            "wmt--neg5-subsampling",
             "w2v2-reconstruction-r1-neg5-subsampling-s1",
         ),
     ),

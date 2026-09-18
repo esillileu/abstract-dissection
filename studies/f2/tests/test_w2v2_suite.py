@@ -67,7 +67,7 @@ def test_w2v2_local_phrase_run_resume_lookup_and_reports(tmp_path):
     definition = DEFINITION.get_suite("w2v2")
     assert definition.executor_module == "f2.suites.w2v2.executor"
     spec = definition.load_run_spec(
-        definition.config_root / "e01_phrase_skipgram.yaml",
+        definition.config_root / "e02_table3_phrase_skipgram.yaml",
         atomic_run_id="local-smoke",
         overrides={},
     )
@@ -117,7 +117,7 @@ def test_w2v2_rejects_nce_substitution():
     definition = DEFINITION.get_suite("w2v2")
     with pytest.raises(ValueError, match="NCE is not substituted"):
         definition.load_run_spec(
-            definition.config_root / "e01_phrase_skipgram.yaml",
+            definition.config_root / "e02_table3_phrase_skipgram.yaml",
             atomic_run_id="local-smoke",
             overrides={"training": {"objective_kind": "nce"}},
         )
@@ -125,7 +125,7 @@ def test_w2v2_rejects_nce_substitution():
 
 def test_evaluation_resources_do_not_change_w2v2_training_identity() -> None:
     definition = DEFINITION.get_suite("w2v2")
-    source = definition.config_root / "e01_phrase_skipgram.yaml"
+    source = definition.config_root / "e02_table3_phrase_skipgram.yaml"
     first = definition.load_run_spec(
         source,
         atomic_run_id="local-smoke",

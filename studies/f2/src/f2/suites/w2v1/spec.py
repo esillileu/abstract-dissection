@@ -28,16 +28,15 @@ class RunSpec:
 
     def with_seed(self, seed: int) -> RunSpec:
         """Bind a planner-selected seed to its immutable catalog slot."""
-        from f2.suites.w2v.matrix import planned_slot_id
-
         identity = dict(self.identity)
         identity["seed"] = seed
         if self.atomic_run_id == "local-smoke":
             base = str(identity["planned_run_slot_id"]).rsplit("-s", 1)[0]
             identity["planned_run_slot_id"] = f"{base}-s{seed}"
         else:
-            identity["planned_run_slot_id"] = planned_slot_id(
-                str(identity["execution_plan_id"]), self.atomic_run_id, seed
+            identity["planned_run_slot_id"] = (
+                f"{identity['execution_plan_id']}-"
+                f"{_condition_id(self.atomic_run_id)}-s{seed}"
             )
         return RunSpec(
             atomic_run_id=self.atomic_run_id,
@@ -98,6 +97,18 @@ def parse_run_spec(
         tracking=mapping(raw, "tracking"),
         path=path,
     )
+
+
+def _condition_id(atomic_run_id: str) -> str:
+    try:
+        corpus_id, condition_id = atomic_run_id.split("--", 1)
+    except ValueError as exc:
+        raise ValueError(
+            "canonical W2V atomic run IDs must be <corpus>--<condition>"
+        ) from exc
+    if not corpus_id or not condition_id:
+        raise ValueError("W2V atomic run corpus and condition IDs must be non-empty")
+    return condition_id
 
 
 __all__ = ["RunSpec", "parse_run_spec"]

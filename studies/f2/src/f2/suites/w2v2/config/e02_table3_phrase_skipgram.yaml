@@ -1,0 +1,69 @@
+domain: f2.w2v2
+kind: word2vec
+execution: {mode: seeded, default_device: cpu}
+seed_policy: {seed_set: research_v1, seed_count: 3}
+identity: {planned_run_slot_id: resolved-from-atomic-run-and-seed, seed: 1}
+corpus: {}
+phrase_detection: {passes: 2, threshold: 100.0, min_count: 5, separator: _}
+vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 5}
+training:
+  model_kind: skip_gram
+  objective_kind: negative_sampling
+  embedding_dimension: 300
+  window_radius: 5
+  epochs: 3
+  thread_count: 1
+  learning_rate_update_interval: 10000
+  observation_interval: 100000
+  initial_learning_rate: 0.025
+  subsampling_threshold: 0.00001
+  negative_sample_count: 15
+  rng_algorithm: lcg
+  negative_table_size: 100000000
+  sigmoid_table_size: 1000
+  sigmoid_max: 6.0
+  hs_out_of_range_policy: skip
+checkpoint: {save_latest: true, save_final: true, best_payload: full}
+tracking: {experiment: f2.w2v2}
+
+resources:
+  wmt: &wmt
+    identity: {execution_plan_id: w2v2-reconstruction-r1, resource_version: f2-wmt-news-2007-2012-normalized-v1, corpus_manifest_digest: cedfd867e5df0c6a6ef392bff5de8df721346f8597ab25fd2893902326efbe6e}
+  lm1b: &lm1b
+    identity: {execution_plan_id: w2v2-lm1b-reduced-r1, resource_version: f2-lm1b-r13output-normalized-v1, corpus_manifest_digest: f4e16b78b98cff999f7e6590a020fe6f1fd8d882bdd385bca81a3c7da520efdb}
+  umbc: &umbc
+    identity: {execution_plan_id: w2v2-umbc-reconstruction-r1, resource_version: f2-umbc-webbase-normalized-v1, corpus_manifest_digest: a5b7ac1e3054670502adb00ebe097d94aa5e881a65b464f22a1c5f665f983dcc}
+
+conditions:
+  neg5-no-subsampling: &neg5-no-subsampling {training: {negative_sample_count: 5, subsampling_threshold: 0.0}}
+  neg15-no-subsampling: &neg15-no-subsampling {training: {negative_sample_count: 15, subsampling_threshold: 0.0}}
+  hs-no-subsampling: &hs-no-subsampling {training: {objective_kind: hierarchical_softmax, negative_sample_count: 0, subsampling_threshold: 0.0}}
+  neg5-subsampling: &neg5-subsampling {training: {negative_sample_count: 5}}
+  neg15-subsampling: &neg15-subsampling {training: {negative_sample_count: 15}}
+  hs-subsampling: &hs-subsampling {training: {objective_kind: hierarchical_softmax, negative_sample_count: 0}}
+
+variants:
+  local-smoke:
+    identity: {execution_plan_id: w2v2-reconstruction-r1, planned_run_slot_id: w2v2-local-smoke-s1, resource_version: w2v2-local-phrase-fixture-v1, corpus_manifest_digest: f451397ad32c1c16a71e9de3c68d57e83308b4e212cd1031afe030e6dfee9a97}
+    corpus: {path: studies/f2/src/f2/suites/w2v2/config/fixtures/corpus.txt}
+    phrase_detection: {passes: 1, threshold: 0.0, min_count: 1, separator: _}
+    vocabulary: {initial_capacity: 16, hash_capacity: 128, min_count: 1}
+    training: {embedding_dimension: 8, window_radius: 2, epochs: 2, learning_rate_update_interval: 10, observation_interval: 2, subsampling_threshold: 0.0, negative_sample_count: 5, negative_table_size: 100}
+  wmt--neg5-no-subsampling: {<<: [*wmt, *neg5-no-subsampling], corpus: {lexical_token_budget: 1000000000}}
+  wmt--neg15-no-subsampling: {<<: [*wmt, *neg15-no-subsampling], corpus: {lexical_token_budget: 1000000000}}
+  wmt--hs-no-subsampling: {<<: [*wmt, *hs-no-subsampling], corpus: {lexical_token_budget: 1000000000}}
+  wmt--neg5-subsampling: {<<: [*wmt, *neg5-subsampling], corpus: {lexical_token_budget: 1000000000}}
+  wmt--neg15-subsampling: {<<: [*wmt, *neg15-subsampling], corpus: {lexical_token_budget: 1000000000}}
+  wmt--hs-subsampling: {<<: [*wmt, *hs-subsampling], corpus: {lexical_token_budget: 1000000000}}
+  lm1b--neg5-no-subsampling: {<<: [*lm1b, *neg5-no-subsampling], corpus: {lexical_token_budget: 791844834}}
+  lm1b--neg15-no-subsampling: {<<: [*lm1b, *neg15-no-subsampling], corpus: {lexical_token_budget: 791844834}}
+  lm1b--hs-no-subsampling: {<<: [*lm1b, *hs-no-subsampling], corpus: {lexical_token_budget: 791844834}}
+  lm1b--neg5-subsampling: {<<: [*lm1b, *neg5-subsampling], corpus: {lexical_token_budget: 791844834}}
+  lm1b--neg15-subsampling: {<<: [*lm1b, *neg15-subsampling], corpus: {lexical_token_budget: 791844834}}
+  lm1b--hs-subsampling: {<<: [*lm1b, *hs-subsampling], corpus: {lexical_token_budget: 791844834}}
+  umbc--neg5-no-subsampling: {<<: [*umbc, *neg5-no-subsampling], corpus: {lexical_token_budget: 1000000000}}
+  umbc--neg15-no-subsampling: {<<: [*umbc, *neg15-no-subsampling], corpus: {lexical_token_budget: 1000000000}}
+  umbc--hs-no-subsampling: {<<: [*umbc, *hs-no-subsampling], corpus: {lexical_token_budget: 1000000000}}
+  umbc--neg5-subsampling: {<<: [*umbc, *neg5-subsampling], corpus: {lexical_token_budget: 1000000000}}
+  umbc--neg15-subsampling: {<<: [*umbc, *neg15-subsampling], corpus: {lexical_token_budget: 1000000000}}
+  umbc--hs-subsampling: {<<: [*umbc, *hs-subsampling], corpus: {lexical_token_budget: 1000000000}}

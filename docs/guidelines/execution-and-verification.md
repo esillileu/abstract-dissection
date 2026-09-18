@@ -50,11 +50,11 @@ uv run repro f2 corpus sources status
 # 3. Word2Vec execution readiness and fixture smoke runs
 uv run repro plan f2 w2v1 -e 01 -a local-smoke --seed 1
 uv run repro run f2 w2v1 -e 01 -a local-smoke --seed 1 --progress line
-uv run repro run f2 w2v2 -e 01 -a local-smoke --seed 1 --progress line
+uv run repro run f2 w2v2 -e 02 -a local-smoke --seed 1 --progress line
 
 # 4. Canonical training (after preflight and explicit cost approval)
 uv run repro f2 preflight
-uv run repro run f2 w2v1 -e 01 -a d50-w24m --seed 1 \
+uv run repro run f2 w2v1 -e 01 -a wmt--d50-w24m --seed 1 \
   --tracking-uri "$F2_MLFLOW_TRACKING_URI" --approve-large-run --progress auto
 ```
 

@@ -54,7 +54,7 @@ slot identity and reports. They must not occupy a nominal 1B or 1.6B slot.
 
 ## Current executability
 
-Training code exists today for these WMT-bound plans:
+Training code exists today for these plans:
 
 - W2V1 Table 2 CBOW: 24 conditions × seeds 1, 7 and 19;
 - W2V2 1B phrase Skip-gram: six objective/subsampling conditions × the same seeds.
@@ -69,6 +69,15 @@ Corpus-specific execution-plan bindings, immutable slot IDs and runtime configs
 for WMT, LM1B and UMBC are now materialized. The catalog contains 270 slots:
 216 W2V1 slots and 54 W2V2 slots. LM1B W2V2 uses a separate 791,844,834-word
 reduced plan and is never placed in the nominal 1B plan.
+
+Runtime experiment numbers identify paper experiments, not corpus substitutes.
+W2V1 Table 2 is `e01_table2_cbow.yaml`; W2V2 Table 3 phrase training is
+`e02_table3_phrase_skipgram.yaml`. Each file contains all eligible corpora, and
+canonical atomic-run selectors use `<corpus>--<condition>` (for example,
+`wmt--d50-w24m` or `umbc--hs-subsampling`). W2V2 `e01` is intentionally absent:
+the paper's word-level comparison is cataloged but is not yet a runnable suite.
+The catalog keeps condition-only IDs within its corpus-specific execution plans,
+so this runtime consolidation does not change immutable planned slot IDs.
 
 The remaining training gate is external: the corpus S3/DB/MLflow preflight must
 pass and `--approve-large-run` must be supplied. Full paper evaluation still

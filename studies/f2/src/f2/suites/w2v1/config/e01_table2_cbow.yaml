@@ -2,12 +2,7 @@ domain: f2.w2v1
 kind: word2vec
 execution: {mode: seeded, default_device: cpu}
 seed_policy: {seed_set: research_v1, seed_count: 3}
-identity:
-  execution_plan_id: w2v1-reconstruction-r2
-  planned_run_slot_id: resolved-from-atomic-run-and-seed
-  resource_version: f2-wmt-news-2007-2012-normalized-v1
-  corpus_manifest_digest: cedfd867e5df0c6a6ef392bff5de8df721346f8597ab25fd2893902326efbe6e
-  seed: 1
+identity: {planned_run_slot_id: resolved-from-atomic-run-and-seed, seed: 1}
 corpus: {}
 vocabulary: {initial_capacity: 16, hash_capacity: 128, min_count: 1, max_lexical_words: 30000}
 training:
@@ -30,39 +25,115 @@ training:
   hs_out_of_range_policy: skip
 checkpoint: {save_latest: true, save_final: true, best_payload: full}
 tracking: {experiment: f2.w2v1}
+
+resources:
+  wmt: &wmt
+    identity: {execution_plan_id: w2v1-reconstruction-r2, resource_version: f2-wmt-news-2007-2012-normalized-v1, corpus_manifest_digest: cedfd867e5df0c6a6ef392bff5de8df721346f8597ab25fd2893902326efbe6e}
+  lm1b: &lm1b
+    identity: {execution_plan_id: w2v1-lm1b-reconstruction-r1, resource_version: f2-lm1b-r13output-normalized-v1, corpus_manifest_digest: f4e16b78b98cff999f7e6590a020fe6f1fd8d882bdd385bca81a3c7da520efdb}
+  umbc: &umbc
+    identity: {execution_plan_id: w2v1-umbc-reconstruction-r1, resource_version: f2-umbc-webbase-normalized-v1, corpus_manifest_digest: a5b7ac1e3054670502adb00ebe097d94aa5e881a65b464f22a1c5f665f983dcc}
+
+conditions:
+  d50-w24m: &d50-w24m {corpus: {lexical_token_budget: 24000000}, vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 1, max_lexical_words: 30000}, training: {observation_interval: 100000}}
+  d50-w49m: &d50-w49m {corpus: {lexical_token_budget: 49000000}, vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 1, max_lexical_words: 30000}, training: {observation_interval: 100000}}
+  d50-w98m: &d50-w98m {corpus: {lexical_token_budget: 98000000}, vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 1, max_lexical_words: 30000}, training: {observation_interval: 100000}}
+  d50-w196m: &d50-w196m {corpus: {lexical_token_budget: 196000000}, vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 1, max_lexical_words: 30000}, training: {observation_interval: 100000}}
+  d50-w391m: &d50-w391m {corpus: {lexical_token_budget: 391000000}, vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 1, max_lexical_words: 30000}, training: {observation_interval: 100000}}
+  d50-w783m: &d50-w783m {corpus: {lexical_token_budget: 783000000}, vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 1, max_lexical_words: 30000}, training: {observation_interval: 100000}}
+  d100-w24m: &d100-w24m {corpus: {lexical_token_budget: 24000000}, vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 1, max_lexical_words: 30000}, training: {embedding_dimension: 100, observation_interval: 100000}}
+  d100-w49m: &d100-w49m {corpus: {lexical_token_budget: 49000000}, vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 1, max_lexical_words: 30000}, training: {embedding_dimension: 100, observation_interval: 100000}}
+  d100-w98m: &d100-w98m {corpus: {lexical_token_budget: 98000000}, vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 1, max_lexical_words: 30000}, training: {embedding_dimension: 100, observation_interval: 100000}}
+  d100-w196m: &d100-w196m {corpus: {lexical_token_budget: 196000000}, vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 1, max_lexical_words: 30000}, training: {embedding_dimension: 100, observation_interval: 100000}}
+  d100-w391m: &d100-w391m {corpus: {lexical_token_budget: 391000000}, vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 1, max_lexical_words: 30000}, training: {embedding_dimension: 100, observation_interval: 100000}}
+  d100-w783m: &d100-w783m {corpus: {lexical_token_budget: 783000000}, vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 1, max_lexical_words: 30000}, training: {embedding_dimension: 100, observation_interval: 100000}}
+  d300-w24m: &d300-w24m {corpus: {lexical_token_budget: 24000000}, vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 1, max_lexical_words: 30000}, training: {embedding_dimension: 300, observation_interval: 100000}}
+  d300-w49m: &d300-w49m {corpus: {lexical_token_budget: 49000000}, vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 1, max_lexical_words: 30000}, training: {embedding_dimension: 300, observation_interval: 100000}}
+  d300-w98m: &d300-w98m {corpus: {lexical_token_budget: 98000000}, vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 1, max_lexical_words: 30000}, training: {embedding_dimension: 300, observation_interval: 100000}}
+  d300-w196m: &d300-w196m {corpus: {lexical_token_budget: 196000000}, vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 1, max_lexical_words: 30000}, training: {embedding_dimension: 300, observation_interval: 100000}}
+  d300-w391m: &d300-w391m {corpus: {lexical_token_budget: 391000000}, vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 1, max_lexical_words: 30000}, training: {embedding_dimension: 300, observation_interval: 100000}}
+  d300-w783m: &d300-w783m {corpus: {lexical_token_budget: 783000000}, vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 1, max_lexical_words: 30000}, training: {embedding_dimension: 300, observation_interval: 100000}}
+  d600-w24m: &d600-w24m {corpus: {lexical_token_budget: 24000000}, vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 1, max_lexical_words: 30000}, training: {embedding_dimension: 600, observation_interval: 100000}}
+  d600-w49m: &d600-w49m {corpus: {lexical_token_budget: 49000000}, vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 1, max_lexical_words: 30000}, training: {embedding_dimension: 600, observation_interval: 100000}}
+  d600-w98m: &d600-w98m {corpus: {lexical_token_budget: 98000000}, vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 1, max_lexical_words: 30000}, training: {embedding_dimension: 600, observation_interval: 100000}}
+  d600-w196m: &d600-w196m {corpus: {lexical_token_budget: 196000000}, vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 1, max_lexical_words: 30000}, training: {embedding_dimension: 600, observation_interval: 100000}}
+  d600-w391m: &d600-w391m {corpus: {lexical_token_budget: 391000000}, vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 1, max_lexical_words: 30000}, training: {embedding_dimension: 600, observation_interval: 100000}}
+  d600-w783m: &d600-w783m {corpus: {lexical_token_budget: 783000000}, vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 1, max_lexical_words: 30000}, training: {embedding_dimension: 600, observation_interval: 100000}}
+
 variants:
   local-smoke:
-    identity:
-      planned_run_slot_id: w2v1-local-smoke-s1
-      resource_version: w2v1-local-fixture-v1
-      corpus_manifest_digest: eed121d55c0454b0dc21c7339cd1be3a9e509c9e8fa5630bf00d6a2f926c89de
-    corpus:
-      path: studies/f2/src/f2/suites/w2v1/config/fixtures/corpus.txt
+    identity: {execution_plan_id: w2v1-reconstruction-r2, planned_run_slot_id: w2v1-local-smoke-s1, resource_version: w2v1-local-fixture-v1, corpus_manifest_digest: eed121d55c0454b0dc21c7339cd1be3a9e509c9e8fa5630bf00d6a2f926c89de}
+    corpus: {path: studies/f2/src/f2/suites/w2v1/config/fixtures/corpus.txt}
     training: {embedding_dimension: 8, window_radius: 2, epochs: 2}
-  d50-w24m:
-    corpus: {lexical_token_budget: 24000000}
-    vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 1, max_lexical_words: 30000}
-    training: {observation_interval: 100000}
-  d50-w49m: {corpus: {lexical_token_budget: 49000000}, vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 1, max_lexical_words: 30000}, training: {observation_interval: 100000}}
-  d50-w98m: {corpus: {lexical_token_budget: 98000000}, vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 1, max_lexical_words: 30000}, training: {observation_interval: 100000}}
-  d50-w196m: {corpus: {lexical_token_budget: 196000000}, vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 1, max_lexical_words: 30000}, training: {observation_interval: 100000}}
-  d50-w391m: {corpus: {lexical_token_budget: 391000000}, vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 1, max_lexical_words: 30000}, training: {observation_interval: 100000}}
-  d50-w783m: {corpus: {lexical_token_budget: 783000000}, vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 1, max_lexical_words: 30000}, training: {observation_interval: 100000}}
-  d100-w24m: {corpus: {lexical_token_budget: 24000000}, vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 1, max_lexical_words: 30000}, training: {embedding_dimension: 100, observation_interval: 100000}}
-  d100-w49m: {corpus: {lexical_token_budget: 49000000}, vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 1, max_lexical_words: 30000}, training: {embedding_dimension: 100, observation_interval: 100000}}
-  d100-w98m: {corpus: {lexical_token_budget: 98000000}, vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 1, max_lexical_words: 30000}, training: {embedding_dimension: 100, observation_interval: 100000}}
-  d100-w196m: {corpus: {lexical_token_budget: 196000000}, vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 1, max_lexical_words: 30000}, training: {embedding_dimension: 100, observation_interval: 100000}}
-  d100-w391m: {corpus: {lexical_token_budget: 391000000}, vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 1, max_lexical_words: 30000}, training: {embedding_dimension: 100, observation_interval: 100000}}
-  d100-w783m: {corpus: {lexical_token_budget: 783000000}, vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 1, max_lexical_words: 30000}, training: {embedding_dimension: 100, observation_interval: 100000}}
-  d300-w24m: {corpus: {lexical_token_budget: 24000000}, vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 1, max_lexical_words: 30000}, training: {embedding_dimension: 300, observation_interval: 100000}}
-  d300-w49m: {corpus: {lexical_token_budget: 49000000}, vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 1, max_lexical_words: 30000}, training: {embedding_dimension: 300, observation_interval: 100000}}
-  d300-w98m: {corpus: {lexical_token_budget: 98000000}, vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 1, max_lexical_words: 30000}, training: {embedding_dimension: 300, observation_interval: 100000}}
-  d300-w196m: {corpus: {lexical_token_budget: 196000000}, vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 1, max_lexical_words: 30000}, training: {embedding_dimension: 300, observation_interval: 100000}}
-  d300-w391m: {corpus: {lexical_token_budget: 391000000}, vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 1, max_lexical_words: 30000}, training: {embedding_dimension: 300, observation_interval: 100000}}
-  d300-w783m: {corpus: {lexical_token_budget: 783000000}, vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 1, max_lexical_words: 30000}, training: {embedding_dimension: 300, observation_interval: 100000}}
-  d600-w24m: {corpus: {lexical_token_budget: 24000000}, vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 1, max_lexical_words: 30000}, training: {embedding_dimension: 600, observation_interval: 100000}}
-  d600-w49m: {corpus: {lexical_token_budget: 49000000}, vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 1, max_lexical_words: 30000}, training: {embedding_dimension: 600, observation_interval: 100000}}
-  d600-w98m: {corpus: {lexical_token_budget: 98000000}, vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 1, max_lexical_words: 30000}, training: {embedding_dimension: 600, observation_interval: 100000}}
-  d600-w196m: {corpus: {lexical_token_budget: 196000000}, vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 1, max_lexical_words: 30000}, training: {embedding_dimension: 600, observation_interval: 100000}}
-  d600-w391m: {corpus: {lexical_token_budget: 391000000}, vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 1, max_lexical_words: 30000}, training: {embedding_dimension: 600, observation_interval: 100000}}
-  d600-w783m: {corpus: {lexical_token_budget: 783000000}, vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 1, max_lexical_words: 30000}, training: {embedding_dimension: 600, observation_interval: 100000}}
+  wmt--d50-w24m: {<<: [*wmt, *d50-w24m]}
+  wmt--d50-w49m: {<<: [*wmt, *d50-w49m]}
+  wmt--d50-w98m: {<<: [*wmt, *d50-w98m]}
+  wmt--d50-w196m: {<<: [*wmt, *d50-w196m]}
+  wmt--d50-w391m: {<<: [*wmt, *d50-w391m]}
+  wmt--d50-w783m: {<<: [*wmt, *d50-w783m]}
+  wmt--d100-w24m: {<<: [*wmt, *d100-w24m]}
+  wmt--d100-w49m: {<<: [*wmt, *d100-w49m]}
+  wmt--d100-w98m: {<<: [*wmt, *d100-w98m]}
+  wmt--d100-w196m: {<<: [*wmt, *d100-w196m]}
+  wmt--d100-w391m: {<<: [*wmt, *d100-w391m]}
+  wmt--d100-w783m: {<<: [*wmt, *d100-w783m]}
+  wmt--d300-w24m: {<<: [*wmt, *d300-w24m]}
+  wmt--d300-w49m: {<<: [*wmt, *d300-w49m]}
+  wmt--d300-w98m: {<<: [*wmt, *d300-w98m]}
+  wmt--d300-w196m: {<<: [*wmt, *d300-w196m]}
+  wmt--d300-w391m: {<<: [*wmt, *d300-w391m]}
+  wmt--d300-w783m: {<<: [*wmt, *d300-w783m]}
+  wmt--d600-w24m: {<<: [*wmt, *d600-w24m]}
+  wmt--d600-w49m: {<<: [*wmt, *d600-w49m]}
+  wmt--d600-w98m: {<<: [*wmt, *d600-w98m]}
+  wmt--d600-w196m: {<<: [*wmt, *d600-w196m]}
+  wmt--d600-w391m: {<<: [*wmt, *d600-w391m]}
+  wmt--d600-w783m: {<<: [*wmt, *d600-w783m]}
+  lm1b--d50-w24m: {<<: [*lm1b, *d50-w24m]}
+  lm1b--d50-w49m: {<<: [*lm1b, *d50-w49m]}
+  lm1b--d50-w98m: {<<: [*lm1b, *d50-w98m]}
+  lm1b--d50-w196m: {<<: [*lm1b, *d50-w196m]}
+  lm1b--d50-w391m: {<<: [*lm1b, *d50-w391m]}
+  lm1b--d50-w783m: {<<: [*lm1b, *d50-w783m]}
+  lm1b--d100-w24m: {<<: [*lm1b, *d100-w24m]}
+  lm1b--d100-w49m: {<<: [*lm1b, *d100-w49m]}
+  lm1b--d100-w98m: {<<: [*lm1b, *d100-w98m]}
+  lm1b--d100-w196m: {<<: [*lm1b, *d100-w196m]}
+  lm1b--d100-w391m: {<<: [*lm1b, *d100-w391m]}
+  lm1b--d100-w783m: {<<: [*lm1b, *d100-w783m]}
+  lm1b--d300-w24m: {<<: [*lm1b, *d300-w24m]}
+  lm1b--d300-w49m: {<<: [*lm1b, *d300-w49m]}
+  lm1b--d300-w98m: {<<: [*lm1b, *d300-w98m]}
+  lm1b--d300-w196m: {<<: [*lm1b, *d300-w196m]}
+  lm1b--d300-w391m: {<<: [*lm1b, *d300-w391m]}
+  lm1b--d300-w783m: {<<: [*lm1b, *d300-w783m]}
+  lm1b--d600-w24m: {<<: [*lm1b, *d600-w24m]}
+  lm1b--d600-w49m: {<<: [*lm1b, *d600-w49m]}
+  lm1b--d600-w98m: {<<: [*lm1b, *d600-w98m]}
+  lm1b--d600-w196m: {<<: [*lm1b, *d600-w196m]}
+  lm1b--d600-w391m: {<<: [*lm1b, *d600-w391m]}
+  lm1b--d600-w783m: {<<: [*lm1b, *d600-w783m]}
+  umbc--d50-w24m: {<<: [*umbc, *d50-w24m]}
+  umbc--d50-w49m: {<<: [*umbc, *d50-w49m]}
+  umbc--d50-w98m: {<<: [*umbc, *d50-w98m]}
+  umbc--d50-w196m: {<<: [*umbc, *d50-w196m]}
+  umbc--d50-w391m: {<<: [*umbc, *d50-w391m]}
+  umbc--d50-w783m: {<<: [*umbc, *d50-w783m]}
+  umbc--d100-w24m: {<<: [*umbc, *d100-w24m]}
+  umbc--d100-w49m: {<<: [*umbc, *d100-w49m]}
+  umbc--d100-w98m: {<<: [*umbc, *d100-w98m]}
+  umbc--d100-w196m: {<<: [*umbc, *d100-w196m]}
+  umbc--d100-w391m: {<<: [*umbc, *d100-w391m]}
+  umbc--d100-w783m: {<<: [*umbc, *d100-w783m]}
+  umbc--d300-w24m: {<<: [*umbc, *d300-w24m]}
+  umbc--d300-w49m: {<<: [*umbc, *d300-w49m]}
+  umbc--d300-w98m: {<<: [*umbc, *d300-w98m]}
+  umbc--d300-w196m: {<<: [*umbc, *d300-w196m]}
+  umbc--d300-w391m: {<<: [*umbc, *d300-w391m]}
+  umbc--d300-w783m: {<<: [*umbc, *d300-w783m]}
+  umbc--d600-w24m: {<<: [*umbc, *d600-w24m]}
+  umbc--d600-w49m: {<<: [*umbc, *d600-w49m]}
+  umbc--d600-w98m: {<<: [*umbc, *d600-w98m]}
+  umbc--d600-w196m: {<<: [*umbc, *d600-w196m]}
+  umbc--d600-w391m: {<<: [*umbc, *d600-w391m]}
+  umbc--d600-w783m: {<<: [*umbc, *d600-w783m]}

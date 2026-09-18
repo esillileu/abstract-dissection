@@ -1,13 +1,6 @@
 from __future__ import annotations
 
 from f2.definition import DEFINITION
-from f2.suites.w2v.matrix import (
-    CANONICAL_SEEDS,
-    canonical_slots,
-    planned_slot_id,
-    w2v1_conditions,
-    w2v2_conditions,
-)
 from f2.suites.w2v.readiness import (
     CLASSIFICATIONS,
     DISPOSITIONS,
@@ -18,44 +11,38 @@ from repro_core.execution.definition import RunOptions, RunSelection
 from repro_core.execution.planning import Planner
 
 
-def test_canonical_matrix_has_explicit_cost_and_approval_policy() -> None:
-    w2v1 = canonical_slots("w2v1-reconstruction-r2", w2v1_conditions())
-    w2v2 = canonical_slots("w2v2-reconstruction-r1", w2v2_conditions())
-
-    assert len(w2v1) == 24 * len(CANONICAL_SEEDS)
-    assert len(w2v2) == 6 * len(CANONICAL_SEEDS)
-    assert len({slot["planned_run_slot_id"] for slot in (*w2v1, *w2v2)}) == 90
-    assert all(slot["requires_approval"] for slot in (*w2v1, *w2v2))
-    assert all(slot["estimated_token_updates"] > 0 for slot in (*w2v1, *w2v2))
-
-
 def test_suite_plans_match_canonical_matrix() -> None:
-    for suite, expected in (("w2v1", 216), ("w2v2", 54)):
+    canonical_seeds = {1, 7, 19}
+    for suite, experiment_id, expected in (
+        ("w2v1", "e01", 216),
+        ("w2v2", "e02", 54),
+    ):
         plans = Planner(DEFINITION.get_suite(suite)).build(
             RunSelection(all_experiments=True), RunOptions()
         )
         canonical = [plan for plan in plans if plan.atomic_run_id != "local-smoke"]
         assert len(canonical) == expected
-        assert {plan.seed for plan in canonical} == set(CANONICAL_SEEDS)
+        assert {plan.experiment_id for plan in canonical} == {experiment_id}
+        assert {plan.seed for plan in canonical} == canonical_seeds
 
 
 def test_each_available_corpus_has_a_separate_runtime_identity() -> None:
     expectations = {
         "w2v1": {
-            "e01": "f2-wmt-news-2007-2012-normalized-v1",
-            "e02": "f2-lm1b-r13output-normalized-v1",
-            "e03": "f2-umbc-webbase-normalized-v1",
+            "wmt--d50-w24m": "f2-wmt-news-2007-2012-normalized-v1",
+            "lm1b--d50-w24m": "f2-lm1b-r13output-normalized-v1",
+            "umbc--d50-w24m": "f2-umbc-webbase-normalized-v1",
         },
         "w2v2": {
-            "e01": "f2-wmt-news-2007-2012-normalized-v1",
-            "e02": "f2-lm1b-r13output-normalized-v1",
-            "e03": "f2-umbc-webbase-normalized-v1",
+            "wmt--neg5-no-subsampling": "f2-wmt-news-2007-2012-normalized-v1",
+            "lm1b--neg5-no-subsampling": "f2-lm1b-r13output-normalized-v1",
+            "umbc--neg5-no-subsampling": "f2-umbc-webbase-normalized-v1",
         },
     }
-    for suite, resources in expectations.items():
+    for suite, variants in expectations.items():
         definition = DEFINITION.get_suite(suite)
-        for experiment_id, resource_version in resources.items():
-            atomic_run_id = "d50-w24m" if suite == "w2v1" else "neg5-no-subsampling"
+        experiment_id = "e01" if suite == "w2v1" else "e02"
+        for atomic_run_id, resource_version in variants.items():
             plans = Planner(definition).build(
                 RunSelection(
                     experiment_ids=(experiment_id,),
@@ -75,14 +62,15 @@ def test_each_available_corpus_has_a_separate_runtime_identity() -> None:
 def test_selected_seed_is_part_of_runtime_identity() -> None:
     definition = DEFINITION.get_suite("w2v2")
     spec = definition.load_run_spec(
-        definition.config_root / "e01_phrase_skipgram.yaml",
-        atomic_run_id="hs-subsampling",
+        definition.config_root / "e02_table3_phrase_skipgram.yaml",
+        atomic_run_id="wmt--hs-subsampling",
         overrides={},
     ).with_seed(19)
 
     assert spec.identity["seed"] == 19
-    assert spec.identity["planned_run_slot_id"] == planned_slot_id(
-        "w2v2-reconstruction-r1", "hs-subsampling", 19
+    assert (
+        spec.identity["planned_run_slot_id"]
+        == "w2v2-reconstruction-r1-hs-subsampling-s19"
     )
 
 
