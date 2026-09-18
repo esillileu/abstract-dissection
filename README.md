@@ -10,7 +10,7 @@
 abstract-dissection/
 ├── pyproject.toml              # Unified root workspace configuration
 ├── uv.lock                     # Monorepo lockfile
-├── .python-version             # Hermetic Python version (3.11.11)
+├── .python-version             # Hermetic Python version (3.12.14)
 ├── justfile                    # Top-level orchestration tasks
 │
 ├── packages/                   # Reusable Libraries & Infrastructure

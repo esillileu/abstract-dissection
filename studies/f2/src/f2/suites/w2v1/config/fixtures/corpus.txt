@@ -1,0 +1,4 @@
+king queen man woman king queen man woman
+paris france berlin germany paris france berlin germany
+walk walking run running walk walking run running
+queen king woman man germany berlin france paris

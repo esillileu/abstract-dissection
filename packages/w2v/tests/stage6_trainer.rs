@@ -1,10 +1,13 @@
-use std::{fs, sync::atomic::Ordering};
+use std::{
+    fs,
+    sync::{Arc, atomic::Ordering},
+};
 use w2v::{
     Corpus, EmbeddingKind, Model, ModelKind, ObjectiveKind, RngAlgorithm, Trainer, TrainingConfig,
-    Vocabulary, VocabularyConfig, training::worker::Worker,
+    TrainingSession, Vocabulary, VocabularyConfig, training::worker::Worker,
 };
 
-fn fixture() -> (Corpus, Vocabulary) {
+fn fixture() -> (Arc<Corpus>, Arc<Vocabulary>) {
     let path = std::env::temp_dir().join(format!(
         "w2v-stage6-{}-{}",
         std::process::id(),
@@ -15,16 +18,18 @@ fn fixture() -> (Corpus, Vocabulary) {
         b"alpha beta alpha gamma\nbeta alpha delta\ngamma beta alpha\n",
     )
     .unwrap();
-    let corpus = Corpus::create(&path).unwrap();
-    let vocab = Vocabulary::build(
-        &corpus,
-        &VocabularyConfig {
-            initial_capacity: 2,
-            hash_capacity: 17,
-            min_count: 1,
-        },
-    )
-    .unwrap();
+    let corpus = Arc::new(Corpus::create(&path).unwrap());
+    let vocab = Arc::new(
+        Vocabulary::build(
+            &corpus,
+            &VocabularyConfig {
+                initial_capacity: 2,
+                hash_capacity: 17,
+                min_count: 1,
+            },
+        )
+        .unwrap(),
+    );
     (corpus, vocab)
 }
 
@@ -89,8 +94,16 @@ fn c_single_thread_golden_cases() {
         config.negative_sample_count = 2;
         config.negative_table_size = 257;
         config.sigmoid_table_size = 101;
-        let model = Model::create(&vocab, 8, config.root_seed, algorithm).unwrap();
-        let trainer = Trainer::create(&corpus, &vocab, &model, &config).unwrap();
+        let model = Arc::new(Model::create(&vocab, 8, config.root_seed, algorithm).unwrap());
+        let trainer = Arc::new(
+            Trainer::create(
+                Arc::clone(&corpus),
+                Arc::clone(&vocab),
+                Arc::clone(&model),
+                &config,
+            )
+            .unwrap(),
+        );
         trainer.train().unwrap();
         assert_eq!(trainer.processed_tokens(), 26);
         let mut snapshot = vec![0.0; vocab.entries.len() * 8];
@@ -119,8 +132,14 @@ fn c_learning_rate_interval() {
         negative_table_size: 7,
         ..TrainingConfig::default()
     };
-    let model = Model::create(&vocab, 2, config.root_seed, config.rng_algorithm).unwrap();
-    let trainer = Trainer::create(&corpus, &vocab, &model, &config).unwrap();
+    let model = Arc::new(Model::create(&vocab, 2, config.root_seed, config.rng_algorithm).unwrap());
+    let trainer = Trainer::create(
+        Arc::clone(&corpus),
+        Arc::clone(&vocab),
+        Arc::clone(&model),
+        &config,
+    )
+    .unwrap();
     let mut worker = Worker::initialize(&trainer, 0).unwrap();
     for count in [2, 3] {
         worker.local_token_count = count;
@@ -145,6 +164,127 @@ fn c_learning_rate_interval() {
 }
 
 #[test]
+fn single_thread_epoch_resume_matches_continuous_training() {
+    let (corpus, vocab) = fixture();
+    let mut config = TrainingConfig::for_model(ModelKind::SkipGram);
+    config.embedding_dimension = 8;
+    config.window_radius = 2;
+    config.epochs = 3;
+    config.thread_count = 1;
+    config.subsampling_threshold = 0.0;
+    config.negative_sample_count = 2;
+    config.negative_table_size = 257;
+    config.sigmoid_table_size = 101;
+
+    let continuous_model =
+        Arc::new(Model::create(&vocab, 8, config.root_seed, config.rng_algorithm).unwrap());
+    let continuous_trainer = Arc::new(
+        Trainer::create(
+            Arc::clone(&corpus),
+            Arc::clone(&vocab),
+            Arc::clone(&continuous_model),
+            &config,
+        )
+        .unwrap(),
+    );
+    continuous_trainer.train().unwrap();
+
+    let checkpoint_model =
+        Arc::new(Model::create(&vocab, 8, config.root_seed, config.rng_algorithm).unwrap());
+    let checkpoint_trainer = Arc::new(
+        Trainer::create(
+            Arc::clone(&corpus),
+            Arc::clone(&vocab),
+            Arc::clone(&checkpoint_model),
+            &config,
+        )
+        .unwrap(),
+    );
+    let mut first_session = checkpoint_trainer.session().unwrap();
+    first_session.train_epoch().unwrap();
+    let state = first_session.export_state().unwrap();
+    assert_eq!(state.completed_epochs, 1);
+
+    let resumed_model =
+        Arc::new(Model::create(&vocab, 8, config.root_seed, config.rng_algorithm).unwrap());
+    let resumed_trainer = Arc::new(
+        Trainer::create(
+            Arc::clone(&corpus),
+            Arc::clone(&vocab),
+            Arc::clone(&resumed_model),
+            &config,
+        )
+        .unwrap(),
+    );
+    let mut resumed_session =
+        TrainingSession::restore(Arc::clone(&resumed_trainer), &state).unwrap();
+    while !resumed_session.is_complete() {
+        resumed_session.train_epoch().unwrap();
+    }
+
+    assert_eq!(
+        resumed_trainer.processed_tokens(),
+        continuous_trainer.processed_tokens()
+    );
+    for kind in [EmbeddingKind::Input, EmbeddingKind::Output] {
+        let mut expected = vec![0.0; vocab.entries.len() * config.embedding_dimension];
+        let mut actual = vec![0.0; expected.len()];
+        assert_eq!(
+            continuous_model.snapshot_into(kind, &mut expected),
+            w2v::Status::Ok
+        );
+        assert_eq!(
+            resumed_model.snapshot_into(kind, &mut actual),
+            w2v::Status::Ok
+        );
+        assert_eq!(actual, expected, "embedding parity for {kind:?}");
+    }
+    fs::remove_file(&corpus.path).unwrap();
+}
+
+#[test]
+fn training_state_rejects_identity_and_schema_mismatches() {
+    let (corpus, vocab) = fixture();
+    let mut config = TrainingConfig::for_model(ModelKind::Cbow);
+    config.embedding_dimension = 4;
+    config.window_radius = 2;
+    config.epochs = 2;
+    config.thread_count = 1;
+    config.subsampling_threshold = 0.0;
+    config.negative_sample_count = 2;
+    config.negative_table_size = 257;
+    config.sigmoid_table_size = 101;
+
+    let model = Arc::new(Model::create(&vocab, 4, config.root_seed, config.rng_algorithm).unwrap());
+    let trainer = Arc::new(
+        Trainer::create(
+            Arc::clone(&corpus),
+            Arc::clone(&vocab),
+            Arc::clone(&model),
+            &config,
+        )
+        .unwrap(),
+    );
+    let mut session = trainer.session().unwrap();
+    session.train_epoch().unwrap();
+    let mut state = session.export_state().unwrap();
+
+    state.descriptor.schema_version += 1;
+    assert!(matches!(
+        TrainingSession::restore(Arc::clone(&trainer), &state),
+        Err(w2v::Status::SchemaMismatch)
+    ));
+
+    let mut state = session.export_state().unwrap();
+    state.descriptor.config_digest.push('x');
+    assert!(matches!(
+        TrainingSession::restore(Arc::clone(&trainer), &state),
+        Err(w2v::Status::IdentityMismatch)
+    ));
+    fs::remove_file(&corpus.path).unwrap();
+}
+
+#[test]
 fn subsampling_is_applied_after_counting_and_before_sentence_storage() {
     let (corpus, vocab) = fixture();
     let base = TrainingConfig {
@@ -154,8 +294,14 @@ fn subsampling_is_applied_after_counting_and_before_sentence_storage() {
         subsampling_threshold: 0.0,
         ..TrainingConfig::default()
     };
-    let model = Model::create(&vocab, 2, base.root_seed, base.rng_algorithm).unwrap();
-    let disabled = Trainer::create(&corpus, &vocab, &model, &base).unwrap();
+    let model = Arc::new(Model::create(&vocab, 2, base.root_seed, base.rng_algorithm).unwrap());
+    let disabled = Trainer::create(
+        Arc::clone(&corpus),
+        Arc::clone(&vocab),
+        Arc::clone(&model),
+        &base,
+    )
+    .unwrap();
     let mut worker = Worker::initialize(&disabled, 0).unwrap();
     assert!(!worker.fill_sentence(&disabled).unwrap());
     assert_eq!(worker.sentence.len(), 4);
@@ -167,7 +313,13 @@ fn subsampling_is_applied_after_counting_and_before_sentence_storage() {
         subsampling_threshold: 1e-9,
         ..base
     };
-    let enabled = Trainer::create(&corpus, &vocab, &model, &enabled_config).unwrap();
+    let enabled = Trainer::create(
+        Arc::clone(&corpus),
+        Arc::clone(&vocab),
+        Arc::clone(&model),
+        &enabled_config,
+    )
+    .unwrap();
     let mut worker = Worker::initialize(&enabled, 0).unwrap();
     assert!(!worker.fill_sentence(&enabled).unwrap());
     assert!(worker.sentence.is_empty());
@@ -191,12 +343,99 @@ fn parallel_training_completes_with_finite_embeddings() {
         sigmoid_table_size: 101,
         ..TrainingConfig::default()
     };
-    let model = Model::create(&vocab, 16, config.root_seed, config.rng_algorithm).unwrap();
-    let trainer = Trainer::create(&corpus, &vocab, &model, &config).unwrap();
+    let model =
+        Arc::new(Model::create(&vocab, 16, config.root_seed, config.rng_algorithm).unwrap());
+    let trainer = Arc::new(
+        Trainer::create(
+            Arc::clone(&corpus),
+            Arc::clone(&vocab),
+            Arc::clone(&model),
+            &config,
+        )
+        .unwrap(),
+    );
     trainer.train().unwrap();
     assert!(trainer.processed_tokens() > 0);
     let mut snapshot = vec![0.0; vocab.entries.len() * 16];
     model.snapshot_into(EmbeddingKind::Input, &mut snapshot);
     assert!(snapshot.iter().all(|value| value.is_finite()));
+    fs::remove_file(&corpus.path).unwrap();
+}
+
+#[test]
+fn objective_observation_is_finite_and_does_not_change_training() {
+    let (corpus, vocab) = fixture();
+    let mut config = TrainingConfig::for_model(ModelKind::SkipGram);
+    config.embedding_dimension = 8;
+    config.window_radius = 2;
+    config.epochs = 1;
+    config.thread_count = 1;
+    config.subsampling_threshold = 0.0;
+    config.negative_sample_count = 2;
+    config.negative_table_size = 257;
+    config.sigmoid_table_size = 101;
+
+    let train = |config: &TrainingConfig| {
+        let model =
+            Arc::new(Model::create(&vocab, 8, config.root_seed, config.rng_algorithm).unwrap());
+        let trainer = Arc::new(
+            Trainer::create(
+                Arc::clone(&corpus),
+                Arc::clone(&vocab),
+                Arc::clone(&model),
+                config,
+            )
+            .unwrap(),
+        );
+        let report = trainer.session().unwrap().train_epoch().unwrap();
+        let mut input = vec![0.0; vocab.entries.len() * 8];
+        let mut output = vec![0.0; input.len()];
+        model.snapshot_into(EmbeddingKind::Input, &mut input);
+        model.snapshot_into(EmbeddingKind::Output, &mut output);
+        (report, input, output)
+    };
+
+    let (disabled, expected_input, expected_output) = train(&config);
+    assert!(disabled.observations.is_empty());
+    assert_eq!(disabled.objective_loss_count, 0);
+
+    config.observation_interval = 1;
+    let (observed, actual_input, actual_output) = train(&config);
+    assert_eq!(actual_input, expected_input);
+    assert_eq!(actual_output, expected_output);
+    assert!(!observed.observations.is_empty());
+    assert_eq!(
+        observed.objective_loss_count,
+        observed
+            .observations
+            .iter()
+            .map(|item| item.objective_loss_count)
+            .sum::<u64>()
+    );
+    assert!(
+        (observed.objective_loss_sum
+            - observed
+                .observations
+                .iter()
+                .map(|item| item.objective_loss_sum)
+                .sum::<f64>())
+        .abs()
+            < f64::EPSILON
+    );
+    assert!(observed.observations.iter().all(|item| {
+        item.objective_loss_sum.is_finite()
+            && item.objective_loss_count > 0
+            && item.learning_rate.is_finite()
+            && item.tokens_per_second.is_finite()
+    }));
+
+    config.observation_interval = 2;
+    let (every_second, interval_input, interval_output) = train(&config);
+    assert_eq!(interval_input, expected_input);
+    assert_eq!(interval_output, expected_output);
+    assert_eq!(
+        every_second.observations.len(),
+        observed.observations.len() / 2
+    );
     fs::remove_file(&corpus.path).unwrap();
 }

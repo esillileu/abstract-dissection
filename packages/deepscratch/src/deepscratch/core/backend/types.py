@@ -1,11 +1,11 @@
 from dataclasses import dataclass
-from typing import Any, Literal, Protocol, TypeAlias
+from typing import Any, Literal, Protocol
 
-Array: TypeAlias = Any
-DType: TypeAlias = Any
-Device: TypeAlias = str
-BackendName: TypeAlias = Literal["numpy", "cupy"]
-FloatDTypeName: TypeAlias = Literal["float32", "float64"]
+type Array = Any
+type DType = Any
+type Device = str
+type BackendName = Literal["numpy", "cupy"]
+type FloatDTypeName = Literal["float32", "float64"]
 
 
 class DeviceMismatchError(RuntimeError):
@@ -45,7 +45,7 @@ class HasDevice(Protocol):
     def device(self) -> str: ...
 
 
-DeviceTarget: TypeAlias = str | HasDevice
+type DeviceTarget = str | HasDevice
 
 
 @dataclass(frozen=True)

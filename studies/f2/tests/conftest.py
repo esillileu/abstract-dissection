@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import gzip
+import os
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import pytest
 
@@ -60,7 +62,6 @@ def sample_cluster_idx_text() -> str:
 @pytest.fixture(scope="session")
 def f2_test_database_url():
     """Only an explicit test URL or a disposable PostgreSQL 18 instance."""
-    import os
     import shutil
     import subprocess
     import time
@@ -112,6 +113,18 @@ def f2_test_database_url():
                 .rsplit(":", 1)[1]
             )
             url = f"postgresql://postgres:f2-test-only@127.0.0.1:{port}/f2_test"
+        # This check deliberately happens before migrations or fixture writes.
+        # Never consult dotenv here: a developer's production .env must not
+        # silently become a test database configuration.
+        parsed = urlsplit(url)
+        database_name = (parsed.path or "").lstrip("/")
+        if database_name == "f2" or not database_name.lower().endswith(
+            ("test", "_test", "-test")
+        ):
+            pytest.fail("F2_TEST_DATABASE_URL must identify a dedicated test database")
+        for key in ("F2_DATABASE_URL",):
+            if os.environ.get(key) == url:
+                pytest.fail("F2_TEST_DATABASE_URL must not equal an F2 operational URL")
         deadline = time.monotonic() + 40
         while True:
             try:

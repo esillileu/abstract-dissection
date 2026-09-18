@@ -1,4 +1,4 @@
-"""F2 Word2Vec 2013 paper reproduction and Common Crawl corpus feasibility study."""
+"""F2 Word2Vec 2013 reproduction, corpus preprocessing, and catalog study."""
 
 from __future__ import annotations
 

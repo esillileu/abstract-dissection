@@ -13,8 +13,7 @@ This document specifies the exact lifecycle, storage tiers, and path resolution 
 | `F2_MLFLOW_TRACKING_URI` | Externally operated F2 MLflow HTTP(S) endpoint | F2 tracked workflows |
 | `F2_MLFLOW_DATABASE_URL` | F2 MLflow PostgreSQL backend credentials | Infrastructure operators only; application code must not read it |
 | `F2_DATABASE_URL` | Externally operated PostgreSQL instance; F2 owns only its `catalog` and `corpus` schemas | F2 catalog CLI & F2 corpus CLI |
-| `F2_CORPUS_DATABASE_URL` | F2 corpus PostgreSQL connection URL (legacy alias, routes to `f2` corpus schema) | F2 corpus CLI |
-| `F2_CATALOG_DATABASE_URL` | F2 catalog PostgreSQL connection URL (legacy alias, routes to `f2` catalog schema) | F2 catalog CLI |
+| `F2_CC_DATABASE_URL` | Dedicated `f2_cc` PostgreSQL database for Common Crawl operational state and releases | F2-CC CLI |
 
 A tracking URI is an HTTP(S) application endpoint used by an MLflow client. A
 database URL is a privileged direct PostgreSQL connection string; it must never
@@ -120,10 +119,13 @@ uploaded to an externally operated MLflow endpoint selected by the study contrac
 * **`F2_DATABASE_URL`:** Externally operated PostgreSQL database; F2 owns the definitions and migrations of its `catalog` and `corpus` schemas only.
   * **Schema `corpus`:** Transaction-safe operational state storage for Common Crawl candidate sampling, feature extraction diagnostics, gold human audit labels, generic acquisition runs, immutable artifact metadata, multi-hop processing DAG lineage, and validation evidence.
   * **Schema `catalog`:** Reproduction catalog database tracking papers, targets, experiment specifications, resource lineage/substitutions, execution plan revisions, and planned run slots.
+* **`F2_CC_DATABASE_URL`:** Physically separate `f2_cc` database owned by the
+  `f2-cc` study. It stores URL-level candidates, range acquisition, extraction,
+  audits, analysis profiles, stage lineage, and published release manifests.
+  F2 consumes only a completed release manifest, never CC operational rows.
 * **Corpus Artifact Object Storage (S3-compatible):** Actual corpus binary files, raw archive dumps, intermediate extracts, and canonical tokenized/sharded text files reside in an externally operated object store. F2 defines logical key layout and records object identities, hashes, counts, lineage, and validation evidence in its own schemas; it does not operate the store.
   * **S3 URI Layout:** `raw/<source>/<release>/...`, `processed/<source>/canonical/shard-XXXXX.txt.zst`, `processed/<source>/normalized/shard-XXXXX.txt.zst`, `manifests/<source>/...`.
   * **Remote Worker Tailscale HTTPS:** Exposed over Tailnet via Tailscale Serve at `https://<tailnet-host>:9000` (`F2_CORPUS_S3_ACCESS_KEY` / `F2_CORPUS_S3_SECRET_KEY`, path-style addressing).
-* **`F2_CORPUS_DATABASE_URL` / `F2_CATALOG_DATABASE_URL`:** Backward-compatible legacy aliases routing transparently to `f2` with dedicated schema search paths.
 
 ---
 
@@ -171,12 +173,10 @@ All storage roots can be overridden via environment variables for CI, remote clu
 
 Explicit connection_url bypasses environment resolution. Without it, an existing
 non-empty F2_DATABASE_URL wins immediately. Otherwise load_dotenv(override=True)
-is attempted using its existing discovery behavior, then F2_DATABASE_URL or the
-subsystem legacy alias is read; finally the legacy environment alias is checked.
-This preserves the existing precedence, including dotenv overriding an existing
-legacy alias when unified configuration was initially absent. Missing configuration
-now raises DatabaseConfigError or CatalogDatabaseConfigError; there are no built-in
-localhost credentials. An unavailable dotenv loader does not suppress the final error.
+is attempted using its existing discovery behavior and F2_DATABASE_URL is read.
+No subsystem or legacy database aliases are consulted. Missing configuration raises
+DatabaseConfigError or CatalogDatabaseConfigError; there are no built-in localhost
+credentials. An unavailable dotenv loader does not suppress the final error.
 
 F2_TEST_DATABASE_URL is read only by test fixtures, never from dotenv. Without it,
 tests create and clean up a temporary PostgreSQL 18 Podman/Docker container. They

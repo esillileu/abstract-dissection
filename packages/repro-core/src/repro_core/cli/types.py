@@ -4,12 +4,9 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from functools import wraps
-from typing import Annotated, ParamSpec, TypeVar
+from typing import Annotated
 
 import typer
-
-P = ParamSpec("P")
-T = TypeVar("T")
 
 Experiments = Annotated[
     list[str] | None,
@@ -29,7 +26,7 @@ Overrides = Annotated[
 ]
 
 
-def cli_errors(function: Callable[P, T]) -> Callable[P, T]:
+def cli_errors[**P, T](function: Callable[P, T]) -> Callable[P, T]:
     @wraps(function)
     def wrapped(*args: P.args, **kwargs: P.kwargs) -> T:
         try:

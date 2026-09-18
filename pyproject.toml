@@ -2,7 +2,7 @@
 name = "abstract-dissection-workspace"
 version = "0.1.0"
 description = "Monorepo for deep learning and NLP paper reproductions"
-requires-python = ">=3.11, <3.12"
+requires-python = ">=3.12, <3.13"
 dependencies = []
 
 [tool.uv.workspace]
@@ -10,7 +10,6 @@ members = [
     "packages/*",
     "studies/*",
 ]
-exclude = ["packages/w2v"]
 
 [tool.uv.sources]
 repro-core = { workspace = true }
@@ -19,14 +18,17 @@ repro-mlflow = { workspace = true }
 dlfs = { workspace = true }
 deepscratch = { workspace = true }
 f2 = { workspace = true }
+f2-cc = { workspace = true }
+w2v = { workspace = true }
 
 [dependency-groups]
 dev = [
+    "maturin>=1.8,<2",
     "mypy>=1.20.0",
-    "pydeps>=3.0.6",
+    "pydeps>=3.0.8",
     "pytest>=9.1.1",
     "pytest-cov>=7.1.0",
-    "ruff>=0.15.8",
+    "ruff>=0.16.8",
 ]
 
 [tool.ruff]
@@ -41,6 +43,7 @@ extend-exclude = [
 
 [tool.pytest.ini_options]
 testpaths = ["packages", "studies", "tests"]
+addopts = "-m 'not network and not database'"
 norecursedirs = [
     "references",
     "data",
@@ -52,6 +55,7 @@ norecursedirs = [
 ]
 markers = [
     "network: marks tests as requiring external network access",
+    "database: marks tests as requiring a disposable or explicitly configured database",
 ]
 
 [tool.ruff.lint]

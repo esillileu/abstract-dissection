@@ -13,7 +13,9 @@ class F2Definition:
 
     name: str = "f2"
     display_name: str = "Word2Vec (2013) Paper Reproduction Campaign"
-    description: str = "Common Crawl (2009-2012) corpus feasibility, word embedding reproductions, and evaluation suites"
+    description: str = (
+        "Word2Vec corpus preprocessing, embedding reproductions, and evaluation suites"
+    )
     _suites: dict[str, ExecutionDefinition] = field(default_factory=dict)
 
     def register_suite(self, suite_name: str, definition: ExecutionDefinition) -> None:
@@ -39,5 +41,16 @@ class F2Definition:
 
 
 DEFINITION = F2Definition()
+
+
+def _register_builtin_suites() -> None:
+    from .suites.w2v1 import DEFINITION as w2v1_definition
+    from .suites.w2v2 import DEFINITION as w2v2_definition
+
+    DEFINITION.register_suite("w2v1", w2v1_definition)
+    DEFINITION.register_suite("w2v2", w2v2_definition)
+
+
+_register_builtin_suites()
 
 __all__ = ["DEFINITION", "F2Definition"]

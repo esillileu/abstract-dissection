@@ -2,20 +2,18 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from functools import wraps
-from typing import Annotated, ParamSpec, TypeVar
+from typing import Annotated
 
 import typer
 
 from repro_core.execution.definition import RunOrder
 
 from .catalog.cli import app as catalog_app
-from .corpus.cli import app as corpus_app
+from .corpus.preprocessing_cli import app as corpus_app
 from .definition import DEFINITION
-
-P = ParamSpec("P")
-T = TypeVar("T")
 
 Experiments = Annotated[
     list[str] | None,
@@ -35,7 +33,7 @@ Overrides = Annotated[
 ]
 
 
-def cli_errors(function: Callable[P, T]) -> Callable[P, T]:
+def cli_errors[**P, T](function: Callable[P, T]) -> Callable[P, T]:
     """Wrap CLI callbacks to format value/runtime errors cleanly."""
 
     @wraps(function)
@@ -56,6 +54,15 @@ app = typer.Typer(
 
 app.add_typer(corpus_app, name="corpus")
 app.add_typer(catalog_app, name="catalog")
+
+
+@app.command("preflight")
+@cli_errors
+def preflight() -> None:
+    """Read-only validation of F2 database, corpus store, and MLflow targets."""
+    from .preflight import run_preflight
+
+    typer.echo(json.dumps(run_preflight(), indent=2, sort_keys=True))
 
 
 @app.command("suites")
@@ -132,11 +139,34 @@ def run(
     progress: Annotated[str, typer.Option("--progress")] = "auto",
     progress_every: Annotated[int, typer.Option("--progress-every")] = 10,
     tracking_uri: Annotated[str | None, typer.Option("--tracking-uri")] = None,
+    approve_large_run: Annotated[
+        bool,
+        typer.Option(
+            "--approve-large-run",
+            help="Acknowledge the cost of canonical W2V training.",
+        ),
+    ] = False,
 ) -> None:
     """Execute F2 suite experiments."""
     from repro_core.cli.commands import run_command
 
     suite_def = DEFINITION.get_suite(suite)
+    canonical_w2v = suite in {"w2v1", "w2v2"} and (
+        not atomic_run or any(run_id != "local-smoke" for run_id in atomic_run)
+    )
+    if canonical_w2v and not dry_run and not approve_large_run:
+        raise ValueError("canonical W2V training requires --approve-large-run")
+    if canonical_w2v and not dry_run:
+        from .tracking import resolve_tracking_uri
+
+        tracking_uri = resolve_tracking_uri(tracking_uri)
+    run_fn = None
+    if suite in {"w2v1", "w2v2"}:
+        from .suites.w2v.tracked import run_local_yaml, run_tracked_yaml
+
+        run_fn = run_local_yaml if tracking_uri is None else run_tracked_yaml
+        # Runner requires a non-empty URI but the local runner never consumes it.
+        tracking_uri = tracking_uri or "local"
     run_command(
         suite_def,
         experiments=experiment or [],
@@ -152,6 +182,7 @@ def run(
         progress=progress,
         progress_every=progress_every,
         tracking_uri=tracking_uri,
+        run_fn=run_fn,
     )
 
 
@@ -167,6 +198,11 @@ def analyze(
     """Render or summarize F2 experiment results."""
     if suite == "corpus":
         typer.echo("For corpus pipeline analysis, use: repro f2 corpus analyze --help")
+        return
+    if suite == "w2v1":
+        from .suites.w2v1.validation import analyze_latest
+
+        typer.echo(analyze_latest())
         return
     typer.echo(f"Analysis orchestration for F2 suite '{suite}' is initialized.")
 
@@ -189,6 +225,11 @@ def check(
     tracking_uri: Annotated[str | None, typer.Option("--tracking-uri")] = None,
 ) -> None:
     """Compare declared plans with recorded F2 run state in MLflow."""
+    if suite == "w2v1" and tracking_uri is None:
+        from .suites.w2v1.validation import check_latest
+
+        typer.echo(check_latest())
+        return
     typer.echo(f"Checking run state for F2 suite '{suite}'...")
 
 

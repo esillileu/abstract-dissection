@@ -28,7 +28,7 @@ All AI agents working in this repository MUST adhere to the following 6 golden r
 ### 1) Strict Hermetic Python (`uv run`)
 * **Rule:** NEVER execute bare system commands such as `python`, `pip`, `pytest`, or `ruff`.
 * **Standard:** ALWAYS prefix Python executions and tools with `uv run` (e.g., `uv run pytest`, `uv run repro ...`, `uv run python -c "..."`).
-* **Environment:** Python 3.11.11 managed via root [`pyproject.toml`](file:///home/esillileu/abstract-dissection/pyproject.toml) and [`uv.lock`](file:///home/esillileu/abstract-dissection/uv.lock).
+* **Environment:** Python 3.12.14 managed via root [`pyproject.toml`](file:///home/esillileu/abstract-dissection/pyproject.toml) and [`uv.lock`](file:///home/esillileu/abstract-dissection/uv.lock).
 
 ### 2) Zero-Dependency Invariants & Package Isolation
 * **`deepscratch`:** 100% standalone deep learning library. NEVER import `repro_core`, `repro_mlflow`, or studies (`dlfs`, `f2`). Allowed: `numpy`, `psutil`, (optional: `cupy`).
@@ -57,6 +57,26 @@ All AI agents working in this repository MUST adhere to the following 6 golden r
   just check
   ```
   Ensure all 500+ tests pass and linter/formatter have 0 errors.
+* **Elevated execution:** Always run the root `just check` outside the filesystem
+  sandbox with elevated permissions. Its verification suite may start a disposable
+  rootless Podman PostgreSQL instance and must be able to write under the user's
+  runtime directory (for example, `/run/user/<uid>/libpod`). Request approval for
+  the narrow `just check` command prefix when no persistent approval exists; do not
+  broaden writable roots or grant general shell access merely to run this gate.
+* **Environment-failure stop rule:** If the verification command cannot start or
+  complete because of an environment or infrastructure problem rather than a
+  code/test failure (for example: a missing executable, broken virtual
+  environment, dependency-sync problem, unavailable service, credentials,
+  permissions, network, GPU, or production database configuration), report the
+  failure and **stop immediately**.
+  * Do **not** run `uv sync`, install/reinstall packages, mutate `.venv`, change
+    credentials or environment variables, start services, apply migrations, or
+    retry against another environment unless the user explicitly authorizes it.
+  * Do **not** run tests when the active environment points at production or
+    shared external services. Treat this as an environment failure and stop.
+  * Never attempt to repair the environment merely to satisfy the verification
+    gate. Record the command, the environmental cause, and which checks did or
+    did not run.
 
 ---
 

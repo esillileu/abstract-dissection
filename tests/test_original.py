@@ -129,6 +129,7 @@ def test_ds2_original_summary_reads_only_original_cache(
 
 def test_ds1_renderer_uses_only_persisted_fixture(
     tmp_path: Path,
+    monkeypatch,
 ) -> None:
     root = tmp_path / "original"
     trial_ids = tuple(
@@ -164,6 +165,16 @@ def test_ds1_renderer_uses_only_persisted_fixture(
                 "config_hash": "fixture",
             },
         )
+
+    def fake_e09_render(_root, image_dir):
+        path = image_dir / "e09_optimizer_compare_naive.png"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"\x89PNG\r\n\x1a\n")
+        return [path]
+
+    import dlfs.ds1.original.native_analysis.e09 as e09_module
+
+    monkeypatch.setattr(e09_module, "render", fake_e09_render)
 
     before = set(sys.modules)
     from dlfs.ds1.original.native_analysis.api import render

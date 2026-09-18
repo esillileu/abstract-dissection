@@ -1,6 +1,6 @@
-from typing import Any, TypeAlias
+from typing import Any
 
-IntPair: TypeAlias = tuple[int, int]
+type IntPair = tuple[int, int]
 
 
 def im2col(

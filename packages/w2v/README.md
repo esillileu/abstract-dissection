@@ -101,6 +101,19 @@ Negative sampling을 선택하려면 `objective_kind`를
 “negative를 끄는” 방식은 사용하지 않습니다. `objective_kind`가 선택의
 기준입니다.
 
+## Training observations
+
+`TrainingConfig::observation_interval`은 worker별 model-objective 호출 중 하나를
+몇 호출마다 측정할지 정합니다. 기본값 `0`은 관측을 비활성화하며 학습 수치 경로에
+추가 연산을 넣지 않습니다. 양수이면 `EpochReport::observations`에 epoch, global
+processed tokens, learning rate, sampled objective loss sum/count, elapsed time 및
+throughput이 기록됩니다. `EpochReport`의 loss sum/count는 해당 epoch의 dense
+observation 집계입니다.
+
+Python의 `EpochReport.observations()`도 같은 owned snapshot을 반환합니다. callback은
+완료된 epoch report를 받으므로 Python 코드가 실행되는 동안 Rust 학습 메모리를
+빌리지 않습니다.
+
 같은 `Trainer`에서 `train()`을 다시 호출하면 처리 토큰 카운터는 0으로
 초기화되지만 이미 학습된 임베딩은 초기화되지 않습니다. 처음부터 다시
 학습하려면 새 `Model`을 생성해야 합니다.

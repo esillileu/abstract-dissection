@@ -15,10 +15,16 @@ lint:
     uv run ruff check --fix .
     uv run ruff format .
 
+linecheck:
+    fd -e py -E '**/original/source/**' -E 'references/**' -E '**/tests/**' -0  | xargs -0 wc -l | awk '$1 >= 250 && $2 != "total"' | sort -nr
 
 # Run test suite
 test *args:
     uv run pytest {{args}}
+
+# Run database integration tests against an explicit test DB or disposable container
+test-db:
+    uv run pytest -q -o addopts="" -m "database and not network"
 
 # Run repro CLI
 repro *args:

@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import urllib.parse
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -20,6 +21,13 @@ class S3Config:
     access_key: str
     secret_key: str
     region: str = "us-east-1"
+
+
+@dataclass(frozen=True)
+class S3ObjectMetadata:
+    uri: str
+    byte_size: int
+    etag: str | None = None
 
 
 class S3ObjectStore:
@@ -38,7 +46,13 @@ class S3ObjectStore:
         return parsed.netloc, path, f"{endpoint}/{parsed.netloc}{path}"
 
     def _headers(
-        self, method: str, bucket: str, path: str, payload_hash: str
+        self,
+        method: str,
+        bucket: str,
+        path: str,
+        payload_hash: str,
+        *,
+        canonical_query: str = "",
     ) -> dict[str, str]:
         from datetime import UTC, datetime
 
@@ -49,7 +63,7 @@ class S3ObjectStore:
             f"host:{host}\nx-amz-content-sha256:{payload_hash}\nx-amz-date:{stamp}\n"
         )
         signed = "host;x-amz-content-sha256;x-amz-date"
-        canonical = f"{method}\n/{bucket}{path}\n\n{canonical_headers}\n{signed}\n{payload_hash}"
+        canonical = f"{method}\n/{bucket}{path}\n{canonical_query}\n{canonical_headers}\n{signed}\n{payload_hash}"
         scope = f"{date}/{self.config.region}/s3/aws4_request"
         string_to_sign = f"AWS4-HMAC-SHA256\n{stamp}\n{scope}\n{hashlib.sha256(canonical.encode()).hexdigest()}"
 
@@ -114,6 +128,63 @@ class S3ObjectStore:
         partial.replace(local_path)
         return local_path
 
+    def head(self, uri: str) -> S3ObjectMetadata:
+        """Return object size and ETag without downloading object bytes."""
+        bucket, path, url = self._target(uri)
+        empty_hash = hashlib.sha256(b"").hexdigest()
+        response = requests.head(
+            url,
+            headers=self._headers("HEAD", bucket, path, empty_hash),
+            timeout=30,
+        )
+        response.raise_for_status()
+        return S3ObjectMetadata(
+            uri=uri,
+            byte_size=int(response.headers["Content-Length"]),
+            etag=response.headers.get("ETag"),
+        )
+
+    def list(self, prefix_uri: str) -> list[S3ObjectMetadata]:
+        """List every object below an S3 URI prefix using ListObjectsV2."""
+        bucket, path, _ = self._target(prefix_uri)
+        prefix = path.lstrip("/")
+        endpoint = self.config.endpoint.rstrip("/")
+        result: list[S3ObjectMetadata] = []
+        continuation: str | None = None
+        while True:
+            query = {"list-type": "2", "prefix": prefix}
+            if continuation:
+                query["continuation-token"] = continuation
+            canonical_query = urllib.parse.urlencode(
+                sorted(query.items()), quote_via=urllib.parse.quote
+            )
+            url = f"{endpoint}/{bucket}/?{canonical_query}"
+            empty_hash = hashlib.sha256(b"").hexdigest()
+            response = requests.get(
+                url,
+                headers=self._headers(
+                    "GET", bucket, "/", empty_hash, canonical_query=canonical_query
+                ),
+                timeout=30,
+            )
+            response.raise_for_status()
+            root = ET.fromstring(response.content)
+            namespace = root.tag.removesuffix("ListBucketResult")
+            for item in root.findall(f"{namespace}Contents"):
+                key = item.findtext(f"{namespace}Key")
+                size = item.findtext(f"{namespace}Size")
+                if key is not None and size is not None:
+                    result.append(
+                        S3ObjectMetadata(
+                            f"s3://{bucket}/{key}",
+                            int(size),
+                            item.findtext(f"{namespace}ETag"),
+                        )
+                    )
+            continuation = root.findtext(f"{namespace}NextContinuationToken")
+            if not continuation:
+                return result
+
     def probe(self) -> None:
         bucket, path, url = self._target(self.config.root_uri.rstrip("/") + "/")
         empty_hash = hashlib.sha256(b"").hexdigest()
@@ -124,4 +195,4 @@ class S3ObjectStore:
             response.raise_for_status()
 
 
-__all__ = ["S3Config", "S3ObjectStore"]
+__all__ = ["S3Config", "S3ObjectMetadata", "S3ObjectStore"]

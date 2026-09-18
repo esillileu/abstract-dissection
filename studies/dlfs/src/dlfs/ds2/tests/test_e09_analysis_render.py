@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -88,6 +90,13 @@ def test_e09_additional_visualization_writes_standalone_and_combined_graphs(
 
     monkeypatch.setattr(e06_addition_seq2seq, "runs", fake_runs)
     monkeypatch.setattr(e06_addition_seq2seq, "source_curve", fake_source_curve)
+
+    def fake_save_figure(_figure, path: Path) -> Path:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"\x89PNG\r\n\x1a\n")
+        return path
+
+    monkeypatch.setattr(e09_addition_seq2seq_150, "save_figure", fake_save_figure)
 
     outputs = e09_addition_seq2seq_150.render_additional_graphs(
         object(),

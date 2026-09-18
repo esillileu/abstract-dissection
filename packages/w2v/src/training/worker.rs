@@ -1,12 +1,21 @@
 //! Sentence filling, subsampling, and worker-local rate from the C oracle.
-use super::{ModelStep, cbow_train, skip_gram_train};
+use super::{ModelStep, ObjectiveLoss, cbow_train, skip_gram_train};
 use crate::{
     config::{MAX_SENTENCE_LENGTH, ModelKind, Real, Status},
     corpus::Tokenizer,
     random::{Rng, RngPurpose, derive_seed},
     trainer::Trainer,
 };
-use std::{fs::File, sync::atomic::Ordering};
+use std::{fs::File, sync::atomic::Ordering, time::Instant};
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct WorkerObservation {
+    pub processed_tokens: u64,
+    pub learning_rate: Real,
+    pub objective_loss_sum: f64,
+    pub objective_loss_count: u64,
+    pub elapsed_seconds: f64,
+}
 
 pub struct Worker {
     pub worker_id: usize,
@@ -21,11 +30,25 @@ pub struct Worker {
     pub window_rng: Rng,
     pub subsampling_rng: Rng,
     pub negative_rng: Rng,
+    pub objective_count: u64,
+    pub observations: Vec<WorkerObservation>,
     tokenizer: Tokenizer<File>,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct WorkerState {
+    pub worker_id: usize,
+    pub local_token_count: u64,
+    pub last_learning_rate_update_count: u64,
+    pub learning_rate: Real,
+    pub window_rng_state: u64,
+    pub subsampling_rng_state: u64,
+    pub negative_rng_state: u64,
+    pub objective_count: u64,
+}
+
 impl Worker {
-    pub fn initialize(trainer: &Trainer<'_>, worker_id: usize) -> Result<Self, Status> {
+    pub fn initialize(trainer: &Trainer, worker_id: usize) -> Result<Self, Status> {
         if worker_id >= trainer.config.thread_count {
             return Err(Status::InvalidArgument);
         }
@@ -64,17 +87,50 @@ impl Worker {
             window_rng: rng(RngPurpose::Window),
             subsampling_rng: rng(RngPurpose::Subsample),
             negative_rng: rng(RngPurpose::Negative),
+            objective_count: 0,
+            observations: Vec::new(),
             tokenizer: trainer.corpus.tokenizer(shard_start)?,
         })
     }
 
-    pub fn reset_epoch(&mut self, trainer: &Trainer<'_>) -> Result<(), Status> {
+    pub fn reset_epoch(&mut self, trainer: &Trainer) -> Result<(), Status> {
         self.epoch_token_count = 0;
         self.tokenizer = trainer.corpus.tokenizer(self.shard_start)?;
         Ok(())
     }
 
-    pub fn fill_sentence(&mut self, trainer: &Trainer<'_>) -> Result<bool, Status> {
+    pub fn export_state(&self) -> WorkerState {
+        WorkerState {
+            worker_id: self.worker_id,
+            local_token_count: self.local_token_count,
+            last_learning_rate_update_count: self.last_learning_rate_update_count,
+            learning_rate: self.learning_rate,
+            window_rng_state: self.window_rng.state,
+            subsampling_rng_state: self.subsampling_rng.state,
+            negative_rng_state: self.negative_rng.state,
+            objective_count: self.objective_count,
+        }
+    }
+
+    pub fn restore_state(&mut self, state: &WorkerState) -> Status {
+        if state.worker_id != self.worker_id
+            || !state.learning_rate.is_finite()
+            || state.learning_rate <= 0.0
+            || state.last_learning_rate_update_count > state.local_token_count
+        {
+            return Status::InvalidState;
+        }
+        self.local_token_count = state.local_token_count;
+        self.last_learning_rate_update_count = state.last_learning_rate_update_count;
+        self.learning_rate = state.learning_rate;
+        self.window_rng.state = state.window_rng_state;
+        self.subsampling_rng.state = state.subsampling_rng_state;
+        self.negative_rng.state = state.negative_rng_state;
+        self.objective_count = state.objective_count;
+        Status::Ok
+    }
+
+    pub fn fill_sentence(&mut self, trainer: &Trainer) -> Result<bool, Status> {
         self.sentence.clear();
         let mut finished = false;
         while self.sentence.len() < MAX_SENTENCE_LENGTH {
@@ -109,7 +165,7 @@ impl Worker {
         Ok(finished)
     }
 
-    pub fn update_learning_rate(&mut self, trainer: &Trainer<'_>) {
+    pub fn update_learning_rate(&mut self, trainer: &Trainer) {
         let since_update = self.local_token_count - self.last_learning_rate_update_count;
         if since_update <= trainer.config.learning_rate_update_interval as u64 {
             return;
@@ -123,9 +179,12 @@ impl Worker {
         self.last_learning_rate_update_count = self.local_token_count;
     }
 
-    pub fn train_sentence(&mut self, trainer: &Trainer<'_>) {
+    pub fn train_sentence(&mut self, trainer: &Trainer, started: Instant) -> Result<(), Status> {
         for position in 0..self.sentence.len() {
             self.update_learning_rate(trainer);
+            self.objective_count += 1;
+            let observe = trainer.config.observation_interval > 0
+                && self.objective_count % trainer.config.observation_interval as u64 == 0;
             let mut step = ModelStep {
                 trainer,
                 target_token: self.sentence[position],
@@ -136,29 +195,44 @@ impl Worker {
                 hidden_gradient: &mut self.hidden_gradient,
                 window_rng: &mut self.window_rng,
                 negative_rng: &mut self.negative_rng,
+                observe_objective: observe,
             };
-            match trainer.config.model_kind {
+            let loss: ObjectiveLoss = match trainer.config.model_kind {
                 ModelKind::Cbow => cbow_train(&mut step),
                 ModelKind::SkipGram => skip_gram_train(&mut step),
+            }?;
+            if observe && loss.count > 0 {
+                self.observations.push(WorkerObservation {
+                    processed_tokens: trainer.processed_tokens(),
+                    learning_rate: self.learning_rate,
+                    objective_loss_sum: loss.sum,
+                    objective_loss_count: loss.count,
+                    elapsed_seconds: started.elapsed().as_secs_f64(),
+                });
             }
         }
+        Ok(())
     }
 
-    pub fn run(&mut self, trainer: &Trainer<'_>) -> Result<(), Status> {
-        for epoch in 0..trainer.config.epochs {
-            if epoch > 0 {
-                self.reset_epoch(trainer)?;
+    pub fn run_epoch(
+        &mut self,
+        trainer: &Trainer,
+        reset: bool,
+        started: Instant,
+    ) -> Result<(), Status> {
+        self.observations.clear();
+        if reset {
+            self.reset_epoch(trainer)?;
+        }
+        let mut finished = false;
+        while !finished {
+            finished = self.fill_sentence(trainer)?;
+            let limit = trainer.vocab.retained_token_count / trainer.config.thread_count as u64;
+            if self.epoch_token_count > limit {
+                finished = true;
             }
-            let mut finished = false;
-            while !finished {
-                finished = self.fill_sentence(trainer)?;
-                let limit = trainer.vocab.retained_token_count / trainer.config.thread_count as u64;
-                if self.epoch_token_count > limit {
-                    finished = true;
-                }
-                if !finished {
-                    self.train_sentence(trainer);
-                }
+            if !finished {
+                self.train_sentence(trainer, started)?;
             }
         }
         Ok(())

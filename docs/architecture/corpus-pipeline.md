@@ -1,36 +1,26 @@
 # Common Crawl Corpus Pipeline & Auditing Architecture
 
-This document describes the Common Crawl corpus sampling, auditing, calibration, and ingestion subsystem in `studies/f2`. This pipeline serves as the **foundational Phase-0 data infrastructure** for the broader `f2` research campaign (a suite of 8~10 studies comprising 2 corpus-dependent Word2Vec training studies and 5 independent benchmark studies).
+This document describes the boundary between the independent Common Crawl
+producer in `studies/f2_cc` and completed-release preparation in `studies/f2`.
+F2-CC owns sampling, auditing, calibration, and release publication. F2 consumes
+only completed release manifests and owns the Word2Vec research catalog.
 
 ---
 
 ## 1. Subsystem Architecture & Module Map
 
 ```text
-studies/f2/
-├── pyproject.toml                     # Workspace dependencies (repro-core, duckdb, psycopg, typer)
+studies/f2_cc/                         # Common Crawl producer; database f2_cc
+├── README.md                          # Fresh collection and release contract
+└── src/f2_cc/
+    ├── corpus/                        # Discovery, extraction, audit, analysis
+    └── db/                            # Operational state and release manifests
+
+studies/f2/                            # Word2Vec consumer and research catalog
+├── catalog/w2v.json                   # W2V1/W2V2 research catalog manifest
 └── src/f2/
-    ├── plugin.py                      # Repro CLI Plugin Entrypoint (discoverable by repro_core)
-    ├── cli.py                         # Root Typer CLI dispatcher
-    ├── definition.py                  # Study ExecutionDefinitions
-    ├── common/                        # Shared statistics & analysis standards
-    │   ├── stats/                     # BootstrapVarianceEngine, DifferenceEstimator, ClassifierMetrics
-    │   └── analysis/                  # BaseAnalysisOrchestrator, theme, declarations
-    └── corpus/                        # Common Crawl Extraction Subsystem & Control Plane
-        ├── cli.py                     # Typer CLI: migrate, plan, sample, audit, analyze, calibrate, build
-        ├── discovery.py               # 2-stage Horvitz-Thompson sampler & 8-stratum audit allocator
-        ├── pipeline.py                # Content extraction, language ID, validity filter, news scoring
-        ├── storage.py                 # Provenance export & clean text shard writers
-        ├── analysis.py                # Two-Phase Stratified Difference Estimator & Bootstrap
-        ├── calibration.py             # Offline classifier calibration & pre-fetch filter ablation
-        └── db/                        # F2-owned schemas/state on external PostgreSQL
-            ├── migrations/
-            │   ├── 001_initial_schema.sql
-            │   ├── 002_add_prefetch_reject_stream.sql
-            │   ├── 003_corpus_lifecycle_lineage_and_validation.sql
-            │   └── runner.py
-            ├── repository.py          # CorpusStateRepository (sampling, auditing, lifecycle DAG lineage & validation)
-            └── session.py             # Connection/transaction lifecycle (F2_DATABASE_URL / F2_CORPUS_DATABASE_URL)
+    ├── catalog/                       # Catalog loader, repository, materializer
+    └── corpus/                        # Completed-source preparation and validation
 ```
 
 ---
@@ -53,8 +43,13 @@ $$\hat{W}_{\text{true}, c} = \hat{W}_{\text{proxy}, c} + \hat{E}_c = \sum_{i \in
 
 ### 3) 3-Tier Storage Lifecycle for Corpus Pipeline
 * **PostgreSQL:** Transactional source of truth for candidate metadata, sampling weights, processing diagnostics, and gold audit annotations.
-* **`.staging/exp/f2/`:** Ephemeral download shards, intermediate text extractions, and scratch audit sheets. Safe to wipe at any time.
-* **`artifacts/analysis/f2/corpus/`:** Specialized corpus deliverables (`00_corpus_confirmatory_50k_report.md`, `00_corpus_confirmatory_50k_summary.csv`, `00_corpus_confirmatory_50k_filter_study.md`, `00_corpus_audit_set_50k_400_annotated.jsonl`), resolved via `RuntimePaths.from_environment().analysis_output("f2", "corpus")`.
+* **`.staging/exp/f2_cc/<run-id>/`:** Ephemeral producer output, intermediate
+  text, and audit material. Safe to wipe at any time.
+* **`artifacts/analysis/f2_cc/corpus/`:** Specialized corpus analysis deliverables
+  (`corpus_analysis.md`, `corpus_analysis.csv`, and `filter_calibration.md`),
+  resolved via `RuntimePaths.from_environment().analysis_output("f2_cc", "corpus")`.
+  Provenance and audit inputs are always selected explicitly; the CLI does not
+  search historical 10K/50K output names.
 
 ---
 
@@ -112,7 +107,9 @@ flowchart LR
   * **Target Referential Integrity:** Mutually exclusive non-null foreign keys (`target_processing_run_id`, `target_artifact_id`, `target_resource_version_id`) with CHECK constraint `ck_validation_runs_target` and generated column `target_id`.
   * **Profile Immutability:** Protected by PostgreSQL trigger `prevent_validation_profile_modification` preventing UPDATE of specification, spec_hash, and identity fields on existing revisions.
   * **Detailed Evidence:** Records individual validation rules, pass/fail status, expected/actual metrics, thresholds, and diagnostic JSON payloads.
-* **Common Crawl Lineage Bridge (`corpus.pipeline_run_lineage`):** Dedicated identity PK (`lineage_id`) with partial unique indexes (`pipeline_run_id`, `stage`) allowing safe retries and bridging Common Crawl operational pipeline runs to standard lifecycle acquisition/processing runs.
+* **Common Crawl release boundary:** F2 records the completed manifest URI and
+  SHA-256 as a catalog resource version. It does not join to F2-CC operational
+  tables or retain a cross-database run bridge.
 
 ### 3) Provenance Invariants & Recursive Lineage Traversal
 * **Strict Provenance Retention:** All historical provenance entities (`resource_versions`, `acquisition_runs`, `processing_runs`, `artifacts`, `corpus_shards`) enforce `ON DELETE RESTRICT`. Accidental deletion of any participant in a lineage chain is rejected at the database level.
@@ -256,32 +253,33 @@ rclone copy --s3-provider Other \
 ## 5. CLI Command Reference
 
 ### A. Common Crawl Subsystem Commands
-All Common Crawl sampling, auditing, and estimation commands run via `uv run repro f2 corpus <subcommand>`:
+Common Crawl sampling, auditing, and estimation belong to the independent
+`f2-cc` plugin. Inputs that identify analysis or audit data are explicit.
 
 ```bash
 # 1. Database Migrations
-uv run repro f2 corpus migrate
+uv run repro f2-cc migrate
 
 # 2. Probability Sampling from CDX Cluster Indexes
-uv run repro f2 corpus sample --crawls CC-MAIN-2009-2010,CC-MAIN-2012 --sample-size 50000
+uv run repro f2-cc corpus sample --run-id <RUN_ID> --crawls CC-MAIN-2009-2010,CC-MAIN-2012 --sample-size 50000
 
 # 3. Create 8-Stratum Audit Assignments in Database
-uv run repro f2 corpus audit --run-id <RUN_ID> --budget 400
+uv run repro f2-cc corpus audit --run-id <RUN_ID> --budget 400
 
 # 4. Export Blinded Audit Review Dossier and JSONL
-uv run repro f2 corpus audit-review --run-id <RUN_ID> --blind
+uv run repro f2-cc corpus audit-review --run-id <RUN_ID> --blind --output-file <review.jsonl>
 
 # 5. Record Gold Annotations into Database
-uv run repro f2 corpus audit-record --run-id <RUN_ID>
+uv run repro f2-cc corpus audit-record --run-id <RUN_ID> --audit-file <annotated.jsonl>
 
 # 6. Run Two-Phase 8-Stratum Estimation & Feasibility Verification
-uv run repro f2 corpus analyze
+uv run repro f2-cc corpus analyze --manifest <provenance.parquet> --audit-file <annotated.jsonl>
 
 # 7. Run Offline Calibration, Prefilter Ablation & Filter Validation Study
-uv run repro f2 corpus calibrate
+uv run repro f2-cc corpus calibrate --manifest <provenance.parquet> --audit-file <annotated.jsonl>
 
 # 8. Build placeholder (directory creation and guidance only)
-uv run repro f2 corpus build --crawl CC-MAIN-2012 --target-words 1000000000 --output-dir data/f2/news_1b
+uv run repro f2-cc corpus build --crawl CC-MAIN-2012 --target-words 40000000000 --output-dir <staging-dir>
 ```
 
 ### B. Non-Common-Crawl Generic Sources Commands

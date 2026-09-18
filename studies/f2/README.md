@@ -1,15 +1,27 @@
-# F2 Word2Vec (2013) Paper Reproduction & Corpus Feasibility Study
+# F2 Word2Vec (2013) Reproduction Catalog and Corpus Preparation
 
-This study package implements the Common Crawl (2009–2012) corpus acquisition, feasibility study, and word-embedding reproduction pipeline for Mikolov et al. (2013, *Distributed Representations of Words and Phrases and their Compositionality*).
+This study package owns the Word2Vec reproduction catalog, completed-corpus
+preparation, and downstream experiments. Common Crawl acquisition and feasibility
+analysis belong to the independent `f2_cc` producer.
 
 ---
 
 ## 1. Study Overview
 
-* **Primary Objective**: Determine whether Common Crawl snapshots from 2009–2012 contain enough usable English news/article text to build reproducible training corpora up to 1B, 6B, and 33B words, and track reproduction resources, specifications, and execution plans for Word2Vec models.
+* **Primary Objective**: Track the two Word2Vec papers' reproduction targets,
+  resources, specifications, and execution plans, then prepare verified corpus
+  releases for downstream experiments.
+
+The all-eligible-corpus comparison policy is maintained in
+[`catalog/CORPUS_SUBSTITUTIONS.md`](catalog/CORPUS_SUBSTITUTIONS.md). Evaluation
+data, engines, suites and analysis work that is not a corpus problem is tracked
+separately in [`catalog/NON_CORPUS_RESOURCES.md`](catalog/NON_CORPUS_RESOURCES.md).
 * **Subsystems & Architecture**:
-  * **Common Infrastructure (`f2/common/`)**: Shared rate-limited HTTP range fetching (`common/network/`), tabular Parquet/JSONL persistence (`common/storage/`), bootstrap variance & two-phase difference estimators (`common/stats/`), and publication plot styling (`common/analysis/`).
-  * **Corpus Pipeline (`f2/corpus/`)**: Two-stage crawl-stratified sampling, rate-limited range fetcher, news classifier, Two-Phase 8-Stratum estimator, and full corpus lifecycle, multi-hop lineage DAG & validation metadata store (`schema: corpus`).
+  * **Common Infrastructure (`f2/common/`)**: Shared research statistics,
+    analysis declarations, and study adapters.
+  * **Corpus Preparation (`f2/corpus/`)**: Acquisition and normalization of
+    completed source releases, with lifecycle, lineage, and validation metadata
+    in the `corpus` schema.
   * **Reproduction Catalog (`f2/catalog/`)**: PostgreSQL catalog tracking paper targets, experiment specs, resource identity SSOT (`catalog.resources`), resource lineage/substitutions, execution plan revisions, and planned run slots (`schema: catalog`, `schema.dbml`, `CatalogPlanMaterializer`, `CatalogRepository`).
   * **Experimental Suites (`f2/suites/`)**: Modular volumes for downstream Word2Vec pretraining, vocabulary scaling, and embedding evaluation benchmarks.
 
@@ -17,30 +29,27 @@ This study package implements the Common Crawl (2009–2012) corpus acquisition,
 
 ## 2. CLI Usage (`repro f2`)
 
-### A. Corpus Pipeline Commands
+Before any tracked run, validate all three external service identities with a
+read-only preflight:
+
 ```bash
-# Apply pending corpus operational DB migrations
-uv run repro f2 corpus migrate
-
-# Inspect sampling plan & crawl strata
-uv run repro f2 corpus plan --crawl CC-MAIN-2012 --sample-size 100 --seed 42
-
-# Execute bounded feasibility sample (safe for shared research network)
-uv run repro f2 corpus sample \
-    --crawls CC-MAIN-2009-2010,CC-MAIN-2012 \
-    --sample-size 10000 \
-    --seed 42 \
-    --bandwidth-limit 20 \
-    --concurrency 2 \
-    --output-dir .staging/exp/f2/sample_10k
-
-# Generate feasibility analytics report
-uv run repro f2 corpus analyze \
-    --manifest .staging/exp/f2/sample_10k/provenance.jsonl \
-    --output-dir artifacts/analysis/f2/corpus
+uv run repro f2 preflight
 ```
 
-### B. Word2Vec Generic Sources Commands (`repro f2 corpus sources`)
+The command accepts only the canonical PostgreSQL database name `f2`, either a
+local corpus endpoint (`http://localhost:9000` or `:19000`, including loopback IP variants)
+or an HTTPS Tailscale Serve endpoint (`*.ts.net`), and an HTTP(S) F2 MLflow
+tracking endpoint. Its output contains scheme, host, database/bucket identity
+only; URLs, usernames, access keys, and secrets are never emitted.
+
+Every tracked execution attempt requires a planned slot ID, plan revision,
+resolved config digest, corpus resource version, and corpus manifest digest.
+Retries and resumes create a new MLflow run tagged with `f2.attempt` and
+`f2.predecessor_run_id`; the catalog slot is linked only after the final attempt
+has passed durable artifact verification. Failed attempts remain in MLflow and
+never count as completed slots.
+
+### A. Word2Vec Corpus Source Commands (`repro f2 corpus sources`)
 ```bash
 # Inspect inventory and acquisition/readiness status across all sources
 uv run repro f2 corpus sources status
@@ -61,13 +70,16 @@ uv run repro f2 corpus sources validate --source lm1b
 uv run repro f2 corpus sources validate --source umbc
 ```
 
-### C. Reproduction Catalog Commands
+### B. Reproduction Catalog Commands
 ```bash
 # Apply pending reproduction catalog DB migrations
 uv run repro f2 catalog migrate
 
 # Inspect canonical execution plan progress and resource inventory
 uv run repro f2 catalog status
+
+# Validate the W2V1/W2V2 research catalog without committing database changes
+uv run repro f2 catalog load-manifest studies/f2/catalog/w2v.json
 
 # Inspect expected run slots with MLflow execution pointers
 uv run repro f2 catalog matrix

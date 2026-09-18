@@ -1,0 +1,201 @@
+from __future__ import annotations
+
+import hashlib
+from contextlib import contextmanager
+
+import numpy as np
+import pytest
+from typer.testing import CliRunner
+
+from f2.definition import DEFINITION
+from f2.suites.w2v.artifacts import load_checkpoint, save_checkpoint
+from f2.suites.w2v.tracked import run_tracked_yaml
+from f2.suites.w2v1.executor import create_session, restore_session
+from f2.suites.w2v1.validation import analyze_latest, check_latest
+from repro_core.cli import app
+from repro_core.context import ExperimentContext, RuntimePaths
+from repro_core.execution.runner import run_config
+
+
+def _paths(tmp_path):
+    root = tmp_path / "repo"
+    root.mkdir()
+    return RuntimePaths(
+        repo_root=DEFINITION.get_suite("w2v1").config_root.parents[6],
+        data_root=root / "data",
+        artifacts_root=root / "artifacts",
+        cache_root=root / "cache",
+        staging_root=root / "staging",
+        references_root=root / "references",
+        studies_root=root / "studies",
+    )
+
+
+def test_w2v1_local_vertical_slice_and_resume_parity(tmp_path):
+    definition = DEFINITION.get_suite("w2v1")
+    assert definition.executor_module == "f2.suites.w2v1.executor"
+    source = definition.config_root / "e01_table2_cbow.yaml"
+    spec = definition.load_run_spec(source, atomic_run_id="local-smoke", overrides={})
+    config = spec.to_executor_config()
+    paths = _paths(tmp_path)
+
+    result = run_config(
+        config,
+        ExperimentContext(paths=paths),
+        executor_module=definition.executor_module,
+    )
+    final_state = load_checkpoint(result.checkpoint)
+    assert final_state.completed_epochs == 2
+    assert result.lookup.is_dir()
+    assert result.metrics.stat().st_size > 0
+
+    interrupted = create_session(config, paths.repo_root)
+    interrupted.train_epoch()
+    interrupted_checkpoint = tmp_path / "interrupted"
+    save_checkpoint(
+        interrupted.export_state(),
+        interrupted_checkpoint,
+        resource_version="w2v1-local-fixture-v1",
+    )
+    session = restore_session(config, interrupted_checkpoint, paths.repo_root)
+    session.train_epoch()
+    resumed = session.export_state()
+    np.testing.assert_array_equal(
+        resumed.input_embeddings(), final_state.input_embeddings()
+    )
+    np.testing.assert_array_equal(
+        resumed.output_embeddings(), final_state.output_embeddings()
+    )
+
+
+def test_local_smoke_seeds_have_distinct_staging_identities() -> None:
+    definition = DEFINITION.get_suite("w2v1")
+    spec = definition.load_run_spec(
+        definition.config_root / "e01_table2_cbow.yaml",
+        atomic_run_id="local-smoke",
+        overrides={},
+    )
+    assert spec.with_seed(1).identity["planned_run_slot_id"] == "w2v1-local-smoke-s1"
+    assert spec.with_seed(7).identity["planned_run_slot_id"] == "w2v1-local-smoke-s7"
+
+
+def test_canonical_cli_requires_explicit_large_run_approval() -> None:
+    result = CliRunner().invoke(
+        app,
+        [
+            "run",
+            "f2",
+            "w2v1",
+            "-e",
+            "01",
+            "-a",
+            "d50-w24m",
+            "--seed",
+            "1",
+            "--tracking-uri",
+            "http://127.0.0.1:1",
+        ],
+    )
+    assert result.exit_code == 2
+    assert "requires --approve-large-run" in result.output
+
+
+def test_w2v1_check_and_analysis_detect_complete_result(tmp_path):
+    definition = DEFINITION.get_suite("w2v1")
+    spec = definition.load_run_spec(
+        definition.config_root / "e01_table2_cbow.yaml",
+        atomic_run_id="local-smoke",
+        overrides={},
+    )
+    paths = _paths(tmp_path)
+    run_config(
+        spec.to_executor_config(),
+        ExperimentContext(paths=paths),
+        executor_module=definition.executor_module,
+    )
+    assert "complete" in check_latest(paths)
+    assert "written" in analyze_latest(paths)
+    assert (paths.artifacts_root / "analysis/f2/w2v1/summary.md").is_file()
+
+
+@pytest.mark.parametrize(
+    ("suite", "config_name", "atomic_run_id", "expected_slot"),
+    (
+        (
+            "w2v1",
+            "e01_table2_cbow.yaml",
+            "d50-w24m",
+            "w2v1-reconstruction-r2-d50-w24m-s1",
+        ),
+        (
+            "w2v2",
+            "e01_phrase_skipgram.yaml",
+            "neg5-subsampling",
+            "w2v2-reconstruction-r1-neg5-subsampling-s1",
+        ),
+    ),
+)
+def test_w2v_tracked_interrupt_resume_and_catalog_link(
+    tmp_path, monkeypatch, suite, config_name, atomic_run_id, expected_slot
+):
+    definition = DEFINITION.get_suite(suite)
+    source = definition.config_root / config_name
+    fixture = definition.config_root / "fixtures/corpus.txt"
+    linked: list[tuple[str, str]] = []
+
+    def materialize(config, _paths, **_kwargs):
+        config["corpus"] = {
+            "path": str(fixture),
+            "sha256": hashlib.sha256(fixture.read_bytes()).hexdigest(),
+        }
+        if suite == "w2v2":
+            config["vocabulary"] = {
+                "initial_capacity": 16,
+                "hash_capacity": 128,
+                "min_count": 1,
+            }
+            config["training"] = {
+                **config["training"],
+                "embedding_dimension": 8,
+                "negative_table_size": 100,
+            }
+
+    @contextmanager
+    def transaction(**_kwargs):
+        yield object()
+
+    class Repository:
+        def __init__(self, _connection):
+            pass
+
+        def link_mlflow_run(self, slot, run_id):
+            linked.append((slot, run_id))
+
+    monkeypatch.setattr("f2.suites.w2v.tracked.run_preflight", lambda: {})
+    monkeypatch.setattr("f2.suites.w2v.tracked._materialize_corpus", materialize)
+    monkeypatch.setattr("f2.suites.w2v.tracked.catalog_transaction", transaction)
+    monkeypatch.setattr("f2.suites.w2v.tracked.CatalogRepository", Repository)
+    monkeypatch.setenv("REPRO_STAGING_ROOT", str(tmp_path / "staging"))
+    monkeypatch.setenv("REPRO_CACHE_ROOT", str(tmp_path / "cache"))
+    monkeypatch.setenv("MLFLOW_ALLOW_FILE_STORE", "true")
+
+    receipt = run_tracked_yaml(
+        source,
+        atomic_run_id=atomic_run_id,
+        executor_module=definition.executor_module,
+        spec_module=definition.spec_module,
+        tracking_uri=(tmp_path / "mlruns").as_uri(),
+    )
+
+    from mlflow import MlflowClient
+
+    client = MlflowClient(tracking_uri=(tmp_path / "mlruns").as_uri())
+    final = client.get_run(receipt.run_id)
+    predecessor = final.data.tags["f2.predecessor_run_id"]
+    interrupted = client.get_run(predecessor)
+    assert interrupted.info.status == "KILLED"
+    assert interrupted.data.tags["result.durable_complete"] == "false"
+    assert final.info.status == "FINISHED"
+    assert final.data.tags["result.durable_complete"] == "true"
+    assert final.data.tags["suite.name"] == suite
+    assert linked == [(expected_slot, receipt.run_id)]

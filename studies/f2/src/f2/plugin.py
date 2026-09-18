@@ -15,7 +15,9 @@ class F2StudyPlugin:
 
     name: str = "f2"
     display_name: str = "Word2Vec (2013) Paper Reproduction Campaign"
-    description: str = "Common Crawl (2009-2012) corpus feasibility, word embedding reproductions, and evaluation suites"
+    description: str = (
+        "Word2Vec corpus preprocessing, reproductions, and evaluation suites"
+    )
 
     def register_commands(self, groups: CommandGroups) -> None:
         """Attach domain-owned commands to root CLI groups."""

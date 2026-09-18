@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import typer
+
+from f2.corpus.db.contract import validate_connection
 
 from .db.migrations.runner import run_catalog_migrations
 from .db.repository import CatalogRepository
 from .db.session import get_connection
+from .manifest import digest_manifest, load_manifest, read_manifest
 
 app = typer.Typer(
     name="catalog",
@@ -15,10 +21,27 @@ app = typer.Typer(
 )
 
 
+@app.command("load-manifest")
+def load_catalog_manifest(
+    manifest: Path = typer.Argument(..., exists=True, dir_okay=False),
+    apply: bool = typer.Option(False, "--apply", help="Commit the validated manifest"),
+) -> None:
+    """Validate a complete catalog manifest and optionally register it atomically."""
+    payload = read_manifest(manifest)
+    digest = digest_manifest(payload)
+    with get_connection(validate_contract=True) as conn:
+        with conn.transaction(force_rollback=not apply):
+            counts = load_manifest(CatalogRepository(conn), payload)
+    typer.echo(
+        json.dumps({"apply": apply, "sha256": digest, "counts": counts}, sort_keys=True)
+    )
+
+
 @app.command("migrate")
 def migrate_catalog_db() -> None:
     """Apply pending PostgreSQL migrations for the F2 reproduction catalog database."""
     with get_connection() as conn:
+        validate_connection(conn, schema="catalog", required_schemas=())
         applied = run_catalog_migrations(conn)
         if applied:
             typer.echo(

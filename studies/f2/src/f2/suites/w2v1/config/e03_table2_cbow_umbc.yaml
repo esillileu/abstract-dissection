@@ -1,0 +1,58 @@
+domain: f2.w2v1
+kind: word2vec
+execution: {mode: seeded, default_device: cpu}
+seed_policy: {seed_set: research_v1, seed_count: 3}
+identity:
+  execution_plan_id: w2v1-umbc-reconstruction-r1
+  planned_run_slot_id: resolved-from-atomic-run-and-seed
+  resource_version: f2-umbc-webbase-normalized-v1
+  corpus_manifest_digest: a5b7ac1e3054670502adb00ebe097d94aa5e881a65b464f22a1c5f665f983dcc
+  seed: 1
+corpus: {}
+vocabulary: {initial_capacity: 16, hash_capacity: 128, min_count: 1}
+training:
+  model_kind: cbow
+  objective_kind: hierarchical_softmax
+  embedding_dimension: 50
+  window_radius: 5
+  epochs: 3
+  thread_count: 1
+  learning_rate_update_interval: 100
+  observation_interval: 2
+  initial_learning_rate: 0.05
+  subsampling_threshold: 0.0
+  negative_sample_count: 0
+  rng_algorithm: lcg
+  negative_table_size: 100
+  sigmoid_table_size: 1000
+  sigmoid_max: 6.0
+  hs_out_of_range_policy: skip
+evaluation:
+  questions_path: studies/f2/src/f2/suites/w2v1/config/fixtures/questions-words.txt
+checkpoint: {save_latest: true, save_final: true, best_payload: full}
+tracking: {experiment: f2.w2v1}
+variants:
+  d50-w24m: {corpus: {lexical_token_budget: 24000000}, vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 5}, training: {observation_interval: 100000}}
+  d50-w49m: {corpus: {lexical_token_budget: 49000000}, vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 5}, training: {observation_interval: 100000}}
+  d50-w98m: {corpus: {lexical_token_budget: 98000000}, vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 5}, training: {observation_interval: 100000}}
+  d50-w196m: {corpus: {lexical_token_budget: 196000000}, vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 5}, training: {observation_interval: 100000}}
+  d50-w391m: {corpus: {lexical_token_budget: 391000000}, vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 5}, training: {observation_interval: 100000}}
+  d50-w783m: {corpus: {lexical_token_budget: 783000000}, vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 5}, training: {observation_interval: 100000}}
+  d100-w24m: {corpus: {lexical_token_budget: 24000000}, vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 5}, training: {embedding_dimension: 100, observation_interval: 100000}}
+  d100-w49m: {corpus: {lexical_token_budget: 49000000}, vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 5}, training: {embedding_dimension: 100, observation_interval: 100000}}
+  d100-w98m: {corpus: {lexical_token_budget: 98000000}, vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 5}, training: {embedding_dimension: 100, observation_interval: 100000}}
+  d100-w196m: {corpus: {lexical_token_budget: 196000000}, vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 5}, training: {embedding_dimension: 100, observation_interval: 100000}}
+  d100-w391m: {corpus: {lexical_token_budget: 391000000}, vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 5}, training: {embedding_dimension: 100, observation_interval: 100000}}
+  d100-w783m: {corpus: {lexical_token_budget: 783000000}, vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 5}, training: {embedding_dimension: 100, observation_interval: 100000}}
+  d300-w24m: {corpus: {lexical_token_budget: 24000000}, vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 5}, training: {embedding_dimension: 300, observation_interval: 100000}}
+  d300-w49m: {corpus: {lexical_token_budget: 49000000}, vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 5}, training: {embedding_dimension: 300, observation_interval: 100000}}
+  d300-w98m: {corpus: {lexical_token_budget: 98000000}, vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 5}, training: {embedding_dimension: 300, observation_interval: 100000}}
+  d300-w196m: {corpus: {lexical_token_budget: 196000000}, vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 5}, training: {embedding_dimension: 300, observation_interval: 100000}}
+  d300-w391m: {corpus: {lexical_token_budget: 391000000}, vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 5}, training: {embedding_dimension: 300, observation_interval: 100000}}
+  d300-w783m: {corpus: {lexical_token_budget: 783000000}, vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 5}, training: {embedding_dimension: 300, observation_interval: 100000}}
+  d600-w24m: {corpus: {lexical_token_budget: 24000000}, vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 5}, training: {embedding_dimension: 600, observation_interval: 100000}}
+  d600-w49m: {corpus: {lexical_token_budget: 49000000}, vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 5}, training: {embedding_dimension: 600, observation_interval: 100000}}
+  d600-w98m: {corpus: {lexical_token_budget: 98000000}, vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 5}, training: {embedding_dimension: 600, observation_interval: 100000}}
+  d600-w196m: {corpus: {lexical_token_budget: 196000000}, vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 5}, training: {embedding_dimension: 600, observation_interval: 100000}}
+  d600-w391m: {corpus: {lexical_token_budget: 391000000}, vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 5}, training: {embedding_dimension: 600, observation_interval: 100000}}
+  d600-w783m: {corpus: {lexical_token_budget: 783000000}, vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 5}, training: {embedding_dimension: 600, observation_interval: 100000}}

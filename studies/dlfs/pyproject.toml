@@ -2,7 +2,7 @@
 name = "dlfs"
 version = "0.1.0"
 description = "Deep Learning from Scratch (Vol 1 & 2) independent reproductions"
-requires-python = ">=3.11, <3.12"
+requires-python = ">=3.12, <3.13"
 dependencies = [
     "cupy-cuda12x[ctk]>=14.1.1",
     "numpy>=2.0.0",

@@ -147,6 +147,27 @@ def test_s3_signature_and_object_bytes(tmp_path, monkeypatch):
     target = store.get_file(store.uri("a b"), tmp_path / "download")
     assert target.read_bytes() == source.read_bytes()
 
+    head_response = MagicMock()
+    head_response.headers = {"Content-Length": "9", "ETag": '"fixture"'}
+    monkeypatch.setattr(
+        "repro_io.s3.requests.head", lambda *args, **kwargs: head_response
+    )
+    metadata = store.head(store.uri("a b"))
+    assert (metadata.byte_size, metadata.etag) == (9, '"fixture"')
+
+    list_response = MagicMock()
+    list_response.content = b"""<?xml version="1.0" encoding="UTF-8"?>
+    <ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+      <Contents><Key>prefix/a.txt</Key><Size>9</Size><ETag>fixture</ETag></Contents>
+    </ListBucketResult>"""
+    monkeypatch.setattr(
+        "repro_io.s3.requests.get", lambda *args, **kwargs: list_response
+    )
+    listed = store.list("s3://bucket/prefix/")
+    assert [(item.uri, item.byte_size) for item in listed] == [
+        ("s3://bucket/prefix/a.txt", 9)
+    ]
+
 
 def test_arc_fallback_and_cdx_surt(monkeypatch):
     monkeypatch.setattr(
