@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import shutil
 from pathlib import Path
@@ -25,6 +26,7 @@ from f2.suites.w2v.artifacts import (
     save_checkpoint,
     save_lookup_artifact,
 )
+from f2.suites.w2v.evaluate import evaluate_lookup_artifact
 from repro_mlflow.artifact_cache import MlflowArtifactCache
 
 
@@ -167,14 +169,29 @@ def test_saved_lookup_can_be_evaluated_without_training_or_overwrite(
             str(questions),
             "--output",
             str(output),
+            "--evaluation-resource-version",
+            "questions-fixture-v1",
         ],
     )
     assert result.exit_code == 0
     report = json.loads(output.read_text())
     assert report["suite"] == "w2v1"
     assert report["lookup_identity"]["resource_version"] == "fixture-v1"
+    assert report["evaluation_identity"] == {
+        "questions_sha256": hashlib.sha256(questions.read_bytes()).hexdigest(),
+        "phrase_separator": "_",
+        "resource_version": "questions-fixture-v1",
+    }
     assert report["analogy"]["overall"]["total_count"] == 1
     assert (artifact / "manifest.json").is_file()
+
+    other_questions = tmp_path / "other-questions.txt"
+    other_questions.write_bytes(b": relation\nalpha gamma beta delta\n")
+    other_report = evaluate_lookup_artifact("w2v1", artifact, other_questions)
+    assert (
+        other_report["evaluation_identity"]["questions_sha256"]
+        != report["evaluation_identity"]["questions_sha256"]
+    )
 
     repeated = CliRunner().invoke(
         app,

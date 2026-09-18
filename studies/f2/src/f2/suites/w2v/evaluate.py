@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import asdict
 from pathlib import Path
@@ -33,6 +34,7 @@ def evaluate_lookup_artifact(
     questions_path: Path,
     *,
     phrase_separator: bytes = b"_",
+    evaluation_resource_version: str | None = None,
 ) -> dict[str, Any]:
     """Evaluate one immutable lookup artifact without a training session."""
     if suite not in {"w2v1", "w2v2"}:
@@ -40,12 +42,24 @@ def evaluate_lookup_artifact(
     lookup = load_lookup_artifact(lookup_path)
     if not questions_path.is_file():
         raise ValueError(f"analogy questions do not exist: {questions_path}")
+    try:
+        separator = phrase_separator.decode("ascii")
+    except UnicodeDecodeError as exc:
+        raise ValueError("phrase separator must be ASCII") from exc
+    questions = questions_path.read_bytes()
     analogy = evaluate_analogies(
-        lookup, parse_analogy_questions(questions_path.read_bytes().splitlines())
+        lookup, parse_analogy_questions(questions.splitlines())
     )
+    evaluation_identity = {
+        "questions_sha256": hashlib.sha256(questions).hexdigest(),
+        "phrase_separator": separator,
+    }
+    if evaluation_resource_version is not None:
+        evaluation_identity["resource_version"] = evaluation_resource_version
     payload: dict[str, Any] = {
         "suite": suite,
         "lookup_identity": {key: lookup.manifest[key] for key in _IDENTITY_KEYS},
+        "evaluation_identity": evaluation_identity,
         "analogy": {
             "overall": asdict(analogy.overall),
             "semantic": asdict(analogy.semantic),
