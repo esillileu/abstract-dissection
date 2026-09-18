@@ -47,8 +47,9 @@ class BaseAnalysisOrchestrator:
             writer.writerows(rows)
         return target
 
+    @staticmethod
     def summarize_metric_series(
-        self, values: Sequence[float], metric_id: str, condition_id: str
+        values: Sequence[float], metric_id: str, condition_id: str
     ) -> NormalizedMetricSummary:
         """Compute mean, standard deviation, and 95% bootstrap confidence interval."""
         if not values:

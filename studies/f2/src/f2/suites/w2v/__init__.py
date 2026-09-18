@@ -7,6 +7,7 @@ from .corpus import (
     MaterializedCorpus,
     ordered_manifest_digest,
 )
+from .evaluation import EvaluationResult
 from .observations import (
     DenseObservationWriter,
     ObservationRow,
@@ -18,6 +19,7 @@ __all__ = [
     "CorpusMaterializer",
     "CorpusShard",
     "DenseObservationWriter",
+    "EvaluationResult",
     "MaterializedCorpus",
     "ObservationRow",
     "ordered_manifest_digest",
