@@ -33,7 +33,10 @@ class RunSpec:
 
         identity = dict(self.identity)
         identity["seed"] = seed
-        if self.atomic_run_id != "local-smoke":
+        if self.atomic_run_id == "local-smoke":
+            base = str(identity["planned_run_slot_id"]).rsplit("-s", 1)[0]
+            identity["planned_run_slot_id"] = f"{base}-s{seed}"
+        else:
             identity["planned_run_slot_id"] = planned_slot_id(
                 str(identity["execution_plan_id"]), self.atomic_run_id, seed
             )

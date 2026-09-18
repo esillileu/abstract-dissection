@@ -51,7 +51,13 @@ class W2V2Executor(W2V1Executor):
             )
             / "phrases.txt"
         )
-        phrase = materialize_phrase_corpus(source, phrase_path, policy)
+        progress = context.metadata.get("progress_reporter")
+        phrase = materialize_phrase_corpus(
+            source,
+            phrase_path,
+            policy,
+            progress=None if progress is None else progress.write,
+        )
         resolved["corpus"] = {"path": str(phrase.path), "sha256": phrase.corpus_sha256}
         result = super().run(resolved, context)
         lineage_target = result.root / "phrase_lineage.json"

@@ -262,6 +262,8 @@ def pca_projection(
     lookup: VectorLookup, tokens: Sequence[bytes]
 ) -> dict[bytes, tuple[float, float]]:
     """Return a sign-stable two-dimensional PCA projection for qualitative reports."""
+    if not tokens:
+        return {}
     rows = [lookup.row(token) for token in tokens]
     if any(row is None for row in rows):
         return {}

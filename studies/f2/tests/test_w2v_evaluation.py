@@ -13,6 +13,7 @@ from f2.suites.w2v.evaluation import (
     evaluate_sentence_completion,
     evaluate_word_similarity,
     parse_analogy_questions,
+    pca_projection,
     select_best_epoch,
 )
 
@@ -29,6 +30,11 @@ class Lookup:
     def vector(self, token: bytes) -> np.ndarray | None:
         row = self.row(token)
         return None if row is None else self.embeddings[row]
+
+
+def test_empty_pca_projection_is_empty_without_numerical_warnings() -> None:
+    lookup = Lookup({b"word": (1.0, 0.0)})
+    assert pca_projection(lookup, []) == {}
 
 
 def test_analogy_scoring_reports_oov_and_semantic_syntactic_splits() -> None:

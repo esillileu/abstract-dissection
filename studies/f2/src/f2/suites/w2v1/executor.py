@@ -88,6 +88,14 @@ class W2V1Executor:
         writer = DenseObservationWriter(root / "metrics" / "observations.csv")
         reports = []
         stop_after_epoch = context.metadata.get("stop_after_epoch")
+        progress = context.metadata.get("progress_reporter")
+        total_epochs = int(_mapping(config, "training")["epochs"])
+        if progress is not None:
+            progress.set_total_updates(total_epochs, completed=session.completed_epochs)
+            progress.write(
+                f"preparing {self.suite_name} slot={run_key} "
+                f"epochs={total_epochs} completed={session.completed_epochs}"
+            )
         while not session.is_complete and (
             stop_after_epoch is None or session.completed_epochs < int(stop_after_epoch)
         ):
@@ -101,6 +109,16 @@ class W2V1Executor:
                     "objective_loss": epoch.objective_loss,
                 }
             )
+            if progress is not None:
+                progress.advance_to(epoch.epoch, epoch=epoch.epoch)
+                progress.write(
+                    f"{self.suite_name} epoch={epoch.epoch}/{total_epochs} "
+                    f"tokens={epoch.processed_tokens} "
+                    f"loss={epoch.objective_loss} "
+                    f"tokens_per_second={epoch.tokens_per_second:.1f}"
+                )
+        if progress is not None:
+            progress.write(f"publishing {self.suite_name} artifacts slot={run_key}")
         final = manager.save_final() if session.is_complete else manager.save_latest()
         state = session.export_state()
         lookup_path = root / "lookup"

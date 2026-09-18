@@ -4,12 +4,15 @@ import hashlib
 from contextlib import contextmanager
 
 import numpy as np
+import pytest
+from typer.testing import CliRunner
 
 from f2.definition import DEFINITION
 from f2.suites.w2v.artifacts import load_checkpoint, save_checkpoint
+from f2.suites.w2v.tracked import run_tracked_yaml
 from f2.suites.w2v1.executor import create_session, restore_session
-from f2.suites.w2v1.tracked import run_tracked_yaml
 from f2.suites.w2v1.validation import analyze_latest, check_latest
+from repro_core.cli import app
 from repro_core.context import ExperimentContext, RuntimePaths
 from repro_core.execution.runner import run_config
 
@@ -65,6 +68,38 @@ def test_w2v1_local_vertical_slice_and_resume_parity(tmp_path):
     )
 
 
+def test_local_smoke_seeds_have_distinct_staging_identities() -> None:
+    definition = DEFINITION.get_suite("w2v1")
+    spec = definition.load_run_spec(
+        definition.config_root / "e01_table2_cbow.yaml",
+        atomic_run_id="local-smoke",
+        overrides={},
+    )
+    assert spec.with_seed(1).identity["planned_run_slot_id"] == "w2v1-local-smoke-s1"
+    assert spec.with_seed(7).identity["planned_run_slot_id"] == "w2v1-local-smoke-s7"
+
+
+def test_canonical_cli_requires_explicit_large_run_approval() -> None:
+    result = CliRunner().invoke(
+        app,
+        [
+            "run",
+            "f2",
+            "w2v1",
+            "-e",
+            "01",
+            "-a",
+            "d50-w24m",
+            "--seed",
+            "1",
+            "--tracking-uri",
+            "http://127.0.0.1:1",
+        ],
+    )
+    assert result.exit_code == 2
+    assert "requires --approve-large-run" in result.output
+
+
 def test_w2v1_check_and_analysis_detect_complete_result(tmp_path):
     definition = DEFINITION.get_suite("w2v1")
     spec = definition.load_run_spec(
@@ -83,17 +118,47 @@ def test_w2v1_check_and_analysis_detect_complete_result(tmp_path):
     assert (paths.artifacts_root / "analysis/f2/w2v1/summary.md").is_file()
 
 
-def test_w2v1_tracked_interrupt_resume_and_catalog_link(tmp_path, monkeypatch):
-    definition = DEFINITION.get_suite("w2v1")
-    source = definition.config_root / "e01_table2_cbow.yaml"
+@pytest.mark.parametrize(
+    ("suite", "config_name", "atomic_run_id", "expected_slot"),
+    (
+        (
+            "w2v1",
+            "e01_table2_cbow.yaml",
+            "d50-w24m",
+            "w2v1-reconstruction-r2-d50-w24m-s1",
+        ),
+        (
+            "w2v2",
+            "e01_phrase_skipgram.yaml",
+            "neg5-subsampling",
+            "w2v2-reconstruction-r1-neg5-subsampling-s1",
+        ),
+    ),
+)
+def test_w2v_tracked_interrupt_resume_and_catalog_link(
+    tmp_path, monkeypatch, suite, config_name, atomic_run_id, expected_slot
+):
+    definition = DEFINITION.get_suite(suite)
+    source = definition.config_root / config_name
     fixture = definition.config_root / "fixtures/corpus.txt"
     linked: list[tuple[str, str]] = []
 
-    def materialize(config, _paths):
+    def materialize(config, _paths, **_kwargs):
         config["corpus"] = {
             "path": str(fixture),
             "sha256": hashlib.sha256(fixture.read_bytes()).hexdigest(),
         }
+        if suite == "w2v2":
+            config["vocabulary"] = {
+                "initial_capacity": 16,
+                "hash_capacity": 128,
+                "min_count": 1,
+            }
+            config["training"] = {
+                **config["training"],
+                "embedding_dimension": 8,
+                "negative_table_size": 100,
+            }
 
     @contextmanager
     def transaction(**_kwargs):
@@ -106,17 +171,17 @@ def test_w2v1_tracked_interrupt_resume_and_catalog_link(tmp_path, monkeypatch):
         def link_mlflow_run(self, slot, run_id):
             linked.append((slot, run_id))
 
-    monkeypatch.setattr("f2.suites.w2v1.tracked.run_preflight", lambda: {})
-    monkeypatch.setattr("f2.suites.w2v1.tracked._materialize_corpus", materialize)
-    monkeypatch.setattr("f2.suites.w2v1.tracked.catalog_transaction", transaction)
-    monkeypatch.setattr("f2.suites.w2v1.tracked.CatalogRepository", Repository)
+    monkeypatch.setattr("f2.suites.w2v.tracked.run_preflight", lambda: {})
+    monkeypatch.setattr("f2.suites.w2v.tracked._materialize_corpus", materialize)
+    monkeypatch.setattr("f2.suites.w2v.tracked.catalog_transaction", transaction)
+    monkeypatch.setattr("f2.suites.w2v.tracked.CatalogRepository", Repository)
     monkeypatch.setenv("REPRO_STAGING_ROOT", str(tmp_path / "staging"))
     monkeypatch.setenv("REPRO_CACHE_ROOT", str(tmp_path / "cache"))
     monkeypatch.setenv("MLFLOW_ALLOW_FILE_STORE", "true")
 
     receipt = run_tracked_yaml(
         source,
-        atomic_run_id="d50-w24m",
+        atomic_run_id=atomic_run_id,
         executor_module=definition.executor_module,
         spec_module=definition.spec_module,
         tracking_uri=(tmp_path / "mlruns").as_uri(),
@@ -132,9 +197,5 @@ def test_w2v1_tracked_interrupt_resume_and_catalog_link(tmp_path, monkeypatch):
     assert interrupted.data.tags["result.durable_complete"] == "false"
     assert final.info.status == "FINISHED"
     assert final.data.tags["result.durable_complete"] == "true"
-    assert linked == [
-        (
-            "w2v1-reconstruction-r2-d50-w24m-s1",
-            receipt.run_id,
-        )
-    ]
+    assert final.data.tags["suite.name"] == suite
+    assert linked == [(expected_slot, receipt.run_id)]

@@ -47,6 +47,21 @@ def test_phrase_materialization_is_deterministic_and_byte_preserving(tmp_path):
     assert b"\xff_x" in first.path.read_bytes()
 
 
+def test_phrase_materialization_reports_each_streaming_pass(tmp_path):
+    source = tmp_path / "source.txt"
+    source.write_bytes(b"new york city\nnew york state\n")
+    messages: list[str] = []
+    materialize_phrase_corpus(
+        source,
+        tmp_path / "phrases.txt",
+        PhrasePolicy(passes=2, threshold=0.0, min_count=1),
+        progress=messages.append,
+    )
+    assert messages[0] == "phrase pass=1/2 counting"
+    assert any("phrase pass=1/2 complete" in message for message in messages)
+    assert any("phrase pass=2/2 complete" in message for message in messages)
+
+
 def test_w2v2_local_phrase_run_resume_lookup_and_reports(tmp_path):
     definition = DEFINITION.get_suite("w2v2")
     assert definition.executor_module == "f2.suites.w2v2.executor"

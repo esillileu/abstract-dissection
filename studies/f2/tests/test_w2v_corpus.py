@@ -74,14 +74,18 @@ def test_materializes_in_manifest_order_and_stops_at_exact_token_budget(
 ) -> None:
     binding, objects = _fixture_binding(tmp_path)
     store = FixtureStore(objects)
+    progress: list[tuple[int, int, int]] = []
     result = CorpusMaterializer(store, paths=_paths(tmp_path)).materialize(
-        binding, lexical_token_budget=7
+        binding,
+        lexical_token_budget=7,
+        progress=lambda *values: progress.append(values),
     )
 
     assert result.path.read_bytes() == b"one two three\nfour five\nsix seven\n"
     assert result.lexical_tokens == 7
     assert result.complete_shards == 1
     assert result.manifest_digest == binding.manifest_digest
+    assert progress == [(1, 2, 5), (2, 2, 7)]
 
     cached = CorpusMaterializer(store, paths=_paths(tmp_path)).materialize(
         binding, lexical_token_budget=7

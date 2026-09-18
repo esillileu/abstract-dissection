@@ -8,7 +8,7 @@ import os
 import re
 import shutil
 import subprocess
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Protocol
@@ -101,7 +101,11 @@ class CorpusMaterializer:
         self.download_attempts = download_attempts
 
     def materialize(
-        self, binding: CorpusBinding, *, lexical_token_budget: int
+        self,
+        binding: CorpusBinding,
+        *,
+        lexical_token_budget: int,
+        progress: Callable[[int, int, int], None] | None = None,
     ) -> MaterializedCorpus:
         if lexical_token_budget < 1:
             raise ValueError("lexical_token_budget must be positive")
@@ -137,7 +141,11 @@ class CorpusMaterializer:
         output = staging / "corpus.txt"
         try:
             tokens, complete_shards = self._write_corpus(
-                binding, root / "objects", output, lexical_token_budget
+                binding,
+                root / "objects",
+                output,
+                lexical_token_budget,
+                progress=progress,
             )
             corpus_sha256 = sha256_file(output)
             result_payload = {
@@ -221,6 +229,8 @@ class CorpusMaterializer:
         object_root: Path,
         output: Path,
         budget: int,
+        *,
+        progress: Callable[[int, int, int], None] | None,
     ) -> tuple[int, int]:
         tokens = 0
         complete_shards = 0
@@ -245,6 +255,8 @@ class CorpusMaterializer:
                     break
                 if shard_complete:
                     complete_shards += 1
+                if progress is not None:
+                    progress(shard.index + 1, len(binding.shards), tokens)
                 if tokens == budget or not shard_complete:
                     break
             destination.flush()

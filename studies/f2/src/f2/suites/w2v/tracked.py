@@ -1,4 +1,4 @@
-"""Tracked two-attempt lifecycle for the canonical W2V1 vertical slice."""
+"""Local and tracked execution lifecycle shared by the F2 Word2Vec suites."""
 
 from __future__ import annotations
 
@@ -27,11 +27,46 @@ from repro_mlflow.schema_v1 import write_result_manifest
 
 
 @dataclass(frozen=True)
-class TrackedW2V1Receipt:
+class W2VRunReceipt:
     result: object
     run_id: str
     staging_root: Path
     durable_complete: bool
+
+
+def run_local_yaml(
+    path: str | Path,
+    *,
+    atomic_run_id: str | None = None,
+    seed: int | None = None,
+    device: str | None = None,
+    overrides: dict[str, object] | None = None,
+    executor_module: str | None = None,
+    spec_module: str | None = None,
+    progress_reporter: object | None = None,
+    **_: object,
+) -> W2VRunReceipt:
+    """Execute a fixture run through the same planner/progress path as tracked runs."""
+    if spec_module is None or executor_module is None:
+        raise ValueError("local W2V execution requires spec and executor modules")
+    if atomic_run_id != "local-smoke":
+        raise ValueError("canonical W2V execution requires a tracking URI")
+    if device not in {None, "cpu"}:
+        raise ValueError("W2V parity execution requires CPU")
+    import importlib
+
+    parser = importlib.import_module(spec_module)
+    spec = parser.parse_run_spec(path, atomic_run_id=atomic_run_id, overrides=overrides)
+    spec = spec.with_seed(int(spec.identity["seed"]) if seed is None else seed)
+    paths = RuntimePaths.from_environment()
+    result = run_config(
+        spec.to_executor_config(),
+        ExperimentContext(
+            paths=paths, metadata={"progress_reporter": progress_reporter}
+        ),
+        executor_module=executor_module,
+    )
+    return W2VRunReceipt(result, "local", result.root, False)
 
 
 def run_tracked_yaml(
@@ -44,11 +79,14 @@ def run_tracked_yaml(
     executor_module: str | None = None,
     spec_module: str | None = None,
     tracking_uri: str,
+    progress_reporter: object | None = None,
     **_: object,
-) -> TrackedW2V1Receipt:
+) -> W2VRunReceipt:
     """Run one interruption/resume pair and publish only the final attempt."""
     if spec_module is None or executor_module is None:
-        raise ValueError("tracked W2V1 execution requires spec and executor modules")
+        raise ValueError("tracked W2V execution requires spec and executor modules")
+    if progress_reporter is not None:
+        progress_reporter.write("checking F2 service preflight")
     run_preflight()
     import importlib
 
@@ -59,11 +97,16 @@ def run_tracked_yaml(
     spec = spec.with_seed(int(spec.identity["seed"]) if seed is None else seed)
     config = spec.to_executor_config()
     if device not in {None, "cpu"}:
-        raise ValueError("canonical W2V1 parity execution requires CPU")
+        raise ValueError("canonical W2V parity execution requires CPU")
     paths = RuntimePaths.from_environment()
+    suite = _suite(config)
     is_canonical = atomic_run_id != "local-smoke"
     if is_canonical:
-        _materialize_corpus(config, paths)
+        if progress_reporter is not None:
+            progress_reporter.write("materializing verified corpus binding")
+        _materialize_corpus(config, paths, progress_reporter=progress_reporter)
+        if progress_reporter is not None:
+            progress_reporter.write("verified corpus binding is ready")
 
     client = MlflowClient(tracking_uri=tracking_uri)
     experiment_name = str(_mapping(config, "tracking")["experiment"])
@@ -75,13 +118,17 @@ def run_tracked_yaml(
     )
     identity = _identity(config)
     first_run = _create_run(client, experiment_id, config, attempt=1)
-    first_root = paths.staging_root / "exp/f2/w2v1/tracked" / first_run
+    first_root = paths.staging_root / f"exp/f2/{suite}/tracked" / first_run
     try:
         interrupted = run_config(
             config,
             ExperimentContext(
                 paths=paths,
-                metadata={"run_root": first_root, "stop_after_epoch": 1},
+                metadata={
+                    "run_root": first_root,
+                    "stop_after_epoch": 1,
+                    "progress_reporter": progress_reporter,
+                },
             ),
             executor_module=executor_module,
         )
@@ -99,7 +146,7 @@ def run_tracked_yaml(
         final_run = _create_run(
             client, experiment_id, config, attempt=2, predecessor=first_run
         )
-        final_root = paths.staging_root / "exp/f2/w2v1/tracked" / final_run
+        final_root = paths.staging_root / f"exp/f2/{suite}/tracked" / final_run
         try:
             result = run_config(
                 config,
@@ -108,6 +155,7 @@ def run_tracked_yaml(
                     metadata={
                         "run_root": final_root,
                         "resume_checkpoint": remote_checkpoint,
+                        "progress_reporter": progress_reporter,
                     },
                 ),
                 executor_module=executor_module,
@@ -122,7 +170,7 @@ def run_tracked_yaml(
                     CatalogRepository(connection).link_mlflow_run(
                         str(identity["planned_run_slot_id"]), final_run
                     )
-            return TrackedW2V1Receipt(result, final_run, final_root, True)
+            return W2VRunReceipt(result, final_run, final_root, True)
         except BaseException:
             client.set_tag(final_run, "result.durable_complete", "false")
             client.set_tag(final_run, "trial.status", "failed")
@@ -137,7 +185,12 @@ def run_tracked_yaml(
         raise
 
 
-def _materialize_corpus(config: dict[str, object], paths: RuntimePaths) -> None:
+def _materialize_corpus(
+    config: dict[str, object],
+    paths: RuntimePaths,
+    *,
+    progress_reporter: object | None = None,
+) -> None:
     identity = _identity(config)
     corpus = _mapping(config, "corpus")
     try:
@@ -150,9 +203,20 @@ def _materialize_corpus(config: dict[str, object], paths: RuntimePaths) -> None:
     binding = CorpusBinding.from_rows(
         version, str(identity["corpus_manifest_digest"]), rows
     )
+
+    def report(shard: int, total: int, tokens: int) -> None:
+        if progress_reporter is not None:
+            progress_reporter.write(
+                f"corpus shard={shard}/{total} lexical_tokens={tokens}/{lexical_token_budget}"
+            )
+
     materialized = CorpusMaterializer(
         S3ObjectStore(s3_config_from_environment()), paths=paths
-    ).materialize(binding, lexical_token_budget=lexical_token_budget)
+    ).materialize(
+        binding,
+        lexical_token_budget=lexical_token_budget,
+        progress=report,
+    )
     config["corpus"] = {
         "path": str(materialized.path),
         "sha256": materialized.corpus_sha256,
@@ -169,6 +233,7 @@ def _create_run(
     predecessor: str | None = None,
 ) -> str:
     identity = _identity(config)
+    suite = _suite(config)
     run_identity = RunIdentity(
         planned_run_slot_id=str(identity["planned_run_slot_id"]),
         plan_revision=_plan_revision(str(identity["execution_plan_id"])),
@@ -181,8 +246,12 @@ def _create_run(
     tags = {
         **run_identity.tags(),
         "paper.id": "mikolov-2013-efficient-estimation",
-        "suite.name": "w2v1",
-        "experiment_spec.id": "w2v1-table2-cbow",
+        "suite.name": suite,
+        "experiment_spec.id": (
+            "w2v1-table2-cbow"
+            if suite == "w2v1"
+            else "w2v2-phrase-skipgram-1b-objectives"
+        ),
         "implementation.variant": str(config["atomic_run_id"]),
         "seed": str(identity["seed"]),
         "trial.status": "running",
@@ -255,4 +324,12 @@ def _identity(config: dict[str, object]) -> dict[str, Any]:
     return _mapping(config, "identity")
 
 
-__all__ = ["TrackedW2V1Receipt", "run_tracked_yaml"]
+def _suite(config: dict[str, object]) -> str:
+    experiment = str(_mapping(config, "tracking")["experiment"])
+    suite = experiment.rsplit(".", 1)[-1]
+    if suite not in {"w2v1", "w2v2"}:
+        raise ValueError(f"unsupported tracked W2V suite: {suite}")
+    return suite
+
+
+__all__ = ["W2VRunReceipt", "run_local_yaml", "run_tracked_yaml"]

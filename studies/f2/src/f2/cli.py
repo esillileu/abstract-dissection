@@ -139,52 +139,34 @@ def run(
     progress: Annotated[str, typer.Option("--progress")] = "auto",
     progress_every: Annotated[int, typer.Option("--progress-every")] = 10,
     tracking_uri: Annotated[str | None, typer.Option("--tracking-uri")] = None,
+    approve_large_run: Annotated[
+        bool,
+        typer.Option(
+            "--approve-large-run",
+            help="Acknowledge the cost of canonical W2V training.",
+        ),
+    ] = False,
 ) -> None:
     """Execute F2 suite experiments."""
     from repro_core.cli.commands import run_command
 
     suite_def = DEFINITION.get_suite(suite)
-    if tracking_uri is None and suite == "w2v1":
-        from repro_core.execution.definition import RunOptions, RunSelection
-        from repro_core.execution.parsing import parse_overrides
-        from repro_core.execution.planning import Planner
-        from repro_core.execution.runner import print_plans, run_config
+    canonical_w2v = suite in {"w2v1", "w2v2"} and (
+        not atomic_run or any(run_id != "local-smoke" for run_id in atomic_run)
+    )
+    if canonical_w2v and not dry_run and not approve_large_run:
+        raise ValueError("canonical W2V training requires --approve-large-run")
+    if canonical_w2v and not dry_run:
+        from .tracking import resolve_tracking_uri
 
-        options = RunOptions(
-            device=device,
-            overrides=parse_overrides(override_values or []),
-            order=order,
-        )
-        plans = Planner(suite_def).build(
-            RunSelection(
-                tuple(experiment or ()),
-                all_experiments,
-                tuple(atomic_run or ()),
-                tuple(exclude_atomic_run or ()),
-                seed,
-                seed_set,
-            ),
-            options,
-        )
-        print_plans(plans)
-        if dry_run:
-            return
-        for selected in plans:
-            spec = suite_def.load_run_spec(
-                selected.path,
-                atomic_run_id=selected.atomic_run_id,
-                overrides=options.overrides,
-            )
-            result = run_config(
-                spec.to_executor_config(), executor_module=suite_def.executor_module
-            )
-            typer.echo(f"completed: {result.report}")
-        return
+        tracking_uri = resolve_tracking_uri(tracking_uri)
     run_fn = None
-    if suite == "w2v1":
-        from .suites.w2v1.tracked import run_tracked_yaml
+    if suite in {"w2v1", "w2v2"}:
+        from .suites.w2v.tracked import run_local_yaml, run_tracked_yaml
 
-        run_fn = run_tracked_yaml
+        run_fn = run_local_yaml if tracking_uri is None else run_tracked_yaml
+        # Runner requires a non-empty URI but the local runner never consumes it.
+        tracking_uri = tracking_uri or "local"
     run_command(
         suite_def,
         experiments=experiment or [],

@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 from collections import Counter
+from collections.abc import Callable
 from dataclasses import dataclass
 from itertools import pairwise
 from pathlib import Path
@@ -45,7 +46,11 @@ class PhraseCorpus:
 
 
 def materialize_phrase_corpus(
-    source: Path, destination: Path, policy: PhrasePolicy
+    source: Path,
+    destination: Path,
+    policy: PhrasePolicy,
+    *,
+    progress: Callable[[str], None] | None = None,
 ) -> PhraseCorpus:
     """Apply the original word2phrase score in stable left-to-right passes.
 
@@ -65,11 +70,20 @@ def materialize_phrase_corpus(
     joined_count = 0
     try:
         for pass_index in range(policy.passes):
+            if progress is not None:
+                progress(f"phrase pass={pass_index + 1}/{policy.passes} counting")
             output = destination.with_name(
                 f".{destination.name}.pass-{pass_index}-{os.getpid()}"
             )
             temporary_paths.append(output)
-            joined_count += _phrase_pass(current, output, policy)
+            joined_count += _phrase_pass(
+                current,
+                output,
+                policy,
+                pass_index=pass_index + 1,
+                pass_count=policy.passes,
+                progress=progress,
+            )
             current = output
         os.replace(current, destination)
         temporary_paths.remove(current)
@@ -77,9 +91,10 @@ def materialize_phrase_corpus(
         for path in temporary_paths:
             path.unlink(missing_ok=True)
     corpus_sha = _sha256(destination)
-    token_count = sum(
-        len(line.split()) for line in destination.read_bytes().splitlines()
-    )
+    token_count = 0
+    with destination.open("rb") as stream:
+        for line in stream:
+            token_count += len(line.split())
     lineage = {
         "format": "f2-phrase-corpus-v1",
         "source_sha256": source_sha,
@@ -104,14 +119,33 @@ def materialize_phrase_corpus(
     )
 
 
-def _phrase_pass(source: Path, destination: Path, policy: PhrasePolicy) -> int:
-    lines = [line.split() for line in source.read_bytes().splitlines()]
-    unigrams = Counter(token for line in lines for token in line)
-    bigrams = Counter(pair for line in lines for pair in pairwise(line))
+def _phrase_pass(
+    source: Path,
+    destination: Path,
+    policy: PhrasePolicy,
+    *,
+    pass_index: int,
+    pass_count: int,
+    progress: Callable[[str], None] | None,
+) -> int:
+    unigrams: Counter[bytes] = Counter()
+    bigrams: Counter[tuple[bytes, bytes]] = Counter()
+    document_count = 0
+    with source.open("rb") as source_stream:
+        for document_count, line in enumerate(source_stream, start=1):
+            tokens = line.split()
+            unigrams.update(tokens)
+            bigrams.update(pairwise(tokens))
+            if progress is not None and document_count % 100_000 == 0:
+                progress(
+                    f"phrase pass={pass_index}/{pass_count} "
+                    f"counted_documents={document_count}"
+                )
     token_total = sum(unigrams.values())
     joined = 0
-    with destination.open("wb") as stream:
-        for tokens in lines:
+    with source.open("rb") as source_stream, destination.open("wb") as stream:
+        for written_documents, line in enumerate(source_stream, start=1):
+            tokens = line.split()
             result: list[bytes] = []
             index = 0
             while index < len(tokens):
@@ -131,8 +165,18 @@ def _phrase_pass(source: Path, destination: Path, policy: PhrasePolicy) -> int:
                 result.append(tokens[index])
                 index += 1
             stream.write(b" ".join(result) + b"\n")
+            if progress is not None and written_documents % 100_000 == 0:
+                progress(
+                    f"phrase pass={pass_index}/{pass_count} "
+                    f"written_documents={written_documents}/{document_count}"
+                )
         stream.flush()
         os.fsync(stream.fileno())
+    if progress is not None:
+        progress(
+            f"phrase pass={pass_index}/{pass_count} complete "
+            f"documents={document_count} joined={joined}"
+        )
     return joined
 
 
