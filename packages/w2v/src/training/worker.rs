@@ -1,12 +1,21 @@
 //! Sentence filling, subsampling, and worker-local rate from the C oracle.
-use super::{ModelStep, cbow_train, skip_gram_train};
+use super::{ModelStep, ObjectiveLoss, cbow_train, skip_gram_train};
 use crate::{
     config::{MAX_SENTENCE_LENGTH, ModelKind, Real, Status},
     corpus::Tokenizer,
     random::{Rng, RngPurpose, derive_seed},
     trainer::Trainer,
 };
-use std::{fs::File, sync::atomic::Ordering};
+use std::{fs::File, sync::atomic::Ordering, time::Instant};
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct WorkerObservation {
+    pub processed_tokens: u64,
+    pub learning_rate: Real,
+    pub objective_loss_sum: f64,
+    pub objective_loss_count: u64,
+    pub elapsed_seconds: f64,
+}
 
 pub struct Worker {
     pub worker_id: usize,
@@ -21,6 +30,8 @@ pub struct Worker {
     pub window_rng: Rng,
     pub subsampling_rng: Rng,
     pub negative_rng: Rng,
+    pub objective_count: u64,
+    pub observations: Vec<WorkerObservation>,
     tokenizer: Tokenizer<File>,
 }
 
@@ -33,6 +44,7 @@ pub struct WorkerState {
     pub window_rng_state: u64,
     pub subsampling_rng_state: u64,
     pub negative_rng_state: u64,
+    pub objective_count: u64,
 }
 
 impl Worker {
@@ -75,6 +87,8 @@ impl Worker {
             window_rng: rng(RngPurpose::Window),
             subsampling_rng: rng(RngPurpose::Subsample),
             negative_rng: rng(RngPurpose::Negative),
+            objective_count: 0,
+            observations: Vec::new(),
             tokenizer: trainer.corpus.tokenizer(shard_start)?,
         })
     }
@@ -94,6 +108,7 @@ impl Worker {
             window_rng_state: self.window_rng.state,
             subsampling_rng_state: self.subsampling_rng.state,
             negative_rng_state: self.negative_rng.state,
+            objective_count: self.objective_count,
         }
     }
 
@@ -111,6 +126,7 @@ impl Worker {
         self.window_rng.state = state.window_rng_state;
         self.subsampling_rng.state = state.subsampling_rng_state;
         self.negative_rng.state = state.negative_rng_state;
+        self.objective_count = state.objective_count;
         Status::Ok
     }
 
@@ -163,9 +179,12 @@ impl Worker {
         self.last_learning_rate_update_count = self.local_token_count;
     }
 
-    pub fn train_sentence(&mut self, trainer: &Trainer) {
+    pub fn train_sentence(&mut self, trainer: &Trainer, started: Instant) -> Result<(), Status> {
         for position in 0..self.sentence.len() {
             self.update_learning_rate(trainer);
+            self.objective_count += 1;
+            let observe = trainer.config.observation_interval > 0
+                && self.objective_count % trainer.config.observation_interval as u64 == 0;
             let mut step = ModelStep {
                 trainer,
                 target_token: self.sentence[position],
@@ -176,15 +195,32 @@ impl Worker {
                 hidden_gradient: &mut self.hidden_gradient,
                 window_rng: &mut self.window_rng,
                 negative_rng: &mut self.negative_rng,
+                observe_objective: observe,
             };
-            match trainer.config.model_kind {
+            let loss: ObjectiveLoss = match trainer.config.model_kind {
                 ModelKind::Cbow => cbow_train(&mut step),
                 ModelKind::SkipGram => skip_gram_train(&mut step),
+            }?;
+            if observe && loss.count > 0 {
+                self.observations.push(WorkerObservation {
+                    processed_tokens: trainer.processed_tokens(),
+                    learning_rate: self.learning_rate,
+                    objective_loss_sum: loss.sum,
+                    objective_loss_count: loss.count,
+                    elapsed_seconds: started.elapsed().as_secs_f64(),
+                });
             }
         }
+        Ok(())
     }
 
-    pub fn run_epoch(&mut self, trainer: &Trainer, reset: bool) -> Result<(), Status> {
+    pub fn run_epoch(
+        &mut self,
+        trainer: &Trainer,
+        reset: bool,
+        started: Instant,
+    ) -> Result<(), Status> {
+        self.observations.clear();
         if reset {
             self.reset_epoch(trainer)?;
         }
@@ -196,7 +232,7 @@ impl Worker {
                 finished = true;
             }
             if !finished {
-                self.train_sentence(trainer);
+                self.train_sentence(trainer, started)?;
             }
         }
         Ok(())

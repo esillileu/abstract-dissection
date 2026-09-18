@@ -120,7 +120,10 @@ fn c_objective_score_and_gradient_bits() {
         atomic_float::store(coordinate, value);
     }
     assert_eq!(objective_score(&hidden, &output).to_bits(), 0x3ef33334);
-    objective_apply_update(&hidden, &mut gradient, &output, 0.025);
+    assert_eq!(
+        objective_apply_update(&hidden, &mut gradient, &output, 0.025),
+        w2v::Status::Ok
+    );
     assert_eq!(
         gradient.map(f32::to_bits),
         [0x3dd70a3e, 0xbe570a3e, 0x3e9d70a4]

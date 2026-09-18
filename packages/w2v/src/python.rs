@@ -1,7 +1,7 @@
 use crate::{
     Corpus, EmbeddingKind, EpochReport, HsOutOfRangePolicy, Model, ModelKind, ObjectiveKind,
-    RngAlgorithm, Status, Trainer, TrainingConfig, TrainingSession, TrainingState, Vocabulary,
-    VocabularyConfig, VocabularyEntry, VocabularyState,
+    Observation, RngAlgorithm, Status, Trainer, TrainingConfig, TrainingSession, TrainingState,
+    Vocabulary, VocabularyConfig, VocabularyEntry, VocabularyState,
 };
 use numpy::{
     IntoPyArray, PyArray1, PyArray2, PyReadonlyArray1, PyReadonlyArray2, PyUntypedArrayMethods,
@@ -411,6 +411,7 @@ impl PyTrainingConfig {
         epochs=5,
         thread_count=12,
         learning_rate_update_interval=10_000,
+        observation_interval=0,
         initial_learning_rate=0.05,
         subsampling_threshold=1e-3,
         negative_sample_count=5,
@@ -430,6 +431,7 @@ impl PyTrainingConfig {
         epochs: usize,
         thread_count: usize,
         learning_rate_update_interval: usize,
+        observation_interval: usize,
         initial_learning_rate: f32,
         subsampling_threshold: f32,
         negative_sample_count: usize,
@@ -448,6 +450,7 @@ impl PyTrainingConfig {
             epochs,
             thread_count,
             learning_rate_update_interval,
+            observation_interval,
             initial_learning_rate,
             subsampling_threshold,
             negative_sample_count,
@@ -570,6 +573,68 @@ pub struct PyEpochReport {
     elapsed_seconds: f64,
     #[pyo3(get)]
     tokens_per_second: f64,
+    #[pyo3(get)]
+    objective_loss_sum: f64,
+    #[pyo3(get)]
+    objective_loss_count: u64,
+    observations: Vec<Observation>,
+}
+
+#[pymethods]
+impl PyEpochReport {
+    #[getter]
+    fn objective_loss(&self) -> Option<f64> {
+        (self.objective_loss_count > 0)
+            .then(|| self.objective_loss_sum / self.objective_loss_count as f64)
+    }
+
+    fn observations(&self) -> Vec<PyObservation> {
+        self.observations
+            .iter()
+            .cloned()
+            .map(PyObservation::from)
+            .collect()
+    }
+}
+
+#[pyclass(name = "Observation", frozen)]
+pub struct PyObservation {
+    #[pyo3(get)]
+    epoch: usize,
+    #[pyo3(get)]
+    processed_tokens: u64,
+    #[pyo3(get)]
+    learning_rate: f32,
+    #[pyo3(get)]
+    objective_loss_sum: f64,
+    #[pyo3(get)]
+    objective_loss_count: u64,
+    #[pyo3(get)]
+    elapsed_seconds: f64,
+    #[pyo3(get)]
+    tokens_per_second: f64,
+}
+
+#[pymethods]
+impl PyObservation {
+    #[getter]
+    fn objective_loss(&self) -> f64 {
+        self.objective_loss_sum / self.objective_loss_count as f64
+    }
+}
+
+impl From<Observation> for PyObservation {
+    fn from(value: Observation) -> Self {
+        Self {
+            epoch: value.epoch,
+            processed_tokens: value.processed_tokens,
+            learning_rate: value.learning_rate,
+            objective_loss_sum: value.objective_loss_sum,
+            objective_loss_count: value.objective_loss_count,
+            elapsed_seconds: value.elapsed_seconds,
+            tokens_per_second: value.tokens_per_second,
+        }
+    }
 }
 
 impl From<EpochReport> for PyEpochReport {
@@ -581,6 +646,9 @@ impl From<EpochReport> for PyEpochReport {
             learning_rate: report.learning_rate,
             elapsed_seconds: report.elapsed_seconds,
             tokens_per_second: report.tokens_per_second,
+            objective_loss_sum: report.objective_loss_sum,
+            objective_loss_count: report.objective_loss_count,
+            observations: report.observations,
         }
     }
 }
@@ -716,6 +784,9 @@ impl PyTrainingSession {
                     learning_rate: report.learning_rate,
                     elapsed_seconds: report.elapsed_seconds,
                     tokens_per_second: report.tokens_per_second,
+                    objective_loss_sum: report.objective_loss_sum,
+                    objective_loss_count: report.objective_loss_count,
+                    observations: report.observations.clone(),
                 },
             )?;
             callback.call1(py, (callback_report,))?;
@@ -741,6 +812,7 @@ fn w2v(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyTrainingConfig>()?;
     m.add_class::<PyModel>()?;
     m.add_class::<PyEpochReport>()?;
+    m.add_class::<PyObservation>()?;
     m.add_class::<PyTrainingState>()?;
     m.add_class::<PyTrainingSession>()?;
     Ok(())

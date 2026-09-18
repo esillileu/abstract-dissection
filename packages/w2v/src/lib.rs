@@ -21,7 +21,9 @@ pub use config::{
 };
 pub use corpus::Corpus;
 pub use model::{EmbeddingKind, Model, SigmoidTable};
-pub use trainer::{EpochReport, StateDescriptor, Trainer, TrainingSession, TrainingState};
+pub use trainer::{
+    EpochReport, Observation, StateDescriptor, Trainer, TrainingSession, TrainingState,
+};
 pub use training::worker::WorkerState;
 pub use vocab::{NegativeSampler, Vocabulary, VocabularyEntry, VocabularyState};
 

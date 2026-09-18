@@ -1,7 +1,10 @@
-use super::{ModelStep, context_position, context_radius, objective};
-use crate::{atomic_float, config::Real};
+use super::{ModelStep, ObjectiveLoss, context_position, context_radius, objective};
+use crate::{
+    atomic_float,
+    config::{Real, Status},
+};
 
-pub fn train(step: &mut ModelStep<'_, '_>) {
+pub fn train(step: &mut ModelStep<'_, '_>) -> Result<ObjectiveLoss, Status> {
     let model = &step.trainer.model;
     let dimension = model.embedding_dimension;
     let radius = context_radius(step.window_rng, step.trainer.config.window_radius);
@@ -23,19 +26,20 @@ pub fn train(step: &mut ModelStep<'_, '_>) {
         }
     }
     if context_count == 0 {
-        return;
+        return Ok(ObjectiveLoss::default());
     }
     for coordinate in 0..dimension {
         step.hidden[coordinate] /= context_count as Real;
     }
-    objective::train(
+    let loss = objective::train(
         step.trainer,
         step.target_token,
         step.learning_rate,
         step.negative_rng,
         step.hidden,
         step.hidden_gradient,
-    );
+        step.observe_objective,
+    )?;
     for offset in 0..=radius * 2 {
         if let Some(position) =
             context_position(step.sentence.len(), step.sentence_position, radius, offset)
@@ -48,4 +52,5 @@ pub fn train(step: &mut ModelStep<'_, '_>) {
             }
         }
     }
+    Ok(loss)
 }

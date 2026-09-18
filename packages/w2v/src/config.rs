@@ -98,6 +98,9 @@ pub struct TrainingConfig {
     pub epochs: usize,
     pub thread_count: usize,
     pub learning_rate_update_interval: usize,
+    /// Measure one model objective every N objective invocations. Zero disables
+    /// observation without changing the training arithmetic.
+    pub observation_interval: usize,
     pub initial_learning_rate: Real,
     pub subsampling_threshold: Real,
     pub negative_sample_count: usize,
@@ -118,6 +121,7 @@ impl Default for TrainingConfig {
             epochs: 5,
             thread_count: 12,
             learning_rate_update_interval: 10_000,
+            observation_interval: 0,
             initial_learning_rate: 0.05,
             subsampling_threshold: 1e-3,
             negative_sample_count: 5,

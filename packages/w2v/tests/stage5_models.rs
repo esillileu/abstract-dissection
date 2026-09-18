@@ -116,11 +116,12 @@ fn run_fixed_step(kind: ModelKind, objective: ObjectiveKind) -> StepOutput {
         hidden_gradient: &mut hidden_gradient,
         window_rng: &mut window_rng,
         negative_rng: &mut negative_rng,
+        observe_objective: false,
     };
     if kind == ModelKind::Cbow {
-        cbow_train(&mut step);
+        cbow_train(&mut step).unwrap();
     } else {
-        skip_gram_train(&mut step);
+        skip_gram_train(&mut step).unwrap();
     }
     let mut input = vec![0.0; 10];
     let mut output = vec![0.0; 10];
@@ -224,14 +225,14 @@ fn c_hs_boundary_policy() {
     atomic_float::store(&model.output_embeddings[output_index], boundary);
     let hidden = [1.0, 0.0];
     let mut gradient = [0.0, 0.0];
-    hierarchical_softmax_train(&trainer, 1, 0.05, &hidden, &mut gradient);
+    hierarchical_softmax_train(&trainer, 1, 0.05, &hidden, &mut gradient, false).unwrap();
     assert_eq!(
         atomic_float::load(&model.output_embeddings[output_index]),
         boundary
     );
     let mut boundary_trainer = trainer;
     boundary_trainer.config.hs_out_of_range_policy = HsOutOfRangePolicy::UseBoundaryValue;
-    hierarchical_softmax_train(&boundary_trainer, 1, 0.05, &hidden, &mut gradient);
+    hierarchical_softmax_train(&boundary_trainer, 1, 0.05, &hidden, &mut gradient, false).unwrap();
     assert_ne!(
         atomic_float::load(&model.output_embeddings[output_index]),
         boundary
@@ -268,7 +269,16 @@ fn c_negative_boundary_fallback() {
     };
     let mut rng = Rng::new(1, RngAlgorithm::Lcg);
     let mut gradient = [0.0; 2];
-    negative_sampling_train(&trainer, 2, 0.05, &mut rng, &[0.25, -0.5], &mut gradient);
+    negative_sampling_train(
+        &trainer,
+        2,
+        0.05,
+        &mut rng,
+        &[0.25, -0.5],
+        &mut gradient,
+        false,
+    )
+    .unwrap();
     assert_eq!(rng.state, 25214903928);
     assert_eq!(
         model.output_embeddings[2..4]

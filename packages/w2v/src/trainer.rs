@@ -15,7 +15,7 @@ use std::{
     time::Instant,
 };
 
-pub const TRAINING_STATE_SCHEMA_VERSION: u32 = 1;
+pub const TRAINING_STATE_SCHEMA_VERSION: u32 = 2;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct StateDescriptor {
@@ -42,6 +42,20 @@ pub struct EpochReport {
     pub epoch_tokens: u64,
     pub processed_tokens: u64,
     pub learning_rate: Real,
+    pub elapsed_seconds: f64,
+    pub tokens_per_second: f64,
+    pub objective_loss_sum: f64,
+    pub objective_loss_count: u64,
+    pub observations: Vec<Observation>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Observation {
+    pub epoch: usize,
+    pub processed_tokens: u64,
+    pub learning_rate: Real,
+    pub objective_loss_sum: f64,
+    pub objective_loss_count: u64,
     pub elapsed_seconds: f64,
     pub tokens_per_second: f64,
 }
@@ -81,6 +95,7 @@ fn config_digest(config: &TrainingConfig) -> String {
         config.epochs as u64,
         config.thread_count as u64,
         config.learning_rate_update_interval as u64,
+        config.observation_interval as u64,
         config.initial_learning_rate.to_bits() as u64,
         config.subsampling_threshold.to_bits() as u64,
         config.negative_sample_count as u64,
@@ -227,7 +242,7 @@ impl TrainingSession {
         let before = self.trainer.processed_tokens();
         let reset = self.completed_epochs > 0;
         let result = if self.workers.len() == 1 {
-            self.workers[0].run_epoch(&self.trainer, reset)
+            self.workers[0].run_epoch(&self.trainer, reset, started)
         } else {
             thread::scope(|scope| {
                 let mut handles = Vec::new();
@@ -236,7 +251,7 @@ impl TrainingSession {
                     .map_err(|_| Status::OutOfMemory)?;
                 for worker in &mut self.workers {
                     let trainer = Arc::clone(&self.trainer);
-                    handles.push(scope.spawn(move || worker.run_epoch(&trainer, reset)));
+                    handles.push(scope.spawn(move || worker.run_epoch(&trainer, reset, started)));
                 }
                 let mut result = Ok(());
                 for handle in handles {
@@ -261,6 +276,37 @@ impl TrainingSession {
             .iter()
             .map(|worker| worker.learning_rate)
             .fold(self.trainer.config.initial_learning_rate, Real::min);
+        if processed < before || !learning_rate.is_finite() || learning_rate <= 0.0 {
+            return Err(Status::InvalidState);
+        }
+        let mut observations: Vec<Observation> = self
+            .workers
+            .iter()
+            .flat_map(|worker| {
+                worker.observations.iter().map(|item| Observation {
+                    epoch: self.completed_epochs,
+                    processed_tokens: item.processed_tokens,
+                    learning_rate: item.learning_rate,
+                    objective_loss_sum: item.objective_loss_sum,
+                    objective_loss_count: item.objective_loss_count,
+                    elapsed_seconds: item.elapsed_seconds,
+                    tokens_per_second: if item.elapsed_seconds > 0.0 {
+                        item.processed_tokens.saturating_sub(before) as f64 / item.elapsed_seconds
+                    } else {
+                        0.0
+                    },
+                })
+            })
+            .collect();
+        observations.sort_by_key(|item| item.processed_tokens);
+        let objective_loss_sum = observations
+            .iter()
+            .map(|item| item.objective_loss_sum)
+            .sum();
+        let objective_loss_count = observations
+            .iter()
+            .map(|item| item.objective_loss_count)
+            .sum();
         Ok(EpochReport {
             epoch: self.completed_epochs,
             epoch_tokens,
@@ -272,6 +318,9 @@ impl TrainingSession {
             } else {
                 0.0
             },
+            objective_loss_sum,
+            objective_loss_count,
+            observations,
         })
     }
 

@@ -1,5 +1,10 @@
 //! Context traversal and objective arithmetic from the modular C oracle.
-use crate::{atomic_float, config::Real, random::Rng, trainer::Trainer};
+use crate::{
+    atomic_float,
+    config::{Real, Status},
+    random::Rng,
+    trainer::Trainer,
+};
 use std::sync::atomic::AtomicU32;
 
 mod cbow;
@@ -27,6 +32,20 @@ pub struct ModelStep<'t, 'w> {
     pub hidden_gradient: &'w mut [Real],
     pub window_rng: &'w mut Rng,
     pub negative_rng: &'w mut Rng,
+    pub observe_objective: bool,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct ObjectiveLoss {
+    pub sum: f64,
+    pub count: u64,
+}
+
+impl ObjectiveLoss {
+    pub fn add(&mut self, other: Self) {
+        self.sum += other.sum;
+        self.count += other.count;
+    }
 }
 
 pub fn context_position(
@@ -75,9 +94,24 @@ pub fn objective_apply_update(
     hidden_gradient: &mut [Real],
     output_row: &[AtomicU32],
     gradient_scale: Real,
-) {
+) -> Status {
     assert_eq!(hidden.len(), output_row.len());
     assert_eq!(hidden_gradient.len(), hidden.len());
+    if !gradient_scale.is_finite() || hidden.iter().any(|value| !value.is_finite()) {
+        return Status::InvalidState;
+    }
+    for coordinate in 0..hidden.len() {
+        let output_value = atomic_float::load(&output_row[coordinate]);
+        let next = hidden_gradient[coordinate] + gradient_scale * output_value;
+        let delta = gradient_scale * hidden[coordinate];
+        if !output_value.is_finite()
+            || !next.is_finite()
+            || !delta.is_finite()
+            || !(output_value + delta).is_finite()
+        {
+            return Status::InvalidState;
+        }
+    }
     for coordinate in 0..hidden.len() {
         let output_value = atomic_float::load(&output_row[coordinate]);
         hidden_gradient[coordinate] += gradient_scale * output_value;
@@ -86,4 +120,5 @@ pub fn objective_apply_update(
         let delta = gradient_scale * hidden[coordinate];
         atomic_float::add(&output_row[coordinate], delta);
     }
+    Status::Ok
 }

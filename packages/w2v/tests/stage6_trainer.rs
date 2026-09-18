@@ -361,3 +361,81 @@ fn parallel_training_completes_with_finite_embeddings() {
     assert!(snapshot.iter().all(|value| value.is_finite()));
     fs::remove_file(&corpus.path).unwrap();
 }
+
+#[test]
+fn objective_observation_is_finite_and_does_not_change_training() {
+    let (corpus, vocab) = fixture();
+    let mut config = TrainingConfig::for_model(ModelKind::SkipGram);
+    config.embedding_dimension = 8;
+    config.window_radius = 2;
+    config.epochs = 1;
+    config.thread_count = 1;
+    config.subsampling_threshold = 0.0;
+    config.negative_sample_count = 2;
+    config.negative_table_size = 257;
+    config.sigmoid_table_size = 101;
+
+    let train = |config: &TrainingConfig| {
+        let model =
+            Arc::new(Model::create(&vocab, 8, config.root_seed, config.rng_algorithm).unwrap());
+        let trainer = Arc::new(
+            Trainer::create(
+                Arc::clone(&corpus),
+                Arc::clone(&vocab),
+                Arc::clone(&model),
+                config,
+            )
+            .unwrap(),
+        );
+        let report = trainer.session().unwrap().train_epoch().unwrap();
+        let mut input = vec![0.0; vocab.entries.len() * 8];
+        let mut output = vec![0.0; input.len()];
+        model.snapshot_into(EmbeddingKind::Input, &mut input);
+        model.snapshot_into(EmbeddingKind::Output, &mut output);
+        (report, input, output)
+    };
+
+    let (disabled, expected_input, expected_output) = train(&config);
+    assert!(disabled.observations.is_empty());
+    assert_eq!(disabled.objective_loss_count, 0);
+
+    config.observation_interval = 1;
+    let (observed, actual_input, actual_output) = train(&config);
+    assert_eq!(actual_input, expected_input);
+    assert_eq!(actual_output, expected_output);
+    assert!(!observed.observations.is_empty());
+    assert_eq!(
+        observed.objective_loss_count,
+        observed
+            .observations
+            .iter()
+            .map(|item| item.objective_loss_count)
+            .sum::<u64>()
+    );
+    assert!(
+        (observed.objective_loss_sum
+            - observed
+                .observations
+                .iter()
+                .map(|item| item.objective_loss_sum)
+                .sum::<f64>())
+        .abs()
+            < f64::EPSILON
+    );
+    assert!(observed.observations.iter().all(|item| {
+        item.objective_loss_sum.is_finite()
+            && item.objective_loss_count > 0
+            && item.learning_rate.is_finite()
+            && item.tokens_per_second.is_finite()
+    }));
+
+    config.observation_interval = 2;
+    let (every_second, interval_input, interval_output) = train(&config);
+    assert_eq!(interval_input, expected_input);
+    assert_eq!(interval_output, expected_output);
+    assert_eq!(
+        every_second.observations.len(),
+        observed.observations.len() / 2
+    );
+    fs::remove_file(&corpus.path).unwrap();
+}

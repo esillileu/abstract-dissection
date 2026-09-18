@@ -13,7 +13,7 @@ from w2v import (
 )
 
 
-def _objects(path: Path, *, epochs: int = 2):
+def _objects(path: Path, *, epochs: int = 2, observation_interval: int = 0):
     path.write_bytes(b"alpha beta alpha gamma\nbeta alpha delta\ngamma beta alpha\n")
     corpus = Corpus(path)
     vocabulary = Vocabulary.build(
@@ -30,6 +30,7 @@ def _objects(path: Path, *, epochs: int = 2):
         negative_sample_count=2,
         negative_table_size=257,
         sigmoid_table_size=101,
+        observation_interval=observation_interval,
     )
     model = Model.create(vocabulary, config)
     return corpus, vocabulary, config, model
@@ -175,3 +176,25 @@ def test_callback_exception_leaves_completed_epoch_exportable(tmp_path: Path) ->
     assert session.export_state().completed_epochs == 1
     assert session.train_epoch().epoch == 2
     assert session.is_complete
+
+
+def test_dense_objective_observations_are_exposed_to_python(tmp_path: Path) -> None:
+    corpus, vocabulary, config, model = _objects(
+        tmp_path / "observations.txt", epochs=1, observation_interval=1
+    )
+    report = TrainingSession(corpus, vocabulary, model, config).train_epoch()
+    observations = report.observations()
+
+    assert observations
+    assert report.objective_loss_count == sum(
+        observation.objective_loss_count for observation in observations
+    )
+    assert report.objective_loss == pytest.approx(
+        report.objective_loss_sum / report.objective_loss_count
+    )
+    assert all(
+        np.isfinite(observation.objective_loss)
+        and observation.epoch == 1
+        and observation.processed_tokens <= report.processed_tokens
+        for observation in observations
+    )
