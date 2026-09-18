@@ -887,18 +887,21 @@ pub struct PyTrainingSession {
 #[pymethods]
 impl PyTrainingSession {
     #[new]
+    #[pyo3(signature = (corpus, vocabulary, model, config, corpus_digest=None))]
     fn new(
         corpus: &PyCorpus,
         vocabulary: &PyVocabulary,
         model: &PyModel,
         config: &PyTrainingConfig,
+        corpus_digest: Option<String>,
     ) -> PyResult<Self> {
         let trainer = Arc::new(
-            Trainer::create(
+            Trainer::create_with_digest(
                 Arc::clone(&corpus.inner),
                 Arc::clone(&vocabulary.inner),
                 Arc::clone(&model.inner),
                 &config.inner,
+                corpus_digest,
             )
             .map_err(status_error)?,
         );
@@ -910,6 +913,7 @@ impl PyTrainingSession {
     }
 
     #[classmethod]
+    #[pyo3(signature = (corpus, vocabulary, model, config, state, corpus_digest=None))]
     fn restore(
         _cls: &Bound<'_, PyType>,
         corpus: &PyCorpus,
@@ -917,13 +921,15 @@ impl PyTrainingSession {
         model: &PyModel,
         config: &PyTrainingConfig,
         state: &PyTrainingState,
+        corpus_digest: Option<String>,
     ) -> PyResult<Self> {
         let trainer = Arc::new(
-            Trainer::create(
+            Trainer::create_with_digest(
                 Arc::clone(&corpus.inner),
                 Arc::clone(&vocabulary.inner),
                 Arc::clone(&model.inner),
                 &config.inner,
+                corpus_digest,
             )
             .map_err(status_error)?,
         );

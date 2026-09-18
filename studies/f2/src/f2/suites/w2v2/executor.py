@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
+import shutil
 from pathlib import Path
+
+from repro_io.checksum import sha256_file
 
 from f2.suites.w2v.phrases import PhrasePolicy, materialize_phrase_corpus
 from f2.suites.w2v1.executor import W2V1Executor, W2V1Result, _mapping
@@ -20,10 +22,14 @@ class W2V2Executor(W2V1Executor):
         source = Path(str(corpus["path"]))
         if not source.is_absolute():
             source = context.paths.repo_root / source
-        source_digest = hashlib.sha256(source.read_bytes()).hexdigest()
-        expected = str(corpus.get("sha256", source_digest))
-        if source_digest != expected:
-            raise ValueError("W2V2 source corpus identity mismatch")
+        configured_digest = corpus.get("sha256")
+        # Canonical materialization has already verified configured digests;
+        # unbound local inputs are hashed here for phrase lineage.
+        source_digest = (
+            str(configured_digest)
+            if configured_digest is not None
+            else sha256_file(source)
+        )
         values = _mapping(config, "phrase_detection")
         policy = PhrasePolicy(
             passes=int(values["passes"]),
@@ -48,11 +54,12 @@ class W2V2Executor(W2V1Executor):
             phrase_path,
             policy,
             progress=None if progress is None else progress.write,
+            source_sha256=source_digest,
         )
         resolved["corpus"] = {"path": str(phrase.path), "sha256": phrase.corpus_sha256}
         result = super().run(resolved, context)
         lineage_target = result.root / "phrase_lineage.json"
-        lineage_target.write_bytes(phrase.path.with_suffix(".txt.json").read_bytes())
+        shutil.copyfile(phrase.path.with_suffix(".txt.json"), lineage_target)
         report = json.loads(result.report.read_text())
         report["artifacts"]["phrase_lineage"] = "phrase_lineage.json"
         result.report.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")

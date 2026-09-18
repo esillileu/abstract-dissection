@@ -69,6 +69,7 @@ fn run_fixed_step(kind: ModelKind, objective: ObjectiveKind) -> StepOutput {
     }
     let trainer = Trainer {
         corpus: Arc::clone(&corpus),
+        corpus_digest: String::new(),
         vocab: Arc::clone(&vocab),
         model: Arc::clone(&model),
         negative_sampler,
@@ -207,6 +208,7 @@ fn c_hs_boundary_policy() {
     };
     let trainer = Trainer {
         corpus: Arc::clone(&corpus),
+        corpus_digest: String::new(),
         vocab: Arc::clone(&vocab),
         model: Arc::clone(&model),
         negative_sampler: NegativeSampler::default(),
@@ -257,6 +259,7 @@ fn c_negative_boundary_fallback() {
     };
     let trainer = Trainer {
         corpus: Arc::clone(&corpus),
+        corpus_digest: String::new(),
         vocab: Arc::clone(&vocab),
         model: Arc::clone(&model),
         negative_sampler: NegativeSampler { table: vec![0; 7] },

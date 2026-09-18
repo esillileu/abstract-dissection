@@ -51,6 +51,7 @@ def materialize_phrase_corpus(
     policy: PhrasePolicy,
     *,
     progress: Callable[[str], None] | None = None,
+    source_sha256: str | None = None,
 ) -> PhraseCorpus:
     """Apply the original word2phrase score in stable left-to-right passes.
 
@@ -60,7 +61,7 @@ def materialize_phrase_corpus(
     source = Path(source)
     if not source.is_file():
         raise ValueError(f"phrase source does not exist: {source}")
-    source_sha = _sha256(source)
+    source_sha = source_sha256 or _sha256(source)
     policy_payload = policy.record()
     policy_digest = _digest(policy_payload)
     destination = Path(destination)

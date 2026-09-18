@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+from repro_io.checksum import sha256_file
 from w2v import (
     TrainingState,
     Vocabulary,
@@ -55,9 +56,10 @@ def resolve_or_build_vocabulary(
     config_values: dict[str, Any],
     *,
     cache_root: Path,
+    corpus_digest: str | None = None,
 ) -> Any:
     """Load a verified shared vocabulary or build it once atomically."""
-    corpus_digest = corpus.digest()
+    corpus_digest = corpus_digest or corpus.digest()
     semantic_config = {
         "min_count": int(config_values.get("min_count", 5)),
         "max_lexical_words": int(config_values.get("max_lexical_words", 0)),
@@ -121,17 +123,47 @@ def _write_vocabulary_artifact(
         _write_manifest(temporary, VOCABULARY_FORMAT, identity, _VOCABULARY_ARRAYS)
         _load_vocabulary_artifact(temporary, expected=identity)
 
-        if target.exists():
+        _publish_vocabulary_artifact(temporary, target, expected=identity)
+        temporary = None
+    finally:
+        if temporary is not None and temporary.exists():
+            shutil.rmtree(temporary)
+
+
+def _publish_vocabulary_artifact(
+    temporary: Path, target: Path, *, expected: dict[str, Any]
+) -> None:
+    """Publish a verified directory, adopting a valid concurrent winner."""
+    for attempt in range(2):
+        try:
+            os.replace(temporary, target)
+            return
+        except OSError:
             try:
-                _load_vocabulary_artifact(target, expected=identity)
+                _load_vocabulary_artifact(target, expected=expected)
             except (FileNotFoundError, OSError, ValueError):
-                shutil.rmtree(target)
+                if attempt == 1:
+                    raise
+                _remove_invalid_target(target)
             else:
                 return
-        os.replace(temporary, target)
-    finally:
-        if temporary.exists():
-            shutil.rmtree(temporary)
+
+
+def _remove_invalid_target(target: Path) -> None:
+    """Remove a known-invalid target only if it was not replaced meanwhile."""
+    try:
+        marker = target.stat()
+    except FileNotFoundError:
+        return
+    try:
+        if target.stat().st_ino != marker.st_ino:
+            return
+    except FileNotFoundError:
+        return
+    if target.is_dir():
+        shutil.rmtree(target)
+    else:
+        target.unlink()
 
 
 def _load_vocabulary_artifact(path: Path, *, expected: dict[str, Any]) -> Any:
@@ -425,11 +457,7 @@ def _load_array(path: Path, *, mmap: bool = False) -> np.ndarray:
 
 
 def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
+    return sha256_file(path)
 
 
 def _write_json(path: Path, value: dict[str, Any]) -> None:

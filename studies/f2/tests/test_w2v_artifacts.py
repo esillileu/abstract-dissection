@@ -18,6 +18,7 @@ from w2v import (
 )
 
 from f2.cli import app
+from f2.suites.w2v import artifacts as artifact_module
 from f2.suites.w2v.artifacts import (
     CHECKPOINT_FORMAT,
     create_checkpoint_manager,
@@ -172,6 +173,72 @@ def test_shared_vocabulary_cache_reuses_verified_state_without_rebuilding(
         second.export_state().arrays(), first.export_state().arrays(), strict=True
     ):
         np.testing.assert_array_equal(actual, expected)
+
+
+def test_shared_vocabulary_cache_hit_reuses_supplied_corpus_digest(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    corpus_path = tmp_path / "verified-corpus.txt"
+    corpus_path.write_bytes(b"alpha beta alpha\n")
+    corpus = Corpus(corpus_path)
+    digest = hashlib.sha256(corpus_path.read_bytes()).hexdigest()
+    values = {"initial_capacity": 2, "hash_capacity": 17, "min_count": 1}
+    resolve_or_build_vocabulary(
+        corpus, values, cache_root=tmp_path / "cache", corpus_digest=digest
+    )
+
+    monkeypatch.setattr(
+        Corpus, "digest", lambda _self: pytest.fail("cache hit rehashed corpus")
+    )
+    resolve_or_build_vocabulary(
+        corpus, values, cache_root=tmp_path / "cache", corpus_digest=digest
+    )
+
+
+def test_concurrent_vocabulary_writer_adopts_valid_published_target(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    corpus_path = tmp_path / "race-corpus.txt"
+    corpus_path.write_bytes(b"alpha beta alpha\n")
+    corpus = Corpus(corpus_path)
+    values = {"initial_capacity": 2, "hash_capacity": 17, "min_count": 1}
+    digest = hashlib.sha256(corpus_path.read_bytes()).hexdigest()
+    cached = resolve_or_build_vocabulary(
+        corpus, values, cache_root=tmp_path / "cache", corpus_digest=digest
+    )
+    target = next((tmp_path / "cache/f2/w2v/vocabulary").iterdir())
+    semantic_config = {
+        "min_count": 1,
+        "max_lexical_words": 0,
+        "hash_capacity": 17,
+        "semantics_version": 1,
+    }
+    config_digest = artifact_module._json_digest(semantic_config)
+    identity_digest = artifact_module._json_digest(
+        {"corpus_digest": digest, "vocabulary_config_digest": config_digest}
+    )
+
+    def existing_target(_source: Path, destination: Path) -> None:
+        if destination == target:
+            raise FileExistsError(destination)
+        raise AssertionError("unexpected publish destination")
+
+    monkeypatch.setattr(artifact_module.os, "replace", existing_target)
+    artifact_module._write_vocabulary_artifact(
+        target,
+        cached.export_state(),
+        corpus_digest=digest,
+        vocabulary_config=semantic_config,
+        vocabulary_config_digest=config_digest,
+        identity_digest=identity_digest,
+    )
+    assert (
+        artifact_module._load_vocabulary_artifact(
+            target,
+            expected={"corpus_digest": digest, "vocabulary_config": semantic_config},
+        ).digest()
+        == cached.digest()
+    )
 
 
 @pytest.mark.parametrize(

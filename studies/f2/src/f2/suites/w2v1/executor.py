@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from repro_io.checksum import sha256_file
 from w2v import (
     Corpus,
     Model,
@@ -45,14 +46,7 @@ class W2V1Executor:
             source = context.paths.repo_root / source
         if not source.is_file():
             raise ValueError(f"W2V1 corpus does not exist: {source}")
-        import hashlib
-
-        actual_digest = hashlib.sha256(source.read_bytes()).hexdigest()
-        expected_file_digest = str(
-            corpus_config.get("sha256", identity["corpus_manifest_digest"])
-        )
-        if actual_digest != expected_file_digest:
-            raise ValueError("W2V1 corpus identity does not match the resolved config")
+        corpus_digest = _corpus_digest(corpus_config, source)
 
         run_key = str(identity["planned_run_slot_id"])
         root_override = context.metadata.get("run_root")
@@ -78,10 +72,14 @@ class W2V1Executor:
                 Path(resume_checkpoint),
                 context.paths.repo_root,
                 cache_root=context.paths.cache_root,
+                corpus_digest=corpus_digest,
             )
             if resume_checkpoint
             else create_session(
-                config, context.paths.repo_root, cache_root=context.paths.cache_root
+                config,
+                context.paths.repo_root,
+                cache_root=context.paths.cache_root,
+                corpus_digest=corpus_digest,
             )
         )
         manager = create_checkpoint_manager(
@@ -150,43 +148,69 @@ def restore_session(
     repo_root: Path,
     *,
     cache_root: Path | None = None,
+    corpus_digest: str | None = None,
 ) -> TrainingSession:
     """Reconstruct a session through the same identity-checked adapter path."""
     corpus_path = Path(str(_mapping(config, "corpus")["path"]))
     corpus = Corpus(
         corpus_path if corpus_path.is_absolute() else repo_root / corpus_path
     )
+    corpus_digest = corpus_digest or _corpus_digest(
+        _mapping(config, "corpus"), Path(corpus.path)
+    )
     vocabulary = resolve_or_build_vocabulary(
         corpus,
         _mapping(config, "vocabulary"),
         cache_root=cache_root or repo_root / ".cache",
+        corpus_digest=corpus_digest,
     )
     values = dict(_mapping(config, "training"))
     values["root_seed"] = int(_mapping(config, "identity")["seed"])
     training = TrainingConfig(**values)
     model = Model.create(vocabulary, training)
     return TrainingSession.restore(
-        corpus, vocabulary, model, training, load_checkpoint(checkpoint)
+        corpus,
+        vocabulary,
+        model,
+        training,
+        load_checkpoint(checkpoint),
+        corpus_digest=corpus_digest,
     )
 
 
 def create_session(
-    config: dict[str, object], repo_root: Path, *, cache_root: Path | None = None
+    config: dict[str, object],
+    repo_root: Path,
+    *,
+    cache_root: Path | None = None,
+    corpus_digest: str | None = None,
 ) -> TrainingSession:
     corpus_path = Path(str(_mapping(config, "corpus")["path"]))
     corpus = Corpus(
         corpus_path if corpus_path.is_absolute() else repo_root / corpus_path
     )
+    corpus_digest = corpus_digest or _corpus_digest(
+        _mapping(config, "corpus"), Path(corpus.path)
+    )
     vocabulary = resolve_or_build_vocabulary(
         corpus,
         _mapping(config, "vocabulary"),
         cache_root=cache_root or repo_root / ".cache",
+        corpus_digest=corpus_digest,
     )
     values = dict(_mapping(config, "training"))
     values["root_seed"] = int(_mapping(config, "identity")["seed"])
     training = TrainingConfig(**values)
     model = Model.create(vocabulary, training)
-    return TrainingSession(corpus, vocabulary, model, training)
+    return TrainingSession(
+        corpus, vocabulary, model, training, corpus_digest=corpus_digest
+    )
+
+
+def _corpus_digest(corpus_config: dict[str, Any], source: Path) -> str:
+    """Use a materializer-verified identity, hashing only unbound local inputs."""
+    configured = corpus_config.get("sha256")
+    return str(configured) if configured is not None else sha256_file(source)
 
 
 def _mapping(config: dict[str, object], key: str) -> dict[str, Any]:

@@ -62,6 +62,7 @@ pub struct Observation {
 
 pub struct Trainer {
     pub corpus: Arc<Corpus>,
+    pub corpus_digest: String,
     pub vocab: Arc<Vocabulary>,
     pub model: Arc<Model>,
     pub negative_sampler: NegativeSampler,
@@ -119,6 +120,16 @@ impl Trainer {
         model: Arc<Model>,
         config: &TrainingConfig,
     ) -> Result<Self, Status> {
+        Self::create_with_digest(corpus, vocab, model, config, None)
+    }
+
+    pub fn create_with_digest(
+        corpus: Arc<Corpus>,
+        vocab: Arc<Vocabulary>,
+        model: Arc<Model>,
+        config: &TrainingConfig,
+        corpus_digest: Option<String>,
+    ) -> Result<Self, Status> {
         if config.validate() != Status::Ok
             || model.vocab_size != vocab.entries.len()
             || model.embedding_dimension != config.embedding_dimension
@@ -133,8 +144,13 @@ impl Trainer {
         } else {
             NegativeSampler::default()
         };
+        let corpus_digest = match corpus_digest {
+            Some(digest) => digest,
+            None => corpus.digest()?,
+        };
         Ok(Self {
             corpus,
+            corpus_digest,
             vocab,
             model,
             negative_sampler,
@@ -153,7 +169,7 @@ impl Trainer {
             schema_version: TRAINING_STATE_SCHEMA_VERSION,
             config_digest: config_digest(&self.config),
             vocabulary_digest: self.vocab.digest(),
-            corpus_digest: self.corpus.digest()?,
+            corpus_digest: self.corpus_digest.clone(),
         })
     }
 
