@@ -1,3 +1,4 @@
+use crate::training::worker::WorkerState;
 use crate::{
     Corpus, EmbeddingKind, EpochReport, HsOutOfRangePolicy, Model, ModelKind, ObjectiveKind,
     Observation, RngAlgorithm, Status, Trainer, TrainingConfig, TrainingSession, TrainingState,
@@ -660,8 +661,165 @@ pub struct PyTrainingState {
     embedding_dimension: usize,
 }
 
+#[pyclass(name = "WorkerState", frozen)]
+#[derive(Clone)]
+pub struct PyWorkerState {
+    inner: WorkerState,
+}
+
+#[pymethods]
+impl PyWorkerState {
+    #[new]
+    #[allow(clippy::too_many_arguments)]
+    fn new(
+        worker_id: usize,
+        local_token_count: u64,
+        last_learning_rate_update_count: u64,
+        learning_rate: f32,
+        window_rng_state: u64,
+        subsampling_rng_state: u64,
+        negative_rng_state: u64,
+        objective_count: u64,
+    ) -> PyResult<Self> {
+        if !learning_rate.is_finite() || learning_rate < 0.0 {
+            return Err(status_error(Status::CorruptData));
+        }
+        Ok(Self {
+            inner: WorkerState {
+                worker_id,
+                local_token_count,
+                last_learning_rate_update_count,
+                learning_rate,
+                window_rng_state,
+                subsampling_rng_state,
+                negative_rng_state,
+                objective_count,
+            },
+        })
+    }
+
+    #[getter]
+    fn worker_id(&self) -> usize {
+        self.inner.worker_id
+    }
+    #[getter]
+    fn local_token_count(&self) -> u64 {
+        self.inner.local_token_count
+    }
+    #[getter]
+    fn last_learning_rate_update_count(&self) -> u64 {
+        self.inner.last_learning_rate_update_count
+    }
+    #[getter]
+    fn learning_rate(&self) -> f32 {
+        self.inner.learning_rate
+    }
+    #[getter]
+    fn window_rng_state(&self) -> u64 {
+        self.inner.window_rng_state
+    }
+    #[getter]
+    fn subsampling_rng_state(&self) -> u64 {
+        self.inner.subsampling_rng_state
+    }
+    #[getter]
+    fn negative_rng_state(&self) -> u64 {
+        self.inner.negative_rng_state
+    }
+    #[getter]
+    fn objective_count(&self) -> u64 {
+        self.inner.objective_count
+    }
+}
+
 #[pymethods]
 impl PyTrainingState {
+    #[classmethod]
+    #[allow(clippy::too_many_arguments)]
+    fn from_parts(
+        _cls: &Bound<'_, PyType>,
+        schema_version: u32,
+        config_digest: String,
+        vocabulary_digest: String,
+        corpus_digest: String,
+        completed_epochs: usize,
+        processed_tokens: u64,
+        vocabulary_state: &PyVocabularyState,
+        input_embeddings: PyReadonlyArray2<'_, f32>,
+        output_embeddings: PyReadonlyArray2<'_, f32>,
+        workers: Vec<PyWorkerState>,
+    ) -> PyResult<Self> {
+        if schema_version != crate::trainer::TRAINING_STATE_SCHEMA_VERSION
+            || Vocabulary::restore(&vocabulary_state.inner)
+                .map_err(status_error)?
+                .digest()
+                != vocabulary_digest
+        {
+            return Err(status_error(Status::IdentityMismatch));
+        }
+        let input_shape = input_embeddings.shape();
+        let output_shape = output_embeddings.shape();
+        if input_shape.len() != 2 || output_shape != input_shape {
+            return Err(status_error(Status::CorruptData));
+        }
+        let vocab_size = vocabulary_state.inner.entries.len();
+        if input_shape[0] != vocab_size || input_shape[1] == 0 {
+            return Err(status_error(Status::CorruptData));
+        }
+        if !input_embeddings.is_c_contiguous() || !output_embeddings.is_c_contiguous() {
+            return Err(PyValueError::new_err(
+                "embedding arrays must be C-contiguous and float32",
+            ));
+        }
+        let input_values = input_embeddings.as_slice().map_err(|_| {
+            PyValueError::new_err("embedding arrays must be C-contiguous and float32")
+        })?;
+        let output_values = output_embeddings.as_slice().map_err(|_| {
+            PyValueError::new_err("embedding arrays must be C-contiguous and float32")
+        })?;
+        if input_values
+            .iter()
+            .chain(output_values)
+            .any(|value| !value.is_finite())
+        {
+            return Err(status_error(Status::CorruptData));
+        }
+        Ok(Self {
+            inner: TrainingState {
+                descriptor: crate::trainer::StateDescriptor {
+                    schema_version,
+                    config_digest,
+                    vocabulary_digest,
+                    corpus_digest,
+                },
+                completed_epochs,
+                processed_tokens,
+                vocabulary: vocabulary_state.inner.clone(),
+                input_embeddings: input_values.to_vec(),
+                output_embeddings: output_values.to_vec(),
+                workers: workers.into_iter().map(|worker| worker.inner).collect(),
+            },
+            vocab_size,
+            embedding_dimension: input_shape[1],
+        })
+    }
+
+    #[getter]
+    fn schema_version(&self) -> u32 {
+        self.inner.descriptor.schema_version
+    }
+    #[getter]
+    fn config_digest(&self) -> String {
+        self.inner.descriptor.config_digest.clone()
+    }
+    #[getter]
+    fn vocabulary_digest(&self) -> String {
+        self.inner.descriptor.vocabulary_digest.clone()
+    }
+    #[getter]
+    fn corpus_digest(&self) -> String {
+        self.inner.descriptor.corpus_digest.clone()
+    }
     #[getter]
     fn completed_epochs(&self) -> usize {
         self.inner.completed_epochs
@@ -694,6 +852,15 @@ impl PyTrainingState {
         PyVocabularyState {
             inner: self.inner.vocabulary.clone(),
         }
+    }
+
+    fn workers(&self) -> Vec<PyWorkerState> {
+        self.inner
+            .workers
+            .iter()
+            .cloned()
+            .map(|inner| PyWorkerState { inner })
+            .collect()
     }
 }
 
@@ -814,6 +981,7 @@ fn w2v(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyEpochReport>()?;
     m.add_class::<PyObservation>()?;
     m.add_class::<PyTrainingState>()?;
+    m.add_class::<PyWorkerState>()?;
     m.add_class::<PyTrainingSession>()?;
     Ok(())
 }

@@ -8,6 +8,7 @@ dependencies = [
     "repro-core",
     "sqlalchemy>=2.0.0",
     "repro-io",
+    "w2v",
     "python-dotenv>=1.0",
 ]
 

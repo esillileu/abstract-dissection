@@ -19,6 +19,7 @@ dlfs = { workspace = true }
 deepscratch = { workspace = true }
 f2 = { workspace = true }
 f2-cc = { workspace = true }
+w2v = { workspace = true }
 
 [dependency-groups]
 dev = [

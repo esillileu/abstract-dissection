@@ -57,6 +57,12 @@ All AI agents working in this repository MUST adhere to the following 6 golden r
   just check
   ```
   Ensure all 500+ tests pass and linter/formatter have 0 errors.
+* **Elevated execution:** Always run the root `just check` outside the filesystem
+  sandbox with elevated permissions. Its verification suite may start a disposable
+  rootless Podman PostgreSQL instance and must be able to write under the user's
+  runtime directory (for example, `/run/user/<uid>/libpod`). Request approval for
+  the narrow `just check` command prefix when no persistent approval exists; do not
+  broaden writable roots or grant general shell access merely to run this gate.
 * **Environment-failure stop rule:** If the verification command cannot start or
   complete because of an environment or infrastructure problem rather than a
   code/test failure (for example: a missing executable, broken virtual

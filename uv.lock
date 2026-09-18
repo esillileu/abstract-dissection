@@ -604,6 +604,7 @@ dependencies = [
     { name = "repro-core" },
     { name = "repro-io" },
     { name = "sqlalchemy" },
+    { name = "w2v" },
 ]
 
 [package.metadata]
@@ -613,6 +614,7 @@ requires-dist = [
     { name = "repro-core", editable = "packages/repro-core" },
     { name = "repro-io", editable = "packages/repro-io" },
     { name = "sqlalchemy", specifier = ">=2.0.0" },
+    { name = "w2v", editable = "packages/w2v" },
 ]
 
 [[package]]

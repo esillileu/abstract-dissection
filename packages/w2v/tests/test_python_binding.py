@@ -7,6 +7,7 @@ from w2v import (
     Model,
     TrainingConfig,
     TrainingSession,
+    TrainingState,
     Vocabulary,
     VocabularyConfig,
     VocabularyState,
@@ -159,6 +160,42 @@ def test_epoch_state_resume_matches_continuous_training(tmp_path: Path) -> None:
     )
     np.testing.assert_array_equal(
         resumed_model.output_embeddings(), continuous_model.output_embeddings()
+    )
+
+
+def test_training_state_parts_roundtrip(tmp_path: Path) -> None:
+    corpus, vocabulary, config, model = _objects(tmp_path / "parts.txt")
+    session = TrainingSession(corpus, vocabulary, model, config)
+    session.train_epoch()
+    state = session.export_state()
+    vocabulary_state = state.vocabulary_state()
+    restored_state = TrainingState.from_parts(
+        state.schema_version,
+        state.config_digest,
+        state.vocabulary_digest,
+        state.corpus_digest,
+        state.completed_epochs,
+        state.processed_tokens,
+        vocabulary_state,
+        state.input_embeddings(),
+        state.output_embeddings(),
+        state.workers(),
+    )
+    restored_vocabulary = Vocabulary.restore_state(vocabulary_state)
+    restored_model = Model.create(restored_vocabulary, config)
+    resumed = TrainingSession.restore(
+        corpus, restored_vocabulary, restored_model, config, restored_state
+    )
+    resumed.train_epoch()
+
+    continuous_model = Model.create(vocabulary, config)
+    continuous = TrainingSession.restore(
+        corpus, vocabulary, continuous_model, config, state
+    )
+    continuous.train_epoch()
+    np.testing.assert_array_equal(
+        resumed.export_state().input_embeddings(),
+        continuous.export_state().input_embeddings(),
     )
 
 
