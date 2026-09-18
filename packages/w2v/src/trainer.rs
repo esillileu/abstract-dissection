@@ -92,6 +92,7 @@ fn config_digest(config: &TrainingConfig) -> String {
         config.objective_kind as u64,
         config.embedding_dimension as u64,
         config.window_radius as u64,
+        config.context_policy as u64,
         config.epochs as u64,
         config.thread_count as u64,
         config.learning_rate_update_interval as u64,

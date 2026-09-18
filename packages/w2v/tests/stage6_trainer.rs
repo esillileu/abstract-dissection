@@ -26,6 +26,7 @@ fn fixture() -> (Arc<Corpus>, Arc<Vocabulary>) {
                 initial_capacity: 2,
                 hash_capacity: 17,
                 min_count: 1,
+                max_lexical_words: 0,
             },
         )
         .unwrap(),

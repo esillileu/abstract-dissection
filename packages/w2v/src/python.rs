@@ -121,12 +121,18 @@ pub struct PyVocabularyConfig {
 #[pymethods]
 impl PyVocabularyConfig {
     #[new]
-    #[pyo3(signature = (initial_capacity=1000, hash_capacity=30_000_000, min_count=5))]
-    fn new(initial_capacity: usize, hash_capacity: usize, min_count: u64) -> PyResult<Self> {
+    #[pyo3(signature = (initial_capacity=1000, hash_capacity=30_000_000, min_count=5, max_lexical_words=0))]
+    fn new(
+        initial_capacity: usize,
+        hash_capacity: usize,
+        min_count: u64,
+        max_lexical_words: usize,
+    ) -> PyResult<Self> {
         let inner = VocabularyConfig {
             initial_capacity,
             hash_capacity,
             min_count,
+            max_lexical_words,
         };
         if inner.validate() != Status::Ok {
             return Err(status_error(Status::InvalidArgument));
@@ -409,6 +415,7 @@ impl PyTrainingConfig {
         objective_kind="negative_sampling",
         embedding_dimension=100,
         window_radius=5,
+        context_policy="dynamic",
         epochs=5,
         thread_count=12,
         learning_rate_update_interval=10_000,
@@ -429,6 +436,7 @@ impl PyTrainingConfig {
         objective_kind: &str,
         embedding_dimension: usize,
         window_radius: usize,
+        context_policy: &str,
         epochs: usize,
         thread_count: usize,
         learning_rate_update_interval: usize,
@@ -448,6 +456,11 @@ impl PyTrainingConfig {
             objective_kind: parse_objective_kind(objective_kind)?,
             embedding_dimension,
             window_radius,
+            context_policy: match context_policy {
+                "dynamic" => crate::ContextPolicy::Dynamic,
+                "fixed" => crate::ContextPolicy::Fixed,
+                _ => return Err(PyValueError::new_err("unknown context policy")),
+            },
             epochs,
             thread_count,
             learning_rate_update_interval,

@@ -1,4 +1,4 @@
-use super::{ModelStep, ObjectiveLoss, context_position, context_radius, objective};
+use super::{ModelStep, ObjectiveLoss, context_position, context_radius_with_policy, objective};
 use crate::{
     atomic_float,
     config::{Real, Status},
@@ -7,7 +7,11 @@ use crate::{
 pub fn train(step: &mut ModelStep<'_, '_>) -> Result<ObjectiveLoss, Status> {
     let model = &step.trainer.model;
     let dimension = model.embedding_dimension;
-    let radius = context_radius(step.window_rng, step.trainer.config.window_radius);
+    let radius = context_radius_with_policy(
+        step.window_rng,
+        step.trainer.config.window_radius,
+        step.trainer.config.context_policy,
+    );
     let mut context_count = 0usize;
     step.hidden.fill(0.0);
     step.hidden_gradient.fill(0.0);

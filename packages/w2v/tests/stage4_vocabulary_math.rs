@@ -5,9 +5,12 @@ use std::{
     sync::atomic::AtomicU32,
 };
 use w2v::{
-    Corpus, RngAlgorithm, Status, Vocabulary, VocabularyConfig, atomic_float,
+    ContextPolicy, Corpus, RngAlgorithm, Status, Vocabulary, VocabularyConfig, atomic_float,
     random::Rng,
-    training::{context_position, context_radius, objective_apply_update, objective_score},
+    training::{
+        context_position, context_radius, context_radius_with_policy, objective_apply_update,
+        objective_score,
+    },
 };
 
 struct FixtureFile(PathBuf);
@@ -38,6 +41,7 @@ fn small_config(hash_capacity: usize) -> VocabularyConfig {
         initial_capacity: 2,
         hash_capacity,
         min_count: 1,
+        max_lexical_words: 0,
     }
 }
 
@@ -109,6 +113,59 @@ fn c_context_order_and_rng_consumption() {
     let mut rng = Rng::new(1, RngAlgorithm::Lcg);
     assert_eq!(context_radius(&mut rng, 2), 2);
     assert_eq!(rng.state, 25214903928);
+}
+
+#[test]
+fn fixed_context_does_not_consume_rng_and_dynamic_context_is_unchanged() {
+    let mut fixed_rng = Rng::new(7, RngAlgorithm::Lcg);
+    let initial_state = fixed_rng.state;
+    for _ in 0..8 {
+        assert_eq!(
+            context_radius_with_policy(&mut fixed_rng, 4, ContextPolicy::Fixed),
+            4
+        );
+    }
+    assert_eq!(fixed_rng.state, initial_state);
+
+    let mut legacy_rng = Rng::new(7, RngAlgorithm::Lcg);
+    let mut policy_rng = Rng::new(7, RngAlgorithm::Lcg);
+    for _ in 0..8 {
+        assert_eq!(
+            context_radius(&mut legacy_rng, 4),
+            context_radius_with_policy(&mut policy_rng, 4, ContextPolicy::Dynamic)
+        );
+    }
+    assert_eq!(legacy_rng.state, policy_rng.state);
+}
+
+#[test]
+fn lexical_limit_excludes_sentence_token_and_rebuilds_vocabulary_state() {
+    let mut corpus = Vec::new();
+    for index in 0..30_001 {
+        write!(&mut corpus, "word{index} ").unwrap();
+    }
+    corpus.push(b'\n');
+    let file = FixtureFile::new("lexical-limit", &corpus);
+    let config = VocabularyConfig {
+        initial_capacity: 30_002,
+        hash_capacity: 60_013,
+        min_count: 1,
+        max_lexical_words: 30_000,
+    };
+    let vocab = Vocabulary::build(&file.corpus(), &config).unwrap();
+
+    assert_eq!(vocab.entries.len(), 30_001);
+    assert_eq!(vocab.entries[0].token, b"</s>");
+    assert_eq!(vocab.retained_token_count, 30_001);
+    assert_eq!(vocab.find(b"word29999"), Some(30_000));
+    assert_eq!(vocab.find(b"word30000"), None);
+    assert!(vocab.entries.iter().all(|entry| {
+        entry.huffman_path.len() == entry.huffman_bits.len()
+            && !entry.huffman_path.is_empty()
+    }));
+    let restored = Vocabulary::restore(&vocab.export_state()).unwrap();
+    assert_eq!(restored.digest(), vocab.digest());
+    assert_eq!(restored.find(b"word29999"), Some(30_000));
 }
 
 #[test]

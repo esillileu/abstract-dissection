@@ -1,10 +1,14 @@
-use super::{ModelStep, ObjectiveLoss, context_position, context_radius, objective};
+use super::{ModelStep, ObjectiveLoss, context_position, context_radius_with_policy, objective};
 use crate::{atomic_float, config::Status};
 
 pub fn train(step: &mut ModelStep<'_, '_>) -> Result<ObjectiveLoss, Status> {
     let model = &step.trainer.model;
     let dimension = model.embedding_dimension;
-    let radius = context_radius(step.window_rng, step.trainer.config.window_radius);
+    let radius = context_radius_with_policy(
+        step.window_rng,
+        step.trainer.config.window_radius,
+        step.trainer.config.context_policy,
+    );
     let center_token = step.target_token;
     let start = center_token * dimension;
     let input_row = &model.input_embeddings[start..start + dimension];

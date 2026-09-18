@@ -1,7 +1,7 @@
 //! Context traversal and objective arithmetic from the modular C oracle.
 use crate::{
     atomic_float,
-    config::{Real, Status},
+    config::{ContextPolicy, Real, Status},
     random::Rng,
     trainer::Trainer,
 };
@@ -75,8 +75,21 @@ pub fn context_position(
 }
 
 pub fn context_radius(window_rng: &mut Rng, window_radius: usize) -> usize {
-    let shrink = window_rng.next_u64() % window_radius as u64;
-    window_radius - shrink as usize
+    context_radius_with_policy(window_rng, window_radius, ContextPolicy::Dynamic)
+}
+
+pub fn context_radius_with_policy(
+    window_rng: &mut Rng,
+    window_radius: usize,
+    policy: ContextPolicy,
+) -> usize {
+    match policy {
+        ContextPolicy::Fixed => window_radius,
+        ContextPolicy::Dynamic => {
+            let shrink = window_rng.next_u64() % window_radius as u64;
+            window_radius - shrink as usize
+        }
+    }
 }
 
 pub fn objective_score(hidden: &[Real], output_row: &[AtomicU32]) -> Real {
