@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-from contextlib import contextmanager
 
 import numpy as np
 import pytest
@@ -194,13 +193,12 @@ def test_w2v1_check_and_analysis_detect_complete_result(tmp_path):
         ),
     ),
 )
-def test_w2v_tracked_interrupt_resume_and_catalog_link(
+def test_w2v_tracked_interrupt_resume_publishes_to_mlflow(
     tmp_path, monkeypatch, suite, config_name, atomic_run_id, expected_slot
 ):
     definition = DEFINITION.get_suite(suite)
     source = definition.config_root / config_name
     fixture = definition.config_root / "fixtures/corpus.txt"
-    linked: list[tuple[str, str]] = []
 
     def materialize(config, _paths, **_kwargs):
         config["corpus"] = {
@@ -219,21 +217,7 @@ def test_w2v_tracked_interrupt_resume_and_catalog_link(
                 "negative_table_size": 100,
             }
 
-    @contextmanager
-    def transaction(**_kwargs):
-        yield object()
-
-    class Repository:
-        def __init__(self, _connection):
-            pass
-
-        def link_mlflow_run(self, slot, run_id):
-            linked.append((slot, run_id))
-
-    monkeypatch.setattr("f2.suites.w2v.tracked.run_preflight", lambda: {})
     monkeypatch.setattr("f2.suites.w2v.tracked._materialize_corpus", materialize)
-    monkeypatch.setattr("f2.suites.w2v.tracked.catalog_transaction", transaction)
-    monkeypatch.setattr("f2.suites.w2v.tracked.CatalogRepository", Repository)
     monkeypatch.setenv("REPRO_STAGING_ROOT", str(tmp_path / "staging"))
     monkeypatch.setenv("REPRO_CACHE_ROOT", str(tmp_path / "cache"))
     monkeypatch.setenv("MLFLOW_ALLOW_FILE_STORE", "true")
@@ -257,4 +241,4 @@ def test_w2v_tracked_interrupt_resume_and_catalog_link(
     assert final.info.status == "FINISHED"
     assert final.data.tags["result.durable_complete"] == "true"
     assert final.data.tags["suite.name"] == suite
-    assert linked == [(expected_slot, receipt.run_id)]
+    assert final.data.tags["f2.planned_run_slot_id"] == expected_slot

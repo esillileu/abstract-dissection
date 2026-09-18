@@ -11,12 +11,9 @@ from typing import Any
 
 from repro_io.s3 import S3ObjectStore
 
-from f2.catalog.db.repository import CatalogRepository
-from f2.catalog.db.session import transaction as catalog_transaction
 from f2.corpus.db.repository import CorpusStateRepository
 from f2.corpus.db.session import get_connection as corpus_connection
 from f2.corpus.object_store import s3_config_from_environment
-from f2.preflight import run_preflight
 from f2.run_identity import RunIdentity
 from f2.suites.w2v.corpus import CorpusBinding, CorpusMaterializer
 from repro_core.context import ExperimentContext, RuntimePaths
@@ -85,9 +82,6 @@ def run_tracked_yaml(
     """Run one interruption/resume pair and publish only the final attempt."""
     if spec_module is None or executor_module is None:
         raise ValueError("tracked W2V execution requires spec and executor modules")
-    if progress_reporter is not None:
-        progress_reporter.write("checking F2 service preflight")
-    run_preflight()
     import importlib
 
     from mlflow import MlflowClient
@@ -165,11 +159,6 @@ def run_tracked_yaml(
             client.set_tag(final_run, "trial.status", "finished")
             client.set_tag(final_run, "result.durable_complete", "true")
             client.set_terminated(final_run, status="FINISHED")
-            if is_canonical:
-                with catalog_transaction(validate_contract=True) as connection:
-                    CatalogRepository(connection).link_mlflow_run(
-                        str(identity["planned_run_slot_id"]), final_run
-                    )
             return W2VRunReceipt(result, final_run, final_root, True)
         except BaseException:
             client.set_tag(final_run, "result.durable_complete", "false")
