@@ -49,18 +49,35 @@ class W2V1Executor:
         import hashlib
 
         actual_digest = hashlib.sha256(source.read_bytes()).hexdigest()
-        if actual_digest != str(identity["corpus_manifest_digest"]):
+        expected_file_digest = str(
+            corpus_config.get("sha256", identity["corpus_manifest_digest"])
+        )
+        if actual_digest != expected_file_digest:
             raise ValueError("W2V1 corpus identity does not match the resolved config")
 
         run_key = str(identity["planned_run_slot_id"])
-        root = context.paths.run_staging(
-            domain="f2", suite="w2v1", study="table2", variant="local", run_key=run_key
+        root_override = context.metadata.get("run_root")
+        root = (
+            Path(root_override)
+            if root_override
+            else context.paths.run_staging(
+                domain="f2",
+                suite="w2v1",
+                study="table2",
+                variant="local",
+                run_key=run_key,
+            )
         )
         if root.exists():
             shutil.rmtree(root)
         root.mkdir(parents=True)
 
-        session = create_session(config, context.paths.repo_root)
+        resume_checkpoint = context.metadata.get("resume_checkpoint")
+        session = (
+            restore_session(config, Path(resume_checkpoint), context.paths.repo_root)
+            if resume_checkpoint
+            else create_session(config, context.paths.repo_root)
+        )
         manager = create_checkpoint_manager(
             root / "checkpoints",
             session=session,
@@ -68,7 +85,10 @@ class W2V1Executor:
         )
         writer = DenseObservationWriter(root / "metrics" / "observations.csv")
         reports = []
-        while not session.is_complete:
+        stop_after_epoch = context.metadata.get("stop_after_epoch")
+        while not session.is_complete and (
+            stop_after_epoch is None or session.completed_epochs < int(stop_after_epoch)
+        ):
             epoch = session.train_epoch()
             writer.append(epoch.observations())
             manager.save_latest()
@@ -79,7 +99,7 @@ class W2V1Executor:
                     "objective_loss": epoch.objective_loss,
                 }
             )
-        final = manager.save_final()
+        final = manager.save_final() if session.is_complete else manager.save_latest()
         state = session.export_state()
         lookup_path = root / "lookup"
         save_lookup_artifact(
@@ -97,6 +117,7 @@ class W2V1Executor:
             "epochs": reports,
             "evaluation": asdict(evaluation),
             "coverage": evaluation.coverage,
+            "complete": session.is_complete,
             "artifacts": {
                 "checkpoint": str(final.path.relative_to(root)),
                 "lookup": str(lookup_path.relative_to(root)),

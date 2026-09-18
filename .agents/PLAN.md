@@ -13,7 +13,7 @@
 | P6 | 완료 | 2026-09-18 | ordered-manifest corpus binding, verified S3 shard cache, exact lexical-token budget streaming, atomic materialization/recovery. F2 non-DB tests: 74 passed. |
 | P7 | 완료 | 2026-09-18 | byte-token similarity, 3CosAdd semantic/syntactic analogy, sentence completion scorer, explicit OOV/coverage, deterministic best selection, target/CI report schema. |
 | P8 | 완료 | 2026-09-18 | `f2.suites.w2v1` config/spec/executor 등록, local immutable fixture의 2 epoch 실행과 checkpoint resume bit parity, evaluation/check/analysis artifact 검증. F2 W2V targeted 20 tests 통과. |
-| P9 | 차단 | 2026-09-18 | 외부 read-only preflight는 통과했으나 tracked 실행 진입점이 `Runner`에 실행 함수를 주입하지 않아 run 생성 전에 실패. canonical `d50-w24m`도 local fixture 경로와 canonical corpus digest를 함께 선언해 실행 불가. MLflow/catalog 쓰기는 발생하지 않음. |
+| P9 | 완료 | 2026-09-18 | F2 전용 tracked runner, canonical corpus materialization, two-attempt epoch resume, remote manifest 검증, durable 이후 catalog link를 구현. 축소 외부 E2E에서 attempt 1 KILLED → attempt 2 FINISHED 및 predecessor/durable 검증. |
 | P10 | 진행 전 |  |  |
 | P11 | 진행 전 |  |  |
 
@@ -112,20 +112,25 @@ P6 구현 메모:
   해당 token까지만 쓰고 newline으로 닫는다. 따라서 budget을 넘기지 않으며 같은
   binding/budget은 cache hit, retry, 재구성 여부와 무관하게 같은 bytes와 identity를 낸다.
 
-P9 차단 메모:
+P9 구현 메모:
 
 - `uv run repro f2 preflight`로 canonical PostgreSQL, corpus S3, MLflow의 read-only
   접근을 확인했다. 출력은 credential과 전체 URI를 포함하지 않았다.
 - `uv run repro run f2 w2v1 -e 01 -a d50-w24m --tracking-uri ... --dry-run`은
   canonical slot 하나만 선택함을 확인했다.
-- 실제 실행은 외부 run을 만들기 전에 `Runner requires an execution runner function`
-  오류로 종료됐다. F2 CLI가 tracked runner를 주입하지 않는 것이 직접 원인이다.
-- 이 wiring만 generic `run_yaml`로 대체하면 해결되지 않는다. 현재 canonical variant의
-  corpus path는 local smoke fixture지만 identity는 24M canonical manifest digest이므로
-  W2V1 executor의 선검증에서 불일치한다. P9 재개 전 canonical corpus materialization을
-  executor config에 연결하고, W2V 전용 artifact/checkpoint lifecycle을 tracked runner와
-  연결해야 한다.
-- 실패/중단 run, catalog final link, 외부 artifact write는 생성되지 않았다.
+- F2 CLI는 W2V1 전용 tracked runner를 주입한다. runner는 catalog/DB의 verified ordered
+  shard binding을 S3에서 materialize하고 실제 corpus SHA-256을 executor에 전달한다.
+- 첫 attempt는 1 epoch checkpoint를 게시하고 KILLED/interrupted로 보존한다. 두 번째
+  attempt는 MLflow artifact cache로 그 checkpoint를 다시 내려받아 복원하며 predecessor
+  run ID를 기록한다. 전체 artifact manifest의 원격 SHA-256 검증이 끝난 뒤에만 durable
+  complete를 설정하고 canonical slot을 catalog에 연결한다.
+- 외부 축소 E2E는 `local-smoke`로 실행했다. attempt 1 `da0bcad4…`는 KILLED/비내구,
+  attempt 2 `229c947c…`는 FINISHED/durable이며 predecessor lineage와 remote manifest를
+  재검증했다. smoke run은 canonical catalog slot에 연결하지 않는다.
+- full 24M 사전 점검에서 catalog에 고정한 digest가 DB verified 165-shard digest와 달라
+  실제 ordered digest로 교정했다. 또한 fixture용 hash capacity와 observation cadence가
+  canonical에 상속되던 문제를 분리했다. 비용이 큰 full canonical 학습은 이 단계의
+  외부 lifecycle 검증에 사용하지 않았다.
 
 ## 1. 목표와 완료 상태
 

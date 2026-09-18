@@ -180,6 +180,11 @@ def run(
             )
             typer.echo(f"completed: {result.report}")
         return
+    run_fn = None
+    if suite == "w2v1":
+        from .suites.w2v1.tracked import run_tracked_yaml
+
+        run_fn = run_tracked_yaml
     run_command(
         suite_def,
         experiments=experiment or [],
@@ -195,6 +200,7 @@ def run(
         progress=progress,
         progress_every=progress_every,
         tracking_uri=tracking_uri,
+        run_fn=run_fn,
     )
 
 
