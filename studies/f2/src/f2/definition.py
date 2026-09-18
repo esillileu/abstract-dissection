@@ -45,8 +45,10 @@ DEFINITION = F2Definition()
 
 def _register_builtin_suites() -> None:
     from .suites.w2v1 import DEFINITION as w2v1_definition
+    from .suites.w2v2 import DEFINITION as w2v2_definition
 
     DEFINITION.register_suite("w2v1", w2v1_definition)
+    DEFINITION.register_suite("w2v2", w2v2_definition)
 
 
 _register_builtin_suites()

@@ -1,0 +1,3 @@
+: entities
+new_york city san_francisco city
+paris france berlin germany

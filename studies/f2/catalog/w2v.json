@@ -662,6 +662,13 @@
           "threshold": null,
           "passes": "typically 2-4 with decreasing threshold"
         },
+        "reconstruction_phrase_policy": {
+          "passes": 2,
+          "threshold": 100.0,
+          "min_count": 5,
+          "separator_hex": "5f",
+          "status": "reconstruction_assumption"
+        },
         "evaluation": [
           "questions_phrases_3218"
         ]
@@ -695,6 +702,13 @@
           "delta": null,
           "threshold": null,
           "passes": "typically 2-4 with decreasing threshold"
+        },
+        "reconstruction_phrase_policy": {
+          "passes": 2,
+          "threshold": 100.0,
+          "min_count": 5,
+          "separator_hex": "5f",
+          "status": "reconstruction_assumption"
         },
         "evaluation": [
           "questions_phrases_3218"

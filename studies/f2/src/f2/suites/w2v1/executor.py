@@ -38,6 +38,8 @@ class W2V1Result:
 
 
 class W2V1Executor:
+    suite_name = "w2v1"
+
     def run(self, config: dict[str, object], context: ExperimentContext) -> W2V1Result:
         identity = _mapping(config, "identity")
         corpus_config = _mapping(config, "corpus")
@@ -62,7 +64,7 @@ class W2V1Executor:
             if root_override
             else context.paths.run_staging(
                 domain="f2",
-                suite="w2v1",
+                suite=self.suite_name,
                 study="table2",
                 variant="local",
                 run_key=run_key,

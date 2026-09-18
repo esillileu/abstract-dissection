@@ -64,6 +64,12 @@ class SentenceCompletionQuestion:
     expected: bytes
 
 
+@dataclass(frozen=True)
+class NearestNeighbor:
+    token: bytes
+    score: float
+
+
 def parse_analogy_questions(lines: Iterable[bytes]) -> tuple[AnalogyQuestion, ...]:
     """Parse the upstream ``questions-words`` section-and-four-token format."""
     category: str | None = None
@@ -207,6 +213,83 @@ def select_best_epoch(
     )
 
 
+def nearest_tokens(
+    lookup: VectorLookup, token: bytes, *, limit: int = 10
+) -> tuple[NearestNeighbor, ...]:
+    """Return deterministic cosine neighbors for a word or phrase token."""
+    row = lookup.row(token)
+    if row is None:
+        return ()
+    if limit < 1:
+        raise ValueError("neighbor limit must be positive")
+    normalized = _normalized_embeddings(lookup.embeddings)
+    scores = normalized @ normalized[row]
+    scores[row] = -np.inf
+    ranked = sorted(
+        (index for index in range(len(scores)) if np.isfinite(scores[index])),
+        key=lambda index: (-float(scores[index]), _token_at(lookup, index)),
+    )[:limit]
+    return tuple(
+        NearestNeighbor(_token_at(lookup, index), float(scores[index]))
+        for index in ranked
+    )
+
+
+def additive_composition(
+    lookup: VectorLookup, tokens: Sequence[bytes], *, limit: int = 10
+) -> tuple[NearestNeighbor, ...]:
+    """Rank tokens nearest to the normalized sum of all supplied token vectors."""
+    rows = [lookup.row(token) for token in tokens]
+    if not tokens or any(row is None for row in rows):
+        return ()
+    normalized = _normalized_embeddings(lookup.embeddings)
+    query = normalized[[int(row) for row in rows]].sum(axis=0)
+    norm = float(np.linalg.norm(query))
+    if norm == 0.0:
+        return ()
+    scores = normalized @ (query / norm)
+    scores[[int(row) for row in rows]] = -np.inf
+    ranked = sorted(
+        (index for index in range(len(scores)) if np.isfinite(scores[index])),
+        key=lambda index: (-float(scores[index]), _token_at(lookup, index)),
+    )[:limit]
+    return tuple(
+        NearestNeighbor(_token_at(lookup, i), float(scores[i])) for i in ranked
+    )
+
+
+def pca_projection(
+    lookup: VectorLookup, tokens: Sequence[bytes]
+) -> dict[bytes, tuple[float, float]]:
+    """Return a sign-stable two-dimensional PCA projection for qualitative reports."""
+    rows = [lookup.row(token) for token in tokens]
+    if any(row is None for row in rows):
+        return {}
+    values = np.asarray(lookup.embeddings[[int(row) for row in rows]], dtype=np.float64)
+    values -= values.mean(axis=0)
+    _, _, right = np.linalg.svd(values, full_matrices=False)
+    components = right[: min(2, len(right))].copy()
+    for component in components:
+        pivot = int(np.argmax(np.abs(component)))
+        if component[pivot] < 0:
+            component *= -1
+    projected = values @ components.T
+    if projected.shape[1] == 1:
+        projected = np.column_stack((projected, np.zeros(len(projected))))
+    return {
+        token: (float(point[0]), float(point[1]))
+        for token, point in zip(tokens, projected, strict=True)
+    }
+
+
+def _token_at(lookup: VectorLookup, row: int) -> bytes:
+    token_bytes = getattr(lookup, "token_bytes", None)
+    offsets = getattr(lookup, "token_offsets", None)
+    if token_bytes is None or offsets is None:
+        raise ValueError("neighbor evaluation requires lookup token arrays")
+    return bytes(token_bytes[offsets[row] : offsets[row + 1]])
+
+
 def _analogy_tokens(question: AnalogyQuestion) -> tuple[bytes, bytes, bytes, bytes]:
     return question.a, question.b, question.c, question.expected
 
@@ -276,11 +359,15 @@ __all__ = [
     "AnalogyEvaluation",
     "AnalogyQuestion",
     "EvaluationResult",
+    "NearestNeighbor",
     "SentenceCompletionQuestion",
     "SimilarityPair",
+    "additive_composition",
     "evaluate_analogies",
     "evaluate_sentence_completion",
     "evaluate_word_similarity",
+    "nearest_tokens",
     "parse_analogy_questions",
+    "pca_projection",
     "select_best_epoch",
 ]
