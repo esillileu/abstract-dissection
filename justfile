@@ -3,6 +3,7 @@ set shell := ["bash", "-cu"]
 # Synchronize monorepo workspace dependencies
 sync:
     uv sync --all-packages --all-extras --dev
+    uv run maturin develop --manifest-path packages/w2v/Cargo.toml
 
 # Run all checks (lint, format, tests)
 check:
