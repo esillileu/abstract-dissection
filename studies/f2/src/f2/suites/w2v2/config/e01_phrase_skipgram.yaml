@@ -1,12 +1,12 @@
 domain: f2.w2v2
 kind: word2vec
 execution: {mode: seeded, default_device: cpu}
-seed_policy: {seed_set: research_v1, seed_count: 1}
+seed_policy: {seed_set: research_v1, seed_count: 3}
 identity:
   execution_plan_id: w2v2-reconstruction-r1
-  planned_run_slot_id: w2v2-reconstruction-r1-phrase-neg15-s1
-  resource_version: f2-wmt-phrase-v1
-  corpus_manifest_digest: 0000000000000000000000000000000000000000000000000000000000000000
+  planned_run_slot_id: resolved-from-atomic-run-and-seed
+  resource_version: f2-wmt-news-2007-2012-normalized-v1
+  corpus_manifest_digest: cedfd867e5df0c6a6ef392bff5de8df721346f8597ab25fd2893902326efbe6e
   seed: 1
 corpus: {}
 phrase_detection: {passes: 2, threshold: 100.0, min_count: 5, separator: _}
@@ -51,9 +51,9 @@ variants:
       subsampling_threshold: 0.0
       negative_sample_count: 5
       negative_table_size: 100
-  neg5: {training: {negative_sample_count: 5}}
-  neg15: {training: {negative_sample_count: 15}}
-  hs:
-    training: {objective_kind: hierarchical_softmax, negative_sample_count: 0}
-  full-sentence:
-    training: {window_radius: 1000}
+  neg5-no-subsampling: {corpus: {lexical_token_budget: 1000000000}, training: {negative_sample_count: 5, subsampling_threshold: 0.0}}
+  neg15-no-subsampling: {corpus: {lexical_token_budget: 1000000000}, training: {negative_sample_count: 15, subsampling_threshold: 0.0}}
+  hs-no-subsampling: {corpus: {lexical_token_budget: 1000000000}, training: {objective_kind: hierarchical_softmax, negative_sample_count: 0, subsampling_threshold: 0.0}}
+  neg5-subsampling: {corpus: {lexical_token_budget: 1000000000}, training: {negative_sample_count: 5}}
+  neg15-subsampling: {corpus: {lexical_token_budget: 1000000000}, training: {negative_sample_count: 15}}
+  hs-subsampling: {corpus: {lexical_token_budget: 1000000000}, training: {objective_kind: hierarchical_softmax, negative_sample_count: 0}}

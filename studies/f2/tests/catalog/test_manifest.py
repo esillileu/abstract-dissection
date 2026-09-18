@@ -25,8 +25,13 @@ def test_w2v_catalog_manifest_is_self_consistent():
     assert {paper["paper_id"] for paper in payload["papers"]} == {"w2v1", "w2v2"}
     assert len(payload["targets"]) == 19
     assert len(payload["experiment_specs"]) == 13
-    assert payload["resource_bindings"]
-    assert payload["planned_run_slots"]
+    assert len(payload["execution_plans"]) == 2
+    assert len(payload["resource_bindings"]) == 4
+    assert len(payload["planned_run_slots"]) == 90
+    assert {slot["seed"] for slot in payload["planned_run_slots"]} == {1, 7, 19}
+    assert all(
+        slot["parameters"]["requires_approval"] for slot in payload["planned_run_slots"]
+    )
     assert digest_manifest(payload) == digest_manifest(
         read_manifest(F2_ROOT / "catalog" / "w2v.json")
     )

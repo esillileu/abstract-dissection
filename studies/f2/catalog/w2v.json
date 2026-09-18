@@ -1484,84 +1484,2006 @@
   ],
   "execution_plans": [
     {
-      "execution_plan_id": "w2v1-reconstruction-r1",
+      "execution_plan_id": "w2v1-reconstruction-r2",
       "plan_key": "w2v1",
+      "revision": 2,
+      "status": "runnable",
+      "source_ref": "studies/f2/catalog/w2v.json",
+      "source_hash": "cb0add87e4eab9c75c7d625c58c55bce7248f659063cc9d5057bfbc6810c2a65",
+      "is_canonical": true,
+      "notes": "Approved execution is required for every large slot; manifest materialization does not start training."
+    },
+    {
+      "execution_plan_id": "w2v2-reconstruction-r1",
+      "plan_key": "w2v2",
       "revision": 1,
       "status": "runnable",
       "source_ref": "studies/f2/catalog/w2v.json",
-      "source_hash": "8c15bd7dd9007924c727a30eda61309c57c7379e65af03a1a0795b9ac346b276",
+      "source_hash": "85aa4668eca1dd348072ec5e59f910312deffdcaa6b5de274e73cf43066b2f9f",
       "is_canonical": true,
-      "notes": "Minimal vertical-slice revision. WMT is an explicit reconstructed substitute for unavailable Google News."
+      "notes": "Approved execution is required for every large slot; manifest materialization does not start training."
     }
   ],
   "plan_experiments": [
     {
-      "plan_experiment_id": "w2v1-reconstruction-r1-table2-cbow",
-      "execution_plan_id": "w2v1-reconstruction-r1",
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table2-cbow",
+      "execution_plan_id": "w2v1-reconstruction-r2",
       "experiment_spec_id": "w2v1-table2-cbow",
       "enabled": true,
       "parameters": {
-        "provenance_status": "reconstructed",
-        "corpus_resource_version_id": "f2-wmt-news-2007-2012-normalized-v1",
-        "corpus_manifest_digest": "cedfd867e5df0c6a6ef392bff5de8df721346f8597ab25fd2893902326efbe6e",
-        "shard_order": "ascending shard_index",
-        "early_stop": "stop before the first token that would exceed the lexical-word budget",
+        "classification": "reconstruction",
         "seed_policy": {
-          "parity": [1],
-          "throughput": []
+          "repetitions": [
+            1,
+            7,
+            19
+          ]
         },
         "runtime_policy": {
           "device": "cpu",
-          "threads": 1,
-          "mode": "single_thread_parity"
+          "threads": 1
         },
+        "approval_policy": "explicit approval required before large execution",
         "evaluation_policy": {
-          "metric": "word_analogy_accuracy",
-          "direction": "maximize",
-          "oov": "exclude question and report coverage",
-          "best_tie_breaker": "earliest_epoch",
-          "confidence_interval": "seed_percentile_95_when_repetitions_ge_2"
+          "oov": "exclude and report coverage",
+          "confidence_interval": "seed percentile 95",
+          "throughput": "report with hardware identity"
         }
       },
-      "notes": "The first runnable slot intentionally fixes the parity seed before throughput repetitions are added."
+      "notes": "Original corpus is unavailable; verified WMT is an explicit substitute."
+    },
+    {
+      "plan_experiment_id": "w2v2-reconstruction-r1-w2v2-phrase-skipgram-1b-objectives",
+      "execution_plan_id": "w2v2-reconstruction-r1",
+      "experiment_spec_id": "w2v2-phrase-skipgram-1b-objectives",
+      "enabled": true,
+      "parameters": {
+        "classification": "reconstruction",
+        "seed_policy": {
+          "repetitions": [
+            1,
+            7,
+            19
+          ]
+        },
+        "runtime_policy": {
+          "device": "cpu",
+          "threads": 1
+        },
+        "approval_policy": "explicit approval required before large execution",
+        "evaluation_policy": {
+          "oov": "exclude and report coverage",
+          "confidence_interval": "seed percentile 95",
+          "throughput": "report with hardware identity"
+        }
+      },
+      "notes": "Original corpus is unavailable; verified WMT is an explicit substitute."
     }
   ],
   "resource_bindings": [
     {
-      "plan_experiment_id": "w2v1-reconstruction-r1-table2-cbow",
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table2-cbow",
       "requirement_id": "w2v1-table2-train-data",
       "resource_version_id": "f2-wmt-news-2007-2012-normalized-v1",
       "binding_type": "substitute",
-      "justification": "The original Google News corpus is unavailable; WMT News 2007-2012 is an immutable, validated news-domain reconstruction with sufficient tokens.",
-      "notes": "Domain, time range, and source composition differ from the paper corpus."
+      "justification": "Pinned verified resource used by the canonical reconstruction.",
+      "notes": null
     },
     {
-      "plan_experiment_id": "w2v1-reconstruction-r1-table2-cbow",
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table2-cbow",
       "requirement_id": "w2v1-table2-eval",
       "resource_version_id": "w2v-questions-words-google-code-export",
       "binding_type": "exact",
-      "justification": "Pinned upstream questions-words dataset used by the public Word2Vec evaluation.",
+      "justification": "Pinned verified resource used by the canonical reconstruction.",
+      "notes": null
+    },
+    {
+      "plan_experiment_id": "w2v2-reconstruction-r1-w2v2-phrase-skipgram-1b-objectives",
+      "requirement_id": "w2v2-phrase-1b-train",
+      "resource_version_id": "f2-wmt-news-2007-2012-normalized-v1",
+      "binding_type": "substitute",
+      "justification": "Pinned verified resource used by the canonical reconstruction.",
+      "notes": null
+    },
+    {
+      "plan_experiment_id": "w2v2-reconstruction-r1-w2v2-phrase-skipgram-1b-objectives",
+      "requirement_id": "w2v2-phrase-1b-eval",
+      "resource_version_id": "w2v-questions-phrases-google-code-export",
+      "binding_type": "exact",
+      "justification": "Pinned verified resource used by the canonical reconstruction.",
       "notes": null
     }
   ],
   "planned_run_slots": [
     {
-      "planned_run_slot_id": "w2v1-reconstruction-r1-table2-cbow-d50-w24m-s1",
-      "plan_experiment_id": "w2v1-reconstruction-r1-table2-cbow",
+      "planned_run_slot_id": "w2v1-reconstruction-r2-d50-w24m-s1",
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table2-cbow",
       "slot_key": "d50-w24m-s1",
       "atomic_run_id": "d50-w24m",
-      "variant_key": "cbow-hs-d50-w24m",
+      "variant_key": "d50-w24m",
       "seed": 1,
       "parameters": {
-        "dimension": 50,
-        "training_words": 24000000,
+        "classification": "reconstruction",
+        "training_tokens": 24000000,
+        "embedding_dimension": 50,
         "epochs": 3,
+        "estimated_token_updates": 72000000,
         "device": "cpu",
-        "threads": 1
+        "threads": 1,
+        "requires_approval": true
       },
       "expected": true,
       "reference_mlflow_run_id": null,
-      "notes": "P8 local vertical slice and P9 tracked-resume candidate."
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v1-reconstruction-r2-d50-w24m-s7",
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table2-cbow",
+      "slot_key": "d50-w24m-s7",
+      "atomic_run_id": "d50-w24m",
+      "variant_key": "d50-w24m",
+      "seed": 7,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 24000000,
+        "embedding_dimension": 50,
+        "epochs": 3,
+        "estimated_token_updates": 72000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v1-reconstruction-r2-d50-w24m-s19",
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table2-cbow",
+      "slot_key": "d50-w24m-s19",
+      "atomic_run_id": "d50-w24m",
+      "variant_key": "d50-w24m",
+      "seed": 19,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 24000000,
+        "embedding_dimension": 50,
+        "epochs": 3,
+        "estimated_token_updates": 72000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v1-reconstruction-r2-d50-w49m-s1",
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table2-cbow",
+      "slot_key": "d50-w49m-s1",
+      "atomic_run_id": "d50-w49m",
+      "variant_key": "d50-w49m",
+      "seed": 1,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 49000000,
+        "embedding_dimension": 50,
+        "epochs": 3,
+        "estimated_token_updates": 147000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v1-reconstruction-r2-d50-w49m-s7",
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table2-cbow",
+      "slot_key": "d50-w49m-s7",
+      "atomic_run_id": "d50-w49m",
+      "variant_key": "d50-w49m",
+      "seed": 7,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 49000000,
+        "embedding_dimension": 50,
+        "epochs": 3,
+        "estimated_token_updates": 147000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v1-reconstruction-r2-d50-w49m-s19",
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table2-cbow",
+      "slot_key": "d50-w49m-s19",
+      "atomic_run_id": "d50-w49m",
+      "variant_key": "d50-w49m",
+      "seed": 19,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 49000000,
+        "embedding_dimension": 50,
+        "epochs": 3,
+        "estimated_token_updates": 147000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v1-reconstruction-r2-d50-w98m-s1",
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table2-cbow",
+      "slot_key": "d50-w98m-s1",
+      "atomic_run_id": "d50-w98m",
+      "variant_key": "d50-w98m",
+      "seed": 1,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 98000000,
+        "embedding_dimension": 50,
+        "epochs": 3,
+        "estimated_token_updates": 294000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v1-reconstruction-r2-d50-w98m-s7",
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table2-cbow",
+      "slot_key": "d50-w98m-s7",
+      "atomic_run_id": "d50-w98m",
+      "variant_key": "d50-w98m",
+      "seed": 7,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 98000000,
+        "embedding_dimension": 50,
+        "epochs": 3,
+        "estimated_token_updates": 294000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v1-reconstruction-r2-d50-w98m-s19",
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table2-cbow",
+      "slot_key": "d50-w98m-s19",
+      "atomic_run_id": "d50-w98m",
+      "variant_key": "d50-w98m",
+      "seed": 19,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 98000000,
+        "embedding_dimension": 50,
+        "epochs": 3,
+        "estimated_token_updates": 294000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v1-reconstruction-r2-d50-w196m-s1",
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table2-cbow",
+      "slot_key": "d50-w196m-s1",
+      "atomic_run_id": "d50-w196m",
+      "variant_key": "d50-w196m",
+      "seed": 1,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 196000000,
+        "embedding_dimension": 50,
+        "epochs": 3,
+        "estimated_token_updates": 588000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v1-reconstruction-r2-d50-w196m-s7",
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table2-cbow",
+      "slot_key": "d50-w196m-s7",
+      "atomic_run_id": "d50-w196m",
+      "variant_key": "d50-w196m",
+      "seed": 7,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 196000000,
+        "embedding_dimension": 50,
+        "epochs": 3,
+        "estimated_token_updates": 588000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v1-reconstruction-r2-d50-w196m-s19",
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table2-cbow",
+      "slot_key": "d50-w196m-s19",
+      "atomic_run_id": "d50-w196m",
+      "variant_key": "d50-w196m",
+      "seed": 19,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 196000000,
+        "embedding_dimension": 50,
+        "epochs": 3,
+        "estimated_token_updates": 588000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v1-reconstruction-r2-d50-w391m-s1",
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table2-cbow",
+      "slot_key": "d50-w391m-s1",
+      "atomic_run_id": "d50-w391m",
+      "variant_key": "d50-w391m",
+      "seed": 1,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 391000000,
+        "embedding_dimension": 50,
+        "epochs": 3,
+        "estimated_token_updates": 1173000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v1-reconstruction-r2-d50-w391m-s7",
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table2-cbow",
+      "slot_key": "d50-w391m-s7",
+      "atomic_run_id": "d50-w391m",
+      "variant_key": "d50-w391m",
+      "seed": 7,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 391000000,
+        "embedding_dimension": 50,
+        "epochs": 3,
+        "estimated_token_updates": 1173000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v1-reconstruction-r2-d50-w391m-s19",
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table2-cbow",
+      "slot_key": "d50-w391m-s19",
+      "atomic_run_id": "d50-w391m",
+      "variant_key": "d50-w391m",
+      "seed": 19,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 391000000,
+        "embedding_dimension": 50,
+        "epochs": 3,
+        "estimated_token_updates": 1173000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v1-reconstruction-r2-d50-w783m-s1",
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table2-cbow",
+      "slot_key": "d50-w783m-s1",
+      "atomic_run_id": "d50-w783m",
+      "variant_key": "d50-w783m",
+      "seed": 1,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 783000000,
+        "embedding_dimension": 50,
+        "epochs": 3,
+        "estimated_token_updates": 2349000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v1-reconstruction-r2-d50-w783m-s7",
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table2-cbow",
+      "slot_key": "d50-w783m-s7",
+      "atomic_run_id": "d50-w783m",
+      "variant_key": "d50-w783m",
+      "seed": 7,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 783000000,
+        "embedding_dimension": 50,
+        "epochs": 3,
+        "estimated_token_updates": 2349000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v1-reconstruction-r2-d50-w783m-s19",
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table2-cbow",
+      "slot_key": "d50-w783m-s19",
+      "atomic_run_id": "d50-w783m",
+      "variant_key": "d50-w783m",
+      "seed": 19,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 783000000,
+        "embedding_dimension": 50,
+        "epochs": 3,
+        "estimated_token_updates": 2349000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v1-reconstruction-r2-d100-w24m-s1",
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table2-cbow",
+      "slot_key": "d100-w24m-s1",
+      "atomic_run_id": "d100-w24m",
+      "variant_key": "d100-w24m",
+      "seed": 1,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 24000000,
+        "embedding_dimension": 100,
+        "epochs": 3,
+        "estimated_token_updates": 72000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v1-reconstruction-r2-d100-w24m-s7",
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table2-cbow",
+      "slot_key": "d100-w24m-s7",
+      "atomic_run_id": "d100-w24m",
+      "variant_key": "d100-w24m",
+      "seed": 7,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 24000000,
+        "embedding_dimension": 100,
+        "epochs": 3,
+        "estimated_token_updates": 72000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v1-reconstruction-r2-d100-w24m-s19",
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table2-cbow",
+      "slot_key": "d100-w24m-s19",
+      "atomic_run_id": "d100-w24m",
+      "variant_key": "d100-w24m",
+      "seed": 19,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 24000000,
+        "embedding_dimension": 100,
+        "epochs": 3,
+        "estimated_token_updates": 72000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v1-reconstruction-r2-d100-w49m-s1",
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table2-cbow",
+      "slot_key": "d100-w49m-s1",
+      "atomic_run_id": "d100-w49m",
+      "variant_key": "d100-w49m",
+      "seed": 1,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 49000000,
+        "embedding_dimension": 100,
+        "epochs": 3,
+        "estimated_token_updates": 147000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v1-reconstruction-r2-d100-w49m-s7",
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table2-cbow",
+      "slot_key": "d100-w49m-s7",
+      "atomic_run_id": "d100-w49m",
+      "variant_key": "d100-w49m",
+      "seed": 7,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 49000000,
+        "embedding_dimension": 100,
+        "epochs": 3,
+        "estimated_token_updates": 147000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v1-reconstruction-r2-d100-w49m-s19",
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table2-cbow",
+      "slot_key": "d100-w49m-s19",
+      "atomic_run_id": "d100-w49m",
+      "variant_key": "d100-w49m",
+      "seed": 19,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 49000000,
+        "embedding_dimension": 100,
+        "epochs": 3,
+        "estimated_token_updates": 147000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v1-reconstruction-r2-d100-w98m-s1",
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table2-cbow",
+      "slot_key": "d100-w98m-s1",
+      "atomic_run_id": "d100-w98m",
+      "variant_key": "d100-w98m",
+      "seed": 1,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 98000000,
+        "embedding_dimension": 100,
+        "epochs": 3,
+        "estimated_token_updates": 294000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v1-reconstruction-r2-d100-w98m-s7",
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table2-cbow",
+      "slot_key": "d100-w98m-s7",
+      "atomic_run_id": "d100-w98m",
+      "variant_key": "d100-w98m",
+      "seed": 7,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 98000000,
+        "embedding_dimension": 100,
+        "epochs": 3,
+        "estimated_token_updates": 294000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v1-reconstruction-r2-d100-w98m-s19",
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table2-cbow",
+      "slot_key": "d100-w98m-s19",
+      "atomic_run_id": "d100-w98m",
+      "variant_key": "d100-w98m",
+      "seed": 19,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 98000000,
+        "embedding_dimension": 100,
+        "epochs": 3,
+        "estimated_token_updates": 294000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v1-reconstruction-r2-d100-w196m-s1",
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table2-cbow",
+      "slot_key": "d100-w196m-s1",
+      "atomic_run_id": "d100-w196m",
+      "variant_key": "d100-w196m",
+      "seed": 1,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 196000000,
+        "embedding_dimension": 100,
+        "epochs": 3,
+        "estimated_token_updates": 588000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v1-reconstruction-r2-d100-w196m-s7",
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table2-cbow",
+      "slot_key": "d100-w196m-s7",
+      "atomic_run_id": "d100-w196m",
+      "variant_key": "d100-w196m",
+      "seed": 7,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 196000000,
+        "embedding_dimension": 100,
+        "epochs": 3,
+        "estimated_token_updates": 588000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v1-reconstruction-r2-d100-w196m-s19",
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table2-cbow",
+      "slot_key": "d100-w196m-s19",
+      "atomic_run_id": "d100-w196m",
+      "variant_key": "d100-w196m",
+      "seed": 19,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 196000000,
+        "embedding_dimension": 100,
+        "epochs": 3,
+        "estimated_token_updates": 588000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v1-reconstruction-r2-d100-w391m-s1",
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table2-cbow",
+      "slot_key": "d100-w391m-s1",
+      "atomic_run_id": "d100-w391m",
+      "variant_key": "d100-w391m",
+      "seed": 1,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 391000000,
+        "embedding_dimension": 100,
+        "epochs": 3,
+        "estimated_token_updates": 1173000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v1-reconstruction-r2-d100-w391m-s7",
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table2-cbow",
+      "slot_key": "d100-w391m-s7",
+      "atomic_run_id": "d100-w391m",
+      "variant_key": "d100-w391m",
+      "seed": 7,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 391000000,
+        "embedding_dimension": 100,
+        "epochs": 3,
+        "estimated_token_updates": 1173000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v1-reconstruction-r2-d100-w391m-s19",
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table2-cbow",
+      "slot_key": "d100-w391m-s19",
+      "atomic_run_id": "d100-w391m",
+      "variant_key": "d100-w391m",
+      "seed": 19,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 391000000,
+        "embedding_dimension": 100,
+        "epochs": 3,
+        "estimated_token_updates": 1173000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v1-reconstruction-r2-d100-w783m-s1",
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table2-cbow",
+      "slot_key": "d100-w783m-s1",
+      "atomic_run_id": "d100-w783m",
+      "variant_key": "d100-w783m",
+      "seed": 1,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 783000000,
+        "embedding_dimension": 100,
+        "epochs": 3,
+        "estimated_token_updates": 2349000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v1-reconstruction-r2-d100-w783m-s7",
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table2-cbow",
+      "slot_key": "d100-w783m-s7",
+      "atomic_run_id": "d100-w783m",
+      "variant_key": "d100-w783m",
+      "seed": 7,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 783000000,
+        "embedding_dimension": 100,
+        "epochs": 3,
+        "estimated_token_updates": 2349000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v1-reconstruction-r2-d100-w783m-s19",
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table2-cbow",
+      "slot_key": "d100-w783m-s19",
+      "atomic_run_id": "d100-w783m",
+      "variant_key": "d100-w783m",
+      "seed": 19,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 783000000,
+        "embedding_dimension": 100,
+        "epochs": 3,
+        "estimated_token_updates": 2349000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v1-reconstruction-r2-d300-w24m-s1",
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table2-cbow",
+      "slot_key": "d300-w24m-s1",
+      "atomic_run_id": "d300-w24m",
+      "variant_key": "d300-w24m",
+      "seed": 1,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 24000000,
+        "embedding_dimension": 300,
+        "epochs": 3,
+        "estimated_token_updates": 72000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v1-reconstruction-r2-d300-w24m-s7",
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table2-cbow",
+      "slot_key": "d300-w24m-s7",
+      "atomic_run_id": "d300-w24m",
+      "variant_key": "d300-w24m",
+      "seed": 7,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 24000000,
+        "embedding_dimension": 300,
+        "epochs": 3,
+        "estimated_token_updates": 72000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v1-reconstruction-r2-d300-w24m-s19",
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table2-cbow",
+      "slot_key": "d300-w24m-s19",
+      "atomic_run_id": "d300-w24m",
+      "variant_key": "d300-w24m",
+      "seed": 19,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 24000000,
+        "embedding_dimension": 300,
+        "epochs": 3,
+        "estimated_token_updates": 72000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v1-reconstruction-r2-d300-w49m-s1",
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table2-cbow",
+      "slot_key": "d300-w49m-s1",
+      "atomic_run_id": "d300-w49m",
+      "variant_key": "d300-w49m",
+      "seed": 1,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 49000000,
+        "embedding_dimension": 300,
+        "epochs": 3,
+        "estimated_token_updates": 147000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v1-reconstruction-r2-d300-w49m-s7",
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table2-cbow",
+      "slot_key": "d300-w49m-s7",
+      "atomic_run_id": "d300-w49m",
+      "variant_key": "d300-w49m",
+      "seed": 7,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 49000000,
+        "embedding_dimension": 300,
+        "epochs": 3,
+        "estimated_token_updates": 147000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v1-reconstruction-r2-d300-w49m-s19",
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table2-cbow",
+      "slot_key": "d300-w49m-s19",
+      "atomic_run_id": "d300-w49m",
+      "variant_key": "d300-w49m",
+      "seed": 19,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 49000000,
+        "embedding_dimension": 300,
+        "epochs": 3,
+        "estimated_token_updates": 147000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v1-reconstruction-r2-d300-w98m-s1",
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table2-cbow",
+      "slot_key": "d300-w98m-s1",
+      "atomic_run_id": "d300-w98m",
+      "variant_key": "d300-w98m",
+      "seed": 1,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 98000000,
+        "embedding_dimension": 300,
+        "epochs": 3,
+        "estimated_token_updates": 294000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v1-reconstruction-r2-d300-w98m-s7",
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table2-cbow",
+      "slot_key": "d300-w98m-s7",
+      "atomic_run_id": "d300-w98m",
+      "variant_key": "d300-w98m",
+      "seed": 7,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 98000000,
+        "embedding_dimension": 300,
+        "epochs": 3,
+        "estimated_token_updates": 294000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v1-reconstruction-r2-d300-w98m-s19",
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table2-cbow",
+      "slot_key": "d300-w98m-s19",
+      "atomic_run_id": "d300-w98m",
+      "variant_key": "d300-w98m",
+      "seed": 19,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 98000000,
+        "embedding_dimension": 300,
+        "epochs": 3,
+        "estimated_token_updates": 294000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v1-reconstruction-r2-d300-w196m-s1",
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table2-cbow",
+      "slot_key": "d300-w196m-s1",
+      "atomic_run_id": "d300-w196m",
+      "variant_key": "d300-w196m",
+      "seed": 1,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 196000000,
+        "embedding_dimension": 300,
+        "epochs": 3,
+        "estimated_token_updates": 588000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v1-reconstruction-r2-d300-w196m-s7",
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table2-cbow",
+      "slot_key": "d300-w196m-s7",
+      "atomic_run_id": "d300-w196m",
+      "variant_key": "d300-w196m",
+      "seed": 7,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 196000000,
+        "embedding_dimension": 300,
+        "epochs": 3,
+        "estimated_token_updates": 588000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v1-reconstruction-r2-d300-w196m-s19",
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table2-cbow",
+      "slot_key": "d300-w196m-s19",
+      "atomic_run_id": "d300-w196m",
+      "variant_key": "d300-w196m",
+      "seed": 19,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 196000000,
+        "embedding_dimension": 300,
+        "epochs": 3,
+        "estimated_token_updates": 588000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v1-reconstruction-r2-d300-w391m-s1",
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table2-cbow",
+      "slot_key": "d300-w391m-s1",
+      "atomic_run_id": "d300-w391m",
+      "variant_key": "d300-w391m",
+      "seed": 1,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 391000000,
+        "embedding_dimension": 300,
+        "epochs": 3,
+        "estimated_token_updates": 1173000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v1-reconstruction-r2-d300-w391m-s7",
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table2-cbow",
+      "slot_key": "d300-w391m-s7",
+      "atomic_run_id": "d300-w391m",
+      "variant_key": "d300-w391m",
+      "seed": 7,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 391000000,
+        "embedding_dimension": 300,
+        "epochs": 3,
+        "estimated_token_updates": 1173000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v1-reconstruction-r2-d300-w391m-s19",
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table2-cbow",
+      "slot_key": "d300-w391m-s19",
+      "atomic_run_id": "d300-w391m",
+      "variant_key": "d300-w391m",
+      "seed": 19,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 391000000,
+        "embedding_dimension": 300,
+        "epochs": 3,
+        "estimated_token_updates": 1173000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v1-reconstruction-r2-d300-w783m-s1",
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table2-cbow",
+      "slot_key": "d300-w783m-s1",
+      "atomic_run_id": "d300-w783m",
+      "variant_key": "d300-w783m",
+      "seed": 1,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 783000000,
+        "embedding_dimension": 300,
+        "epochs": 3,
+        "estimated_token_updates": 2349000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v1-reconstruction-r2-d300-w783m-s7",
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table2-cbow",
+      "slot_key": "d300-w783m-s7",
+      "atomic_run_id": "d300-w783m",
+      "variant_key": "d300-w783m",
+      "seed": 7,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 783000000,
+        "embedding_dimension": 300,
+        "epochs": 3,
+        "estimated_token_updates": 2349000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v1-reconstruction-r2-d300-w783m-s19",
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table2-cbow",
+      "slot_key": "d300-w783m-s19",
+      "atomic_run_id": "d300-w783m",
+      "variant_key": "d300-w783m",
+      "seed": 19,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 783000000,
+        "embedding_dimension": 300,
+        "epochs": 3,
+        "estimated_token_updates": 2349000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v1-reconstruction-r2-d600-w24m-s1",
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table2-cbow",
+      "slot_key": "d600-w24m-s1",
+      "atomic_run_id": "d600-w24m",
+      "variant_key": "d600-w24m",
+      "seed": 1,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 24000000,
+        "embedding_dimension": 600,
+        "epochs": 3,
+        "estimated_token_updates": 72000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v1-reconstruction-r2-d600-w24m-s7",
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table2-cbow",
+      "slot_key": "d600-w24m-s7",
+      "atomic_run_id": "d600-w24m",
+      "variant_key": "d600-w24m",
+      "seed": 7,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 24000000,
+        "embedding_dimension": 600,
+        "epochs": 3,
+        "estimated_token_updates": 72000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v1-reconstruction-r2-d600-w24m-s19",
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table2-cbow",
+      "slot_key": "d600-w24m-s19",
+      "atomic_run_id": "d600-w24m",
+      "variant_key": "d600-w24m",
+      "seed": 19,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 24000000,
+        "embedding_dimension": 600,
+        "epochs": 3,
+        "estimated_token_updates": 72000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v1-reconstruction-r2-d600-w49m-s1",
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table2-cbow",
+      "slot_key": "d600-w49m-s1",
+      "atomic_run_id": "d600-w49m",
+      "variant_key": "d600-w49m",
+      "seed": 1,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 49000000,
+        "embedding_dimension": 600,
+        "epochs": 3,
+        "estimated_token_updates": 147000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v1-reconstruction-r2-d600-w49m-s7",
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table2-cbow",
+      "slot_key": "d600-w49m-s7",
+      "atomic_run_id": "d600-w49m",
+      "variant_key": "d600-w49m",
+      "seed": 7,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 49000000,
+        "embedding_dimension": 600,
+        "epochs": 3,
+        "estimated_token_updates": 147000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v1-reconstruction-r2-d600-w49m-s19",
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table2-cbow",
+      "slot_key": "d600-w49m-s19",
+      "atomic_run_id": "d600-w49m",
+      "variant_key": "d600-w49m",
+      "seed": 19,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 49000000,
+        "embedding_dimension": 600,
+        "epochs": 3,
+        "estimated_token_updates": 147000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v1-reconstruction-r2-d600-w98m-s1",
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table2-cbow",
+      "slot_key": "d600-w98m-s1",
+      "atomic_run_id": "d600-w98m",
+      "variant_key": "d600-w98m",
+      "seed": 1,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 98000000,
+        "embedding_dimension": 600,
+        "epochs": 3,
+        "estimated_token_updates": 294000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v1-reconstruction-r2-d600-w98m-s7",
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table2-cbow",
+      "slot_key": "d600-w98m-s7",
+      "atomic_run_id": "d600-w98m",
+      "variant_key": "d600-w98m",
+      "seed": 7,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 98000000,
+        "embedding_dimension": 600,
+        "epochs": 3,
+        "estimated_token_updates": 294000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v1-reconstruction-r2-d600-w98m-s19",
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table2-cbow",
+      "slot_key": "d600-w98m-s19",
+      "atomic_run_id": "d600-w98m",
+      "variant_key": "d600-w98m",
+      "seed": 19,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 98000000,
+        "embedding_dimension": 600,
+        "epochs": 3,
+        "estimated_token_updates": 294000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v1-reconstruction-r2-d600-w196m-s1",
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table2-cbow",
+      "slot_key": "d600-w196m-s1",
+      "atomic_run_id": "d600-w196m",
+      "variant_key": "d600-w196m",
+      "seed": 1,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 196000000,
+        "embedding_dimension": 600,
+        "epochs": 3,
+        "estimated_token_updates": 588000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v1-reconstruction-r2-d600-w196m-s7",
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table2-cbow",
+      "slot_key": "d600-w196m-s7",
+      "atomic_run_id": "d600-w196m",
+      "variant_key": "d600-w196m",
+      "seed": 7,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 196000000,
+        "embedding_dimension": 600,
+        "epochs": 3,
+        "estimated_token_updates": 588000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v1-reconstruction-r2-d600-w196m-s19",
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table2-cbow",
+      "slot_key": "d600-w196m-s19",
+      "atomic_run_id": "d600-w196m",
+      "variant_key": "d600-w196m",
+      "seed": 19,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 196000000,
+        "embedding_dimension": 600,
+        "epochs": 3,
+        "estimated_token_updates": 588000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v1-reconstruction-r2-d600-w391m-s1",
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table2-cbow",
+      "slot_key": "d600-w391m-s1",
+      "atomic_run_id": "d600-w391m",
+      "variant_key": "d600-w391m",
+      "seed": 1,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 391000000,
+        "embedding_dimension": 600,
+        "epochs": 3,
+        "estimated_token_updates": 1173000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v1-reconstruction-r2-d600-w391m-s7",
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table2-cbow",
+      "slot_key": "d600-w391m-s7",
+      "atomic_run_id": "d600-w391m",
+      "variant_key": "d600-w391m",
+      "seed": 7,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 391000000,
+        "embedding_dimension": 600,
+        "epochs": 3,
+        "estimated_token_updates": 1173000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v1-reconstruction-r2-d600-w391m-s19",
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table2-cbow",
+      "slot_key": "d600-w391m-s19",
+      "atomic_run_id": "d600-w391m",
+      "variant_key": "d600-w391m",
+      "seed": 19,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 391000000,
+        "embedding_dimension": 600,
+        "epochs": 3,
+        "estimated_token_updates": 1173000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v1-reconstruction-r2-d600-w783m-s1",
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table2-cbow",
+      "slot_key": "d600-w783m-s1",
+      "atomic_run_id": "d600-w783m",
+      "variant_key": "d600-w783m",
+      "seed": 1,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 783000000,
+        "embedding_dimension": 600,
+        "epochs": 3,
+        "estimated_token_updates": 2349000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v1-reconstruction-r2-d600-w783m-s7",
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table2-cbow",
+      "slot_key": "d600-w783m-s7",
+      "atomic_run_id": "d600-w783m",
+      "variant_key": "d600-w783m",
+      "seed": 7,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 783000000,
+        "embedding_dimension": 600,
+        "epochs": 3,
+        "estimated_token_updates": 2349000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v1-reconstruction-r2-d600-w783m-s19",
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table2-cbow",
+      "slot_key": "d600-w783m-s19",
+      "atomic_run_id": "d600-w783m",
+      "variant_key": "d600-w783m",
+      "seed": 19,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 783000000,
+        "embedding_dimension": 600,
+        "epochs": 3,
+        "estimated_token_updates": 2349000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v2-reconstruction-r1-neg5-no-subsampling-s1",
+      "plan_experiment_id": "w2v2-reconstruction-r1-w2v2-phrase-skipgram-1b-objectives",
+      "slot_key": "neg5-no-subsampling-s1",
+      "atomic_run_id": "neg5-no-subsampling",
+      "variant_key": "neg5-no-subsampling",
+      "seed": 1,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 1000000000,
+        "embedding_dimension": 300,
+        "epochs": 3,
+        "estimated_token_updates": 3000000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v2-reconstruction-r1-neg5-no-subsampling-s7",
+      "plan_experiment_id": "w2v2-reconstruction-r1-w2v2-phrase-skipgram-1b-objectives",
+      "slot_key": "neg5-no-subsampling-s7",
+      "atomic_run_id": "neg5-no-subsampling",
+      "variant_key": "neg5-no-subsampling",
+      "seed": 7,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 1000000000,
+        "embedding_dimension": 300,
+        "epochs": 3,
+        "estimated_token_updates": 3000000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v2-reconstruction-r1-neg5-no-subsampling-s19",
+      "plan_experiment_id": "w2v2-reconstruction-r1-w2v2-phrase-skipgram-1b-objectives",
+      "slot_key": "neg5-no-subsampling-s19",
+      "atomic_run_id": "neg5-no-subsampling",
+      "variant_key": "neg5-no-subsampling",
+      "seed": 19,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 1000000000,
+        "embedding_dimension": 300,
+        "epochs": 3,
+        "estimated_token_updates": 3000000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v2-reconstruction-r1-neg15-no-subsampling-s1",
+      "plan_experiment_id": "w2v2-reconstruction-r1-w2v2-phrase-skipgram-1b-objectives",
+      "slot_key": "neg15-no-subsampling-s1",
+      "atomic_run_id": "neg15-no-subsampling",
+      "variant_key": "neg15-no-subsampling",
+      "seed": 1,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 1000000000,
+        "embedding_dimension": 300,
+        "epochs": 3,
+        "estimated_token_updates": 3000000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v2-reconstruction-r1-neg15-no-subsampling-s7",
+      "plan_experiment_id": "w2v2-reconstruction-r1-w2v2-phrase-skipgram-1b-objectives",
+      "slot_key": "neg15-no-subsampling-s7",
+      "atomic_run_id": "neg15-no-subsampling",
+      "variant_key": "neg15-no-subsampling",
+      "seed": 7,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 1000000000,
+        "embedding_dimension": 300,
+        "epochs": 3,
+        "estimated_token_updates": 3000000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v2-reconstruction-r1-neg15-no-subsampling-s19",
+      "plan_experiment_id": "w2v2-reconstruction-r1-w2v2-phrase-skipgram-1b-objectives",
+      "slot_key": "neg15-no-subsampling-s19",
+      "atomic_run_id": "neg15-no-subsampling",
+      "variant_key": "neg15-no-subsampling",
+      "seed": 19,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 1000000000,
+        "embedding_dimension": 300,
+        "epochs": 3,
+        "estimated_token_updates": 3000000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v2-reconstruction-r1-hs-no-subsampling-s1",
+      "plan_experiment_id": "w2v2-reconstruction-r1-w2v2-phrase-skipgram-1b-objectives",
+      "slot_key": "hs-no-subsampling-s1",
+      "atomic_run_id": "hs-no-subsampling",
+      "variant_key": "hs-no-subsampling",
+      "seed": 1,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 1000000000,
+        "embedding_dimension": 300,
+        "epochs": 3,
+        "estimated_token_updates": 3000000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v2-reconstruction-r1-hs-no-subsampling-s7",
+      "plan_experiment_id": "w2v2-reconstruction-r1-w2v2-phrase-skipgram-1b-objectives",
+      "slot_key": "hs-no-subsampling-s7",
+      "atomic_run_id": "hs-no-subsampling",
+      "variant_key": "hs-no-subsampling",
+      "seed": 7,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 1000000000,
+        "embedding_dimension": 300,
+        "epochs": 3,
+        "estimated_token_updates": 3000000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v2-reconstruction-r1-hs-no-subsampling-s19",
+      "plan_experiment_id": "w2v2-reconstruction-r1-w2v2-phrase-skipgram-1b-objectives",
+      "slot_key": "hs-no-subsampling-s19",
+      "atomic_run_id": "hs-no-subsampling",
+      "variant_key": "hs-no-subsampling",
+      "seed": 19,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 1000000000,
+        "embedding_dimension": 300,
+        "epochs": 3,
+        "estimated_token_updates": 3000000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v2-reconstruction-r1-neg5-subsampling-s1",
+      "plan_experiment_id": "w2v2-reconstruction-r1-w2v2-phrase-skipgram-1b-objectives",
+      "slot_key": "neg5-subsampling-s1",
+      "atomic_run_id": "neg5-subsampling",
+      "variant_key": "neg5-subsampling",
+      "seed": 1,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 1000000000,
+        "embedding_dimension": 300,
+        "epochs": 3,
+        "estimated_token_updates": 3000000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v2-reconstruction-r1-neg5-subsampling-s7",
+      "plan_experiment_id": "w2v2-reconstruction-r1-w2v2-phrase-skipgram-1b-objectives",
+      "slot_key": "neg5-subsampling-s7",
+      "atomic_run_id": "neg5-subsampling",
+      "variant_key": "neg5-subsampling",
+      "seed": 7,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 1000000000,
+        "embedding_dimension": 300,
+        "epochs": 3,
+        "estimated_token_updates": 3000000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v2-reconstruction-r1-neg5-subsampling-s19",
+      "plan_experiment_id": "w2v2-reconstruction-r1-w2v2-phrase-skipgram-1b-objectives",
+      "slot_key": "neg5-subsampling-s19",
+      "atomic_run_id": "neg5-subsampling",
+      "variant_key": "neg5-subsampling",
+      "seed": 19,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 1000000000,
+        "embedding_dimension": 300,
+        "epochs": 3,
+        "estimated_token_updates": 3000000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v2-reconstruction-r1-neg15-subsampling-s1",
+      "plan_experiment_id": "w2v2-reconstruction-r1-w2v2-phrase-skipgram-1b-objectives",
+      "slot_key": "neg15-subsampling-s1",
+      "atomic_run_id": "neg15-subsampling",
+      "variant_key": "neg15-subsampling",
+      "seed": 1,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 1000000000,
+        "embedding_dimension": 300,
+        "epochs": 3,
+        "estimated_token_updates": 3000000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v2-reconstruction-r1-neg15-subsampling-s7",
+      "plan_experiment_id": "w2v2-reconstruction-r1-w2v2-phrase-skipgram-1b-objectives",
+      "slot_key": "neg15-subsampling-s7",
+      "atomic_run_id": "neg15-subsampling",
+      "variant_key": "neg15-subsampling",
+      "seed": 7,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 1000000000,
+        "embedding_dimension": 300,
+        "epochs": 3,
+        "estimated_token_updates": 3000000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v2-reconstruction-r1-neg15-subsampling-s19",
+      "plan_experiment_id": "w2v2-reconstruction-r1-w2v2-phrase-skipgram-1b-objectives",
+      "slot_key": "neg15-subsampling-s19",
+      "atomic_run_id": "neg15-subsampling",
+      "variant_key": "neg15-subsampling",
+      "seed": 19,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 1000000000,
+        "embedding_dimension": 300,
+        "epochs": 3,
+        "estimated_token_updates": 3000000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v2-reconstruction-r1-hs-subsampling-s1",
+      "plan_experiment_id": "w2v2-reconstruction-r1-w2v2-phrase-skipgram-1b-objectives",
+      "slot_key": "hs-subsampling-s1",
+      "atomic_run_id": "hs-subsampling",
+      "variant_key": "hs-subsampling",
+      "seed": 1,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 1000000000,
+        "embedding_dimension": 300,
+        "epochs": 3,
+        "estimated_token_updates": 3000000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v2-reconstruction-r1-hs-subsampling-s7",
+      "plan_experiment_id": "w2v2-reconstruction-r1-w2v2-phrase-skipgram-1b-objectives",
+      "slot_key": "hs-subsampling-s7",
+      "atomic_run_id": "hs-subsampling",
+      "variant_key": "hs-subsampling",
+      "seed": 7,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 1000000000,
+        "embedding_dimension": 300,
+        "epochs": 3,
+        "estimated_token_updates": 3000000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
+    },
+    {
+      "planned_run_slot_id": "w2v2-reconstruction-r1-hs-subsampling-s19",
+      "plan_experiment_id": "w2v2-reconstruction-r1-w2v2-phrase-skipgram-1b-objectives",
+      "slot_key": "hs-subsampling-s19",
+      "atomic_run_id": "hs-subsampling",
+      "variant_key": "hs-subsampling",
+      "seed": 19,
+      "parameters": {
+        "classification": "reconstruction",
+        "training_tokens": 1000000000,
+        "embedding_dimension": 300,
+        "epochs": 3,
+        "estimated_token_updates": 3000000000,
+        "device": "cpu",
+        "threads": 1,
+        "requires_approval": true
+      },
+      "expected": true,
+      "reference_mlflow_run_id": null,
+      "notes": "Large canonical slot; planning is not execution approval."
     }
   ]
 }

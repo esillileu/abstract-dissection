@@ -27,6 +27,28 @@ class RunSpec:
     tracking: dict[str, object]
     path: Path
 
+    def with_seed(self, seed: int) -> RunSpec:
+        """Bind a planner-selected seed to its immutable catalog slot."""
+        from f2.suites.w2v.matrix import planned_slot_id
+
+        identity = dict(self.identity)
+        identity["seed"] = seed
+        if self.atomic_run_id != "local-smoke":
+            identity["planned_run_slot_id"] = planned_slot_id(
+                str(identity["execution_plan_id"]), self.atomic_run_id, seed
+            )
+        return RunSpec(
+            atomic_run_id=self.atomic_run_id,
+            identity=identity,
+            corpus=self.corpus,
+            vocabulary=self.vocabulary,
+            training=self.training,
+            evaluation=self.evaluation,
+            checkpoint=self.checkpoint,
+            tracking=self.tracking,
+            path=self.path,
+        )
+
     def to_executor_config(self) -> dict[str, object]:
         resolved = {
             "corpus": self.corpus,

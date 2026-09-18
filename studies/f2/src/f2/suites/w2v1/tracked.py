@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import re
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -54,11 +55,9 @@ def run_tracked_yaml(
     from mlflow import MlflowClient
 
     parser = importlib.import_module(spec_module)
-    config = parser.parse_run_spec(
-        path, atomic_run_id=atomic_run_id, overrides=overrides
-    ).to_executor_config()
-    if seed is not None:
-        _identity(config)["seed"] = seed
+    spec = parser.parse_run_spec(path, atomic_run_id=atomic_run_id, overrides=overrides)
+    spec = spec.with_seed(int(spec.identity["seed"]) if seed is None else seed)
+    config = spec.to_executor_config()
     if device not in {None, "cpu"}:
         raise ValueError("canonical W2V1 parity execution requires CPU")
     paths = RuntimePaths.from_environment()
@@ -172,7 +171,7 @@ def _create_run(
     identity = _identity(config)
     run_identity = RunIdentity(
         planned_run_slot_id=str(identity["planned_run_slot_id"]),
-        plan_revision=1,
+        plan_revision=_plan_revision(str(identity["execution_plan_id"])),
         config_digest=str(identity["config_digest"]),
         resource_version_id=str(identity["resource_version"]),
         resource_manifest_digest=str(identity["corpus_manifest_digest"]),
@@ -195,6 +194,13 @@ def _create_run(
         tags=tags,
         run_name=f"{identity['planned_run_slot_id']}-a{attempt}",
     ).info.run_id
+
+
+def _plan_revision(execution_plan_id: str) -> int:
+    match = re.search(r"-r(\d+)$", execution_plan_id)
+    if match is None:
+        raise ValueError("execution_plan_id must end with an explicit revision")
+    return int(match.group(1))
 
 
 def _publish(client: Any, run_id: str, root: Path) -> None:

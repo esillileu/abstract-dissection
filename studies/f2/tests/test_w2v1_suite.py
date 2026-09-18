@@ -134,7 +134,7 @@ def test_w2v1_tracked_interrupt_resume_and_catalog_link(tmp_path, monkeypatch):
     assert final.data.tags["result.durable_complete"] == "true"
     assert linked == [
         (
-            "w2v1-reconstruction-r1-table2-cbow-d50-w24m-s1",
+            "w2v1-reconstruction-r2-d50-w24m-s1",
             receipt.run_id,
         )
     ]

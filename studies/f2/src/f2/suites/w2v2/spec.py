@@ -30,6 +30,12 @@ class RunSpec(CommonRunSpec):
     def phrase_detection(self) -> dict[str, object]:
         return self._phrase_detection
 
+    def with_seed(self, seed: int) -> RunSpec:
+        seeded = super().with_seed(seed)
+        spec = RunSpec(**vars(seeded))
+        object.__setattr__(spec, "_phrase_detection", self.phrase_detection)
+        return spec
+
 
 def parse_run_spec(
     path: str | Path,
