@@ -187,5 +187,26 @@ class ArtifactsRepositoryMixin(BaseCorpusRepository):
             cols = [desc[0] for desc in cur.description]
             return dict(zip(cols, row, strict=False))
 
+    def list_verified_corpus_shards(
+        self, resource_version_id: str
+    ) -> list[dict[str, Any]]:
+        """Return the immutable ordered shard identity used by training adapters."""
+        with self.conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT s.shard_index, a.s3_uri, a.sha256, s.byte_size,
+                       s.word_count, s.doc_count
+                FROM corpus_shards AS s
+                JOIN artifacts AS a ON a.artifact_id = s.artifact_id
+                WHERE s.resource_version_id = %s
+                  AND a.resource_version_id = s.resource_version_id
+                  AND a.integrity_status = 'verified'
+                ORDER BY s.shard_index;
+                """,
+                (resource_version_id,),
+            )
+            columns = [desc[0] for desc in cur.description]
+            return [dict(zip(columns, row, strict=True)) for row in cur.fetchall()]
+
 
 __all__ = ["ArtifactsRepositoryMixin"]
