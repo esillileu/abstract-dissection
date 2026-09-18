@@ -23,6 +23,7 @@ from f2.suites.w2v.artifacts import (
     create_checkpoint_manager,
     load_checkpoint,
     load_lookup_artifact,
+    resolve_or_build_vocabulary,
     save_checkpoint,
     save_lookup_artifact,
 )
@@ -143,6 +144,89 @@ def test_lookup_is_mmap_backed_and_indexes_byte_tokens(tmp_path: Path) -> None:
         lookup.vector(b"alpha"), lookup.embeddings[lookup.row(b"alpha")]
     )
     assert lookup.vector(b"missing") is None
+
+
+def test_shared_vocabulary_cache_reuses_verified_state_without_rebuilding(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    corpus_path = tmp_path / "vocabulary-corpus.txt"
+    corpus_path.write_bytes(b"alpha beta alpha gamma\nbeta alpha delta\n")
+    corpus = Corpus(corpus_path)
+    values = {"initial_capacity": 2, "hash_capacity": 17, "min_count": 1}
+
+    first = resolve_or_build_vocabulary(corpus, values, cache_root=tmp_path / "cache")
+    original_build = Vocabulary.build
+    calls = 0
+
+    def fail_if_built(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return original_build(*args, **kwargs)
+
+    monkeypatch.setattr(Vocabulary, "build", fail_if_built)
+    second = resolve_or_build_vocabulary(corpus, values, cache_root=tmp_path / "cache")
+
+    assert calls == 0
+    assert second.digest() == first.digest()
+    for actual, expected in zip(
+        second.export_state().arrays(), first.export_state().arrays(), strict=True
+    ):
+        np.testing.assert_array_equal(actual, expected)
+
+
+@pytest.mark.parametrize(
+    "change",
+    (
+        {"min_count": 2},
+        {"max_lexical_words": 2},
+        {"hash_capacity": 19},
+    ),
+)
+def test_vocabulary_semantic_config_changes_cache_identity(
+    tmp_path: Path, change: dict[str, int]
+) -> None:
+    corpus_path = tmp_path / "identity-corpus.txt"
+    corpus_path.write_bytes(b"alpha beta alpha gamma\nbeta alpha delta\n")
+    corpus = Corpus(corpus_path)
+    base = {"initial_capacity": 2, "hash_capacity": 17, "min_count": 1}
+    resolve_or_build_vocabulary(corpus, base, cache_root=tmp_path / "cache")
+    changed = {**base, **change}
+    resolve_or_build_vocabulary(corpus, changed, cache_root=tmp_path / "cache")
+
+    artifacts = list((tmp_path / "cache/f2/w2v/vocabulary").iterdir())
+    assert len(artifacts) == 2
+
+
+def test_corrupt_shared_vocabulary_is_rebuilt_and_huffman_state_matches(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    corpus_path = tmp_path / "corrupt-vocabulary-corpus.txt"
+    corpus_path.write_bytes(b"alpha beta alpha gamma\nbeta alpha delta\n")
+    corpus = Corpus(corpus_path)
+    values = {"initial_capacity": 2, "hash_capacity": 17, "min_count": 1}
+    cache = tmp_path / "cache"
+    fresh = Vocabulary.build(corpus, VocabularyConfig(**values))
+    cached = resolve_or_build_vocabulary(corpus, values, cache_root=cache)
+    artifact = next((cache / "f2/w2v/vocabulary").iterdir())
+    (artifact / "huffman_bits.npy").write_bytes(b"corrupt")
+
+    original_build = Vocabulary.build
+    calls = 0
+
+    def counted_build(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return original_build(*args, **kwargs)
+
+    monkeypatch.setattr(Vocabulary, "build", counted_build)
+    rebuilt = resolve_or_build_vocabulary(corpus, values, cache_root=cache)
+
+    assert calls == 1
+    assert rebuilt.digest() == fresh.digest() == cached.digest()
+    for actual, expected in zip(
+        rebuilt.export_state().arrays(), fresh.export_state().arrays(), strict=True
+    ):
+        np.testing.assert_array_equal(actual, expected)
 
 
 def test_saved_lookup_can_be_evaluated_without_training_or_overwrite(

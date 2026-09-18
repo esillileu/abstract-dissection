@@ -13,13 +13,12 @@ from w2v import (
     Model,
     TrainingConfig,
     TrainingSession,
-    Vocabulary,
-    VocabularyConfig,
 )
 
 from f2.suites.w2v.artifacts import (
     create_checkpoint_manager,
     load_checkpoint,
+    resolve_or_build_vocabulary,
     save_lookup_artifact,
 )
 from f2.suites.w2v.observations import DenseObservationWriter
@@ -74,9 +73,16 @@ class W2V1Executor:
 
         resume_checkpoint = context.metadata.get("resume_checkpoint")
         session = (
-            restore_session(config, Path(resume_checkpoint), context.paths.repo_root)
+            restore_session(
+                config,
+                Path(resume_checkpoint),
+                context.paths.repo_root,
+                cache_root=context.paths.cache_root,
+            )
             if resume_checkpoint
-            else create_session(config, context.paths.repo_root)
+            else create_session(
+                config, context.paths.repo_root, cache_root=context.paths.cache_root
+            )
         )
         manager = create_checkpoint_manager(
             root / "checkpoints",
@@ -139,15 +145,21 @@ class W2V1Executor:
 
 
 def restore_session(
-    config: dict[str, object], checkpoint: Path, repo_root: Path
+    config: dict[str, object],
+    checkpoint: Path,
+    repo_root: Path,
+    *,
+    cache_root: Path | None = None,
 ) -> TrainingSession:
     """Reconstruct a session through the same identity-checked adapter path."""
     corpus_path = Path(str(_mapping(config, "corpus")["path"]))
     corpus = Corpus(
         corpus_path if corpus_path.is_absolute() else repo_root / corpus_path
     )
-    vocabulary = Vocabulary.build(
-        corpus, VocabularyConfig(**_mapping(config, "vocabulary"))
+    vocabulary = resolve_or_build_vocabulary(
+        corpus,
+        _mapping(config, "vocabulary"),
+        cache_root=cache_root or repo_root / ".cache",
     )
     values = dict(_mapping(config, "training"))
     values["root_seed"] = int(_mapping(config, "identity")["seed"])
@@ -158,13 +170,17 @@ def restore_session(
     )
 
 
-def create_session(config: dict[str, object], repo_root: Path) -> TrainingSession:
+def create_session(
+    config: dict[str, object], repo_root: Path, *, cache_root: Path | None = None
+) -> TrainingSession:
     corpus_path = Path(str(_mapping(config, "corpus")["path"]))
     corpus = Corpus(
         corpus_path if corpus_path.is_absolute() else repo_root / corpus_path
     )
-    vocabulary = Vocabulary.build(
-        corpus, VocabularyConfig(**_mapping(config, "vocabulary"))
+    vocabulary = resolve_or_build_vocabulary(
+        corpus,
+        _mapping(config, "vocabulary"),
+        cache_root=cache_root or repo_root / ".cache",
     )
     values = dict(_mapping(config, "training"))
     values["root_seed"] = int(_mapping(config, "identity")["seed"])

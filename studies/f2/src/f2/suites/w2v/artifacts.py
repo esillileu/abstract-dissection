@@ -4,12 +4,21 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import shutil
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import numpy as np
-from w2v import TrainingState, VocabularyState, WorkerState
+from w2v import (
+    TrainingState,
+    Vocabulary,
+    VocabularyConfig,
+    VocabularyState,
+    WorkerState,
+)
 
 from repro_core.context.checkpoint import (
     CheckpointManager,
@@ -18,10 +27,9 @@ from repro_core.context.checkpoint import (
 
 CHECKPOINT_FORMAT = "f2-w2v-checkpoint-v1"
 LOOKUP_FORMAT = "f2-w2v-lookup-v1"
+VOCABULARY_FORMAT = "f2-w2v-vocabulary-v1"
 
-_CHECKPOINT_ARRAYS = (
-    "input_embeddings.npy",
-    "output_embeddings.npy",
+_VOCABULARY_ARRAYS = (
     "token_bytes.npy",
     "token_offsets.npy",
     "counts.npy",
@@ -29,12 +37,127 @@ _CHECKPOINT_ARRAYS = (
     "huffman_paths.npy",
     "huffman_bits.npy",
 )
+_CHECKPOINT_ARRAYS = (
+    "input_embeddings.npy",
+    "output_embeddings.npy",
+    *_VOCABULARY_ARRAYS,
+)
 _LOOKUP_ARRAYS = (
     "input_embeddings.npy",
     "token_bytes.npy",
     "token_offsets.npy",
     "counts.npy",
 )
+
+
+def resolve_or_build_vocabulary(
+    corpus: Any,
+    config_values: dict[str, Any],
+    *,
+    cache_root: Path,
+) -> Any:
+    """Load a verified shared vocabulary or build it once atomically."""
+    corpus_digest = corpus.digest()
+    semantic_config = {
+        "min_count": int(config_values.get("min_count", 5)),
+        "max_lexical_words": int(config_values.get("max_lexical_words", 0)),
+        "hash_capacity": int(config_values.get("hash_capacity", 30_000_000)),
+        "semantics_version": 1,
+    }
+    config_digest = _json_digest(semantic_config)
+    identity = _json_digest(
+        {"corpus_digest": corpus_digest, "vocabulary_config_digest": config_digest}
+    )
+    target = Path(cache_root) / "f2" / "w2v" / "vocabulary" / identity
+    expected = {
+        "corpus_digest": corpus_digest,
+        "vocabulary_config": semantic_config,
+        "vocabulary_config_digest": config_digest,
+        "identity_digest": identity,
+    }
+    try:
+        return _load_vocabulary_artifact(target, expected=expected)
+    except (FileNotFoundError, OSError, ValueError):
+        pass
+
+    vocabulary = Vocabulary.build(corpus, VocabularyConfig(**config_values))
+    _write_vocabulary_artifact(
+        target,
+        vocabulary.export_state(),
+        corpus_digest=corpus_digest,
+        vocabulary_config=semantic_config,
+        vocabulary_config_digest=config_digest,
+        identity_digest=identity,
+    )
+    return _load_vocabulary_artifact(target, expected=expected)
+
+
+def _write_vocabulary_artifact(
+    target: Path,
+    state: VocabularyState,
+    *,
+    corpus_digest: str,
+    vocabulary_config: dict[str, int],
+    vocabulary_config_digest: str,
+    identity_digest: str,
+) -> None:
+    parent = target.parent
+    parent.mkdir(parents=True, exist_ok=True)
+    temporary = Path(tempfile.mkdtemp(prefix=f".{target.name}.", dir=parent))
+    try:
+        arrays = state.arrays()
+        for name, value in zip(_VOCABULARY_ARRAYS, arrays, strict=True):
+            np.save(temporary / name, value, allow_pickle=False)
+        vocabulary_digest = state.digest()
+        identity = {
+            "corpus_digest": corpus_digest,
+            "vocabulary_config": vocabulary_config,
+            "vocabulary_config_digest": vocabulary_config_digest,
+            "identity_digest": identity_digest,
+            "vocabulary_digest": vocabulary_digest,
+            "hash_capacity": state.hash_capacity,
+            "retained_token_count": state.retained_token_count,
+        }
+        _write_manifest(temporary, VOCABULARY_FORMAT, identity, _VOCABULARY_ARRAYS)
+        _load_vocabulary_artifact(temporary, expected=identity)
+
+        if target.exists():
+            try:
+                _load_vocabulary_artifact(target, expected=identity)
+            except (FileNotFoundError, OSError, ValueError):
+                shutil.rmtree(target)
+            else:
+                return
+        os.replace(temporary, target)
+    finally:
+        if temporary.exists():
+            shutil.rmtree(temporary)
+
+
+def _load_vocabulary_artifact(path: Path, *, expected: dict[str, Any]) -> Any:
+    manifest = verify_artifact(path, expected=expected, format_name=VOCABULARY_FORMAT)
+    arrays = {name: _load_array(path / name) for name in _VOCABULARY_ARRAYS}
+    state = VocabularyState.from_arrays(
+        arrays["token_bytes.npy"],
+        arrays["token_offsets.npy"],
+        arrays["counts.npy"],
+        arrays["huffman_offsets.npy"],
+        arrays["huffman_paths.npy"],
+        arrays["huffman_bits.npy"],
+        int(manifest["hash_capacity"]),
+        int(manifest["retained_token_count"]),
+    )
+    if state.digest() != manifest.get("vocabulary_digest"):
+        raise ValueError("vocabulary artifact digest mismatch")
+    return Vocabulary.restore_state(state)
+
+
+def _json_digest(value: Any) -> str:
+    digest = hashlib.sha256()
+    digest.update(
+        json.dumps(value, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    )
+    return digest.hexdigest()
 
 
 def save_checkpoint(
@@ -325,10 +448,12 @@ def _read_json(path: Path) -> dict[str, Any]:
 __all__ = [
     "CHECKPOINT_FORMAT",
     "LOOKUP_FORMAT",
+    "VOCABULARY_FORMAT",
     "LookupEmbeddings",
     "create_checkpoint_manager",
     "load_checkpoint",
     "load_lookup_artifact",
+    "resolve_or_build_vocabulary",
     "save_checkpoint",
     "save_lookup_artifact",
     "verify_artifact",

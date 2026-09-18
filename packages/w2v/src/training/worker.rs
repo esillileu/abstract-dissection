@@ -6,7 +6,7 @@ use crate::{
     random::{Rng, RngPurpose, derive_seed},
     trainer::Trainer,
 };
-use std::{fs::File, sync::atomic::Ordering, time::Instant};
+use std::{fs::File, io::BufReader, sync::atomic::Ordering, time::Instant};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct WorkerObservation {
@@ -32,7 +32,7 @@ pub struct Worker {
     pub negative_rng: Rng,
     pub objective_count: u64,
     pub observations: Vec<WorkerObservation>,
-    tokenizer: Tokenizer<File>,
+    tokenizer: Tokenizer<BufReader<File>>,
 }
 
 #[derive(Clone, Debug, PartialEq)]

@@ -1,7 +1,7 @@
 use crate::config::{MAX_TOKEN_LENGTH, Status};
 use std::{
     fs::File,
-    io::{Read, Seek, SeekFrom},
+    io::{BufReader, Read, Seek, SeekFrom},
     path::{Path, PathBuf},
 };
 
@@ -28,11 +28,11 @@ impl Corpus {
         })
     }
 
-    pub fn tokenizer(&self, byte_offset: usize) -> Result<Tokenizer<File>, Status> {
+    pub fn tokenizer(&self, byte_offset: usize) -> Result<Tokenizer<BufReader<File>>, Status> {
         let mut file = File::open(&self.path).map_err(|_| Status::IoError)?;
         file.seek(SeekFrom::Start(byte_offset as u64))
             .map_err(|_| Status::IoError)?;
-        Ok(Tokenizer::new(file))
+        Ok(Tokenizer::new(BufReader::new(file)))
     }
 
     pub fn digest(&self) -> Result<String, Status> {
