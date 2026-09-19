@@ -3,6 +3,7 @@ use crate::{
     atomic_float,
     config::{ContextPolicy, Real, Status, UpdateStrategy},
     random::Rng,
+    simd,
     trainer::Trainer,
 };
 use std::sync::atomic::AtomicU32;
@@ -102,13 +103,7 @@ pub fn context_radius_with_policy(
 
 #[inline(always)]
 pub fn objective_score(hidden: &[Real], output_row: &[AtomicU32]) -> Real {
-    assert_eq!(hidden.len(), output_row.len());
-    let mut score = 0.0;
-    for coordinate in 0..hidden.len() {
-        let output_value = atomic_float::load(&output_row[coordinate]);
-        score += hidden[coordinate] * output_value;
-    }
-    score
+    simd::shared_dot(hidden, output_row)
 }
 
 pub fn objective_apply_update_checked(
