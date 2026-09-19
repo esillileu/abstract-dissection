@@ -42,12 +42,19 @@ or an HTTPS Tailscale Serve endpoint (`*.ts.net`), and an HTTP(S) F2 MLflow
 tracking endpoint. Its output contains scheme, host, database/bucket identity
 only; URLs, usernames, access keys, and secrets are never emitted.
 
-Every tracked execution attempt requires a planned slot ID, plan revision,
-resolved config digest, corpus resource version, and corpus manifest digest.
-Retries and resumes create a new MLflow run tagged with `f2.attempt` and
-`f2.predecessor_run_id`; the catalog slot is linked only after the final attempt
-has passed durable artifact verification. Failed attempts remain in MLflow and
-never count as completed slots.
+Every tracked reproduction requires a planned slot ID, plan revision, resolved
+config digest, corpus resource version, and corpus manifest digest. One selected
+slot produces exactly one MLflow run named after that slot. The runtime trains
+that run to its configured completion; it must never inject an artificial stop,
+resume exercise, reduced fixture, smoke scenario, or test-only variant.
+
+Tests may call executors with test-owned fixtures under `studies/f2/tests`, but
+test fixtures and test variants are forbidden from `studies/f2/src`, suite YAML,
+the CLI run catalog, and tracked MLflow execution. Input digest checks, corpus
+manifest matching, checkpoint serialization, and final upload-manifest checks
+remain mandatory because they establish the identity and durability of the
+reproduction result; they must not alter the training schedule or create extra
+runs.
 
 ### A. Word2Vec Corpus Source Commands (`repro f2 corpus sources`)
 ```bash

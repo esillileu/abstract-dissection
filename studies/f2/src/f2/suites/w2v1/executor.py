@@ -1,4 +1,4 @@
-"""Local epoch-boundary W2V1 orchestration."""
+"""W2V1 paper-reproduction training orchestration."""
 
 from __future__ import annotations
 
@@ -18,7 +18,6 @@ from w2v import (
 
 from f2.suites.w2v.artifacts import (
     create_checkpoint_manager,
-    load_checkpoint,
     resolve_or_build_vocabulary,
     save_lookup_artifact,
 )
@@ -65,22 +64,11 @@ class W2V1Executor:
             shutil.rmtree(root)
         root.mkdir(parents=True)
 
-        resume_checkpoint = context.metadata.get("resume_checkpoint")
-        session = (
-            restore_session(
-                config,
-                Path(resume_checkpoint),
-                context.paths.repo_root,
-                cache_root=context.paths.cache_root,
-                corpus_digest=corpus_digest,
-            )
-            if resume_checkpoint
-            else create_session(
-                config,
-                context.paths.repo_root,
-                cache_root=context.paths.cache_root,
-                corpus_digest=corpus_digest,
-            )
+        session = create_session(
+            config,
+            context.paths.repo_root,
+            cache_root=context.paths.cache_root,
+            corpus_digest=corpus_digest,
         )
         manager = create_checkpoint_manager(
             root / "checkpoints",
@@ -89,7 +77,6 @@ class W2V1Executor:
         )
         writer = DenseObservationWriter(root / "metrics" / "observations.csv")
         reports = []
-        stop_after_epoch = context.metadata.get("stop_after_epoch")
         progress = context.metadata.get("progress_reporter")
         total_epochs = int(_mapping(config, "training")["epochs"])
         if progress is not None:
@@ -98,9 +85,7 @@ class W2V1Executor:
                 f"preparing {self.suite_name} slot={run_key} "
                 f"epochs={total_epochs} completed={session.completed_epochs}"
             )
-        while not session.is_complete and (
-            stop_after_epoch is None or session.completed_epochs < int(stop_after_epoch)
-        ):
+        while not session.is_complete:
             epoch = session.train_epoch()
             writer.append(epoch.observations())
             manager.save_latest()
@@ -121,7 +106,7 @@ class W2V1Executor:
                 )
         if progress is not None:
             progress.write(f"publishing {self.suite_name} artifacts slot={run_key}")
-        final = manager.save_final() if session.is_complete else manager.save_latest()
+        final = manager.save_final()
         state = session.export_state()
         lookup_path = root / "lookup"
         save_lookup_artifact(
@@ -140,42 +125,6 @@ class W2V1Executor:
         report_path = root / "result.json"
         report_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
         return W2V1Result(root, final.path, lookup_path, writer.path, report_path)
-
-
-def restore_session(
-    config: dict[str, object],
-    checkpoint: Path,
-    repo_root: Path,
-    *,
-    cache_root: Path | None = None,
-    corpus_digest: str | None = None,
-) -> TrainingSession:
-    """Reconstruct a session through the same identity-checked adapter path."""
-    corpus_path = Path(str(_mapping(config, "corpus")["path"]))
-    corpus = Corpus(
-        corpus_path if corpus_path.is_absolute() else repo_root / corpus_path
-    )
-    corpus_digest = corpus_digest or _corpus_digest(
-        _mapping(config, "corpus"), Path(corpus.path)
-    )
-    vocabulary = resolve_or_build_vocabulary(
-        corpus,
-        _mapping(config, "vocabulary"),
-        cache_root=cache_root or repo_root / ".cache",
-        corpus_digest=corpus_digest,
-    )
-    values = dict(_mapping(config, "training"))
-    values["root_seed"] = int(_mapping(config, "identity")["seed"])
-    training = TrainingConfig(**values)
-    model = Model.create(vocabulary, training)
-    return TrainingSession.restore(
-        corpus,
-        vocabulary,
-        model,
-        training,
-        load_checkpoint(checkpoint),
-        corpus_digest=corpus_digest,
-    )
 
 
 def create_session(
@@ -235,5 +184,4 @@ __all__ = [
     "W2V1Result",
     "create_session",
     "get_executor",
-    "restore_session",
 ]

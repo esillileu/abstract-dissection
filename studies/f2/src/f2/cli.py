@@ -187,9 +187,7 @@ def run(
     from repro_core.cli.commands import run_command
 
     suite_def = DEFINITION.get_suite(suite)
-    canonical_w2v = suite in {"w2v1", "w2v2"} and (
-        not atomic_run or any(run_id != "local-smoke" for run_id in atomic_run)
-    )
+    canonical_w2v = suite in {"w2v1", "w2v2"}
     if canonical_w2v and not dry_run and not approve_large_run:
         raise ValueError("canonical W2V training requires --approve-large-run")
     if canonical_w2v and not dry_run:
@@ -198,11 +196,9 @@ def run(
         tracking_uri = resolve_tracking_uri(tracking_uri)
     run_fn = None
     if suite in {"w2v1", "w2v2"}:
-        from .suites.w2v.tracked import run_local_yaml, run_tracked_yaml
+        from .suites.w2v.tracked import run_tracked_yaml
 
-        run_fn = run_local_yaml if tracking_uri is None else run_tracked_yaml
-        # Runner requires a non-empty URI but the local runner never consumes it.
-        tracking_uri = tracking_uri or "local"
+        run_fn = run_tracked_yaml
     run_command(
         suite_def,
         experiments=experiment or [],
@@ -235,11 +231,6 @@ def analyze(
     if suite == "corpus":
         typer.echo("For corpus pipeline analysis, use: repro f2 corpus analyze --help")
         return
-    if suite == "w2v1":
-        from .suites.w2v1.validation import analyze_latest
-
-        typer.echo(analyze_latest())
-        return
     typer.echo(f"Analysis orchestration for F2 suite '{suite}' is initialized.")
 
 
@@ -261,11 +252,6 @@ def check(
     tracking_uri: Annotated[str | None, typer.Option("--tracking-uri")] = None,
 ) -> None:
     """Compare declared plans with recorded F2 run state in MLflow."""
-    if suite == "w2v1" and tracking_uri is None:
-        from .suites.w2v1.validation import check_latest
-
-        typer.echo(check_latest())
-        return
     typer.echo(f"Checking run state for F2 suite '{suite}'...")
 
 

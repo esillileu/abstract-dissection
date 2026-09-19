@@ -47,12 +47,7 @@ uv run repro f2 catalog status
 uv run repro f2 catalog matrix
 uv run repro f2 corpus sources status
 
-# 3. Word2Vec execution readiness and fixture smoke runs
-uv run repro plan f2 w2v1 -e 01 -a local-smoke --seed 1
-uv run repro run f2 w2v1 -e 01 -a local-smoke --seed 1 --progress line
-uv run repro run f2 w2v2 -e 02 -a local-smoke --seed 1 --progress line
-
-# 4. Canonical training (after preflight and explicit cost approval)
+# 3. Canonical training (after preflight and explicit cost approval)
 uv run repro f2 preflight
 uv run repro run f2 w2v1 -e 01 -a wmt--d50-w24m --seed 1 \
   --tracking-uri "$F2_MLFLOW_TRACKING_URI" --approve-large-run --progress auto
@@ -61,8 +56,9 @@ uv run repro run f2 w2v1 -e 01 -a wmt--d50-w24m --seed 1 \
 F2 Word2Vec progress covers the selected-run count, service preflight, corpus
 shards and lexical-token materialization, phrase passes/documents, completed
 training epochs with loss and throughput, and artifact publication. Canonical
-runs are rejected unless `--approve-large-run` is explicit; `--dry-run` and the
-`local-smoke` fixture do not require approval.
+runs are rejected unless `--approve-large-run` is explicit. `--dry-run` does not
+execute training and does not require approval. F2 production catalogs expose no
+smoke or fixture-backed run variants.
 
 Tracked DLFS commands require `F1_MLFLOW_TRACKING_URI` unless `--tracking-uri`
 is supplied. The complete service connection contract is defined in
@@ -108,3 +104,9 @@ dedicated test URL or an available rootless Podman/Docker runtime for a disposab
 PostgreSQL 18 instance. Ordinary `.env` database settings are never used by fixtures.
 Network smoke tests remain separately marked `network` and excluded by default.
 Independent repro-io verification is documented in its package README.
+
+Tests may reduce schedules and use fixtures only from test code. A test must not
+add a selectable study variant, a production executor branch, a deliberate run
+interruption, or a synthetic retry/resume sequence. Reviewers must reject any
+change that causes a research CLI invocation to perform implementation testing
+as part of the recorded study run.

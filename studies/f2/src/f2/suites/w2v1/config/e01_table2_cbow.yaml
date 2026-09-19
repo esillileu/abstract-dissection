@@ -61,11 +61,6 @@ conditions:
   d600-w783m: &d600-w783m {corpus: {lexical_token_budget: 783000000}, vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 1, max_lexical_words: 30000}, training: {embedding_dimension: 600, observation_interval: 100000}}
 
 variants:
-  local-smoke:
-    execution: {mode: single, include_in_all: false}
-    identity: {execution_plan_id: w2v1-reconstruction-r2, planned_run_slot_id: w2v1-local-smoke-s1, resource_version: w2v1-local-fixture-v1, corpus_manifest_digest: eed121d55c0454b0dc21c7339cd1be3a9e509c9e8fa5630bf00d6a2f926c89de}
-    corpus: {path: studies/f2/src/f2/suites/w2v1/config/fixtures/corpus.txt}
-    training: {embedding_dimension: 8, window_radius: 2, epochs: 2}
   wmt--d50-w24m: {<<: [*wmt, *d50-w24m]}
   wmt--d50-w49m: {<<: [*wmt, *d50-w49m]}
   wmt--d50-w98m: {<<: [*wmt, *d50-w98m]}

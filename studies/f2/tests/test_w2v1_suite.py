@@ -2,16 +2,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+from pathlib import Path
 
-import numpy as np
 import pytest
 from typer.testing import CliRunner
 
 from f2.definition import DEFINITION
-from f2.suites.w2v.artifacts import load_checkpoint, save_checkpoint
+from f2.suites.w2v.artifacts import load_checkpoint
 from f2.suites.w2v.tracked import run_tracked_yaml
-from f2.suites.w2v1.executor import create_session, restore_session
-from f2.suites.w2v1.validation import analyze_latest, check_latest
 from repro_core.cli import app
 from repro_core.context import ExperimentContext, RuntimePaths
 from repro_core.execution.runner import run_config
@@ -31,52 +29,59 @@ def _paths(tmp_path):
     )
 
 
-def test_w2v1_local_vertical_slice_and_resume_parity(tmp_path):
+def _fixture_overrides() -> dict[str, object]:
+    return {
+        "corpus": {"path": str(Path(__file__).parent / "fixtures/w2v1-corpus.txt")},
+        "vocabulary": {
+            "initial_capacity": 16,
+            "hash_capacity": 128,
+            "min_count": 1,
+            "max_lexical_words": 30_000,
+        },
+        "training": {
+            "embedding_dimension": 8,
+            "window_radius": 2,
+            "epochs": 2,
+            "learning_rate_update_interval": 10,
+            "observation_interval": 2,
+        },
+    }
+
+
+def test_w2v1_executor_completes_declared_schedule(tmp_path):
     definition = DEFINITION.get_suite("w2v1")
     assert definition.executor_module == "f2.suites.w2v1.executor"
     source = definition.config_root / "e01_table2_cbow.yaml"
-    spec = definition.load_run_spec(source, atomic_run_id="local-smoke", overrides={})
-    config = spec.to_executor_config()
+    spec = definition.load_run_spec(
+        source, atomic_run_id="wmt--d50-w24m", overrides=_fixture_overrides()
+    ).with_seed(1)
     paths = _paths(tmp_path)
 
     result = run_config(
-        config,
+        spec.to_executor_config(),
         ExperimentContext(paths=paths),
         executor_module=definition.executor_module,
     )
-    final_state = load_checkpoint(result.checkpoint)
-    assert final_state.completed_epochs == 2
+    assert load_checkpoint(result.checkpoint).completed_epochs == 2
     assert result.lookup.is_dir()
     assert result.metrics.stat().st_size > 0
 
-    interrupted = create_session(config, paths.repo_root)
-    interrupted.train_epoch()
-    interrupted_checkpoint = tmp_path / "interrupted"
-    save_checkpoint(
-        interrupted.export_state(),
-        interrupted_checkpoint,
-        resource_version="w2v1-local-fixture-v1",
-    )
-    session = restore_session(config, interrupted_checkpoint, paths.repo_root)
-    session.train_epoch()
-    resumed = session.export_state()
-    np.testing.assert_array_equal(
-        resumed.input_embeddings(), final_state.input_embeddings()
-    )
-    np.testing.assert_array_equal(
-        resumed.output_embeddings(), final_state.output_embeddings()
-    )
 
-
-def test_local_smoke_seeds_have_distinct_staging_identities() -> None:
+def test_canonical_seeds_have_distinct_staging_identities() -> None:
     definition = DEFINITION.get_suite("w2v1")
     spec = definition.load_run_spec(
         definition.config_root / "e01_table2_cbow.yaml",
-        atomic_run_id="local-smoke",
+        atomic_run_id="wmt--d50-w24m",
         overrides={},
     )
-    assert spec.with_seed(1).identity["planned_run_slot_id"] == "w2v1-local-smoke-s1"
-    assert spec.with_seed(7).identity["planned_run_slot_id"] == "w2v1-local-smoke-s7"
+    assert (
+        spec.with_seed(1).identity["planned_run_slot_id"]
+        == "w2v1-reconstruction-r2-d50-w24m-s1"
+    )
+    assert (
+        spec.with_seed(7).identity["planned_run_slot_id"]
+        == "w2v1-reconstruction-r2-d50-w24m-s7"
+    )
 
 
 @pytest.mark.parametrize(
@@ -108,12 +113,12 @@ def test_evaluation_resources_do_not_change_training_identity() -> None:
     source = definition.config_root / "e01_table2_cbow.yaml"
     first = definition.load_run_spec(
         source,
-        atomic_run_id="local-smoke",
+        atomic_run_id="wmt--d50-w24m",
         overrides={"evaluation": {"questions_path": "first.txt"}},
     ).to_executor_config()
     second = definition.load_run_spec(
         source,
-        atomic_run_id="local-smoke",
+        atomic_run_id="wmt--d50-w24m",
         overrides={"evaluation": {"questions_path": "second.txt"}},
     ).to_executor_config()
     assert first["identity"]["config_digest"] == second["identity"]["config_digest"]
@@ -123,9 +128,12 @@ def test_training_completes_without_evaluation_dataset(tmp_path) -> None:
     definition = DEFINITION.get_suite("w2v1")
     spec = definition.load_run_spec(
         definition.config_root / "e01_table2_cbow.yaml",
-        atomic_run_id="local-smoke",
-        overrides={"evaluation": {"questions_path": str(tmp_path / "missing.txt")}},
-    )
+        atomic_run_id="wmt--d50-w24m",
+        overrides={
+            **_fixture_overrides(),
+            "evaluation": {"questions_path": str(tmp_path / "missing.txt")},
+        },
+    ).with_seed(1)
     result = run_config(
         spec.to_executor_config(),
         ExperimentContext(paths=_paths(tmp_path)),
@@ -158,24 +166,6 @@ def test_canonical_cli_requires_explicit_large_run_approval() -> None:
     assert "requires --approve-large-run" in result.output
 
 
-def test_w2v1_check_and_analysis_detect_complete_result(tmp_path):
-    definition = DEFINITION.get_suite("w2v1")
-    spec = definition.load_run_spec(
-        definition.config_root / "e01_table2_cbow.yaml",
-        atomic_run_id="local-smoke",
-        overrides={},
-    )
-    paths = _paths(tmp_path)
-    run_config(
-        spec.to_executor_config(),
-        ExperimentContext(paths=paths),
-        executor_module=definition.executor_module,
-    )
-    assert "complete" in check_latest(paths)
-    assert "written" in analyze_latest(paths)
-    assert (paths.artifacts_root / "analysis/f2/w2v1/summary.md").is_file()
-
-
 @pytest.mark.parametrize(
     ("suite", "config_name", "atomic_run_id", "expected_slot"),
     (
@@ -193,12 +183,12 @@ def test_w2v1_check_and_analysis_detect_complete_result(tmp_path):
         ),
     ),
 )
-def test_w2v_tracked_interrupt_resume_publishes_to_mlflow(
+def test_w2v_tracked_run_publishes_one_complete_mlflow_run(
     tmp_path, monkeypatch, suite, config_name, atomic_run_id, expected_slot
 ):
     definition = DEFINITION.get_suite(suite)
     source = definition.config_root / config_name
-    fixture = definition.config_root / "fixtures/corpus.txt"
+    fixture = Path(__file__).parent / f"fixtures/{suite}-corpus.txt"
 
     def materialize(config, _paths, **_kwargs):
         config["corpus"] = {
@@ -228,17 +218,33 @@ def test_w2v_tracked_interrupt_resume_publishes_to_mlflow(
         executor_module=definition.executor_module,
         spec_module=definition.spec_module,
         tracking_uri=(tmp_path / "mlruns").as_uri(),
+        overrides=_fixture_overrides()
+        if suite == "w2v1"
+        else {
+            "vocabulary": {
+                "initial_capacity": 16,
+                "hash_capacity": 128,
+                "min_count": 1,
+            },
+            "training": {
+                "embedding_dimension": 8,
+                "epochs": 2,
+                "negative_table_size": 100,
+            },
+            "phrase_detection": {"passes": 1, "threshold": 0.0, "min_count": 1},
+        },
     )
 
     from mlflow import MlflowClient
 
     client = MlflowClient(tracking_uri=(tmp_path / "mlruns").as_uri())
-    final = client.get_run(receipt.run_id)
-    predecessor = final.data.tags["f2.predecessor_run_id"]
-    interrupted = client.get_run(predecessor)
-    assert interrupted.info.status == "KILLED"
-    assert interrupted.data.tags["result.durable_complete"] == "false"
-    assert final.info.status == "FINISHED"
-    assert final.data.tags["result.durable_complete"] == "true"
-    assert final.data.tags["suite.name"] == suite
-    assert final.data.tags["f2.planned_run_slot_id"] == expected_slot
+    runs = client.search_runs([client.get_run(receipt.run_id).info.experiment_id])
+    assert len(runs) == 1
+    run = runs[0]
+    assert run.info.status == "FINISHED"
+    assert run.data.tags["mlflow.runName"] == expected_slot
+    assert run.data.tags["result.durable_complete"] == "true"
+    assert run.data.tags["suite.name"] == suite
+    assert run.data.tags["f2.planned_run_slot_id"] == expected_slot
+    assert "f2.attempt" not in run.data.tags
+    assert "f2.predecessor_run_id" not in run.data.tags

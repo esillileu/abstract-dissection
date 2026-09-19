@@ -1,4 +1,4 @@
-"""Local and tracked execution lifecycle shared by the F2 Word2Vec suites."""
+"""Tracked reproduction lifecycle shared by the F2 Word2Vec suites."""
 
 from __future__ import annotations
 
@@ -18,7 +18,6 @@ from f2.run_identity import RunIdentity
 from f2.suites.w2v.corpus import CorpusBinding, CorpusMaterializer
 from repro_core.context import ExperimentContext, RuntimePaths
 from repro_core.execution.runner import run_config
-from repro_mlflow.artifact_cache import MlflowArtifactCache
 from repro_mlflow.runtime.verification import _verify_uploaded_manifest
 from repro_mlflow.schema_v1 import write_result_manifest
 
@@ -29,41 +28,6 @@ class W2VRunReceipt:
     run_id: str
     staging_root: Path
     durable_complete: bool
-
-
-def run_local_yaml(
-    path: str | Path,
-    *,
-    atomic_run_id: str | None = None,
-    seed: int | None = None,
-    device: str | None = None,
-    overrides: dict[str, object] | None = None,
-    executor_module: str | None = None,
-    spec_module: str | None = None,
-    progress_reporter: object | None = None,
-    **_: object,
-) -> W2VRunReceipt:
-    """Execute a fixture run through the same planner/progress path as tracked runs."""
-    if spec_module is None or executor_module is None:
-        raise ValueError("local W2V execution requires spec and executor modules")
-    if atomic_run_id != "local-smoke":
-        raise ValueError("canonical W2V execution requires a tracking URI")
-    if device not in {None, "cpu"}:
-        raise ValueError("W2V parity execution requires CPU")
-    import importlib
-
-    parser = importlib.import_module(spec_module)
-    spec = parser.parse_run_spec(path, atomic_run_id=atomic_run_id, overrides=overrides)
-    spec = spec.with_seed(int(spec.identity["seed"]) if seed is None else seed)
-    paths = RuntimePaths.from_environment()
-    result = run_config(
-        spec.to_executor_config(),
-        ExperimentContext(
-            paths=paths, metadata={"progress_reporter": progress_reporter}
-        ),
-        executor_module=executor_module,
-    )
-    return W2VRunReceipt(result, "local", result.root, False)
 
 
 def run_tracked_yaml(
@@ -79,7 +43,7 @@ def run_tracked_yaml(
     progress_reporter: object | None = None,
     **_: object,
 ) -> W2VRunReceipt:
-    """Run one interruption/resume pair and publish only the final attempt."""
+    """Execute and publish one complete paper-reproduction run."""
     if spec_module is None or executor_module is None:
         raise ValueError("tracked W2V execution requires spec and executor modules")
     import importlib
@@ -94,13 +58,11 @@ def run_tracked_yaml(
         raise ValueError("canonical W2V parity execution requires CPU")
     paths = RuntimePaths.from_environment()
     suite = _suite(config)
-    is_canonical = atomic_run_id != "local-smoke"
-    if is_canonical:
-        if progress_reporter is not None:
-            progress_reporter.write("materializing verified corpus binding")
-        _materialize_corpus(config, paths, progress_reporter=progress_reporter)
-        if progress_reporter is not None:
-            progress_reporter.write("verified corpus binding is ready")
+    if progress_reporter is not None:
+        progress_reporter.write("materializing verified corpus binding")
+    _materialize_corpus(config, paths, progress_reporter=progress_reporter)
+    if progress_reporter is not None:
+        progress_reporter.write("verified corpus binding is ready")
 
     client = MlflowClient(tracking_uri=tracking_uri)
     experiment_name = str(_mapping(config, "tracking")["experiment"])
@@ -110,67 +72,32 @@ def run_tracked_yaml(
         if experiment is None
         else experiment.experiment_id
     )
-    identity = _identity(config)
-    first_run = _create_run(client, experiment_id, config, attempt=1)
-    first_root = paths.staging_root / f"exp/f2/{suite}/tracked" / first_run
+    run_id = _create_run(client, experiment_id, config)
+    run_root = paths.staging_root / f"exp/f2/{suite}/tracked" / run_id
     try:
-        interrupted = run_config(
+        result = run_config(
             config,
             ExperimentContext(
                 paths=paths,
                 metadata={
-                    "run_root": first_root,
-                    "stop_after_epoch": 1,
+                    "run_root": run_root,
                     "progress_reporter": progress_reporter,
                 },
             ),
             executor_module=executor_module,
         )
-        _publish(client, first_run, interrupted.root)
-        client.set_tag(first_run, "trial.status", "interrupted")
-        client.set_tag(first_run, "result.durable_complete", "false")
-        client.set_terminated(first_run, status="KILLED")
-
-        cache = MlflowArtifactCache(
-            client, tracking_uri, root=paths.cache_root / "mlflow_artifact"
-        )
-        checkpoint_artifact = f"checkpoints/generations/{interrupted.checkpoint.name}"
-        remote_checkpoint = cache.get(first_run, checkpoint_artifact)
-
-        final_run = _create_run(
-            client, experiment_id, config, attempt=2, predecessor=first_run
-        )
-        final_root = paths.staging_root / f"exp/f2/{suite}/tracked" / final_run
-        try:
-            result = run_config(
-                config,
-                ExperimentContext(
-                    paths=paths,
-                    metadata={
-                        "run_root": final_root,
-                        "resume_checkpoint": remote_checkpoint,
-                        "progress_reporter": progress_reporter,
-                    },
-                ),
-                executor_module=executor_module,
-            )
-            _publish(client, final_run, result.root)
-            _verify_uploaded_manifest(client, final_run)
-            client.set_tag(final_run, "trial.status", "finished")
-            client.set_tag(final_run, "result.durable_complete", "true")
-            client.set_terminated(final_run, status="FINISHED")
-            return W2VRunReceipt(result, final_run, final_root, True)
-        except BaseException:
-            client.set_tag(final_run, "result.durable_complete", "false")
-            client.set_tag(final_run, "trial.status", "failed")
-            client.set_terminated(final_run, status="FAILED")
-            raise
+        _publish(client, run_id, result.root)
+        _verify_uploaded_manifest(client, run_id)
+        client.set_tag(run_id, "trial.status", "finished")
+        client.set_tag(run_id, "result.durable_complete", "true")
+        client.set_terminated(run_id, status="FINISHED")
+        return W2VRunReceipt(result, run_id, run_root, True)
     except BaseException:
-        run = client.get_run(first_run)
+        run = client.get_run(run_id)
         if run.info.status == "RUNNING":
-            client.set_tag(first_run, "result.durable_complete", "false")
-            client.set_tag(first_run, "trial.status", "failed")
-            client.set_terminated(first_run, status="FAILED")
+            client.set_tag(run_id, "result.durable_complete", "false")
+            client.set_tag(run_id, "trial.status", "failed")
+            client.set_terminated(run_id, status="FAILED")
         raise
 
 
@@ -217,9 +144,6 @@ def _create_run(
     client: Any,
     experiment_id: str,
     config: dict[str, object],
-    *,
-    attempt: int,
-    predecessor: str | None = None,
 ) -> str:
     identity = _identity(config)
     suite = _suite(config)
@@ -229,8 +153,6 @@ def _create_run(
         config_digest=str(identity["config_digest"]),
         resource_version_id=str(identity["resource_version"]),
         resource_manifest_digest=str(identity["corpus_manifest_digest"]),
-        attempt=attempt,
-        predecessor_run_id=predecessor,
     )
     tags = {
         **run_identity.tags(),
@@ -250,7 +172,7 @@ def _create_run(
         experiment_id,
         start_time=int(time.time() * 1000),
         tags=tags,
-        run_name=f"{identity['planned_run_slot_id']}-a{attempt}",
+        run_name=str(identity["planned_run_slot_id"]),
     ).info.run_id
 
 
@@ -321,4 +243,4 @@ def _suite(config: dict[str, object]) -> str:
     return suite
 
 
-__all__ = ["W2VRunReceipt", "run_local_yaml", "run_tracked_yaml"]
+__all__ = ["W2VRunReceipt", "run_tracked_yaml"]

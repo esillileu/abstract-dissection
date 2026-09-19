@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from f2.definition import DEFINITION
 from f2.suites.w2v.readiness import (
     CLASSIFICATIONS,
@@ -11,6 +13,24 @@ from repro_core.execution.definition import RunOptions, RunSelection
 from repro_core.execution.planning import Planner
 
 
+def test_production_w2v_catalogs_cannot_embed_test_scenarios() -> None:
+    source_root = Path(__file__).parents[1] / "src/f2/suites"
+    assert not [path for path in source_root.rglob("fixtures/*") if path.is_file()]
+    for config in source_root.glob("w2v*/config/*.yaml"):
+        assert "local-smoke" not in config.read_text()
+
+    tracked = (source_root / "w2v/tracked.py").read_text()
+    executor = (source_root / "w2v1/executor.py").read_text()
+    for forbidden in (
+        "stop_after_epoch",
+        "resume_checkpoint",
+        "run_local_yaml",
+        'status="KILLED"',
+    ):
+        assert forbidden not in tracked
+        assert forbidden not in executor
+
+
 def test_suite_plans_match_canonical_matrix() -> None:
     canonical_seeds = {1, 7, 19}
     for suite, experiment_id, expected in (
@@ -20,29 +40,9 @@ def test_suite_plans_match_canonical_matrix() -> None:
         plans = Planner(DEFINITION.get_suite(suite)).build(
             RunSelection(all_experiments=True), RunOptions()
         )
-        canonical = [plan for plan in plans if plan.atomic_run_id != "local-smoke"]
-        assert len(canonical) == expected
-        assert {plan.experiment_id for plan in canonical} == {experiment_id}
-        assert {plan.seed for plan in canonical} == canonical_seeds
-
-
-def test_local_smoke_is_explicit_single_run() -> None:
-    for suite, experiment_id in (("w2v1", "e01"), ("w2v2", "e02")):
-        definition = DEFINITION.get_suite(suite)
-        all_plans = Planner(definition).build(
-            RunSelection(all_experiments=True), RunOptions()
-        )
-        assert all(plan.atomic_run_id != "local-smoke" for plan in all_plans)
-
-        smoke_plans = Planner(definition).build(
-            RunSelection(
-                experiment_ids=(experiment_id,), atomic_run_ids=("local-smoke",)
-            ),
-            RunOptions(),
-        )
-        assert [(plan.atomic_run_id, plan.seed) for plan in smoke_plans] == [
-            ("local-smoke", None)
-        ]
+        assert len(plans) == expected
+        assert {plan.experiment_id for plan in plans} == {experiment_id}
+        assert {plan.seed for plan in plans} == canonical_seeds
 
 
 def test_each_available_corpus_has_a_separate_runtime_identity() -> None:

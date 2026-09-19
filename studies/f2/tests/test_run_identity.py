@@ -21,10 +21,7 @@ def test_tracked_run_requires_complete_immutable_identity():
         identity(config_digest="")
 
 
-def test_resume_is_a_new_attempt_with_predecessor_lineage():
-    resumed = identity(attempt=2, predecessor_run_id="previous-run")
-    assert resumed.tags()["f2.predecessor_run_id"] == "previous-run"
-    with pytest.raises(ValueError, match="predecessor"):
-        identity(attempt=2)
-    with pytest.raises(ValueError, match="first attempt"):
-        identity(predecessor_run_id="unexpected")
+def test_tracked_run_identity_has_no_synthetic_attempt_dimension():
+    tags = identity().tags()
+    assert "f2.attempt" not in tags
+    assert "f2.predecessor_run_id" not in tags

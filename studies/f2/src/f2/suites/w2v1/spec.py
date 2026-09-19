@@ -30,14 +30,10 @@ class RunSpec:
         """Bind a planner-selected seed to its immutable catalog slot."""
         identity = dict(self.identity)
         identity["seed"] = seed
-        if self.atomic_run_id == "local-smoke":
-            base = str(identity["planned_run_slot_id"]).rsplit("-s", 1)[0]
-            identity["planned_run_slot_id"] = f"{base}-s{seed}"
-        else:
-            identity["planned_run_slot_id"] = (
-                f"{identity['execution_plan_id']}-"
-                f"{_condition_id(self.atomic_run_id)}-s{seed}"
-            )
+        identity["planned_run_slot_id"] = (
+            f"{identity['execution_plan_id']}-"
+            f"{_condition_id(self.atomic_run_id)}-s{seed}"
+        )
         return RunSpec(
             atomic_run_id=self.atomic_run_id,
             identity=identity,

@@ -144,6 +144,21 @@ def get_executor(kind: str):
 
 When `run_config` or `run_yaml` executes, it dynamically dispatches to the specified `executor_module`, ensuring complete isolation across studies.
 
+### Research runs are not test harnesses
+
+A selected study slot maps to one research run that executes the declared
+scientific schedule to completion. Production suite catalogs and executors must
+not contain smoke variants, fixture-backed variants, deliberate interruption,
+resume-parity exercises, shortened test schedules, or extra MLflow attempts whose
+purpose is implementation verification. Such behavior belongs exclusively in
+test code and test-owned fixtures.
+
+Runtime integrity enforcement is distinct from test behavior. Dataset and
+manifest identity checks, deterministic configuration, checkpoint writing, and
+artifact-upload confirmation are part of the reproducibility contract when they
+observe or protect the declared run without changing its schedule or splitting
+it into synthetic attempts.
+
 
 
 F2 keeps extraction options, text filters/counters, sampling, auditing, estimation,

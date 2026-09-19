@@ -43,13 +43,6 @@ conditions:
   hs-subsampling: &hs-subsampling {training: {objective_kind: hierarchical_softmax, negative_sample_count: 0}}
 
 variants:
-  local-smoke:
-    execution: {mode: single, include_in_all: false}
-    identity: {execution_plan_id: w2v2-reconstruction-r1, planned_run_slot_id: w2v2-local-smoke-s1, resource_version: w2v2-local-phrase-fixture-v1, corpus_manifest_digest: f451397ad32c1c16a71e9de3c68d57e83308b4e212cd1031afe030e6dfee9a97}
-    corpus: {path: studies/f2/src/f2/suites/w2v2/config/fixtures/corpus.txt}
-    phrase_detection: {passes: 1, threshold: 0.0, min_count: 1, separator: _}
-    vocabulary: {initial_capacity: 16, hash_capacity: 128, min_count: 1}
-    training: {embedding_dimension: 8, window_radius: 2, epochs: 2, learning_rate_update_interval: 10, observation_interval: 2, subsampling_threshold: 0.0, negative_sample_count: 5, negative_table_size: 100}
   wmt--neg5-no-subsampling: {<<: [*wmt, *neg5-no-subsampling], corpus: {lexical_token_budget: 1000000000}}
   wmt--neg15-no-subsampling: {<<: [*wmt, *neg15-no-subsampling], corpus: {lexical_token_budget: 1000000000}}
   wmt--hs-no-subsampling: {<<: [*wmt, *hs-no-subsampling], corpus: {lexical_token_budget: 1000000000}}
