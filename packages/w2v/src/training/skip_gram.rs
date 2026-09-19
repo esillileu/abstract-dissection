@@ -1,7 +1,11 @@
 use super::{
-    ModelStep, ObjectiveLoss, context_position, context_radius_with_policy, objective, shared_add,
+    ModelStep, ObjectiveLoss, ObjectiveScratch, context_position, context_radius_with_policy,
+    hierarchical_softmax, negative_sampling, shared_add,
 };
-use crate::{atomic_float, config::Status};
+use crate::{
+    atomic_float,
+    config::{ObjectiveKind, Status},
+};
 
 #[inline]
 pub fn train(step: &mut ModelStep<'_, '_>) -> Result<ObjectiveLoss, Status> {
@@ -26,15 +30,31 @@ pub fn train(step: &mut ModelStep<'_, '_>) -> Result<ObjectiveLoss, Status> {
                 step.hidden[coordinate] = atomic_float::load(value);
             }
             step.hidden_gradient.fill(0.0);
-            loss.add(objective::train(
-                step.trainer,
-                context_token,
-                step.learning_rate,
-                step.negative_rng,
-                step.hidden,
-                step.hidden_gradient,
-                step.observe_objective,
-            )?);
+            loss.add(match step.trainer.config.objective_kind {
+                ObjectiveKind::HierarchicalSoftmax => hierarchical_softmax::train_with_scratch(
+                    step.trainer,
+                    context_token,
+                    step.learning_rate,
+                    step.hidden,
+                    ObjectiveScratch {
+                        hidden_gradient: step.hidden_gradient,
+                        output_snapshot: step.output_snapshot,
+                    },
+                    step.observe_objective,
+                ),
+                ObjectiveKind::NegativeSampling => negative_sampling::train_with_scratch(
+                    step.trainer,
+                    context_token,
+                    step.learning_rate,
+                    step.negative_rng,
+                    step.hidden,
+                    ObjectiveScratch {
+                        hidden_gradient: step.hidden_gradient,
+                        output_snapshot: step.output_snapshot,
+                    },
+                    step.observe_objective,
+                ),
+            }?);
             for (coordinate, value) in input_row.iter().enumerate() {
                 shared_add(
                     value,

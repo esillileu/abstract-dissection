@@ -105,6 +105,7 @@ fn run_fixed_step(kind: ModelKind, objective: ObjectiveKind) -> StepOutput {
     let sentence = [1, 2, 3];
     let mut hidden = [0.0; 2];
     let mut hidden_gradient = [0.0; 2];
+    let mut output_snapshot = [0.0; 2];
     let mut window_rng = Rng::new(1, RngAlgorithm::Lcg);
     let mut negative_rng = Rng::new(1, RngAlgorithm::Lcg);
     let mut step = ModelStep {
@@ -115,6 +116,7 @@ fn run_fixed_step(kind: ModelKind, objective: ObjectiveKind) -> StepOutput {
         sentence_position: 1,
         hidden: &mut hidden,
         hidden_gradient: &mut hidden_gradient,
+        output_snapshot: &mut output_snapshot,
         window_rng: &mut window_rng,
         negative_rng: &mut negative_rng,
         observe_objective: false,

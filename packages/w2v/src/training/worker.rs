@@ -23,6 +23,7 @@ pub struct Worker {
     pub sentence: Vec<usize>,
     pub hidden: Vec<Real>,
     pub hidden_gradient: Vec<Real>,
+    pub output_snapshot: Vec<Real>,
     pub local_token_count: u64,
     pub epoch_token_count: u64,
     pub last_learning_rate_update_count: u64,
@@ -60,14 +61,19 @@ impl Worker {
             .map_err(|_| Status::OutOfMemory)?;
         let mut hidden = Vec::new();
         let mut hidden_gradient = Vec::new();
+        let mut output_snapshot = Vec::new();
         hidden
             .try_reserve_exact(dimension)
             .map_err(|_| Status::OutOfMemory)?;
         hidden_gradient
             .try_reserve_exact(dimension)
             .map_err(|_| Status::OutOfMemory)?;
+        output_snapshot
+            .try_reserve_exact(dimension)
+            .map_err(|_| Status::OutOfMemory)?;
         hidden.resize(dimension, 0.0);
         hidden_gradient.resize(dimension, 0.0);
+        output_snapshot.resize(dimension, 0.0);
         let rng = |purpose| {
             Rng::new(
                 derive_seed(trainer.config.root_seed, worker_id, purpose),
@@ -80,6 +86,7 @@ impl Worker {
             sentence,
             hidden,
             hidden_gradient,
+            output_snapshot,
             local_token_count: 0,
             epoch_token_count: 0,
             last_learning_rate_update_count: 0,
@@ -204,6 +211,7 @@ impl Worker {
                 sentence_position: position,
                 hidden: &mut self.hidden,
                 hidden_gradient: &mut self.hidden_gradient,
+                output_snapshot: &mut self.output_snapshot,
                 window_rng: &mut self.window_rng,
                 negative_rng: &mut self.negative_rng,
                 observe_objective: observe,
