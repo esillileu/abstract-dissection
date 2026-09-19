@@ -42,6 +42,7 @@ def _fixture_overrides() -> dict[str, object]:
             "embedding_dimension": 8,
             "window_radius": 2,
             "epochs": 2,
+            "thread_count": 1,
             "learning_rate_update_interval": 10,
             "observation_interval": 2,
         },
@@ -100,7 +101,7 @@ def test_canonical_table2_training_conditions(atomic_run_id: str) -> None:
         overrides={},
     ).to_executor_config()
     assert config["training"]["initial_learning_rate"] == 0.025
-    assert config["training"]["thread_count"] == 10
+    assert config["training"]["thread_count"] == 20
     assert config["training"]["window_radius"] == 4
     assert config["training"]["context_policy"] == "fixed"
     assert config["vocabulary"]["min_count"] == 1
@@ -229,6 +230,7 @@ def test_w2v_tracked_run_publishes_one_complete_mlflow_run(
             "training": {
                 "embedding_dimension": 8,
                 "epochs": 2,
+                "thread_count": 1,
                 "negative_table_size": 100,
             },
             "phrase_detection": {"passes": 1, "threshold": 0.0, "min_count": 1},

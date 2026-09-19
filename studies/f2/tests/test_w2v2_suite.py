@@ -78,6 +78,7 @@ def test_w2v2_phrase_run_completes_declared_schedule_and_reports(tmp_path):
                 "embedding_dimension": 8,
                 "window_radius": 2,
                 "epochs": 2,
+                "thread_count": 1,
                 "negative_table_size": 100,
             },
             "phrase_detection": {"passes": 1, "threshold": 0.0, "min_count": 1},
@@ -121,7 +122,7 @@ def test_w2v2_rejects_nce_substitution():
         )
 
 
-def test_canonical_phrase_training_uses_ten_workers() -> None:
+def test_canonical_phrase_training_uses_twenty_workers() -> None:
     definition = DEFINITION.get_suite("w2v2")
     config = definition.load_run_spec(
         definition.config_root / "e02_table3_phrase_skipgram.yaml",
@@ -129,7 +130,7 @@ def test_canonical_phrase_training_uses_ten_workers() -> None:
         overrides={},
     ).to_executor_config()
 
-    assert config["training"]["thread_count"] == 10
+    assert config["training"]["thread_count"] == 20
 
 
 def test_evaluation_resources_do_not_change_w2v2_training_identity() -> None:

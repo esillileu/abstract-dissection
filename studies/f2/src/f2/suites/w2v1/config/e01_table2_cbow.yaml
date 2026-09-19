@@ -12,7 +12,7 @@ training:
   window_radius: 4
   context_policy: fixed
   epochs: 3
-  thread_count: 10
+  thread_count: 20
   learning_rate_update_interval: 100
   observation_interval: 2
   initial_learning_rate: 0.025
