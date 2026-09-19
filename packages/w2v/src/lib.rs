@@ -8,6 +8,7 @@ pub mod corpus;
 mod identity;
 pub mod model;
 pub mod random;
+mod simd;
 pub mod trainer;
 pub mod training;
 pub mod vocab;

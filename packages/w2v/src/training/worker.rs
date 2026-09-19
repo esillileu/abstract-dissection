@@ -132,6 +132,8 @@ impl Worker {
 
     pub fn fill_sentence(&mut self, trainer: &Trainer) -> Result<bool, Status> {
         self.sentence.clear();
+        let subsampling_threshold = trainer.config.subsampling_threshold;
+        let retained_token_count = trainer.vocab.retained_token_count;
         let mut finished = false;
         while self.sentence.len() < MAX_SENTENCE_LENGTH {
             let read = self.tokenizer.read_token()?;
@@ -148,14 +150,13 @@ impl Worker {
             if token == 0 {
                 break;
             }
-            if trainer.config.subsampling_threshold > 0.0 {
-                let sample = trainer.config.subsampling_threshold;
+            if subsampling_threshold > 0.0 {
+                let sample = subsampling_threshold;
                 let count = trainer.vocab.entries[token].count;
-                let train_words = trainer.vocab.retained_token_count;
-                let keep_probability = ((count as Real / (sample * train_words as Real)).sqrt()
-                    + 1.0)
-                    * (sample * train_words as Real)
-                    / count as Real;
+                let keep_probability =
+                    ((count as Real / (sample * retained_token_count as Real)).sqrt() + 1.0)
+                        * (sample * retained_token_count as Real)
+                        / count as Real;
                 if keep_probability < self.subsampling_rng.uniform() {
                     continue;
                 }

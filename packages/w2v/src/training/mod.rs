@@ -92,6 +92,7 @@ pub fn context_radius_with_policy(
     }
 }
 
+#[inline(always)]
 pub fn objective_score(hidden: &[Real], output_row: &[AtomicU32]) -> Real {
     assert_eq!(hidden.len(), output_row.len());
     let mut score = 0.0;
@@ -147,35 +148,41 @@ pub(crate) fn objective_apply_update_fast(
     update_strategy: UpdateStrategy,
 ) {
     match update_strategy {
-        UpdateStrategy::AtomicCas => objective_apply_update_fast_with(
-            hidden,
-            hidden_gradient,
-            output_row,
-            gradient_scale,
-            atomic_float::add,
-        ),
-        UpdateStrategy::Hogwild => objective_apply_update_fast_with(
-            hidden,
-            hidden_gradient,
-            output_row,
-            gradient_scale,
-            atomic_float::add_hogwild,
-        ),
+        UpdateStrategy::AtomicCas => {
+            objective_apply_update_cas(hidden, hidden_gradient, output_row, gradient_scale)
+        }
+        UpdateStrategy::Hogwild => {
+            objective_apply_update_hogwild(hidden, hidden_gradient, output_row, gradient_scale)
+        }
     }
 }
 
 #[inline(always)]
-fn objective_apply_update_fast_with(
+fn objective_apply_update_cas(
     hidden: &[Real],
     hidden_gradient: &mut [Real],
     output_row: &[AtomicU32],
     gradient_scale: Real,
-    add: fn(&AtomicU32, Real),
 ) {
     for coordinate in 0..hidden.len() {
         let output_value = atomic_float::load(&output_row[coordinate]);
         hidden_gradient[coordinate] += gradient_scale * output_value;
         let delta = gradient_scale * hidden[coordinate];
-        add(&output_row[coordinate], delta);
+        atomic_float::add(&output_row[coordinate], delta);
+    }
+}
+
+#[inline(always)]
+fn objective_apply_update_hogwild(
+    hidden: &[Real],
+    hidden_gradient: &mut [Real],
+    output_row: &[AtomicU32],
+    gradient_scale: Real,
+) {
+    for coordinate in 0..hidden.len() {
+        let output_value = atomic_float::load(&output_row[coordinate]);
+        hidden_gradient[coordinate] += gradient_scale * output_value;
+        let delta = gradient_scale * hidden[coordinate];
+        atomic_float::add_hogwild(&output_row[coordinate], delta);
     }
 }

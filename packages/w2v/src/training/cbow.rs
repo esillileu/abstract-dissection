@@ -2,8 +2,10 @@ use super::{ModelStep, ObjectiveLoss, context_position, context_radius_with_poli
 use crate::{
     atomic_float,
     config::{Real, Status},
+    simd,
 };
 
+#[inline]
 pub fn train(step: &mut ModelStep<'_, '_>) -> Result<ObjectiveLoss, Status> {
     let model = &step.trainer.model;
     let dimension = model.embedding_dimension;
@@ -32,9 +34,7 @@ pub fn train(step: &mut ModelStep<'_, '_>) -> Result<ObjectiveLoss, Status> {
     if context_count == 0 {
         return Ok(ObjectiveLoss::default());
     }
-    for coordinate in 0..dimension {
-        step.hidden[coordinate] /= context_count as Real;
-    }
+    simd::divide_in_place(step.hidden, context_count as Real);
     let loss = objective::train(
         step.trainer,
         step.target_token,

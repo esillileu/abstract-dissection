@@ -1,6 +1,7 @@
 use super::{ModelStep, ObjectiveLoss, context_position, context_radius_with_policy, objective};
 use crate::{atomic_float, config::Status};
 
+#[inline]
 pub fn train(step: &mut ModelStep<'_, '_>) -> Result<ObjectiveLoss, Status> {
     let model = &step.trainer.model;
     let dimension = model.embedding_dimension;
