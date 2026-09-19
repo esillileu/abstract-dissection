@@ -18,3 +18,8 @@ general repository-level verification instructions where they conflict.
 
 - `reference/z_original_w2v.c` is an immutable upstream snapshot.
 - Do not modify, format, compile, test, or sanitize that file.
+
+The sole exception to the compile prohibition is the isolated
+`profiling/Makefile` target. It may compile the unmodified snapshot as a
+profiling baseline. The snapshot remains excluded from normal builds, tests,
+formatters, and sanitizers.

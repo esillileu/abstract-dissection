@@ -184,7 +184,9 @@ impl Worker {
             self.update_learning_rate(trainer);
             self.objective_count += 1;
             let observe = trainer.config.observation_interval > 0
-                && self.objective_count % trainer.config.observation_interval as u64 == 0;
+                && self
+                    .objective_count
+                    .is_multiple_of(trainer.config.observation_interval as u64);
             let mut step = ModelStep {
                 trainer,
                 target_token: self.sentence[position],
