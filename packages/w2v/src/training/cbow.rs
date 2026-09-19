@@ -1,4 +1,6 @@
-use super::{ModelStep, ObjectiveLoss, context_position, context_radius_with_policy, objective};
+use super::{
+    ModelStep, ObjectiveLoss, context_position, context_radius_with_policy, objective, shared_add,
+};
 use crate::{
     atomic_float,
     config::{Real, Status},
@@ -52,7 +54,11 @@ pub fn train(step: &mut ModelStep<'_, '_>) -> Result<ObjectiveLoss, Status> {
             let start = token * dimension;
             let input_row = &model.input_embeddings[start..start + dimension];
             for (coordinate, value) in input_row.iter().enumerate() {
-                atomic_float::add(value, step.hidden_gradient[coordinate]);
+                shared_add(
+                    value,
+                    step.hidden_gradient[coordinate],
+                    step.trainer.config.update_strategy,
+                );
             }
         }
     }

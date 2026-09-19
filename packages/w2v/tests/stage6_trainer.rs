@@ -1,7 +1,4 @@
-use std::{
-    fs,
-    sync::{Arc, atomic::Ordering},
-};
+use std::{fs, sync::Arc};
 use w2v::{
     Corpus, EmbeddingKind, Model, ModelKind, ObjectiveKind, RngAlgorithm, Trainer, TrainingConfig,
     TrainingSession, UpdateStrategy, Vocabulary, VocabularyConfig, training::worker::Worker,
@@ -147,23 +144,24 @@ fn c_learning_rate_interval() {
     let mut worker = Worker::initialize(&trainer, 0).unwrap();
     for count in [2, 3] {
         worker.local_token_count = count;
-        trainer.processed_tokens.store(count, Ordering::Relaxed);
         worker.update_learning_rate(&trainer);
         assert_eq!(worker.learning_rate, config.initial_learning_rate);
+        assert_eq!(trainer.processed_tokens(), 0);
     }
     worker.local_token_count = 4;
-    trainer.processed_tokens.store(4, Ordering::Relaxed);
     worker.update_learning_rate(&trainer);
     let updated = worker.learning_rate;
     assert!(updated < config.initial_learning_rate);
     assert_eq!(worker.last_learning_rate_update_count, 4);
+    assert_eq!(trainer.processed_tokens(), 4);
     worker.local_token_count = 7;
     worker.update_learning_rate(&trainer);
     assert_eq!(worker.learning_rate, updated);
+    assert_eq!(trainer.processed_tokens(), 4);
     worker.local_token_count = 8;
-    trainer.processed_tokens.store(8, Ordering::Relaxed);
     worker.update_learning_rate(&trainer);
     assert!(worker.learning_rate < updated);
+    assert_eq!(trainer.processed_tokens(), 8);
     fs::remove_file(&corpus.path).unwrap();
 }
 
@@ -310,7 +308,7 @@ fn subsampling_is_applied_after_counting_and_before_sentence_storage() {
     assert!(!worker.fill_sentence(&disabled).unwrap());
     assert_eq!(worker.sentence.len(), 4);
     assert_eq!(worker.local_token_count, 5); // 네 단어와 줄 경계
-    assert_eq!(disabled.processed_tokens(), 5);
+    assert_eq!(disabled.processed_tokens(), 0);
     let untouched_subsampling_state = worker.subsampling_rng.state;
 
     let enabled_config = TrainingConfig {
@@ -328,7 +326,7 @@ fn subsampling_is_applied_after_counting_and_before_sentence_storage() {
     assert!(!worker.fill_sentence(&enabled).unwrap());
     assert!(worker.sentence.is_empty());
     assert_eq!(worker.local_token_count, 5);
-    assert_eq!(enabled.processed_tokens(), 5);
+    assert_eq!(enabled.processed_tokens(), 0);
     assert_ne!(worker.subsampling_rng.state, untouched_subsampling_state);
     fs::remove_file(&corpus.path).unwrap();
 }

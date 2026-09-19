@@ -20,6 +20,14 @@ pub use negative_sampling::train as negative_sampling_train;
 pub use objective::train as objective_train;
 pub use skip_gram::train as skip_gram_train;
 
+#[inline(always)]
+pub(crate) fn shared_add(destination: &AtomicU32, delta: Real, strategy: UpdateStrategy) {
+    match strategy {
+        UpdateStrategy::AtomicCas => atomic_float::add(destination, delta),
+        UpdateStrategy::Hogwild => atomic_float::add_hogwild(destination, delta),
+    }
+}
+
 /// The per-target contract needed by both model kinds. Stage 6 owns the
 /// sentence and scratch buffers and creates a step for each trained target.
 pub struct ModelStep<'t, 'w> {

@@ -146,7 +146,6 @@ impl Worker {
             };
             self.local_token_count = self.local_token_count.wrapping_add(1);
             self.epoch_token_count = self.epoch_token_count.wrapping_add(1);
-            trainer.processed_tokens.fetch_add(1, Ordering::Relaxed);
             if token == 0 {
                 break;
             }
@@ -167,17 +166,26 @@ impl Worker {
     }
 
     pub fn update_learning_rate(&mut self, trainer: &Trainer) {
-        let since_update = self.local_token_count - self.last_learning_rate_update_count;
-        if since_update <= trainer.config.learning_rate_update_interval as u64 {
+        let delta = self.local_token_count - self.last_learning_rate_update_count;
+        if delta <= trainer.config.learning_rate_update_interval as u64 {
             return;
         }
-        let processed = trainer.processed_tokens.load(Ordering::Relaxed);
+        let processed_before = trainer.processed_tokens.fetch_add(delta, Ordering::Relaxed);
+        let processed = processed_before + delta;
         let total = trainer.vocab.retained_token_count as f64 * trainer.config.epochs as f64;
         let rate =
             trainer.config.initial_learning_rate * (1.0 - processed as f64 / (total + 1.0)) as Real;
         let minimum = trainer.config.initial_learning_rate * 0.0001;
         self.learning_rate = rate.max(minimum);
         self.last_learning_rate_update_count = self.local_token_count;
+    }
+
+    fn flush_processed_tokens(&mut self, trainer: &Trainer) {
+        let delta = self.local_token_count - self.last_learning_rate_update_count;
+        if delta > 0 {
+            trainer.processed_tokens.fetch_add(delta, Ordering::Relaxed);
+            self.last_learning_rate_update_count = self.local_token_count;
+        }
     }
 
     pub fn train_sentence(&mut self, trainer: &Trainer, started: Instant) -> Result<(), Status> {
@@ -238,6 +246,7 @@ impl Worker {
                 self.train_sentence(trainer, started)?;
             }
         }
+        self.flush_processed_tokens(trainer);
         Ok(())
     }
 }
