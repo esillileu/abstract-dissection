@@ -2,7 +2,7 @@ use crate::training::worker::WorkerState;
 use crate::{
     Corpus, EmbeddingKind, EpochReport, HsOutOfRangePolicy, Model, ModelKind, ObjectiveKind,
     Observation, RngAlgorithm, Status, Trainer, TrainingConfig, TrainingSession, TrainingState,
-    Vocabulary, VocabularyConfig, VocabularyEntry, VocabularyState,
+    UpdateStrategy, Vocabulary, VocabularyConfig, VocabularyEntry, VocabularyState,
 };
 use numpy::{
     IntoPyArray, PyArray1, PyArray2, PyReadonlyArray1, PyReadonlyArray2, PyUntypedArrayMethods,
@@ -51,6 +51,16 @@ fn parse_rng_algorithm(value: &str) -> PyResult<RngAlgorithm> {
         "xorshift" => Ok(RngAlgorithm::Xorshift),
         _ => Err(PyValueError::new_err(
             "rng_algorithm must be 'lcg' or 'xorshift'",
+        )),
+    }
+}
+
+fn parse_update_strategy(value: &str) -> PyResult<UpdateStrategy> {
+    match value {
+        "cas" => Ok(UpdateStrategy::AtomicCas),
+        "hogwild" => Ok(UpdateStrategy::Hogwild),
+        _ => Err(PyValueError::new_err(
+            "update_strategy must be 'cas' or 'hogwild'",
         )),
     }
 }
@@ -428,7 +438,8 @@ impl PyTrainingConfig {
         negative_table_size=100_000_000,
         sigmoid_table_size=1000,
         sigmoid_max=6.0,
-        hs_out_of_range_policy="skip"
+        hs_out_of_range_policy="skip",
+        update_strategy="hogwild"
     ))]
     #[allow(clippy::too_many_arguments)]
     fn new(
@@ -450,6 +461,7 @@ impl PyTrainingConfig {
         sigmoid_table_size: usize,
         sigmoid_max: f32,
         hs_out_of_range_policy: &str,
+        update_strategy: &str,
     ) -> PyResult<Self> {
         let inner = TrainingConfig {
             model_kind: parse_model_kind(model_kind)?,
@@ -474,6 +486,7 @@ impl PyTrainingConfig {
             sigmoid_table_size,
             sigmoid_max,
             hs_out_of_range_policy: hs_policy(hs_out_of_range_policy)?,
+            update_strategy: parse_update_strategy(update_strategy)?,
         };
         if inner.validate() != Status::Ok {
             return Err(status_error(Status::InvalidArgument));

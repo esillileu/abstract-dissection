@@ -1,4 +1,4 @@
-use std::{env, path::Path, process::ExitCode, sync::Arc};
+use std::{env, path::Path, process::ExitCode, sync::Arc, time::Instant};
 use w2v::{
     Corpus, Model, ModelKind, ObjectiveKind, RngAlgorithm, Trainer, TrainingConfig, Vocabulary,
     VocabularyConfig,
@@ -6,14 +6,14 @@ use w2v::{
 
 fn usage(program: &str) -> ! {
     eprintln!(
-        "usage: {program} CORPUS cbow|skipgram hs|negative THREADS EPOCHS [NEGATIVE_TABLE_SIZE]"
+        "usage: {program} CORPUS cbow|skipgram hs|negative THREADS EPOCHS [NEGATIVE_TABLE_SIZE] [cas|hogwild]"
     );
     std::process::exit(2);
 }
 
 fn main() -> ExitCode {
     let args: Vec<String> = env::args().collect();
-    if !(6..=7).contains(&args.len()) {
+    if !(6..=8).contains(&args.len()) {
         usage(&args[0]);
     }
     let model_kind = match args[2].as_str() {
@@ -41,6 +41,11 @@ fn main() -> ExitCode {
     } else {
         100_000_000
     };
+    let update_strategy = match args.get(7).map(String::as_str).unwrap_or("hogwild") {
+        "cas" => w2v::UpdateStrategy::AtomicCas,
+        "hogwild" => w2v::UpdateStrategy::Hogwild,
+        _ => usage(&args[0]),
+    };
 
     let result = (|| {
         let corpus = Arc::new(Corpus::create(Path::new(&args[1]))?);
@@ -64,6 +69,7 @@ fn main() -> ExitCode {
         config.root_seed = 1;
         config.rng_algorithm = RngAlgorithm::Lcg;
         config.negative_table_size = table_size;
+        config.update_strategy = update_strategy;
         let model = Arc::new(Model::create(
             &vocab,
             config.embedding_dimension,
@@ -76,12 +82,18 @@ fn main() -> ExitCode {
             model,
             &config,
         )?);
+        let training_started = Instant::now();
         trainer.train()?;
-        Ok::<_, w2v::Status>((trainer.processed_tokens(), vocab.entries.len()))
+        let training_seconds = training_started.elapsed().as_secs_f64();
+        let processed = trainer.processed_tokens();
+        Ok::<_, w2v::Status>((training_seconds, processed, vocab.entries.len()))
     })();
     match result {
-        Ok((processed, vocab_size)) => {
-            println!("processed_tokens={processed} vocab_size={vocab_size}");
+        Ok((training_seconds, processed, vocab_size)) => {
+            println!(
+                "training_seconds={training_seconds:.9} processed_tokens={processed} processed_tokens_per_training_second={:.9} vocab_size={vocab_size}",
+                processed as f64 / training_seconds
+            );
             ExitCode::SUCCESS
         }
         Err(status) => {

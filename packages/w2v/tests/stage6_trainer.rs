@@ -4,7 +4,7 @@ use std::{
 };
 use w2v::{
     Corpus, EmbeddingKind, Model, ModelKind, ObjectiveKind, RngAlgorithm, Trainer, TrainingConfig,
-    TrainingSession, Vocabulary, VocabularyConfig, training::worker::Worker,
+    TrainingSession, UpdateStrategy, Vocabulary, VocabularyConfig, training::worker::Worker,
 };
 
 fn fixture() -> (Arc<Corpus>, Arc<Vocabulary>) {
@@ -84,42 +84,45 @@ fn c_single_thread_golden_cases() {
         ),
     ];
     for (kind, objective, algorithm, expected_input, expected_output) in cases {
-        let mut config = TrainingConfig::for_model(kind);
-        config.objective_kind = objective;
-        config.rng_algorithm = algorithm;
-        config.embedding_dimension = 8;
-        config.window_radius = 2;
-        config.epochs = 2;
-        config.thread_count = 1;
-        config.subsampling_threshold = 0.0;
-        config.negative_sample_count = 2;
-        config.negative_table_size = 257;
-        config.sigmoid_table_size = 101;
-        let model = Arc::new(Model::create(&vocab, 8, config.root_seed, algorithm).unwrap());
-        let trainer = Arc::new(
-            Trainer::create(
-                Arc::clone(&corpus),
-                Arc::clone(&vocab),
-                Arc::clone(&model),
-                &config,
-            )
-            .unwrap(),
-        );
-        trainer.train().unwrap();
-        assert_eq!(trainer.processed_tokens(), 26);
-        let mut snapshot = vec![0.0; vocab.entries.len() * 8];
-        model.snapshot_into(EmbeddingKind::Input, &mut snapshot);
-        assert_eq!(
-            hash_float_bits(&snapshot),
-            expected_input,
-            "input {kind:?} {objective:?} {algorithm:?}"
-        );
-        model.snapshot_into(EmbeddingKind::Output, &mut snapshot);
-        assert_eq!(
-            hash_float_bits(&snapshot),
-            expected_output,
-            "output {kind:?} {objective:?} {algorithm:?}"
-        );
+        for strategy in [UpdateStrategy::AtomicCas, UpdateStrategy::Hogwild] {
+            let mut config = TrainingConfig::for_model(kind);
+            config.objective_kind = objective;
+            config.rng_algorithm = algorithm;
+            config.embedding_dimension = 8;
+            config.window_radius = 2;
+            config.epochs = 2;
+            config.thread_count = 1;
+            config.subsampling_threshold = 0.0;
+            config.negative_sample_count = 2;
+            config.negative_table_size = 257;
+            config.sigmoid_table_size = 101;
+            config.update_strategy = strategy;
+            let model = Arc::new(Model::create(&vocab, 8, config.root_seed, algorithm).unwrap());
+            let trainer = Arc::new(
+                Trainer::create(
+                    Arc::clone(&corpus),
+                    Arc::clone(&vocab),
+                    Arc::clone(&model),
+                    &config,
+                )
+                .unwrap(),
+            );
+            trainer.train().unwrap();
+            assert_eq!(trainer.processed_tokens(), 26);
+            let mut snapshot = vec![0.0; vocab.entries.len() * 8];
+            model.snapshot_into(EmbeddingKind::Input, &mut snapshot);
+            assert_eq!(
+                hash_float_bits(&snapshot),
+                expected_input,
+                "input {kind:?} {objective:?} {algorithm:?}"
+            );
+            model.snapshot_into(EmbeddingKind::Output, &mut snapshot);
+            assert_eq!(
+                hash_float_bits(&snapshot),
+                expected_output,
+                "output {kind:?} {objective:?} {algorithm:?}"
+            );
+        }
     }
     fs::remove_file(&corpus.path).unwrap();
 }

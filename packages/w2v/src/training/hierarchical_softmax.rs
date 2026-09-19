@@ -1,4 +1,4 @@
-use super::{ObjectiveLoss, objective_apply_update, objective_score};
+use super::{ObjectiveLoss, objective_apply_update_fast, objective_score};
 use crate::{
     config::{HsOutOfRangePolicy, Real, Status},
     trainer::Trainer,
@@ -43,10 +43,13 @@ pub fn train(
             loss.count += 1;
         }
         let gradient_scale = (1.0 - target - prediction) * learning_rate;
-        if objective_apply_update(hidden, hidden_gradient, output_row, gradient_scale) != Status::Ok
-        {
-            return Err(Status::InvalidState);
-        }
+        objective_apply_update_fast(
+            hidden,
+            hidden_gradient,
+            output_row,
+            gradient_scale,
+            trainer.config.update_strategy,
+        );
     }
     Ok(loss)
 }

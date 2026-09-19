@@ -61,6 +61,13 @@ pub enum RngAlgorithm {
 
 #[repr(i32)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum UpdateStrategy {
+    AtomicCas = 0,
+    Hogwild = 1,
+}
+
+#[repr(i32)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ContextPolicy {
     Dynamic = 0,
     Fixed = 1,
@@ -122,6 +129,7 @@ pub struct TrainingConfig {
     pub sigmoid_table_size: usize,
     pub sigmoid_max: Real,
     pub hs_out_of_range_policy: HsOutOfRangePolicy,
+    pub update_strategy: UpdateStrategy,
 }
 impl Default for TrainingConfig {
     fn default() -> Self {
@@ -144,6 +152,7 @@ impl Default for TrainingConfig {
             sigmoid_table_size: 1000,
             sigmoid_max: 6.0,
             hs_out_of_range_policy: HsOutOfRangePolicy::Skip,
+            update_strategy: UpdateStrategy::Hogwild,
         }
     }
 }

@@ -18,10 +18,21 @@ dependencies or alter system settings. Generated corpora, binaries, raw
 
 `manifest.json` records corpus/config hashes, CPU topology and affinity order,
 tool versions, WSL detection, Git state, completeness counts, and the semantic
-limits of the comparison. `summary.csv` reports median and MAD. `speedup.csv`
+limits of the comparison. `summary.csv` reports median and MAD. The profiling
+Rust release uses thin LTO as the retained compiler-only candidate.
+Modular C/Rust
+stdout also reports the `trainer_train()`/`trainer.train()` interval; these values
+are stored in `runner_metrics.csv` and summarized in `training_summary.csv`.
+The immutable original runner has no training-only metric. `speedup.csv`
 uses whole-process wall time and nominal input tokens/s: upstream vocabulary
 construction, table initialization, training, and output cannot be cleanly
 separated. The modular runners additionally print actual processed-token counts.
+
+Focused development runs may use `--threads 1,6,12`, `--models cbow`, and
+`--objectives negative` without changing the default matrix. Rust policy
+comparisons use `--update-strategy cas` or `--update-strategy hogwild`; the
+latter is the canonical Rust default after validation on the fixed `scale=0.25`
+workload. Stack completeness follows the selected model/objective matrix.
 
 ## Upstream oracle snapshot
 

@@ -1,4 +1,4 @@
-use super::{ObjectiveLoss, objective_apply_update, objective_score};
+use super::{ObjectiveLoss, objective_apply_update_fast, objective_score};
 use crate::{
     config::{Real, Status},
     random::Rng,
@@ -51,10 +51,13 @@ pub fn train(
             loss.count += 1;
         }
         let gradient_scale = (label - prediction) * learning_rate;
-        if objective_apply_update(hidden, hidden_gradient, output_row, gradient_scale) != Status::Ok
-        {
-            return Err(Status::InvalidState);
-        }
+        objective_apply_update_fast(
+            hidden,
+            hidden_gradient,
+            output_row,
+            gradient_scale,
+            trainer.config.update_strategy,
+        );
     }
     Ok(loss)
 }

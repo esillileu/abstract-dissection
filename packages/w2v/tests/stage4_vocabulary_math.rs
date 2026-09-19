@@ -8,8 +8,8 @@ use w2v::{
     ContextPolicy, Corpus, RngAlgorithm, Status, Vocabulary, VocabularyConfig, atomic_float,
     random::Rng,
     training::{
-        context_position, context_radius, context_radius_with_policy, objective_apply_update,
-        objective_score,
+        context_position, context_radius, context_radius_with_policy,
+        objective_apply_update_checked, objective_score,
     },
 };
 
@@ -160,8 +160,7 @@ fn lexical_limit_excludes_sentence_token_and_rebuilds_vocabulary_state() {
     assert_eq!(vocab.find(b"word29999"), Some(30_000));
     assert_eq!(vocab.find(b"word30000"), None);
     assert!(vocab.entries.iter().all(|entry| {
-        entry.huffman_path.len() == entry.huffman_bits.len()
-            && !entry.huffman_path.is_empty()
+        entry.huffman_path.len() == entry.huffman_bits.len() && !entry.huffman_path.is_empty()
     }));
     let restored = Vocabulary::restore(&vocab.export_state()).unwrap();
     assert_eq!(restored.digest(), vocab.digest());
@@ -178,7 +177,7 @@ fn c_objective_score_and_gradient_bits() {
     }
     assert_eq!(objective_score(&hidden, &output).to_bits(), 0x3ef33334);
     assert_eq!(
-        objective_apply_update(&hidden, &mut gradient, &output, 0.025),
+        objective_apply_update_checked(&hidden, &mut gradient, &output, 0.025),
         w2v::Status::Ok
     );
     assert_eq!(

@@ -25,3 +25,8 @@ pub fn add(destination: &AtomicU32, delta: Real) {
         }
     }
 }
+
+pub fn add_hogwild(destination: &AtomicU32, delta: Real) {
+    let value = load(destination);
+    store(destination, value + delta);
+}

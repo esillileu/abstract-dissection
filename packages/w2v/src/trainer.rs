@@ -107,6 +107,7 @@ fn config_digest(config: &TrainingConfig) -> String {
         config.sigmoid_table_size as u64,
         config.sigmoid_max.to_bits() as u64,
         config.hs_out_of_range_policy as u64,
+        config.update_strategy as u64,
     ] {
         hash.value(value);
     }

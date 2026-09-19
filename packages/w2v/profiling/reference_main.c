@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 static void usage(const char *program)
 {
@@ -87,7 +88,21 @@ int main(int argc, char **argv)
     Trainer *trainer = model == NULL ? NULL : trainer_create(corpus, vocab, model, &config, &status);
     if (trainer != NULL)
     {
+        struct timespec training_started;
+        struct timespec training_finished;
+        clock_gettime(CLOCK_MONOTONIC, &training_started);
         status = trainer_train(trainer);
+        clock_gettime(CLOCK_MONOTONIC, &training_finished);
+        if (status == STATUS_OK)
+        {
+            double training_seconds = (double)(training_finished.tv_sec - training_started.tv_sec) +
+                                      (double)(training_finished.tv_nsec - training_started.tv_nsec) / 1e9;
+            uint64_t tokens = trainer_processed_tokens(trainer);
+            printf("training_seconds=%.9f processed_tokens=%llu processed_tokens_per_training_second=%.9f\n",
+                   training_seconds,
+                   (unsigned long long)tokens,
+                   (double)tokens / training_seconds);
+        }
     }
     if (status == STATUS_OK)
     {

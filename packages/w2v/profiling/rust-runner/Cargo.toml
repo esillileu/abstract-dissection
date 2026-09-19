@@ -10,7 +10,7 @@ w2v = { path = "../.." }
 [profile.release]
 opt-level = 3
 debug = 2
-lto = false
+lto = "thin"
 codegen-units = 1
 
 [workspace]

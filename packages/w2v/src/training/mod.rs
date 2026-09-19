@@ -1,7 +1,7 @@
 //! Context traversal and objective arithmetic from the modular C oracle.
 use crate::{
     atomic_float,
-    config::{ContextPolicy, Real, Status},
+    config::{ContextPolicy, Real, Status, UpdateStrategy},
     random::Rng,
     trainer::Trainer,
 };
@@ -102,7 +102,7 @@ pub fn objective_score(hidden: &[Real], output_row: &[AtomicU32]) -> Real {
     score
 }
 
-pub fn objective_apply_update(
+pub fn objective_apply_update_checked(
     hidden: &[Real],
     hidden_gradient: &mut [Real],
     output_row: &[AtomicU32],
@@ -134,4 +134,48 @@ pub fn objective_apply_update(
         atomic_float::add(&output_row[coordinate], delta);
     }
     Status::Ok
+}
+
+/// Applies a validated objective update without repeating state validation for
+/// every coordinate. Each coordinate's gradient reads its output value before
+/// that same coordinate is updated.
+pub(crate) fn objective_apply_update_fast(
+    hidden: &[Real],
+    hidden_gradient: &mut [Real],
+    output_row: &[AtomicU32],
+    gradient_scale: Real,
+    update_strategy: UpdateStrategy,
+) {
+    match update_strategy {
+        UpdateStrategy::AtomicCas => objective_apply_update_fast_with(
+            hidden,
+            hidden_gradient,
+            output_row,
+            gradient_scale,
+            atomic_float::add,
+        ),
+        UpdateStrategy::Hogwild => objective_apply_update_fast_with(
+            hidden,
+            hidden_gradient,
+            output_row,
+            gradient_scale,
+            atomic_float::add_hogwild,
+        ),
+    }
+}
+
+#[inline(always)]
+fn objective_apply_update_fast_with(
+    hidden: &[Real],
+    hidden_gradient: &mut [Real],
+    output_row: &[AtomicU32],
+    gradient_scale: Real,
+    add: fn(&AtomicU32, Real),
+) {
+    for coordinate in 0..hidden.len() {
+        let output_value = atomic_float::load(&output_row[coordinate]);
+        hidden_gradient[coordinate] += gradient_scale * output_value;
+        let delta = gradient_scale * hidden[coordinate];
+        add(&output_row[coordinate], delta);
+    }
 }

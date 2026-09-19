@@ -17,7 +17,7 @@ mod python;
 
 pub use config::{
     ContextPolicy, HsOutOfRangePolicy, ModelKind, ObjectiveKind, RngAlgorithm, Status,
-    TrainingConfig, VocabularyConfig,
+    TrainingConfig, UpdateStrategy, VocabularyConfig,
 };
 pub use corpus::Corpus;
 pub use model::{EmbeddingKind, Model, SigmoidTable};
