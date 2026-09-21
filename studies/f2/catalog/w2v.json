@@ -1060,7 +1060,7 @@
       "uri": "s3://f2-corpus/processed/lm1b/normalized/",
       "local_path": null,
       "checksum_algo": "sha256-ordered-shard-manifest-v1",
-      "checksum": "f4e16b78b98cff999f7e6590a020fe6f1fd8d882bdd385bca81a3c7da520efdb",
+      "checksum": "5ae2779ef0167f44b8f1d9fdf26b949c9b5ea880d013aefed414666091832546",
       "size_bytes": 1153703165,
       "metadata": {
         "representation": "normalized",
@@ -1083,7 +1083,7 @@
       "uri": "s3://f2-corpus/processed/umbc/normalized/",
       "local_path": null,
       "checksum_algo": "sha256-ordered-shard-manifest-v1",
-      "checksum": "a5b7ac1e3054670502adb00ebe097d94aa5e881a65b464f22a1c5f665f983dcc",
+      "checksum": "5287ec55a03259d3f69fa56a7fd45f65b400f23fc7cad6019c4048222cf7234d",
       "size_bytes": 4285053224,
       "metadata": {
         "representation": "normalized",
