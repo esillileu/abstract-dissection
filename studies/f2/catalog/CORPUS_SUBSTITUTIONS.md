@@ -12,8 +12,8 @@ For each paper condition:
 1. enumerate every verified normalized corpus with enough lexical words;
 2. materialize the requested lexical-token budget as an ordered prefix;
 3. run the same model condition and seeds independently for every eligible corpus;
-4. preserve corpus resource version, ordered-manifest digest and materialized
-   corpus digest in the planned slot and MLflow lineage;
+4. resolve verified training shards directly from the planned slot without exposing
+   catalog resource versions or ordered-manifest digests to the runner;
 5. report each corpus separately and compare corpus-domain sensitivity across
    corpora; and
 6. label every result as a reconstruction, never as an exact reproduction.

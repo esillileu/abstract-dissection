@@ -10,15 +10,11 @@ class RunIdentity:
     planned_run_slot_id: str
     plan_revision: int
     config_digest: str
-    resource_version_id: str
-    resource_manifest_digest: str
 
     def __post_init__(self) -> None:
         required = {
             "planned_run_slot_id": self.planned_run_slot_id,
             "config_digest": self.config_digest,
-            "resource_version_id": self.resource_version_id,
-            "resource_manifest_digest": self.resource_manifest_digest,
         }
         missing = [name for name, value in required.items() if not value.strip()]
         if missing:
@@ -33,8 +29,6 @@ class RunIdentity:
             "f2.planned_run_slot_id": self.planned_run_slot_id,
             "f2.plan_revision": str(self.plan_revision),
             "f2.config_digest": self.config_digest,
-            "f2.resource_version_id": self.resource_version_id,
-            "f2.resource_manifest_digest": self.resource_manifest_digest,
         }
         return tags
 

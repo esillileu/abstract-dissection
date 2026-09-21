@@ -67,10 +67,6 @@ def evaluate(
     phrase_separator: Annotated[
         str, typer.Option(help="W2V2 phrase token separator.")
     ] = "_",
-    evaluation_resource_version: Annotated[
-        str | None,
-        typer.Option(help="Optional catalog version for the evaluation resource."),
-    ] = None,
 ) -> None:
     """Evaluate a saved model artifact independently of training."""
     from .suites.w2v.evaluate import (
@@ -87,7 +83,6 @@ def evaluate(
         lookup,
         questions,
         phrase_separator=separator,
-        evaluation_resource_version=evaluation_resource_version,
     )
     typer.echo(f"Evaluation report written: {write_evaluation_report(payload, output)}")
 

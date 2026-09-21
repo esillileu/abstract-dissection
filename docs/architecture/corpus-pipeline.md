@@ -97,6 +97,10 @@ flowchart LR
 * **PostgreSQL (external service, F2 schemas):** SSOT for metadata, content hashes (SHA-256), schema constraints, lineage DAG edges, and validation records. F2 owns schema definitions and migrations, not the PostgreSQL service.
 * **S3-compatible object storage (external service):** Stores actual archive binaries, intermediate text chunks, and canonical shards (`s3://...`). F2 defines logical keys and records their identities; bucket administration, retention, and availability are external responsibilities.
 * **Catalog Identity SSOT:** All generic sources (WMT News Crawl, LM1B, Gigaword, UMBC, Wikipedia, Common Crawl) are registered exclusively in `catalog.resources` and `catalog.resource_versions`. Corpus lifecycle tables reference `catalog.resource_versions(resource_version_id)` via strict foreign keys without duplicating source definitions.
+* **Runtime Corpus Resolution:** A planned run slot resolves through its catalog
+  `train_data` binding directly to verified ordered rows in the corpus schema.
+  Experiment YAML, checkpoints, artifacts, and MLflow tags do not carry catalog
+  resource versions or ordered-manifest digests.
 
 ### 2) Core Entities & Relational Design
 * **Acquisition Layer (`corpus.acquisition_runs`):** Captures source snapshots, acquisition method (`crawler`, `dump_download`, `api`, `torrent`, `manual_archive`), parameters, target S3 prefix, status, and error logs.

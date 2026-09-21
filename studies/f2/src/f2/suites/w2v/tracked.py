@@ -113,12 +113,10 @@ def _materialize_corpus(
         lexical_token_budget = int(corpus["lexical_token_budget"])
     except (KeyError, TypeError, ValueError) as exc:
         raise ValueError("canonical W2V1 corpus requires lexical_token_budget") from exc
-    version = str(identity["resource_version"])
+    slot_id = str(identity["planned_run_slot_id"])
     with corpus_connection(validate_contract=True) as connection:
-        rows = CorpusStateRepository(connection).list_verified_corpus_shards(version)
-    binding = CorpusBinding.from_rows(
-        version, str(identity["corpus_manifest_digest"]), rows
-    )
+        rows = CorpusStateRepository(connection).list_verified_training_shards(slot_id)
+    binding = CorpusBinding.from_rows(rows)
 
     def report(shard: int, total: int, tokens: int) -> None:
         if progress_reporter is not None:
@@ -151,8 +149,6 @@ def _create_run(
         planned_run_slot_id=str(identity["planned_run_slot_id"]),
         plan_revision=_plan_revision(str(identity["execution_plan_id"])),
         config_digest=str(identity["config_digest"]),
-        resource_version_id=str(identity["resource_version"]),
-        resource_manifest_digest=str(identity["corpus_manifest_digest"]),
     )
     tags = {
         **run_identity.tags(),

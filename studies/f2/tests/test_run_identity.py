@@ -8,8 +8,6 @@ def identity(**overrides):
         "planned_run_slot_id": "w2v1-r1-slot-1",
         "plan_revision": 1,
         "config_digest": "config-sha256",
-        "resource_version_id": "wmt-normalized-v1",
-        "resource_manifest_digest": "manifest-sha256",
     }
     values.update(overrides)
     return RunIdentity(**values)

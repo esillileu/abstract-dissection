@@ -1036,8 +1036,6 @@
       "version_label": "v1",
       "uri": "s3://f2-corpus/processed/wmt/normalized/",
       "local_path": null,
-      "checksum_algo": "sha256-ordered-shard-manifest-v1",
-      "checksum": "cedfd867e5df0c6a6ef392bff5de8df721346f8597ab25fd2893902326efbe6e",
       "size_bytes": 2393739624,
       "metadata": {
         "representation": "normalized",
@@ -1051,7 +1049,7 @@
         "paper_compatibility": "compatible_reconstruction"
       },
       "is_verified": true,
-      "notes": "Digest covers ordered shard index, URI, object SHA-256, byte size, word count, and document count."
+      "notes": "Runtime training input is resolved from the planned slot and verified corpus shards."
     },
     {
       "resource_version_id": "f2-lm1b-r13output-normalized-v1",
@@ -1059,8 +1057,6 @@
       "version_label": "v1",
       "uri": "s3://f2-corpus/processed/lm1b/normalized/",
       "local_path": null,
-      "checksum_algo": "sha256-ordered-shard-manifest-v1",
-      "checksum": "5ae2779ef0167f44b8f1d9fdf26b949c9b5ea880d013aefed414666091832546",
       "size_bytes": 1153703165,
       "metadata": {
         "representation": "normalized",
@@ -1074,7 +1070,7 @@
         "paper_compatibility": "compatible_reconstruction"
       },
       "is_verified": true,
-      "notes": "Digest covers ordered shard index, URI, object SHA-256, byte size, word count, and document count."
+      "notes": "Runtime training input is resolved from the planned slot and verified corpus shards."
     },
     {
       "resource_version_id": "f2-umbc-webbase-normalized-v1",
@@ -1082,8 +1078,6 @@
       "version_label": "v1",
       "uri": "s3://f2-corpus/processed/umbc/normalized/",
       "local_path": null,
-      "checksum_algo": "sha256-ordered-shard-manifest-v1",
-      "checksum": "5287ec55a03259d3f69fa56a7fd45f65b400f23fc7cad6019c4048222cf7234d",
       "size_bytes": 4285053224,
       "metadata": {
         "representation": "normalized",
@@ -1097,7 +1091,7 @@
         "paper_compatibility": "compatible_reconstruction"
       },
       "is_verified": true,
-      "notes": "Digest covers ordered shard index, URI, object SHA-256, byte size, word count, and document count."
+      "notes": "Runtime training input is resolved from the planned slot and verified corpus shards."
     },
     {
       "resource_version_id": "w2v-questions-words-google-code-export",

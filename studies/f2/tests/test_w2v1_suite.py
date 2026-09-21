@@ -117,6 +117,8 @@ def test_canonical_table2_training_conditions(atomic_run_id: str) -> None:
     assert config["training"]["context_policy"] == "fixed"
     assert config["vocabulary"]["min_count"] == 1
     assert config["vocabulary"]["max_lexical_words"] == 30_000
+    assert "resource_version" not in config["identity"]
+    assert "corpus_manifest_digest" not in config["identity"]
     assert "evaluation" not in config
 
 
@@ -258,6 +260,8 @@ def test_w2v_tracked_run_publishes_one_complete_mlflow_run(
     assert run.data.tags["mlflow.runName"] == expected_slot
     assert run.data.tags["result.durable_complete"] == "true"
     assert run.data.tags["suite.name"] == suite
+    assert "f2.resource_manifest_digest" not in run.data.tags
+    assert "f2.resource_version_id" not in run.data.tags
     assert run.data.tags["f2.planned_run_slot_id"] == expected_slot
     assert "f2.attempt" not in run.data.tags
     assert "f2.predecessor_run_id" not in run.data.tags

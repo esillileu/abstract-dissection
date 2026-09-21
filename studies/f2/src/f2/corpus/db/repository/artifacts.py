@@ -208,5 +208,41 @@ class ArtifactsRepositoryMixin(BaseCorpusRepository):
             columns = [desc[0] for desc in cur.description]
             return [dict(zip(columns, row, strict=True)) for row in cur.fetchall()]
 
+    def list_verified_training_shards(
+        self, planned_run_slot_id: str
+    ) -> list[dict[str, Any]]:
+        """Resolve one run slot directly to its verified ordered training shards."""
+        with self.conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT s.shard_index, a.s3_uri, a.sha256, s.byte_size,
+                       s.word_count, s.doc_count
+                FROM catalog.planned_run_slots AS prs
+                JOIN catalog.execution_plan_experiments AS epe
+                  ON epe.plan_experiment_id = prs.plan_experiment_id
+                JOIN catalog.execution_plans AS ep
+                  ON ep.execution_plan_id = epe.execution_plan_id
+                JOIN catalog.execution_plan_bindings AS epb
+                  ON epb.plan_experiment_id = epe.plan_experiment_id
+                JOIN catalog.experiment_requirements AS er
+                  ON er.requirement_id = epb.requirement_id
+                JOIN corpus_shards AS s
+                  ON s.resource_version_id = epb.resource_version_id
+                JOIN artifacts AS a ON a.artifact_id = s.artifact_id
+                WHERE prs.planned_run_slot_id = %s
+                  AND prs.expected = TRUE
+                  AND epe.enabled = TRUE
+                  AND ep.status = 'runnable'
+                  AND er.required = TRUE
+                  AND er.role = 'train_data'
+                  AND a.resource_version_id = s.resource_version_id
+                  AND a.integrity_status = 'verified'
+                ORDER BY s.shard_index;
+                """,
+                (planned_run_slot_id,),
+            )
+            columns = [desc[0] for desc in cur.description]
+            return [dict(zip(columns, row, strict=True)) for row in cur.fetchall()]
+
 
 __all__ = ["ArtifactsRepositoryMixin"]

@@ -22,7 +22,6 @@ _IDENTITY_KEYS = (
     "config_digest",
     "vocabulary_digest",
     "corpus_digest",
-    "resource_version",
     "completed_epochs",
     "processed_tokens",
 )
@@ -34,7 +33,6 @@ def evaluate_lookup_artifact(
     questions_path: Path,
     *,
     phrase_separator: bytes = b"_",
-    evaluation_resource_version: str | None = None,
 ) -> dict[str, Any]:
     """Evaluate one immutable lookup artifact without a training session."""
     if suite not in {"w2v1", "w2v2"}:
@@ -58,8 +56,6 @@ def evaluate_lookup_artifact(
     }
     if suite == "w2v1":
         evaluation_identity["vocabulary_limit"] = 30_000
-    if evaluation_resource_version is not None:
-        evaluation_identity["resource_version"] = evaluation_resource_version
     payload: dict[str, Any] = {
         "suite": suite,
         "lookup_identity": {key: lookup.manifest[key] for key in _IDENTITY_KEYS},

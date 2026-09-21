@@ -55,6 +55,14 @@ def test_w2v_catalog_manifest_is_self_consistent():
         "f2-lm1b-normalized",
         "f2-umbc-normalized",
     }
+    corpus_versions = [
+        version
+        for version in payload["resource_versions"]
+        if version["resource_id"]
+        in {"f2-wmt-normalized", "f2-lm1b-normalized", "f2-umbc-normalized"}
+    ]
+    assert len(corpus_versions) == 3
+    assert all("checksum" not in version for version in corpus_versions)
 
 
 def test_manifest_rejects_unknown_requirement_candidate_resource(tmp_path):

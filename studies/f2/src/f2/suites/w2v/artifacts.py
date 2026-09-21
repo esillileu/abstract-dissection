@@ -196,7 +196,6 @@ def save_checkpoint(
     state: TrainingState,
     path: Path,
     *,
-    resource_version: str,
     payload: str = "full",
 ) -> None:
     """Write one complete checkpoint generation into manager-owned staging."""
@@ -223,7 +222,6 @@ def save_checkpoint(
         "config_digest": state.config_digest,
         "vocabulary_digest": state.vocabulary_digest,
         "corpus_digest": state.corpus_digest,
-        "resource_version": resource_version,
         "completed_epochs": state.completed_epochs,
         "processed_tokens": state.processed_tokens,
         "vocabulary": {
@@ -271,9 +269,7 @@ def load_checkpoint(
     )
 
 
-def save_lookup_artifact(
-    state: TrainingState, path: Path, *, resource_version: str
-) -> None:
+def save_lookup_artifact(state: TrainingState, path: Path) -> None:
     """Write the compact consumer artifact, excluding resumable trainer state."""
     path.mkdir(parents=True, exist_ok=False)
     vocabulary = state.vocabulary_state()
@@ -291,7 +287,6 @@ def save_lookup_artifact(
         "config_digest": state.config_digest,
         "vocabulary_digest": state.vocabulary_digest,
         "corpus_digest": state.corpus_digest,
-        "resource_version": resource_version,
         "completed_epochs": state.completed_epochs,
         "processed_tokens": state.processed_tokens,
     }
@@ -350,7 +345,6 @@ def create_checkpoint_manager(
     root: Path,
     *,
     session: Any,
-    resource_version: str,
     policy: CheckpointRetentionPolicy | None = None,
 ) -> CheckpointManager:
     """Bind an engine session to the generic generation/pointer manager."""
@@ -363,7 +357,6 @@ def create_checkpoint_manager(
         save_fn=lambda path, payload: save_checkpoint(
             session.export_state(),
             path,
-            resource_version=resource_version,
             payload=payload,
         ),
         epoch_fn=lambda: session.completed_epochs,
@@ -431,7 +424,6 @@ def _validate_manifest_identity(
         "config_digest",
         "vocabulary_digest",
         "corpus_digest",
-        "resource_version",
         "completed_epochs",
         "processed_tokens",
     )

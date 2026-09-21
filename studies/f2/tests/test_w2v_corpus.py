@@ -12,7 +12,6 @@ from f2.suites.w2v.corpus import (
     CorpusBinding,
     CorpusMaterializer,
     CorpusShard,
-    ordered_manifest_digest,
 )
 from repro_core.context.paths import RuntimePaths
 
@@ -62,11 +61,7 @@ def _fixture_binding(tmp_path: Path) -> tuple[CorpusBinding, dict[str, Path]]:
         digest = hashlib.sha256(compressed.read_bytes()).hexdigest()
         shards.append(CorpusShard(index, uri, digest, compressed.stat().st_size, 5, 2))
         objects[uri] = compressed
-    shard_tuple = tuple(shards)
-    return (
-        CorpusBinding("fixture-v1", ordered_manifest_digest(shard_tuple), shard_tuple),
-        objects,
-    )
+    return CorpusBinding(tuple(shards)), objects
 
 
 def test_materializes_in_manifest_order_and_stops_at_exact_token_budget(
@@ -84,7 +79,6 @@ def test_materializes_in_manifest_order_and_stops_at_exact_token_budget(
     assert result.path.read_bytes() == b"one two three\nfour five\nsix seven\n"
     assert result.lexical_tokens == 7
     assert result.complete_shards == 1
-    assert result.manifest_digest == binding.manifest_digest
     assert progress == [(1, 2, 5), (2, 2, 7)]
 
     cached = CorpusMaterializer(store, paths=_paths(tmp_path)).materialize(
@@ -92,6 +86,23 @@ def test_materializes_in_manifest_order_and_stops_at_exact_token_budget(
     )
     assert cached == result
     assert store.calls == 2
+
+
+def test_binding_is_derived_from_verified_repository_rows() -> None:
+    rows = [
+        {
+            "shard_index": 0,
+            "s3_uri": "s3://fixture/shard-00000.txt.zst",
+            "sha256": "a" * 64,
+            "byte_size": 10,
+            "word_count": 3,
+            "doc_count": 1,
+        }
+    ]
+
+    binding = CorpusBinding.from_rows(rows)
+
+    assert binding.shards[0].uri == "s3://fixture/shard-00000.txt.zst"
 
 
 def test_rejects_reordered_and_corrupt_shards(tmp_path: Path) -> None:
@@ -103,12 +114,7 @@ def test_rejects_reordered_and_corrupt_shards(tmp_path: Path) -> None:
         )
 
     corrupt = replace(binding.shards[0], sha256="0" * 64)
-    corrupt_shards = (corrupt, binding.shards[1])
-    corrupt_binding = replace(
-        binding,
-        manifest_digest=ordered_manifest_digest(corrupt_shards),
-        shards=corrupt_shards,
-    )
+    corrupt_binding = replace(binding, shards=(corrupt, binding.shards[1]))
     with pytest.raises(OSError, match="failed verification"):
         CorpusMaterializer(
             FixtureStore(objects), paths=_paths(tmp_path), download_attempts=1

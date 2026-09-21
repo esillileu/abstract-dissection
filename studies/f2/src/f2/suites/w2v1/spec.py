@@ -75,8 +75,6 @@ def parse_run_spec(
     required = {
         "execution_plan_id",
         "planned_run_slot_id",
-        "resource_version",
-        "corpus_manifest_digest",
     }
     if missing := sorted(required - identity.keys()):
         raise ValueError(f"W2V1 identity is missing: {', '.join(missing)}")

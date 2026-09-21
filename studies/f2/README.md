@@ -42,9 +42,11 @@ or an HTTPS Tailscale Serve endpoint (`*.ts.net`), and an HTTP(S) F2 MLflow
 tracking endpoint. Its output contains scheme, host, database/bucket identity
 only; URLs, usernames, access keys, and secrets are never emitted.
 
-Every tracked reproduction requires a planned slot ID, plan revision, resolved
-config digest, corpus resource version, and corpus manifest digest. One selected
-slot produces exactly one MLflow run named after that slot. The runtime trains
+Every tracked reproduction requires a planned slot ID, plan revision, and resolved
+config digest. At runtime, the planned slot resolves directly to verified ordered
+corpus shards; resource versions and corpus-manifest digests are not part of the
+runner, checkpoint, artifact, or MLflow identity. One selected slot produces
+exactly one MLflow run named after that slot. The runtime trains
 that run to its configured completion; it must never inject an artificial stop,
 resume exercise, reduced fixture, smoke scenario, or test-only variant.
 

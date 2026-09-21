@@ -73,7 +73,6 @@ class W2V1Executor:
         manager = create_checkpoint_manager(
             root / "checkpoints",
             session=session,
-            resource_version=str(identity["resource_version"]),
         )
         writer = DenseObservationWriter(root / "metrics" / "observations.csv")
         reports = []
@@ -109,9 +108,7 @@ class W2V1Executor:
         final = manager.save_final()
         state = session.export_state()
         lookup_path = root / "lookup"
-        save_lookup_artifact(
-            state, lookup_path, resource_version=str(identity["resource_version"])
-        )
+        save_lookup_artifact(state, lookup_path)
         report = {
             "identity": identity,
             "epochs": reports,

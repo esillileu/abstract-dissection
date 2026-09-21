@@ -45,23 +45,23 @@ def test_suite_plans_match_canonical_matrix() -> None:
         assert {plan.seed for plan in plans} == canonical_seeds
 
 
-def test_each_available_corpus_has_a_separate_runtime_identity() -> None:
+def test_each_available_corpus_uses_only_its_plan_identity() -> None:
     expectations = {
         "w2v1": {
-            "wmt--d50-w24m": "f2-wmt-news-2007-2012-normalized-v1",
-            "lm1b--d50-w24m": "f2-lm1b-r13output-normalized-v1",
-            "umbc--d50-w24m": "f2-umbc-webbase-normalized-v1",
+            "wmt--d50-w24m": "w2v1-reconstruction-r2",
+            "lm1b--d50-w24m": "w2v1-lm1b-reconstruction-r1",
+            "umbc--d50-w24m": "w2v1-umbc-reconstruction-r1",
         },
         "w2v2": {
-            "wmt--neg5-no-subsampling": "f2-wmt-news-2007-2012-normalized-v1",
-            "lm1b--neg5-no-subsampling": "f2-lm1b-r13output-normalized-v1",
-            "umbc--neg5-no-subsampling": "f2-umbc-webbase-normalized-v1",
+            "wmt--neg5-no-subsampling": "w2v2-reconstruction-r1",
+            "lm1b--neg5-no-subsampling": "w2v2-lm1b-reduced-r1",
+            "umbc--neg5-no-subsampling": "w2v2-umbc-reconstruction-r1",
         },
     }
     for suite, variants in expectations.items():
         definition = DEFINITION.get_suite(suite)
         experiment_id = "e01" if suite == "w2v1" else "e02"
-        for atomic_run_id, resource_version in variants.items():
+        for atomic_run_id, execution_plan_id in variants.items():
             plans = Planner(definition).build(
                 RunSelection(
                     experiment_ids=(experiment_id,),
@@ -75,7 +75,9 @@ def test_each_available_corpus_has_a_separate_runtime_identity() -> None:
                 atomic_run_id=plans[0].atomic_run_id,
                 overrides={},
             ).with_seed(1)
-            assert spec.identity["resource_version"] == resource_version
+            assert spec.identity["execution_plan_id"] == execution_plan_id
+            assert "resource_version" not in spec.identity
+            assert "corpus_manifest_digest" not in spec.identity
 
 
 def test_selected_seed_is_part_of_runtime_identity() -> None:

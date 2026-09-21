@@ -205,7 +205,10 @@ def _validate_references(payload: dict[str, Any]) -> None:
                     f"planned slots require binding {requirement['requirement_id']!r}"
                 )
             version = versions[binding["resource_version_id"]]
-            if not version.get("is_verified") or not version.get("checksum"):
+            runtime_corpus = requirement.get("role") == "train_data"
+            if not version.get("is_verified") or (
+                not runtime_corpus and not version.get("checksum")
+            ):
                 raise ValueError(
                     "planned slots require a verified immutable resource version: "
                     f"{version['resource_version_id']!r}"

@@ -63,12 +63,11 @@ def test_checkpoint_roundtrip_resumes_bit_identically(tmp_path: Path) -> None:
     corpus, vocabulary, config, session = _session(tmp_path / "corpus.txt")
     session.train_epoch()
     checkpoint = tmp_path / "checkpoint"
-    save_checkpoint(session.export_state(), checkpoint, resource_version="fixture-v1")
+    save_checkpoint(session.export_state(), checkpoint)
     loaded = load_checkpoint(
         checkpoint,
         expected={
             "config_digest": session.export_state().config_digest,
-            "resource_version": "fixture-v1",
         },
     )
     resumed_model = Model.create(vocabulary, config)
@@ -91,16 +90,16 @@ def test_checkpoint_rejects_corruption_missing_files_and_identity(
     *_, session = _session(tmp_path / "corrupt-corpus.txt", epochs=1)
     session.train_epoch()
     checkpoint = tmp_path / "checkpoint"
-    save_checkpoint(session.export_state(), checkpoint, resource_version="fixture-v1")
+    save_checkpoint(session.export_state(), checkpoint)
     with pytest.raises(ValueError, match="identity mismatch"):
-        load_checkpoint(checkpoint, expected={"resource_version": "wrong"})
+        load_checkpoint(checkpoint, expected={"config_digest": "wrong"})
 
     (checkpoint / "counts.npy").write_bytes(b"corrupt")
     with pytest.raises(ValueError, match="digest mismatch"):
         load_checkpoint(checkpoint)
 
     missing = tmp_path / "missing"
-    save_checkpoint(session.export_state(), missing, resource_version="fixture-v1")
+    save_checkpoint(session.export_state(), missing)
     (missing / "huffman_bits.npy").unlink()
     with pytest.raises(ValueError, match="file set"):
         load_checkpoint(missing)
@@ -111,7 +110,6 @@ def test_checkpoint_manager_pointers_and_periodic_retention(tmp_path: Path) -> N
     manager = create_checkpoint_manager(
         tmp_path / "managed",
         session=session,
-        resource_version="fixture-v1",
     )
     session.train_epoch()
     latest = manager.save_latest()
@@ -134,9 +132,7 @@ def test_lookup_is_mmap_backed_and_indexes_byte_tokens(tmp_path: Path) -> None:
     *_, session = _session(tmp_path / "lookup-corpus.txt", epochs=1)
     session.train_epoch()
     artifact = tmp_path / "embeddings"
-    save_lookup_artifact(
-        session.export_state(), artifact, resource_version="fixture-v1"
-    )
+    save_lookup_artifact(session.export_state(), artifact)
     lookup = load_lookup_artifact(artifact)
 
     assert isinstance(lookup.embeddings, np.memmap)
@@ -302,9 +298,7 @@ def test_saved_lookup_can_be_evaluated_without_training_or_overwrite(
     *_, session = _session(tmp_path / "evaluation-corpus.txt", epochs=1)
     session.train_epoch()
     artifact = tmp_path / "lookup"
-    save_lookup_artifact(
-        session.export_state(), artifact, resource_version="fixture-v1"
-    )
+    save_lookup_artifact(session.export_state(), artifact)
     questions = tmp_path / "questions.txt"
     questions.write_bytes(b": relation\nalpha beta gamma delta\n")
     output = tmp_path / "reports" / "evaluation.json"
@@ -320,18 +314,14 @@ def test_saved_lookup_can_be_evaluated_without_training_or_overwrite(
             str(questions),
             "--output",
             str(output),
-            "--evaluation-resource-version",
-            "questions-fixture-v1",
         ],
     )
     assert result.exit_code == 0
     report = json.loads(output.read_text())
     assert report["suite"] == "w2v1"
-    assert report["lookup_identity"]["resource_version"] == "fixture-v1"
     assert report["evaluation_identity"] == {
         "questions_sha256": hashlib.sha256(questions.read_bytes()).hexdigest(),
         "phrase_separator": "_",
-        "resource_version": "questions-fixture-v1",
         "vocabulary_limit": 30_000,
     }
     assert report["analogy"]["overall"]["total_count"] == 1
@@ -381,7 +371,7 @@ def test_download_cache_roundtrip_preserves_verified_manifest(tmp_path: Path) ->
     *_, session = _session(tmp_path / "remote-corpus.txt", epochs=1)
     session.train_epoch()
     remote = tmp_path / "remote"
-    save_checkpoint(session.export_state(), remote, resource_version="fixture-v1")
+    save_checkpoint(session.export_state(), remote)
     cache = MlflowArtifactCache(
         _DownloadClient(remote),
         "https://mlflow.example.test",

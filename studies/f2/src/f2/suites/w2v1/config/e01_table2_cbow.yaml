@@ -28,11 +28,11 @@ tracking: {experiment: f2.w2v1}
 
 resources:
   wmt: &wmt
-    identity: {execution_plan_id: w2v1-reconstruction-r2, resource_version: f2-wmt-news-2007-2012-normalized-v1, corpus_manifest_digest: cedfd867e5df0c6a6ef392bff5de8df721346f8597ab25fd2893902326efbe6e}
+    identity: {execution_plan_id: w2v1-reconstruction-r2}
   lm1b: &lm1b
-    identity: {execution_plan_id: w2v1-lm1b-reconstruction-r1, resource_version: f2-lm1b-r13output-normalized-v1, corpus_manifest_digest: 5ae2779ef0167f44b8f1d9fdf26b949c9b5ea880d013aefed414666091832546}
+    identity: {execution_plan_id: w2v1-lm1b-reconstruction-r1}
   umbc: &umbc
-    identity: {execution_plan_id: w2v1-umbc-reconstruction-r1, resource_version: f2-umbc-webbase-normalized-v1, corpus_manifest_digest: 5287ec55a03259d3f69fa56a7fd45f65b400f23fc7cad6019c4048222cf7234d}
+    identity: {execution_plan_id: w2v1-umbc-reconstruction-r1}
 
 conditions:
   d50-w24m: &d50-w24m {corpus: {lexical_token_budget: 24000000}, vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 1, max_lexical_words: 30000}, training: {observation_interval: 100000}}
