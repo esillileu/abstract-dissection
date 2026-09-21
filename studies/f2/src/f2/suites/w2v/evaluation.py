@@ -92,26 +92,57 @@ def parse_analogy_questions(lines: Iterable[bytes]) -> tuple[AnalogyQuestion, ..
 
 
 def evaluate_analogies(
-    lookup: VectorLookup, questions: Sequence[AnalogyQuestion]
+    lookup: VectorLookup,
+    questions: Sequence[AnalogyQuestion],
+    *,
+    vocabulary_limit: int | None = None,
+    batch_size: int = 256,
 ) -> AnalogyEvaluation:
-    """Score 3CosAdd analogies, excluding any question containing an OOV token."""
-    normalized = _normalized_embeddings(lookup.embeddings)
+    """Score analogies with the original ``compute-accuracy`` protocol.
+
+    Vocabulary and question tokens are compared after ASCII upper-casing, vectors are
+    normalized individually, and candidates use ``b - a + c`` while excluding the
+    three input rows. Questions containing any out-of-vocabulary token are excluded.
+    """
+    if batch_size < 1:
+        raise ValueError("analogy batch_size must be positive")
+    row_count = len(lookup.embeddings)
+    if vocabulary_limit is not None:
+        if vocabulary_limit < 1:
+            raise ValueError("analogy vocabulary_limit must be positive")
+        row_count = min(row_count, vocabulary_limit)
+    normalized = _normalized_embeddings(lookup.embeddings[:row_count], dtype=np.float32)
+    analogy_rows = _analogy_rows(lookup, row_count)
     category_counts: dict[str, list[int]] = {}
+    valid: list[tuple[AnalogyQuestion, tuple[int, int, int, int]]] = []
     for question in questions:
         counts = category_counts.setdefault(question.category, [0, 0, 0])
         counts[0] += 1
-        rows = [lookup.row(token) for token in _analogy_tokens(question)]
+        rows = [analogy_rows.get(token.upper()) for token in _analogy_tokens(question)]
         if any(row is None for row in rows):
             continue
-        a, b, c, expected = (int(row) for row in rows)
         counts[1] += 1
-        query = normalized[b] - normalized[a] + normalized[c]
-        norm = float(np.linalg.norm(query))
-        if norm == 0.0:
-            continue
-        scores = normalized @ (query / norm)
-        scores[[a, b, c]] = -np.inf
-        counts[2] += int(int(np.argmax(scores)) == expected)
+        valid.append((question, tuple(int(row) for row in rows)))
+
+    for start in range(0, len(valid), batch_size):
+        batch = valid[start : start + batch_size]
+        rows = np.asarray([item[1] for item in batch], dtype=np.int64)
+        queries = (
+            normalized[rows[:, 1]] - normalized[rows[:, 0]] + normalized[rows[:, 2]]
+        )
+        scores = normalized @ queries.T
+        columns = np.arange(len(batch))
+        scores[rows[:, 0], columns] = -np.inf
+        scores[rows[:, 1], columns] = -np.inf
+        scores[rows[:, 2], columns] = -np.inf
+        predictions = np.argmax(scores, axis=0)
+        positive = np.max(scores, axis=0) > 0.0
+        for (question, row), prediction, has_positive in zip(
+            batch, predictions, positive, strict=True
+        ):
+            category_counts[question.category][2] += int(
+                has_positive and int(prediction) == row[3]
+            )
 
     categories = tuple(
         _accuracy_result(name, total, valid, correct)
@@ -316,8 +347,29 @@ def _combine_accuracy(
     )
 
 
-def _normalized_embeddings(embeddings: np.ndarray) -> np.ndarray:
-    values = np.asarray(embeddings, dtype=np.float64)
+def _analogy_rows(lookup: VectorLookup, row_count: int) -> dict[bytes, int]:
+    token_bytes = getattr(lookup, "token_bytes", None)
+    offsets = getattr(lookup, "token_offsets", None)
+    if token_bytes is not None and offsets is not None:
+        rows: dict[bytes, int] = {}
+        for row in range(row_count):
+            token = bytes(token_bytes[offsets[row] : offsets[row + 1]]).upper()
+            rows.setdefault(token, row)
+        return rows
+
+    # Lightweight in-memory test lookups do not expose packed token arrays.
+    tokens = getattr(lookup, "tokens", ())
+    if tokens:
+        return {
+            bytes(token).upper(): row for row, token in enumerate(tokens[:row_count])
+        }
+    raise ValueError("analogy evaluation requires lookup token arrays")
+
+
+def _normalized_embeddings(
+    embeddings: np.ndarray, *, dtype: np.dtype = np.float64
+) -> np.ndarray:
+    values = np.asarray(embeddings, dtype=dtype)
     if values.ndim != 2 or not np.isfinite(values).all():
         raise ValueError("embeddings must be a finite rank-2 array")
     norms = np.linalg.norm(values, axis=1, keepdims=True)

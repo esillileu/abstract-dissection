@@ -10,6 +10,7 @@ from typer.testing import CliRunner
 from f2.definition import DEFINITION
 from f2.suites.w2v.artifacts import load_checkpoint
 from f2.suites.w2v.tracked import run_tracked_yaml
+from f2.suites.w2v1.analysis import observed_training_seconds
 from repro_core.cli import app
 from repro_core.context import ExperimentContext, RuntimePaths
 from repro_core.execution.runner import run_config
@@ -47,6 +48,16 @@ def _fixture_overrides() -> dict[str, object]:
             "observation_interval": 2,
         },
     }
+
+
+def test_observed_training_time_sums_last_observation_per_epoch(tmp_path) -> None:
+    observations = tmp_path / "observations.csv"
+    observations.write_text(
+        "epoch,elapsed_seconds\n1,1.5\n1,2.0\n2,3.25\n2,3.0\n",
+        encoding="utf-8",
+    )
+
+    assert observed_training_seconds(observations) == 5.25
 
 
 def test_w2v1_executor_completes_declared_schedule(tmp_path):

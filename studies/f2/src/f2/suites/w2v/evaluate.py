@@ -48,12 +48,16 @@ def evaluate_lookup_artifact(
         raise ValueError("phrase separator must be ASCII") from exc
     questions = questions_path.read_bytes()
     analogy = evaluate_analogies(
-        lookup, parse_analogy_questions(questions.splitlines())
+        lookup,
+        parse_analogy_questions(questions.splitlines()),
+        vocabulary_limit=30_000 if suite == "w2v1" else None,
     )
     evaluation_identity = {
         "questions_sha256": hashlib.sha256(questions).hexdigest(),
         "phrase_separator": separator,
     }
+    if suite == "w2v1":
+        evaluation_identity["vocabulary_limit"] = 30_000
     if evaluation_resource_version is not None:
         evaluation_identity["resource_version"] = evaluation_resource_version
     payload: dict[str, Any] = {

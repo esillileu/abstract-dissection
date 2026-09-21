@@ -226,10 +226,29 @@ def analyze(
             help="Target F2 suite (e.g. w2v_pretrain) or 'corpus'",
         ),
     ] = "corpus",
+    tracking_uri: Annotated[str | None, typer.Option("--tracking-uri")] = None,
+    questions: Annotated[
+        Path | None,
+        typer.Option("--questions", help="Canonical questions-words.txt path."),
+    ] = None,
 ) -> None:
     """Render or summarize F2 experiment results."""
     if suite == "corpus":
         typer.echo("For corpus pipeline analysis, use: repro f2 corpus analyze --help")
+        return
+    if suite == "w2v1":
+        from repro_core.context import RuntimePaths
+
+        from .common.paths import get_benchmark_data_dir
+        from .suites.w2v1.analysis import analyze_table2
+        from .tracking import resolve_tracking_uri
+
+        paths = RuntimePaths.from_environment()
+        questions = questions or get_benchmark_data_dir(paths) / "questions-words.txt"
+        output = analyze_table2(
+            resolve_tracking_uri(tracking_uri), questions, paths=paths
+        )
+        typer.echo(f"W2V1 Table 2 analysis written: {output}")
         return
     typer.echo(f"Analysis orchestration for F2 suite '{suite}' is initialized.")
 

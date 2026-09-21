@@ -332,6 +332,7 @@ def test_saved_lookup_can_be_evaluated_without_training_or_overwrite(
         "questions_sha256": hashlib.sha256(questions.read_bytes()).hexdigest(),
         "phrase_separator": "_",
         "resource_version": "questions-fixture-v1",
+        "vocabulary_limit": 30_000,
     }
     assert report["analogy"]["overall"]["total_count"] == 1
     assert (artifact / "manifest.json").is_file()
