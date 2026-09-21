@@ -7,6 +7,7 @@ import hashlib
 import json
 import re
 import statistics
+import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -16,11 +17,13 @@ from f2.suites.w2v.evaluation import evaluate_analogies, parse_analogy_questions
 from repro_core.context import RuntimePaths
 from repro_mlflow.artifact_cache import MlflowArtifactCache, artifact_download_progress
 
-_CONDITION = re.compile(r"wmt--d(50|100|300|600)-w(24|49|98|196|391|783)m")
+_CONDITION = re.compile(r"(wmt|lm1b|umbc)--d(50|100|300|600)-w(24|49|98|196|391|783)m")
+CORPUS_SOURCES = ("wmt", "lm1b", "umbc")
 _DIMENSIONS = (50, 100, 300, 600)
 _TRAINING_WORDS = (24, 49, 98, 196, 391, 783)
 _SEEDS = (1, 7, 19)
 _VOCABULARY_LIMIT = 30_000
+_EVALUATION_PROTOCOL = "compute-accuracy-v1"
 
 
 @dataclass(frozen=True)
@@ -37,20 +40,77 @@ class Table2RunResult:
     total_questions: int
 
 
+class Table2EvaluationCache:
+    """Signature-checked per-run cache for reconstructible analogy results."""
+
+    def __init__(self, root: Path, *, questions_sha256: str) -> None:
+        self.root = root
+        self.signature = {
+            "schema_version": 1,
+            "evaluation_protocol": _EVALUATION_PROTOCOL,
+            "questions_sha256": questions_sha256,
+            "vocabulary_limit": _VOCABULARY_LIMIT,
+        }
+
+    def load(self, run_id: str) -> Table2RunResult | None:
+        path = self._path(run_id)
+        if not path.is_file():
+            return None
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            if payload.get("signature") != self.signature:
+                return None
+            result = Table2RunResult(**payload["result"])
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+            return None
+        return result if result.mlflow_run_id == run_id else None
+
+    def store(
+        self, result: Table2RunResult, *, lookup_identity: dict[str, object]
+    ) -> None:
+        path = self._path(result.mlflow_run_id)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(
+                {
+                    "signature": self.signature,
+                    "lookup_identity": lookup_identity,
+                    "result": asdict(result),
+                },
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+    def _path(self, run_id: str) -> Path:
+        if re.fullmatch(r"[0-9a-f]{32}", run_id) is None:
+            raise ValueError(f"invalid MLflow run ID: {run_id}")
+        return self.root / f"{run_id}.json"
+
+
 def analyze_table2(
     tracking_uri: str,
     questions_path: Path,
     *,
+    corpus_source: str = "wmt",
     paths: RuntimePaths | None = None,
 ) -> Path:
     """Evaluate only conditions having all three durable canonical seed runs."""
     from mlflow import MlflowClient
 
     paths = paths or RuntimePaths.from_environment()
+    if corpus_source not in CORPUS_SOURCES:
+        raise ValueError(
+            f"unsupported W2V1 corpus source {corpus_source!r}; "
+            f"expected one of {', '.join(CORPUS_SOURCES)}"
+        )
     questions_path = Path(questions_path)
     if not questions_path.is_file():
         raise ValueError(f"word analogy questions do not exist: {questions_path}")
     question_bytes = questions_path.read_bytes()
+    questions_sha256 = hashlib.sha256(question_bytes).hexdigest()
     questions = parse_analogy_questions(question_bytes.splitlines())
     if len(questions) != 19_544:
         raise ValueError(
@@ -71,14 +131,29 @@ def analyze_table2(
         order_by=["attributes.start_time DESC"],
         max_results=10_000,
     )
-    selected = _complete_conditions(runs)
+    selected = _complete_conditions(runs, corpus_source=corpus_source)
     cache = MlflowArtifactCache(
         client, tracking_uri, root=paths.cache_root / "mlflow_artifact"
     )
+    evaluation_cache = Table2EvaluationCache(
+        paths.cache_root / "f2/w2v1/analogy", questions_sha256=questions_sha256
+    )
     records: list[Table2RunResult] = []
+    cache_hits = 0
+    cache_misses = 0
     with artifact_download_progress():
         for (words, dimension), condition_runs in sorted(selected.items()):
             for seed, run in sorted(condition_runs.items()):
+                cached = evaluation_cache.load(run.info.run_id)
+                if cached is not None and (
+                    cached.training_words_millions,
+                    cached.vector_dimension,
+                    cached.seed,
+                ) == (words, dimension, seed):
+                    records.append(cached)
+                    cache_hits += 1
+                    continue
+                cache_misses += 1
                 lookup = load_lookup_artifact(cache.get(run.info.run_id, "lookup"))
                 result = evaluate_analogies(
                     lookup,
@@ -88,36 +163,47 @@ def analyze_table2(
                 training_seconds = observed_training_seconds(
                     cache.get(run.info.run_id, "metrics/observations.csv")
                 )
-                records.append(
-                    Table2RunResult(
-                        training_words_millions=words,
-                        vector_dimension=dimension,
-                        seed=seed,
-                        mlflow_run_id=run.info.run_id,
-                        total_accuracy_percent=100.0 * result.overall.score,
-                        semantic_accuracy_percent=100.0 * result.semantic.score,
-                        syntactic_accuracy_percent=100.0 * result.syntactic.score,
-                        observed_training_seconds=training_seconds,
-                        included_questions=result.overall.valid_count,
-                        total_questions=result.overall.total_count,
-                    )
+                record = Table2RunResult(
+                    training_words_millions=words,
+                    vector_dimension=dimension,
+                    seed=seed,
+                    mlflow_run_id=run.info.run_id,
+                    total_accuracy_percent=100.0 * result.overall.score,
+                    semantic_accuracy_percent=100.0 * result.semantic.score,
+                    syntactic_accuracy_percent=100.0 * result.syntactic.score,
+                    observed_training_seconds=training_seconds,
+                    included_questions=result.overall.valid_count,
+                    total_questions=result.overall.total_count,
                 )
+                evaluation_cache.store(record, lookup_identity=lookup.manifest)
+                records.append(record)
 
-    output = paths.analysis_output("f2", "w2v1")
+    print(
+        f"W2V1 {corpus_source} analogy cache: "
+        f"{cache_hits} hit(s), {cache_misses} miss(es)",
+        file=sys.stderr,
+    )
+
+    output = paths.analysis_output("f2", "w2v1") / corpus_source
     output.mkdir(parents=True, exist_ok=True)
     _write_run_results(output / "table2-runs.csv", records)
     _write_summary(
         output / "summary.md",
         records,
-        questions_sha256=hashlib.sha256(question_bytes).hexdigest(),
+        corpus_source=corpus_source,
+        questions_sha256=questions_sha256,
     )
     (output / "table2-results.json").write_text(
         json.dumps(
             {
                 "protocol": {
+                    "corpus_source": corpus_source,
                     "questions_path": str(questions_path),
-                    "questions_sha256": hashlib.sha256(question_bytes).hexdigest(),
+                    "questions_sha256": questions_sha256,
                     "vocabulary_limit": _VOCABULARY_LIMIT,
+                    "evaluation_protocol": _EVALUATION_PROTOCOL,
+                    "cache_hits": cache_hits,
+                    "cache_misses": cache_misses,
                     "analogy": "b - a + c; cosine; exclude a, b, c",
                     "source_protocol": "tmikolov/word2vec compute-accuracy.c",
                 },
@@ -132,17 +218,48 @@ def analyze_table2(
     return output
 
 
-def _complete_conditions(runs: list[Any]) -> dict[tuple[int, int], dict[int, Any]]:
+def analyze_table2_sources(
+    tracking_uri: str,
+    questions_path: Path,
+    *,
+    corpus_source: str | None = None,
+    paths: RuntimePaths | None = None,
+) -> tuple[Path, ...]:
+    """Analyze one requested corpus or render each canonical corpus independently."""
+    paths = paths or RuntimePaths.from_environment()
+    sources = CORPUS_SOURCES if corpus_source is None else (corpus_source,)
+    outputs = tuple(
+        analyze_table2(
+            tracking_uri,
+            questions_path,
+            corpus_source=source,
+            paths=paths,
+        )
+        for source in sources
+    )
+    if corpus_source is None:
+        root = paths.analysis_output("f2", "w2v1")
+        root.mkdir(parents=True, exist_ok=True)
+        lines = ["# W2V1 Table 2 analyses", ""]
+        for source, output in zip(sources, outputs, strict=True):
+            lines.append(f"- [{source.upper()}](./{output.name}/summary.md)")
+        (root / "summary.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return outputs
+
+
+def _complete_conditions(
+    runs: list[Any], *, corpus_source: str
+) -> dict[tuple[int, int], dict[int, Any]]:
     grouped: dict[tuple[int, int], dict[int, Any]] = {}
     for run in runs:
         variant = run.data.tags.get("implementation.variant", "")
         match = _CONDITION.fullmatch(variant)
-        if match is None:
+        if match is None or match.group(1) != corpus_source:
             continue
         seed = int(run.data.tags.get("seed", "0"))
         if seed not in _SEEDS:
             continue
-        key = (int(match.group(2)), int(match.group(1)))
+        key = (int(match.group(3)), int(match.group(2)))
         seeds = grouped.setdefault(key, {})
         if seed in seeds:
             raise ValueError(f"multiple durable runs found for {variant}, seed {seed}")
@@ -171,7 +288,11 @@ def observed_training_seconds(path: Path) -> float:
 
 
 def _write_summary(
-    path: Path, records: list[Table2RunResult], *, questions_sha256: str
+    path: Path,
+    records: list[Table2RunResult],
+    *,
+    corpus_source: str,
+    questions_sha256: str,
 ) -> None:
     grouped: dict[tuple[int, int], list[Table2RunResult]] = {}
     for record in records:
@@ -179,7 +300,7 @@ def _write_summary(
             (record.training_words_millions, record.vector_dimension), []
         ).append(record)
     lines = [
-        "# W2V1 Table 2 word analogy accuracy",
+        f"# W2V1 Table 2 word analogy accuracy — {corpus_source.upper()}",
         "",
         "Cells are the mean total accuracy (%) across seeds 1, 7, and 19. "
         "Only conditions with all three durable completed runs are shown.",
@@ -246,4 +367,11 @@ def _duration(seconds: float) -> str:
     return f"{remaining_seconds:.1f}s"
 
 
-__all__ = ["Table2RunResult", "analyze_table2", "observed_training_seconds"]
+__all__ = [
+    "CORPUS_SOURCES",
+    "Table2EvaluationCache",
+    "Table2RunResult",
+    "analyze_table2",
+    "analyze_table2_sources",
+    "observed_training_seconds",
+]

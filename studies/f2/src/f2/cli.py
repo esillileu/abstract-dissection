@@ -226,6 +226,13 @@ def analyze(
         Path | None,
         typer.Option("--questions", help="Canonical questions-words.txt path."),
     ] = None,
+    corpus: Annotated[
+        str | None,
+        typer.Option(
+            "--corpus",
+            help="W2V1 corpus source: wmt, lm1b, or umbc. Omit to analyze all.",
+        ),
+    ] = None,
 ) -> None:
     """Render or summarize F2 experiment results."""
     if suite == "corpus":
@@ -235,15 +242,19 @@ def analyze(
         from repro_core.context import RuntimePaths
 
         from .common.paths import get_benchmark_data_dir
-        from .suites.w2v1.analysis import analyze_table2
+        from .suites.w2v1.analysis import analyze_table2_sources
         from .tracking import resolve_tracking_uri
 
         paths = RuntimePaths.from_environment()
         questions = questions or get_benchmark_data_dir(paths) / "questions-words.txt"
-        output = analyze_table2(
-            resolve_tracking_uri(tracking_uri), questions, paths=paths
+        outputs = analyze_table2_sources(
+            resolve_tracking_uri(tracking_uri),
+            questions,
+            corpus_source=corpus,
+            paths=paths,
         )
-        typer.echo(f"W2V1 Table 2 analysis written: {output}")
+        for output in outputs:
+            typer.echo(f"W2V1 Table 2 analysis written: {output}")
         return
     typer.echo(f"Analysis orchestration for F2 suite '{suite}' is initialized.")
 

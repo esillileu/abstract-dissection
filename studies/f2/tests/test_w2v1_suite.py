@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from typer.testing import CliRunner
@@ -10,7 +11,12 @@ from typer.testing import CliRunner
 from f2.definition import DEFINITION
 from f2.suites.w2v.artifacts import load_checkpoint
 from f2.suites.w2v.tracked import run_tracked_yaml
-from f2.suites.w2v1.analysis import observed_training_seconds
+from f2.suites.w2v1.analysis import (
+    Table2EvaluationCache,
+    Table2RunResult,
+    _complete_conditions,
+    observed_training_seconds,
+)
 from repro_core.cli import app
 from repro_core.context import ExperimentContext, RuntimePaths
 from repro_core.execution.runner import run_config
@@ -58,6 +64,39 @@ def test_observed_training_time_sums_last_observation_per_epoch(tmp_path) -> Non
     )
 
     assert observed_training_seconds(observations) == 5.25
+
+
+def test_table2_evaluation_cache_requires_matching_protocol_signature(tmp_path) -> None:
+    run_id = "a" * 32
+    result = Table2RunResult(24, 50, 1, run_id, 12.5, 8.0, 15.0, 30.0, 10, 12)
+    first = Table2EvaluationCache(tmp_path, questions_sha256="first")
+    first.store(result, lookup_identity={"vocabulary_digest": "digest"})
+
+    assert first.load(run_id) == result
+    assert (
+        Table2EvaluationCache(tmp_path, questions_sha256="second").load(run_id) is None
+    )
+
+
+def test_table2_conditions_are_partitioned_by_corpus_source() -> None:
+    runs = [
+        SimpleNamespace(
+            data=SimpleNamespace(
+                tags={"implementation.variant": f"{source}--d50-w24m", "seed": seed}
+            )
+        )
+        for source in ("wmt", "lm1b")
+        for seed in (1, 7, 19)
+    ]
+
+    wmt = _complete_conditions(runs, corpus_source="wmt")
+    lm1b = _complete_conditions(runs, corpus_source="lm1b")
+
+    assert set(wmt) == {(24, 50)}
+    assert set(lm1b) == {(24, 50)}
+    assert {
+        run.data.tags["implementation.variant"] for run in wmt[24, 50].values()
+    } == {"wmt--d50-w24m"}
 
 
 def test_w2v1_executor_completes_declared_schedule(tmp_path):
