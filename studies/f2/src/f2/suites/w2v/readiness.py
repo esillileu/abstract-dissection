@@ -29,6 +29,16 @@ DISPOSITIONS = (
         "verified WMT substitute replaces unavailable Google News bytes",
     ),
     TargetDisposition(
+        "w2v1-table3-cbow",
+        "reconstruction",
+        "verified WMT substitute replaces unavailable LDC bytes",
+    ),
+    TargetDisposition(
+        "w2v1-table3-skipgram",
+        "reconstruction",
+        "verified WMT substitute replaces unavailable LDC bytes",
+    ),
+    TargetDisposition(
         "w2v2-phrase-skipgram-1b-objectives",
         "reconstruction",
         "verified WMT substitute and deterministic phrase materialization",
@@ -46,8 +56,6 @@ DISPOSITIONS = (
     *(
         TargetDisposition(spec, "unsupported", reason)
         for spec, reason in (
-            ("w2v1-table3-cbow", "original LDC composition is unresolved"),
-            ("w2v1-table3-skipgram", "original LDC composition is unresolved"),
             (
                 "w2v1-google-news-cbow-scale",
                 "original Google News bytes are unavailable",

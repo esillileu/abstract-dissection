@@ -26,10 +26,10 @@ def test_w2v_catalog_manifest_is_self_consistent():
     assert len(payload["targets"]) == 19
     assert len(payload["experiment_specs"]) == 13
     assert len(payload["execution_plans"]) == 6
-    assert len(payload["plan_experiments"]) == 6
+    assert len(payload["plan_experiments"]) == 12
     assert len(payload["requirement_candidates"]) == 27
-    assert len(payload["resource_bindings"]) == 12
-    assert len(payload["planned_run_slots"]) == 270
+    assert len(payload["resource_bindings"]) == 24
+    assert len(payload["planned_run_slots"]) == 288
     assert {slot["seed"] for slot in payload["planned_run_slots"]} == {1, 7, 19}
     assert all(
         slot["parameters"]["requires_approval"] for slot in payload["planned_run_slots"]

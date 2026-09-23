@@ -41,7 +41,7 @@ execution-plan binding creates runnable slots.
 | catalog condition | WMT | LM1B | UMBC | action |
 |---|---|---|---|---|
 | W2V1 Table 2, 24M-783M | full | full | full | Run all three corpora and compare all dimensions/seeds. |
-| W2V1 Table 3, 320M | full | full | full | Run all three after non-corpus blockers are resolved. |
+| W2V1 Table 3, 320M | full | full | full | Run all three for CBOW and Skip-gram comparisons. |
 | W2V1 Table 4/5, 783M | full | full | full | Run all three. |
 | W2V1 Table 4/5, 1.6B | full | insufficient | full | Run WMT and UMBC; report LM1B only as a separate 791,844,834-word reduced condition if desired. |
 | W2V1 sentence training, 50M | full | full | full | Run all three as explicitly domain-substituted training conditions. |
@@ -57,6 +57,7 @@ slot identity and reports. They must not occupy a nominal 1B or 1.6B slot.
 Training code exists today for these plans:
 
 - W2V1 Table 2 CBOW: 24 conditions × seeds 1, 7 and 19;
+- W2V1 Table 3 CBOW and Skip-gram: 6 conditions × seeds 1, 7 and 19;
 - W2V2 1B phrase Skip-gram: six objective/subsampling conditions × the same seeds.
 
 They can start through the tracked runner after F2 database, corpus S3 and MLflow
@@ -66,8 +67,8 @@ evaluation dataset. Full paper evaluation remains a later, independent operation
 against the saved lookup artifact.
 
 Corpus-specific execution-plan bindings, immutable slot IDs and runtime configs
-for WMT, LM1B and UMBC are now materialized. The catalog contains 270 slots:
-216 W2V1 slots and 54 W2V2 slots. LM1B W2V2 uses a separate 791,844,834-word
+for WMT, LM1B and UMBC are now materialized. The catalog contains 288 slots:
+234 W2V1 slots (216 Table 2 slots and 18 Table 3 slots) and 54 W2V2 slots. LM1B W2V2 uses a separate 791,844,834-word
 reduced plan and is never placed in the nominal 1B plan.
 
 Runtime experiment numbers identify paper experiments, not corpus substitutes.
