@@ -79,6 +79,21 @@ def parse_run_spec(
     if missing := sorted(required - identity.keys()):
         raise ValueError(f"W2V1 identity is missing: {', '.join(missing)}")
     training = mapping(raw, "training")
+    if "study" not in identity:
+        identity["study"] = "table3" if "table3" in path.name else "table2"
+    if "experiment_spec_id" not in identity:
+        if raw.get("experiment_spec_id"):
+            identity["experiment_spec_id"] = raw["experiment_spec_id"]
+        elif identity.get("study") == "table3" or "table3" in path.name:
+            model_kind = training.get("model_kind")
+            if model_kind == "cbow":
+                identity["experiment_spec_id"] = "w2v1-table3-cbow"
+            elif model_kind == "skip_gram":
+                identity["experiment_spec_id"] = "w2v1-table3-skipgram"
+            else:
+                identity["experiment_spec_id"] = "w2v1-table3"
+        else:
+            identity["experiment_spec_id"] = "w2v1-table2-cbow"
     return RunSpec(
         atomic_run_id=str(raw["atomic_run_id"]),
         identity=identity,

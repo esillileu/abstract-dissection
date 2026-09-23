@@ -55,7 +55,7 @@ class W2V1Executor:
             else context.paths.run_staging(
                 domain="f2",
                 suite=self.suite_name,
-                study="table2",
+                study=str(identity.get("study", "table2")),
                 variant="local",
                 run_key=run_key,
             )

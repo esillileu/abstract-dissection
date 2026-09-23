@@ -15,9 +15,7 @@ check:
 lint:
     uv run ruff check --fix .
     uv run ruff format .
-
-linecheck:
-    fd -e py -E '**/original/source/**' -E 'references/**' -E '**/tests/**' -0  | xargs -0 wc -l | awk '$1 >= 250 && $2 != "total"' | sort -nr
+    flck
 
 # Run test suite
 test *args:

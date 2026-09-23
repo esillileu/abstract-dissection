@@ -154,10 +154,13 @@ def _create_run(
         **run_identity.tags(),
         "paper.id": "mikolov-2013-efficient-estimation",
         "suite.name": suite,
-        "experiment_spec.id": (
-            "w2v1-table2-cbow"
-            if suite == "w2v1"
-            else "w2v2-phrase-skipgram-1b-objectives"
+        "experiment_spec.id": str(
+            identity.get(
+                "experiment_spec_id",
+                "w2v1-table2-cbow"
+                if suite == "w2v1"
+                else "w2v2-phrase-skipgram-1b-objectives",
+            )
         ),
         "implementation.variant": str(config["atomic_run_id"]),
         "seed": str(identity["seed"]),

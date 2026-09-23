@@ -304,3 +304,87 @@ def test_w2v_tracked_run_publishes_one_complete_mlflow_run(
     assert run.data.tags["f2.planned_run_slot_id"] == expected_slot
     assert "f2.attempt" not in run.data.tags
     assert "f2.predecessor_run_id" not in run.data.tags
+
+
+@pytest.mark.parametrize(
+    (
+        "atomic_run_id",
+        "expected_model",
+        "expected_radius",
+        "expected_policy",
+        "expected_spec_id",
+    ),
+    (
+        ("wmt--cbow-d640-w320m", "cbow", 4, "fixed", "w2v1-table3-cbow"),
+        ("lm1b--cbow-d640-w320m", "cbow", 4, "fixed", "w2v1-table3-cbow"),
+        ("umbc--cbow-d640-w320m", "cbow", 4, "fixed", "w2v1-table3-cbow"),
+        (
+            "wmt--skipgram-d640-w320m",
+            "skip_gram",
+            10,
+            "dynamic",
+            "w2v1-table3-skipgram",
+        ),
+        (
+            "lm1b--skipgram-d640-w320m",
+            "skip_gram",
+            10,
+            "dynamic",
+            "w2v1-table3-skipgram",
+        ),
+        (
+            "umbc--skipgram-d640-w320m",
+            "skip_gram",
+            10,
+            "dynamic",
+            "w2v1-table3-skipgram",
+        ),
+    ),
+)
+def test_canonical_table3_training_conditions(
+    atomic_run_id: str,
+    expected_model: str,
+    expected_radius: int,
+    expected_policy: str,
+    expected_spec_id: str,
+) -> None:
+    definition = DEFINITION.get_suite("w2v1")
+    spec = definition.load_run_spec(
+        definition.config_root / "e02_table3.yaml",
+        atomic_run_id=atomic_run_id,
+        overrides={},
+    )
+    config = spec.to_executor_config()
+    assert spec.identity["experiment_spec_id"] == expected_spec_id
+    assert spec.identity["study"] == "table3"
+    assert config["training"]["model_kind"] == expected_model
+    assert config["training"]["embedding_dimension"] == 640
+    assert config["training"]["window_radius"] == expected_radius
+    assert config["training"]["context_policy"] == expected_policy
+    assert config["corpus"]["lexical_token_budget"] == 320_000_000
+    assert config["vocabulary"]["max_lexical_words"] == 82_000
+
+
+@pytest.mark.parametrize(
+    "atomic_run_id",
+    (
+        "wmt--cbow-d640-w320m",
+        "wmt--skipgram-d640-w320m",
+    ),
+)
+def test_table3_executor_runs_with_fixtures(tmp_path, atomic_run_id: str) -> None:
+    definition = DEFINITION.get_suite("w2v1")
+    source = definition.config_root / "e02_table3.yaml"
+    spec = definition.load_run_spec(
+        source, atomic_run_id=atomic_run_id, overrides=_fixture_overrides()
+    ).with_seed(1)
+    paths = _paths(tmp_path)
+
+    result = run_config(
+        spec.to_executor_config(),
+        ExperimentContext(paths=paths),
+        executor_module=definition.executor_module,
+    )
+    assert load_checkpoint(result.checkpoint).completed_epochs == 2
+    assert result.lookup.is_dir()
+    assert result.metrics.stat().st_size > 0
