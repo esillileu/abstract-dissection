@@ -35,8 +35,9 @@ def evaluate_lookup_artifact(
     phrase_separator: bytes = b"_",
 ) -> dict[str, Any]:
     """Evaluate one immutable lookup artifact without a training session."""
-    if suite not in {"w2v1", "w2v2"}:
-        raise ValueError("evaluation suite must be w2v1 or w2v2")
+    if suite not in {"w2v1-table2", "w2v1-table4", "w2v2"}:
+        raise ValueError("evaluation policy must be w2v1-table2, w2v1-table4, or w2v2")
+    vocabulary_limit = 30_000 if suite == "w2v1-table2" else None
     lookup = load_lookup_artifact(lookup_path)
     if not questions_path.is_file():
         raise ValueError(f"analogy questions do not exist: {questions_path}")
@@ -48,14 +49,15 @@ def evaluate_lookup_artifact(
     analogy = evaluate_analogies(
         lookup,
         parse_analogy_questions(questions.splitlines()),
-        vocabulary_limit=30_000 if suite == "w2v1" else None,
+        vocabulary_limit=vocabulary_limit,
+        batch_size=16 if suite == "w2v1-table4" else 256,
     )
     evaluation_identity = {
         "questions_sha256": hashlib.sha256(questions).hexdigest(),
         "phrase_separator": separator,
     }
-    if suite == "w2v1":
-        evaluation_identity["vocabulary_limit"] = 30_000
+    if suite != "w2v2":
+        evaluation_identity["vocabulary_limit"] = vocabulary_limit
     payload: dict[str, Any] = {
         "suite": suite,
         "lookup_identity": {key: lookup.manifest[key] for key in _IDENTITY_KEYS},

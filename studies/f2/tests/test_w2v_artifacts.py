@@ -307,7 +307,7 @@ def test_saved_lookup_can_be_evaluated_without_training_or_overwrite(
         app,
         [
             "evaluate",
-            "w2v1",
+            "w2v1-table2",
             "--lookup",
             str(artifact),
             "--questions",
@@ -318,7 +318,7 @@ def test_saved_lookup_can_be_evaluated_without_training_or_overwrite(
     )
     assert result.exit_code == 0
     report = json.loads(output.read_text())
-    assert report["suite"] == "w2v1"
+    assert report["suite"] == "w2v1-table2"
     assert report["evaluation_identity"] == {
         "questions_sha256": hashlib.sha256(questions.read_bytes()).hexdigest(),
         "phrase_separator": "_",
@@ -327,9 +327,16 @@ def test_saved_lookup_can_be_evaluated_without_training_or_overwrite(
     assert report["analogy"]["overall"]["total_count"] == 1
     assert (artifact / "manifest.json").is_file()
 
+    table4 = evaluate_lookup_artifact("w2v1-table4", artifact, questions)
+    assert table4["evaluation_identity"]["vocabulary_limit"] is None
+    assert table4["analogy"]["overall"]["total_count"] == 1
+    assert (
+        table4["analogy"]["overall"]["score"] == report["analogy"]["overall"]["score"]
+    )
+
     other_questions = tmp_path / "other-questions.txt"
     other_questions.write_bytes(b": relation\nalpha gamma beta delta\n")
-    other_report = evaluate_lookup_artifact("w2v1", artifact, other_questions)
+    other_report = evaluate_lookup_artifact("w2v1-table2", artifact, other_questions)
     assert (
         other_report["evaluation_identity"]["questions_sha256"]
         != report["evaluation_identity"]["questions_sha256"]
@@ -339,7 +346,7 @@ def test_saved_lookup_can_be_evaluated_without_training_or_overwrite(
         app,
         [
             "evaluate",
-            "w2v1",
+            "w2v1-table2",
             "--lookup",
             str(artifact),
             "--questions",
