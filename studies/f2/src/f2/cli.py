@@ -60,7 +60,10 @@ app.add_typer(catalog_app, name="catalog")
 @app.command("evaluate")
 @cli_errors
 def evaluate(
-    suite: Annotated[str, typer.Argument(help="Evaluation policy: w2v1 or w2v2.")],
+    suite: Annotated[
+        str,
+        typer.Argument(help="Evaluation policy: w2v1-table2, w2v1-table4, or w2v2."),
+    ],
     lookup: Annotated[Path, typer.Option(help="Saved lookup artifact directory.")],
     questions: Annotated[Path, typer.Option(help="Analogy questions file.")],
     output: Annotated[Path, typer.Option(help="New evaluation report JSON path.")],
@@ -233,6 +236,9 @@ def analyze(
             help="W2V1 corpus source: wmt, lm1b, or umbc. Omit to analyze all.",
         ),
     ] = None,
+    table: Annotated[
+        int, typer.Option("--table", help="W2V1 table number: 2 or 4.")
+    ] = 2,
 ) -> None:
     """Render or summarize F2 experiment results."""
     if suite == "corpus":
@@ -243,18 +249,22 @@ def analyze(
 
         from .common.paths import get_benchmark_data_dir
         from .suites.w2v1.analysis import analyze_table2_sources
+        from .suites.w2v1.table4 import analyze_table4_sources
         from .tracking import resolve_tracking_uri
 
         paths = RuntimePaths.from_environment()
         questions = questions or get_benchmark_data_dir(paths) / "questions-words.txt"
-        outputs = analyze_table2_sources(
+        if table not in (2, 4):
+            raise ValueError("W2V1 analysis table must be 2 or 4")
+        analyzer = analyze_table2_sources if table == 2 else analyze_table4_sources
+        outputs = analyzer(
             resolve_tracking_uri(tracking_uri),
             questions,
             corpus_source=corpus,
             paths=paths,
         )
         for output in outputs:
-            typer.echo(f"W2V1 Table 2 analysis written: {output}")
+            typer.echo(f"W2V1 Table {table} analysis written: {output}")
         return
     typer.echo(f"Analysis orchestration for F2 suite '{suite}' is initialized.")
 
