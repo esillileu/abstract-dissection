@@ -15,6 +15,7 @@ from f2.suites.w2v1.analysis import (
     Table2EvaluationCache,
     Table2RunResult,
     _complete_conditions,
+    ensure_questions_words,
     observed_training_seconds,
 )
 from repro_core.cli import app
@@ -97,6 +98,47 @@ def test_table2_conditions_are_partitioned_by_corpus_source() -> None:
     assert {
         run.data.tags["implementation.variant"] for run in wmt[24, 50].values()
     } == {"wmt--d50-w24m"}
+
+
+def test_table2_conditions_deduplicate_by_latest_run() -> None:
+    runs = [
+        SimpleNamespace(
+            info=SimpleNamespace(run_id="run-new"),
+            data=SimpleNamespace(
+                tags={"implementation.variant": "wmt--d50-w24m", "seed": 1}
+            ),
+        ),
+        SimpleNamespace(
+            info=SimpleNamespace(run_id="run-old"),
+            data=SimpleNamespace(
+                tags={"implementation.variant": "wmt--d50-w24m", "seed": 1}
+            ),
+        ),
+        SimpleNamespace(
+            info=SimpleNamespace(run_id="run-7"),
+            data=SimpleNamespace(
+                tags={"implementation.variant": "wmt--d50-w24m", "seed": 7}
+            ),
+        ),
+        SimpleNamespace(
+            info=SimpleNamespace(run_id="run-19"),
+            data=SimpleNamespace(
+                tags={"implementation.variant": "wmt--d50-w24m", "seed": 19}
+            ),
+        ),
+    ]
+
+    wmt = _complete_conditions(runs, corpus_source="wmt")
+    assert wmt[24, 50][1].info.run_id == "run-new"
+
+
+def test_ensure_questions_words_guards(tmp_path: Path) -> None:
+    existing = tmp_path / "questions-words.txt"
+    existing.write_text("dummy")
+    assert ensure_questions_words(existing) == existing
+
+    with pytest.raises(ValueError, match="word analogy questions do not exist"):
+        ensure_questions_words(tmp_path / "other-file.txt")
 
 
 def test_w2v1_executor_completes_declared_schedule(tmp_path):

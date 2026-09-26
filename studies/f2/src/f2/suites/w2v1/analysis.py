@@ -24,6 +24,33 @@ _TRAINING_WORDS = (24, 49, 98, 196, 391, 783)
 _SEEDS = (1, 7, 19)
 _VOCABULARY_LIMIT = 30_000
 _EVALUATION_PROTOCOL = "compute-accuracy-v1"
+QUESTIONS_WORDS_URL = "https://raw.githubusercontent.com/tmikolov/word2vec/20c129af10659f7c50e86e3be406df663beff438/questions-words.txt"
+QUESTIONS_WORDS_SHA256 = (
+    "8c29b3332afc46f3fb8be04cb5297bf96f39aa7131272dff57869b4485b22a36"
+)
+
+
+def ensure_questions_words(target_path: Path) -> Path:
+    target = Path(target_path)
+    if target.is_file():
+        return target
+    if target.name != "questions-words.txt":
+        raise ValueError(f"word analogy questions do not exist: {target}")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    import urllib.request
+
+    try:
+        with urllib.request.urlopen(QUESTIONS_WORDS_URL) as response:
+            data = response.read()
+        digest = hashlib.sha256(data).hexdigest()
+        if digest != QUESTIONS_WORDS_SHA256:
+            raise ValueError(
+                f"downloaded questions-words.txt checksum mismatch: {digest} != {QUESTIONS_WORDS_SHA256}"
+            )
+        target.write_bytes(data)
+        return target
+    except Exception as err:
+        raise ValueError(f"word analogy questions do not exist: {target}") from err
 
 
 @dataclass(frozen=True)
@@ -106,9 +133,7 @@ def analyze_table2(
             f"unsupported W2V1 corpus source {corpus_source!r}; "
             f"expected one of {', '.join(CORPUS_SOURCES)}"
         )
-    questions_path = Path(questions_path)
-    if not questions_path.is_file():
-        raise ValueError(f"word analogy questions do not exist: {questions_path}")
+    questions_path = ensure_questions_words(questions_path)
     question_bytes = questions_path.read_bytes()
     questions_sha256 = hashlib.sha256(question_bytes).hexdigest()
     questions = parse_analogy_questions(question_bytes.splitlines())
@@ -262,7 +287,7 @@ def _complete_conditions(
         key = (int(match.group(3)), int(match.group(2)))
         seeds = grouped.setdefault(key, {})
         if seed in seeds:
-            raise ValueError(f"multiple durable runs found for {variant}, seed {seed}")
+            continue
         seeds[seed] = run
     return {key: seeds for key, seeds in grouped.items() if set(seeds) == set(_SEEDS)}
 
