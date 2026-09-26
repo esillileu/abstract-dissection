@@ -39,6 +39,16 @@ DISPOSITIONS = (
         "verified WMT substitute replaces unavailable LDC bytes",
     ),
     TargetDisposition(
+        "w2v1-google-news-cbow-scale",
+        "reconstruction",
+        "Table 4 300d/783M/3-epoch condition on verified substitute corpora; 1M vocabulary is a reconstruction decision",
+    ),
+    TargetDisposition(
+        "w2v1-google-news-skipgram-scale",
+        "reconstruction",
+        "Table 4 300d/783M/3-epoch condition on verified substitute corpora; 1M vocabulary is a reconstruction decision",
+    ),
+    TargetDisposition(
         "w2v2-phrase-skipgram-1b-objectives",
         "reconstruction",
         "verified WMT substitute and deterministic phrase materialization",
@@ -56,14 +66,6 @@ DISPOSITIONS = (
     *(
         TargetDisposition(spec, "unsupported", reason)
         for spec, reason in (
-            (
-                "w2v1-google-news-cbow-scale",
-                "original Google News bytes are unavailable",
-            ),
-            (
-                "w2v1-google-news-skipgram-scale",
-                "original Google News bytes are unavailable",
-            ),
             ("w2v1-table6-cbow-6b", "DistBelief execution environment is unavailable"),
             (
                 "w2v1-table6-skipgram-6b",
