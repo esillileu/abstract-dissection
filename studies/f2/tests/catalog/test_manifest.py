@@ -25,11 +25,11 @@ def test_w2v_catalog_manifest_is_self_consistent():
     assert {paper["paper_id"] for paper in payload["papers"]} == {"w2v1", "w2v2"}
     assert len(payload["targets"]) == 19
     assert len(payload["experiment_specs"]) == 13
-    assert len(payload["execution_plans"]) == 6
-    assert len(payload["plan_experiments"]) == 6
+    assert len(payload["execution_plans"]) == 9
+    assert len(payload["plan_experiments"]) == 18
     assert len(payload["requirement_candidates"]) == 27
-    assert len(payload["resource_bindings"]) == 12
-    assert len(payload["planned_run_slots"]) == 270
+    assert len(payload["resource_bindings"]) == 36
+    assert len(payload["planned_run_slots"]) == 306
     assert {slot["seed"] for slot in payload["planned_run_slots"]} == {1, 7, 19}
     assert all(
         slot["parameters"]["requires_approval"] for slot in payload["planned_run_slots"]
@@ -55,6 +55,14 @@ def test_w2v_catalog_manifest_is_self_consistent():
         "f2-lm1b-normalized",
         "f2-umbc-normalized",
     }
+    corpus_versions = [
+        version
+        for version in payload["resource_versions"]
+        if version["resource_id"]
+        in {"f2-wmt-normalized", "f2-lm1b-normalized", "f2-umbc-normalized"}
+    ]
+    assert len(corpus_versions) == 3
+    assert all("checksum" not in version for version in corpus_versions)
 
 
 def test_manifest_rejects_unknown_requirement_candidate_resource(tmp_path):

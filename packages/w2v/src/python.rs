@@ -2,7 +2,7 @@ use crate::training::worker::WorkerState;
 use crate::{
     Corpus, EmbeddingKind, EpochReport, HsOutOfRangePolicy, Model, ModelKind, ObjectiveKind,
     Observation, RngAlgorithm, Status, Trainer, TrainingConfig, TrainingSession, TrainingState,
-    Vocabulary, VocabularyConfig, VocabularyEntry, VocabularyState,
+    UpdateStrategy, Vocabulary, VocabularyConfig, VocabularyEntry, VocabularyState,
 };
 use numpy::{
     IntoPyArray, PyArray1, PyArray2, PyReadonlyArray1, PyReadonlyArray2, PyUntypedArrayMethods,
@@ -51,6 +51,16 @@ fn parse_rng_algorithm(value: &str) -> PyResult<RngAlgorithm> {
         "xorshift" => Ok(RngAlgorithm::Xorshift),
         _ => Err(PyValueError::new_err(
             "rng_algorithm must be 'lcg' or 'xorshift'",
+        )),
+    }
+}
+
+fn parse_update_strategy(value: &str) -> PyResult<UpdateStrategy> {
+    match value {
+        "cas" => Ok(UpdateStrategy::AtomicCas),
+        "hogwild" => Ok(UpdateStrategy::Hogwild),
+        _ => Err(PyValueError::new_err(
+            "update_strategy must be 'cas' or 'hogwild'",
         )),
     }
 }
@@ -121,12 +131,18 @@ pub struct PyVocabularyConfig {
 #[pymethods]
 impl PyVocabularyConfig {
     #[new]
-    #[pyo3(signature = (initial_capacity=1000, hash_capacity=30_000_000, min_count=5))]
-    fn new(initial_capacity: usize, hash_capacity: usize, min_count: u64) -> PyResult<Self> {
+    #[pyo3(signature = (initial_capacity=1000, hash_capacity=30_000_000, min_count=5, max_lexical_words=0))]
+    fn new(
+        initial_capacity: usize,
+        hash_capacity: usize,
+        min_count: u64,
+        max_lexical_words: usize,
+    ) -> PyResult<Self> {
         let inner = VocabularyConfig {
             initial_capacity,
             hash_capacity,
             min_count,
+            max_lexical_words,
         };
         if inner.validate() != Status::Ok {
             return Err(status_error(Status::InvalidArgument));
@@ -409,6 +425,7 @@ impl PyTrainingConfig {
         objective_kind="negative_sampling",
         embedding_dimension=100,
         window_radius=5,
+        context_policy="dynamic",
         epochs=5,
         thread_count=12,
         learning_rate_update_interval=10_000,
@@ -421,7 +438,8 @@ impl PyTrainingConfig {
         negative_table_size=100_000_000,
         sigmoid_table_size=1000,
         sigmoid_max=6.0,
-        hs_out_of_range_policy="skip"
+        hs_out_of_range_policy="skip",
+        update_strategy="hogwild"
     ))]
     #[allow(clippy::too_many_arguments)]
     fn new(
@@ -429,6 +447,7 @@ impl PyTrainingConfig {
         objective_kind: &str,
         embedding_dimension: usize,
         window_radius: usize,
+        context_policy: &str,
         epochs: usize,
         thread_count: usize,
         learning_rate_update_interval: usize,
@@ -442,12 +461,18 @@ impl PyTrainingConfig {
         sigmoid_table_size: usize,
         sigmoid_max: f32,
         hs_out_of_range_policy: &str,
+        update_strategy: &str,
     ) -> PyResult<Self> {
         let inner = TrainingConfig {
             model_kind: parse_model_kind(model_kind)?,
             objective_kind: parse_objective_kind(objective_kind)?,
             embedding_dimension,
             window_radius,
+            context_policy: match context_policy {
+                "dynamic" => crate::ContextPolicy::Dynamic,
+                "fixed" => crate::ContextPolicy::Fixed,
+                _ => return Err(PyValueError::new_err("unknown context policy")),
+            },
             epochs,
             thread_count,
             learning_rate_update_interval,
@@ -461,6 +486,7 @@ impl PyTrainingConfig {
             sigmoid_table_size,
             sigmoid_max,
             hs_out_of_range_policy: hs_policy(hs_out_of_range_policy)?,
+            update_strategy: parse_update_strategy(update_strategy)?,
         };
         if inner.validate() != Status::Ok {
             return Err(status_error(Status::InvalidArgument));
@@ -874,18 +900,21 @@ pub struct PyTrainingSession {
 #[pymethods]
 impl PyTrainingSession {
     #[new]
+    #[pyo3(signature = (corpus, vocabulary, model, config, corpus_digest=None))]
     fn new(
         corpus: &PyCorpus,
         vocabulary: &PyVocabulary,
         model: &PyModel,
         config: &PyTrainingConfig,
+        corpus_digest: Option<String>,
     ) -> PyResult<Self> {
         let trainer = Arc::new(
-            Trainer::create(
+            Trainer::create_with_digest(
                 Arc::clone(&corpus.inner),
                 Arc::clone(&vocabulary.inner),
                 Arc::clone(&model.inner),
                 &config.inner,
+                corpus_digest,
             )
             .map_err(status_error)?,
         );
@@ -897,6 +926,7 @@ impl PyTrainingSession {
     }
 
     #[classmethod]
+    #[pyo3(signature = (corpus, vocabulary, model, config, state, corpus_digest=None))]
     fn restore(
         _cls: &Bound<'_, PyType>,
         corpus: &PyCorpus,
@@ -904,13 +934,15 @@ impl PyTrainingSession {
         model: &PyModel,
         config: &PyTrainingConfig,
         state: &PyTrainingState,
+        corpus_digest: Option<String>,
     ) -> PyResult<Self> {
         let trainer = Arc::new(
-            Trainer::create(
+            Trainer::create_with_digest(
                 Arc::clone(&corpus.inner),
                 Arc::clone(&vocabulary.inner),
                 Arc::clone(&model.inner),
                 &config.inner,
+                corpus_digest,
             )
             .map_err(status_error)?,
         );

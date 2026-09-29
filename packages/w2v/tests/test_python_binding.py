@@ -163,6 +163,23 @@ def test_epoch_state_resume_matches_continuous_training(tmp_path: Path) -> None:
     )
 
 
+def test_supplied_corpus_digest_makes_exports_independent_of_corpus_file(
+    tmp_path: Path,
+) -> None:
+    corpus, vocabulary, config, model = _objects(tmp_path / "owned-digest.txt")
+    session = TrainingSession(
+        corpus,
+        vocabulary,
+        model,
+        config,
+        corpus_digest="verified-corpus-digest",
+    )
+    corpus_path = Path(corpus.path)
+    corpus_path.unlink()
+    assert session.export_state().corpus_digest == "verified-corpus-digest"
+    assert session.export_state().corpus_digest == "verified-corpus-digest"
+
+
 def test_training_state_parts_roundtrip(tmp_path: Path) -> None:
     corpus, vocabulary, config, model = _objects(tmp_path / "parts.txt")
     session = TrainingSession(corpus, vocabulary, model, config)

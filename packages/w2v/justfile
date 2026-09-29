@@ -6,3 +6,9 @@ check:
 
 sanitize:
     make -C reference sanitize
+
+profile-smoke:
+    uv run python profiling/profile.py smoke
+
+profile *args:
+    uv run python profiling/profile.py run {{args}}

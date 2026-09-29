@@ -8,6 +8,7 @@ pub mod corpus;
 mod identity;
 pub mod model;
 pub mod random;
+mod simd;
 pub mod trainer;
 pub mod training;
 pub mod vocab;
@@ -16,8 +17,8 @@ pub mod vocab;
 mod python;
 
 pub use config::{
-    HsOutOfRangePolicy, ModelKind, ObjectiveKind, RngAlgorithm, Status, TrainingConfig,
-    VocabularyConfig,
+    ContextPolicy, HsOutOfRangePolicy, ModelKind, ObjectiveKind, RngAlgorithm, Status,
+    TrainingConfig, UpdateStrategy, VocabularyConfig,
 };
 pub use corpus::Corpus;
 pub use model::{EmbeddingKind, Model, SigmoidTable};

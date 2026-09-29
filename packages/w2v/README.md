@@ -114,6 +114,19 @@ Python의 `EpochReport.observations()`도 같은 owned snapshot을 반환합니�
 완료된 epoch report를 받으므로 Python 코드가 실행되는 동안 Rust 학습 메모리를
 빌리지 않습니다.
 
+## Shared update strategy
+
+`TrainingConfig::update_strategy`의 기본값은 `UpdateStrategy::Hogwild`입니다.
+Hogwild는 `AtomicU32` 저장소에서 relaxed load와 relaxed store를 사용해 CAS
+재시도 없이 갱신합니다. 따라서 plain concurrent `f32` write의 data race는
+없지만 worker 간 update 순서와 multi-thread 결과의 bitwise 재현성은 보장하지
+않습니다. `UpdateStrategy::AtomicCas`는 coordinate-level compare-exchange가
+필요한 checked/reference 비교용 선택지입니다.
+
+이 선택은 원본 `z_original_w2v.c`의 synchronization-free Hogwild 의미와 성능을
+비교하기 위한 것이며, 원본과 모듈식 C/Rust 사이의 알려진 Skip-gram, RNG,
+objective 차이를 semantic equivalence로 없애려는 규칙이 아닙니다.
+
 같은 `Trainer`에서 `train()`을 다시 호출하면 처리 토큰 카운터는 0으로
 초기화되지만 이미 학습된 임베딩은 초기화되지 않습니다. 처음부터 다시
 학습하려면 새 `Model`을 생성해야 합니다.

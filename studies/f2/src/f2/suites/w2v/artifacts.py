@@ -4,12 +4,22 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import shutil
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import numpy as np
-from w2v import TrainingState, VocabularyState, WorkerState
+from repro_io.checksum import sha256_file
+from w2v import (
+    TrainingState,
+    Vocabulary,
+    VocabularyConfig,
+    VocabularyState,
+    WorkerState,
+)
 
 from repro_core.context.checkpoint import (
     CheckpointManager,
@@ -18,16 +28,20 @@ from repro_core.context.checkpoint import (
 
 CHECKPOINT_FORMAT = "f2-w2v-checkpoint-v1"
 LOOKUP_FORMAT = "f2-w2v-lookup-v1"
+VOCABULARY_FORMAT = "f2-w2v-vocabulary-v1"
 
-_CHECKPOINT_ARRAYS = (
-    "input_embeddings.npy",
-    "output_embeddings.npy",
+_VOCABULARY_ARRAYS = (
     "token_bytes.npy",
     "token_offsets.npy",
     "counts.npy",
     "huffman_offsets.npy",
     "huffman_paths.npy",
     "huffman_bits.npy",
+)
+_CHECKPOINT_ARRAYS = (
+    "input_embeddings.npy",
+    "output_embeddings.npy",
+    *_VOCABULARY_ARRAYS,
 )
 _LOOKUP_ARRAYS = (
     "input_embeddings.npy",
@@ -37,11 +51,151 @@ _LOOKUP_ARRAYS = (
 )
 
 
+def resolve_or_build_vocabulary(
+    corpus: Any,
+    config_values: dict[str, Any],
+    *,
+    cache_root: Path,
+    corpus_digest: str | None = None,
+) -> Any:
+    """Load a verified shared vocabulary or build it once atomically."""
+    corpus_digest = corpus_digest or corpus.digest()
+    semantic_config = {
+        "min_count": int(config_values.get("min_count", 5)),
+        "max_lexical_words": int(config_values.get("max_lexical_words", 0)),
+        "hash_capacity": int(config_values.get("hash_capacity", 30_000_000)),
+        "semantics_version": 1,
+    }
+    config_digest = _json_digest(semantic_config)
+    identity = _json_digest(
+        {"corpus_digest": corpus_digest, "vocabulary_config_digest": config_digest}
+    )
+    target = Path(cache_root) / "f2" / "w2v" / "vocabulary" / identity
+    expected = {
+        "corpus_digest": corpus_digest,
+        "vocabulary_config": semantic_config,
+        "vocabulary_config_digest": config_digest,
+        "identity_digest": identity,
+    }
+    try:
+        return _load_vocabulary_artifact(target, expected=expected)
+    except (FileNotFoundError, OSError, ValueError):
+        pass
+
+    vocabulary = Vocabulary.build(corpus, VocabularyConfig(**config_values))
+    _write_vocabulary_artifact(
+        target,
+        vocabulary.export_state(),
+        corpus_digest=corpus_digest,
+        vocabulary_config=semantic_config,
+        vocabulary_config_digest=config_digest,
+        identity_digest=identity,
+    )
+    return _load_vocabulary_artifact(target, expected=expected)
+
+
+def _write_vocabulary_artifact(
+    target: Path,
+    state: VocabularyState,
+    *,
+    corpus_digest: str,
+    vocabulary_config: dict[str, int],
+    vocabulary_config_digest: str,
+    identity_digest: str,
+) -> None:
+    parent = target.parent
+    parent.mkdir(parents=True, exist_ok=True)
+    temporary = Path(tempfile.mkdtemp(prefix=f".{target.name}.", dir=parent))
+    try:
+        arrays = state.arrays()
+        for name, value in zip(_VOCABULARY_ARRAYS, arrays, strict=True):
+            np.save(temporary / name, value, allow_pickle=False)
+        vocabulary_digest = state.digest()
+        identity = {
+            "corpus_digest": corpus_digest,
+            "vocabulary_config": vocabulary_config,
+            "vocabulary_config_digest": vocabulary_config_digest,
+            "identity_digest": identity_digest,
+            "vocabulary_digest": vocabulary_digest,
+            "hash_capacity": state.hash_capacity,
+            "retained_token_count": state.retained_token_count,
+        }
+        _write_manifest(temporary, VOCABULARY_FORMAT, identity, _VOCABULARY_ARRAYS)
+        _load_vocabulary_artifact(temporary, expected=identity)
+
+        _publish_vocabulary_artifact(temporary, target, expected=identity)
+        temporary = None
+    finally:
+        if temporary is not None and temporary.exists():
+            shutil.rmtree(temporary)
+
+
+def _publish_vocabulary_artifact(
+    temporary: Path, target: Path, *, expected: dict[str, Any]
+) -> None:
+    """Publish a verified directory, adopting a valid concurrent winner."""
+    for attempt in range(2):
+        try:
+            os.replace(temporary, target)
+            return
+        except OSError:
+            try:
+                _load_vocabulary_artifact(target, expected=expected)
+            except (FileNotFoundError, OSError, ValueError):
+                if attempt == 1:
+                    raise
+                _remove_invalid_target(target)
+            else:
+                return
+
+
+def _remove_invalid_target(target: Path) -> None:
+    """Remove a known-invalid target only if it was not replaced meanwhile."""
+    try:
+        marker = target.stat()
+    except FileNotFoundError:
+        return
+    try:
+        if target.stat().st_ino != marker.st_ino:
+            return
+    except FileNotFoundError:
+        return
+    if target.is_dir():
+        shutil.rmtree(target)
+    else:
+        target.unlink()
+
+
+def _load_vocabulary_artifact(path: Path, *, expected: dict[str, Any]) -> Any:
+    manifest = verify_artifact(path, expected=expected, format_name=VOCABULARY_FORMAT)
+    arrays = {name: _load_array(path / name) for name in _VOCABULARY_ARRAYS}
+    state = VocabularyState.from_arrays(
+        arrays["token_bytes.npy"],
+        arrays["token_offsets.npy"],
+        arrays["counts.npy"],
+        arrays["huffman_offsets.npy"],
+        arrays["huffman_paths.npy"],
+        arrays["huffman_bits.npy"],
+        int(manifest["hash_capacity"]),
+        int(manifest["retained_token_count"]),
+    )
+    if state.digest() != manifest.get("vocabulary_digest"):
+        raise ValueError("vocabulary artifact digest mismatch")
+    return Vocabulary.restore_state(state)
+
+
+def _json_digest(value: Any) -> str:
+    digest = hashlib.sha256()
+    digest.update(
+        json.dumps(value, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    )
+    return digest.hexdigest()
+
+
 def save_checkpoint(
     state: TrainingState,
     path: Path,
     *,
-    resource_version: str,
     payload: str = "full",
 ) -> None:
     """Write one complete checkpoint generation into manager-owned staging."""
@@ -68,7 +222,6 @@ def save_checkpoint(
         "config_digest": state.config_digest,
         "vocabulary_digest": state.vocabulary_digest,
         "corpus_digest": state.corpus_digest,
-        "resource_version": resource_version,
         "completed_epochs": state.completed_epochs,
         "processed_tokens": state.processed_tokens,
         "vocabulary": {
@@ -116,9 +269,7 @@ def load_checkpoint(
     )
 
 
-def save_lookup_artifact(
-    state: TrainingState, path: Path, *, resource_version: str
-) -> None:
+def save_lookup_artifact(state: TrainingState, path: Path) -> None:
     """Write the compact consumer artifact, excluding resumable trainer state."""
     path.mkdir(parents=True, exist_ok=False)
     vocabulary = state.vocabulary_state()
@@ -136,7 +287,6 @@ def save_lookup_artifact(
         "config_digest": state.config_digest,
         "vocabulary_digest": state.vocabulary_digest,
         "corpus_digest": state.corpus_digest,
-        "resource_version": resource_version,
         "completed_epochs": state.completed_epochs,
         "processed_tokens": state.processed_tokens,
     }
@@ -195,7 +345,6 @@ def create_checkpoint_manager(
     root: Path,
     *,
     session: Any,
-    resource_version: str,
     policy: CheckpointRetentionPolicy | None = None,
 ) -> CheckpointManager:
     """Bind an engine session to the generic generation/pointer manager."""
@@ -208,7 +357,6 @@ def create_checkpoint_manager(
         save_fn=lambda path, payload: save_checkpoint(
             session.export_state(),
             path,
-            resource_version=resource_version,
             payload=payload,
         ),
         epoch_fn=lambda: session.completed_epochs,
@@ -276,7 +424,6 @@ def _validate_manifest_identity(
         "config_digest",
         "vocabulary_digest",
         "corpus_digest",
-        "resource_version",
         "completed_epochs",
         "processed_tokens",
     )
@@ -302,11 +449,7 @@ def _load_array(path: Path, *, mmap: bool = False) -> np.ndarray:
 
 
 def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
+    return sha256_file(path)
 
 
 def _write_json(path: Path, value: dict[str, Any]) -> None:
@@ -325,10 +468,12 @@ def _read_json(path: Path) -> dict[str, Any]:
 __all__ = [
     "CHECKPOINT_FORMAT",
     "LOOKUP_FORMAT",
+    "VOCABULARY_FORMAT",
     "LookupEmbeddings",
     "create_checkpoint_manager",
     "load_checkpoint",
     "load_lookup_artifact",
+    "resolve_or_build_vocabulary",
     "save_checkpoint",
     "save_lookup_artifact",
     "verify_artifact",

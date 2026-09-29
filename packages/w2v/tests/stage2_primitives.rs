@@ -134,3 +134,23 @@ fn c_corpus_metadata_and_error_status() {
     assert_eq!(Corpus::create(&path).unwrap_err(), Status::IoError);
     assert_eq!(Corpus::create("").unwrap_err(), Status::InvalidArgument);
 }
+
+#[test]
+fn buffered_tokenizer_preserves_bytes_and_nonzero_offset() {
+    let path = std::env::temp_dir().join(format!("w2v-stage2-offset-{}.txt", std::process::id()));
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&path)
+        .unwrap();
+    file.write_all(b"prefix\r\n\xff\x80 raw\tlast").unwrap();
+    drop(file);
+
+    let corpus = Corpus::create(&path).unwrap();
+    let mut tokenizer = corpus.tokenizer(8).unwrap();
+    assert_eq!(tokenizer.read_token().unwrap().token, b"\xff\x80");
+    assert_eq!(tokenizer.read_token().unwrap().token, b"raw");
+    assert_eq!(tokenizer.read_token().unwrap().token, b"last");
+    assert!(tokenizer.read_token().unwrap().at_eof);
+    fs::remove_file(&path).unwrap();
+}

@@ -62,6 +62,7 @@ pub struct Observation {
 
 pub struct Trainer {
     pub corpus: Arc<Corpus>,
+    pub corpus_digest: String,
     pub vocab: Arc<Vocabulary>,
     pub model: Arc<Model>,
     pub negative_sampler: NegativeSampler,
@@ -92,6 +93,7 @@ fn config_digest(config: &TrainingConfig) -> String {
         config.objective_kind as u64,
         config.embedding_dimension as u64,
         config.window_radius as u64,
+        config.context_policy as u64,
         config.epochs as u64,
         config.thread_count as u64,
         config.learning_rate_update_interval as u64,
@@ -105,6 +107,7 @@ fn config_digest(config: &TrainingConfig) -> String {
         config.sigmoid_table_size as u64,
         config.sigmoid_max.to_bits() as u64,
         config.hs_out_of_range_policy as u64,
+        config.update_strategy as u64,
     ] {
         hash.value(value);
     }
@@ -117,6 +120,16 @@ impl Trainer {
         vocab: Arc<Vocabulary>,
         model: Arc<Model>,
         config: &TrainingConfig,
+    ) -> Result<Self, Status> {
+        Self::create_with_digest(corpus, vocab, model, config, None)
+    }
+
+    pub fn create_with_digest(
+        corpus: Arc<Corpus>,
+        vocab: Arc<Vocabulary>,
+        model: Arc<Model>,
+        config: &TrainingConfig,
+        corpus_digest: Option<String>,
     ) -> Result<Self, Status> {
         if config.validate() != Status::Ok
             || model.vocab_size != vocab.entries.len()
@@ -132,8 +145,13 @@ impl Trainer {
         } else {
             NegativeSampler::default()
         };
+        let corpus_digest = match corpus_digest {
+            Some(digest) => digest,
+            None => corpus.digest()?,
+        };
         Ok(Self {
             corpus,
+            corpus_digest,
             vocab,
             model,
             negative_sampler,
@@ -152,7 +170,7 @@ impl Trainer {
             schema_version: TRAINING_STATE_SCHEMA_VERSION,
             config_digest: config_digest(&self.config),
             vocabulary_digest: self.vocab.digest(),
-            corpus_digest: self.corpus.digest()?,
+            corpus_digest: self.corpus_digest.clone(),
         })
     }
 

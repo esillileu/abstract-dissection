@@ -84,3 +84,10 @@ known-first-party = ["repro_core", "repro_mlflow", "dlfs", "f2"]
 [tool.mypy]
 explicit_package_bases = true
 ignore_missing_imports = true
+
+[tool.flck]
+soft = 250
+hard = 300
+
+allow = [
+]

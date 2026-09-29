@@ -1,29 +1,26 @@
-"""Local epoch-boundary W2V1 orchestration."""
+"""W2V1 paper-reproduction training orchestration."""
 
 from __future__ import annotations
 
 import json
 import shutil
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from repro_io.checksum import sha256_file
 from w2v import (
     Corpus,
     Model,
     TrainingConfig,
     TrainingSession,
-    Vocabulary,
-    VocabularyConfig,
 )
 
 from f2.suites.w2v.artifacts import (
     create_checkpoint_manager,
-    load_checkpoint,
-    load_lookup_artifact,
+    resolve_or_build_vocabulary,
     save_lookup_artifact,
 )
-from f2.suites.w2v.evaluation import evaluate_analogies, parse_analogy_questions
 from f2.suites.w2v.observations import DenseObservationWriter
 from repro_core.context import ExperimentContext
 
@@ -48,14 +45,7 @@ class W2V1Executor:
             source = context.paths.repo_root / source
         if not source.is_file():
             raise ValueError(f"W2V1 corpus does not exist: {source}")
-        import hashlib
-
-        actual_digest = hashlib.sha256(source.read_bytes()).hexdigest()
-        expected_file_digest = str(
-            corpus_config.get("sha256", identity["corpus_manifest_digest"])
-        )
-        if actual_digest != expected_file_digest:
-            raise ValueError("W2V1 corpus identity does not match the resolved config")
+        corpus_digest = _corpus_digest(corpus_config, source)
 
         run_key = str(identity["planned_run_slot_id"])
         root_override = context.metadata.get("run_root")
@@ -65,7 +55,7 @@ class W2V1Executor:
             else context.paths.run_staging(
                 domain="f2",
                 suite=self.suite_name,
-                study="table2",
+                study=str(identity.get("study", "table2")),
                 variant="local",
                 run_key=run_key,
             )
@@ -74,20 +64,18 @@ class W2V1Executor:
             shutil.rmtree(root)
         root.mkdir(parents=True)
 
-        resume_checkpoint = context.metadata.get("resume_checkpoint")
-        session = (
-            restore_session(config, Path(resume_checkpoint), context.paths.repo_root)
-            if resume_checkpoint
-            else create_session(config, context.paths.repo_root)
+        session = create_session(
+            config,
+            context.paths.repo_root,
+            cache_root=context.paths.cache_root,
+            corpus_digest=corpus_digest,
         )
         manager = create_checkpoint_manager(
             root / "checkpoints",
             session=session,
-            resource_version=str(identity["resource_version"]),
         )
         writer = DenseObservationWriter(root / "metrics" / "observations.csv")
         reports = []
-        stop_after_epoch = context.metadata.get("stop_after_epoch")
         progress = context.metadata.get("progress_reporter")
         total_epochs = int(_mapping(config, "training")["epochs"])
         if progress is not None:
@@ -96,9 +84,7 @@ class W2V1Executor:
                 f"preparing {self.suite_name} slot={run_key} "
                 f"epochs={total_epochs} completed={session.completed_epochs}"
             )
-        while not session.is_complete and (
-            stop_after_epoch is None or session.completed_epochs < int(stop_after_epoch)
-        ):
+        while not session.is_complete:
             epoch = session.train_epoch()
             writer.append(epoch.observations())
             manager.save_latest()
@@ -119,24 +105,13 @@ class W2V1Executor:
                 )
         if progress is not None:
             progress.write(f"publishing {self.suite_name} artifacts slot={run_key}")
-        final = manager.save_final() if session.is_complete else manager.save_latest()
+        final = manager.save_final()
         state = session.export_state()
         lookup_path = root / "lookup"
-        save_lookup_artifact(
-            state, lookup_path, resource_version=str(identity["resource_version"])
-        )
-        lookup = load_lookup_artifact(lookup_path)
-        questions_path = Path(str(_mapping(config, "evaluation")["questions_path"]))
-        if not questions_path.is_absolute():
-            questions_path = context.paths.repo_root / questions_path
-        evaluation = evaluate_analogies(
-            lookup, parse_analogy_questions(questions_path.read_bytes().splitlines())
-        ).overall
+        save_lookup_artifact(state, lookup_path)
         report = {
             "identity": identity,
             "epochs": reports,
-            "evaluation": asdict(evaluation),
-            "coverage": evaluation.coverage,
             "complete": session.is_complete,
             "artifacts": {
                 "checkpoint": str(final.path.relative_to(root)),
@@ -149,39 +124,39 @@ class W2V1Executor:
         return W2V1Result(root, final.path, lookup_path, writer.path, report_path)
 
 
-def restore_session(
-    config: dict[str, object], checkpoint: Path, repo_root: Path
+def create_session(
+    config: dict[str, object],
+    repo_root: Path,
+    *,
+    cache_root: Path | None = None,
+    corpus_digest: str | None = None,
 ) -> TrainingSession:
-    """Reconstruct a session through the same identity-checked adapter path."""
     corpus_path = Path(str(_mapping(config, "corpus")["path"]))
     corpus = Corpus(
         corpus_path if corpus_path.is_absolute() else repo_root / corpus_path
     )
-    vocabulary = Vocabulary.build(
-        corpus, VocabularyConfig(**_mapping(config, "vocabulary"))
+    corpus_digest = corpus_digest or _corpus_digest(
+        _mapping(config, "corpus"), Path(corpus.path)
+    )
+    vocabulary = resolve_or_build_vocabulary(
+        corpus,
+        _mapping(config, "vocabulary"),
+        cache_root=cache_root or repo_root / ".cache",
+        corpus_digest=corpus_digest,
     )
     values = dict(_mapping(config, "training"))
     values["root_seed"] = int(_mapping(config, "identity")["seed"])
     training = TrainingConfig(**values)
     model = Model.create(vocabulary, training)
-    return TrainingSession.restore(
-        corpus, vocabulary, model, training, load_checkpoint(checkpoint)
+    return TrainingSession(
+        corpus, vocabulary, model, training, corpus_digest=corpus_digest
     )
 
 
-def create_session(config: dict[str, object], repo_root: Path) -> TrainingSession:
-    corpus_path = Path(str(_mapping(config, "corpus")["path"]))
-    corpus = Corpus(
-        corpus_path if corpus_path.is_absolute() else repo_root / corpus_path
-    )
-    vocabulary = Vocabulary.build(
-        corpus, VocabularyConfig(**_mapping(config, "vocabulary"))
-    )
-    values = dict(_mapping(config, "training"))
-    values["root_seed"] = int(_mapping(config, "identity")["seed"])
-    training = TrainingConfig(**values)
-    model = Model.create(vocabulary, training)
-    return TrainingSession(corpus, vocabulary, model, training)
+def _corpus_digest(corpus_config: dict[str, Any], source: Path) -> str:
+    """Use a materializer-verified identity, hashing only unbound local inputs."""
+    configured = corpus_config.get("sha256")
+    return str(configured) if configured is not None else sha256_file(source)
 
 
 def _mapping(config: dict[str, object], key: str) -> dict[str, Any]:
@@ -206,5 +181,4 @@ __all__ = [
     "W2V1Result",
     "create_session",
     "get_executor",
-    "restore_session",
 ]

@@ -228,6 +228,14 @@ impl Vocabulary {
             index += 1;
             keep
         });
+        if config.max_lexical_words > 0 {
+            vocab.entries.truncate(
+                vocab
+                    .entries
+                    .len()
+                    .min(config.max_lexical_words.saturating_add(1)),
+            );
+        }
         vocab.retained_token_count = vocab
             .entries
             .iter()

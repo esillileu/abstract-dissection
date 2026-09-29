@@ -22,31 +22,24 @@ class RunSpec:
     corpus: dict[str, object]
     vocabulary: dict[str, object]
     training: dict[str, object]
-    evaluation: dict[str, object]
     checkpoint: dict[str, object]
     tracking: dict[str, object]
     path: Path
 
     def with_seed(self, seed: int) -> RunSpec:
         """Bind a planner-selected seed to its immutable catalog slot."""
-        from f2.suites.w2v.matrix import planned_slot_id
-
         identity = dict(self.identity)
         identity["seed"] = seed
-        if self.atomic_run_id == "local-smoke":
-            base = str(identity["planned_run_slot_id"]).rsplit("-s", 1)[0]
-            identity["planned_run_slot_id"] = f"{base}-s{seed}"
-        else:
-            identity["planned_run_slot_id"] = planned_slot_id(
-                str(identity["execution_plan_id"]), self.atomic_run_id, seed
-            )
+        identity["planned_run_slot_id"] = (
+            f"{identity['execution_plan_id']}-"
+            f"{_condition_id(self.atomic_run_id)}-s{seed}"
+        )
         return RunSpec(
             atomic_run_id=self.atomic_run_id,
             identity=identity,
             corpus=self.corpus,
             vocabulary=self.vocabulary,
             training=self.training,
-            evaluation=self.evaluation,
             checkpoint=self.checkpoint,
             tracking=self.tracking,
             path=self.path,
@@ -57,7 +50,6 @@ class RunSpec:
             "corpus": self.corpus,
             "vocabulary": self.vocabulary,
             "training": self.training,
-            "evaluation": self.evaluation,
         }
         return {
             "kind": "word2vec",
@@ -83,25 +75,47 @@ def parse_run_spec(
     required = {
         "execution_plan_id",
         "planned_run_slot_id",
-        "resource_version",
-        "corpus_manifest_digest",
     }
     if missing := sorted(required - identity.keys()):
         raise ValueError(f"W2V1 identity is missing: {', '.join(missing)}")
     training = mapping(raw, "training")
-    if int(training.get("thread_count", 0)) != 1:
-        raise ValueError("W2V1 parity configuration requires one training thread")
+    if "study" not in identity:
+        identity["study"] = "table3" if "table3" in path.name else "table2"
+    if "experiment_spec_id" not in identity:
+        if raw.get("experiment_spec_id"):
+            identity["experiment_spec_id"] = raw["experiment_spec_id"]
+        elif identity.get("study") == "table3" or "table3" in path.name:
+            model_kind = training.get("model_kind")
+            if model_kind == "cbow":
+                identity["experiment_spec_id"] = "w2v1-table3-cbow"
+            elif model_kind == "skip_gram":
+                identity["experiment_spec_id"] = "w2v1-table3-skipgram"
+            else:
+                identity["experiment_spec_id"] = "w2v1-table3"
+        else:
+            identity["experiment_spec_id"] = "w2v1-table2-cbow"
     return RunSpec(
         atomic_run_id=str(raw["atomic_run_id"]),
         identity=identity,
         corpus=mapping(raw, "corpus"),
         vocabulary=mapping(raw, "vocabulary"),
         training=training,
-        evaluation=mapping(raw, "evaluation"),
         checkpoint=mapping(raw, "checkpoint"),
         tracking=mapping(raw, "tracking"),
         path=path,
     )
+
+
+def _condition_id(atomic_run_id: str) -> str:
+    try:
+        corpus_id, condition_id = atomic_run_id.split("--", 1)
+    except ValueError as exc:
+        raise ValueError(
+            "canonical W2V atomic run IDs must be <corpus>--<condition>"
+        ) from exc
+    if not corpus_id or not condition_id:
+        raise ValueError("W2V atomic run corpus and condition IDs must be non-empty")
+    return condition_id
 
 
 __all__ = ["RunSpec", "parse_run_spec"]

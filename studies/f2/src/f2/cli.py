@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from functools import wraps
+from pathlib import Path
 from typing import Annotated
 
 import typer
@@ -54,6 +55,39 @@ app = typer.Typer(
 
 app.add_typer(corpus_app, name="corpus")
 app.add_typer(catalog_app, name="catalog")
+
+
+@app.command("evaluate")
+@cli_errors
+def evaluate(
+    suite: Annotated[
+        str,
+        typer.Argument(help="Evaluation policy: w2v1-table2, w2v1-table4, or w2v2."),
+    ],
+    lookup: Annotated[Path, typer.Option(help="Saved lookup artifact directory.")],
+    questions: Annotated[Path, typer.Option(help="Analogy questions file.")],
+    output: Annotated[Path, typer.Option(help="New evaluation report JSON path.")],
+    phrase_separator: Annotated[
+        str, typer.Option(help="W2V2 phrase token separator.")
+    ] = "_",
+) -> None:
+    """Evaluate a saved model artifact independently of training."""
+    from .suites.w2v.evaluate import (
+        evaluate_lookup_artifact,
+        write_evaluation_report,
+    )
+
+    try:
+        separator = phrase_separator.encode("ascii")
+    except UnicodeEncodeError as exc:
+        raise ValueError("phrase separator must be ASCII") from exc
+    payload = evaluate_lookup_artifact(
+        suite,
+        lookup,
+        questions,
+        phrase_separator=separator,
+    )
+    typer.echo(f"Evaluation report written: {write_evaluation_report(payload, output)}")
 
 
 @app.command("preflight")
@@ -151,9 +185,7 @@ def run(
     from repro_core.cli.commands import run_command
 
     suite_def = DEFINITION.get_suite(suite)
-    canonical_w2v = suite in {"w2v1", "w2v2"} and (
-        not atomic_run or any(run_id != "local-smoke" for run_id in atomic_run)
-    )
+    canonical_w2v = suite in {"w2v1", "w2v2"}
     if canonical_w2v and not dry_run and not approve_large_run:
         raise ValueError("canonical W2V training requires --approve-large-run")
     if canonical_w2v and not dry_run:
@@ -162,11 +194,9 @@ def run(
         tracking_uri = resolve_tracking_uri(tracking_uri)
     run_fn = None
     if suite in {"w2v1", "w2v2"}:
-        from .suites.w2v.tracked import run_local_yaml, run_tracked_yaml
+        from .suites.w2v.tracked import run_tracked_yaml
 
-        run_fn = run_local_yaml if tracking_uri is None else run_tracked_yaml
-        # Runner requires a non-empty URI but the local runner never consumes it.
-        tracking_uri = tracking_uri or "local"
+        run_fn = run_tracked_yaml
     run_command(
         suite_def,
         experiments=experiment or [],
@@ -194,15 +224,47 @@ def analyze(
             help="Target F2 suite (e.g. w2v_pretrain) or 'corpus'",
         ),
     ] = "corpus",
+    tracking_uri: Annotated[str | None, typer.Option("--tracking-uri")] = None,
+    questions: Annotated[
+        Path | None,
+        typer.Option("--questions", help="Canonical questions-words.txt path."),
+    ] = None,
+    corpus: Annotated[
+        str | None,
+        typer.Option(
+            "--corpus",
+            help="W2V1 corpus source: wmt, lm1b, or umbc. Omit to analyze all.",
+        ),
+    ] = None,
+    table: Annotated[
+        int, typer.Option("--table", help="W2V1 table number: 2 or 4.")
+    ] = 2,
 ) -> None:
     """Render or summarize F2 experiment results."""
     if suite == "corpus":
         typer.echo("For corpus pipeline analysis, use: repro f2 corpus analyze --help")
         return
     if suite == "w2v1":
-        from .suites.w2v1.validation import analyze_latest
+        from repro_core.context import RuntimePaths
 
-        typer.echo(analyze_latest())
+        from .common.paths import get_benchmark_data_dir
+        from .suites.w2v1.analysis import analyze_table2_sources
+        from .suites.w2v1.table4 import analyze_table4_sources
+        from .tracking import resolve_tracking_uri
+
+        paths = RuntimePaths.from_environment()
+        questions = questions or get_benchmark_data_dir(paths) / "questions-words.txt"
+        if table not in (2, 4):
+            raise ValueError("W2V1 analysis table must be 2 or 4")
+        analyzer = analyze_table2_sources if table == 2 else analyze_table4_sources
+        outputs = analyzer(
+            resolve_tracking_uri(tracking_uri),
+            questions,
+            corpus_source=corpus,
+            paths=paths,
+        )
+        for output in outputs:
+            typer.echo(f"W2V1 Table {table} analysis written: {output}")
         return
     typer.echo(f"Analysis orchestration for F2 suite '{suite}' is initialized.")
 
@@ -225,12 +287,7 @@ def check(
     tracking_uri: Annotated[str | None, typer.Option("--tracking-uri")] = None,
 ) -> None:
     """Compare declared plans with recorded F2 run state in MLflow."""
-    if suite == "w2v1" and tracking_uri is None:
-        from .suites.w2v1.validation import check_latest
-
-        typer.echo(check_latest())
-        return
     typer.echo(f"Checking run state for F2 suite '{suite}'...")
 
 
-__all__ = ["analyze", "app", "check", "list_suites", "plan", "run"]
+__all__ = ["analyze", "app", "check", "evaluate", "list_suites", "plan", "run"]

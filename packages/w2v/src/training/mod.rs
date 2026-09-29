@@ -1,8 +1,9 @@
 //! Context traversal and objective arithmetic from the modular C oracle.
 use crate::{
     atomic_float,
-    config::{Real, Status},
+    config::{ContextPolicy, Real, Status, UpdateStrategy},
     random::Rng,
+    simd,
     trainer::Trainer,
 };
 use std::sync::atomic::AtomicU32;
@@ -10,15 +11,21 @@ use std::sync::atomic::AtomicU32;
 mod cbow;
 mod hierarchical_softmax;
 mod negative_sampling;
-mod objective;
 mod skip_gram;
 pub mod worker;
 
 pub use cbow::train as cbow_train;
 pub use hierarchical_softmax::train as hierarchical_softmax_train;
 pub use negative_sampling::train as negative_sampling_train;
-pub use objective::train as objective_train;
 pub use skip_gram::train as skip_gram_train;
+
+#[inline(always)]
+pub(crate) fn shared_add(destination: &AtomicU32, delta: Real, strategy: UpdateStrategy) {
+    match strategy {
+        UpdateStrategy::AtomicCas => atomic_float::add(destination, delta),
+        UpdateStrategy::Hogwild => atomic_float::add_hogwild(destination, delta),
+    }
+}
 
 /// The per-target contract needed by both model kinds. Stage 6 owns the
 /// sentence and scratch buffers and creates a step for each trained target.
@@ -30,9 +37,56 @@ pub struct ModelStep<'t, 'w> {
     pub sentence_position: usize,
     pub hidden: &'w mut [Real],
     pub hidden_gradient: &'w mut [Real],
+    pub output_snapshot: &'w mut [Real],
     pub window_rng: &'w mut Rng,
     pub negative_rng: &'w mut Rng,
     pub observe_objective: bool,
+}
+
+pub(crate) struct ObjectiveScratch<'a> {
+    pub hidden_gradient: &'a mut [Real],
+    pub output_snapshot: &'a mut [Real],
+}
+
+pub(crate) fn objective_step<F>(
+    hidden: &[Real],
+    hidden_gradient: &mut [Real],
+    output_row: &[AtomicU32],
+    output_snapshot: &mut [Real],
+    update_strategy: UpdateStrategy,
+    gradient: F,
+) -> Result<(), Status>
+where
+    F: FnOnce(Real) -> Result<Option<Real>, Status>,
+{
+    assert_eq!(hidden.len(), hidden_gradient.len());
+    assert_eq!(hidden.len(), output_row.len());
+    assert_eq!(hidden.len(), output_snapshot.len());
+    for (snapshot, shared) in output_snapshot.iter_mut().zip(output_row) {
+        *snapshot = atomic_float::load(shared);
+    }
+    let score = simd::dot(hidden, output_snapshot);
+    let Some(gradient_scale) = gradient(score)? else {
+        return Ok(());
+    };
+    simd::scaled_accumulate(hidden_gradient, output_snapshot, gradient_scale);
+    match update_strategy {
+        UpdateStrategy::AtomicCas => {
+            for (snapshot, value) in output_snapshot.iter_mut().zip(hidden) {
+                *snapshot = gradient_scale * value;
+            }
+            for (shared, delta) in output_row.iter().zip(output_snapshot) {
+                atomic_float::add(shared, *delta);
+            }
+        }
+        UpdateStrategy::Hogwild => {
+            simd::scaled_accumulate(output_snapshot, hidden, gradient_scale);
+            for (shared, value) in output_row.iter().zip(output_snapshot) {
+                atomic_float::store(shared, *value);
+            }
+        }
+    }
+    Ok(())
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -75,21 +129,29 @@ pub fn context_position(
 }
 
 pub fn context_radius(window_rng: &mut Rng, window_radius: usize) -> usize {
-    let shrink = window_rng.next_u64() % window_radius as u64;
-    window_radius - shrink as usize
+    context_radius_with_policy(window_rng, window_radius, ContextPolicy::Dynamic)
 }
 
-pub fn objective_score(hidden: &[Real], output_row: &[AtomicU32]) -> Real {
-    assert_eq!(hidden.len(), output_row.len());
-    let mut score = 0.0;
-    for coordinate in 0..hidden.len() {
-        let output_value = atomic_float::load(&output_row[coordinate]);
-        score += hidden[coordinate] * output_value;
+pub fn context_radius_with_policy(
+    window_rng: &mut Rng,
+    window_radius: usize,
+    policy: ContextPolicy,
+) -> usize {
+    match policy {
+        ContextPolicy::Fixed => window_radius,
+        ContextPolicy::Dynamic => {
+            let shrink = window_rng.next_u64() % window_radius as u64;
+            window_radius - shrink as usize
+        }
     }
-    score
 }
 
-pub fn objective_apply_update(
+#[inline(always)]
+pub fn objective_score(hidden: &[Real], output_row: &[AtomicU32]) -> Real {
+    simd::shared_dot(hidden, output_row)
+}
+
+pub fn objective_apply_update_checked(
     hidden: &[Real],
     hidden_gradient: &mut [Real],
     output_row: &[AtomicU32],

@@ -72,6 +72,28 @@ def test_analogy_scoring_reports_oov_and_semantic_syntactic_splits() -> None:
     ]
 
 
+def test_analogy_scoring_matches_compute_accuracy_casing_and_threshold() -> None:
+    lookup = Lookup(
+        {
+            b"athens": (1, 0),
+            b"greece": (1, 1),
+            b"baghdad": (2, 0),
+            b"iraq": (2, 1),
+            b"decoy": (2, 0.9),
+        }
+    )
+    questions = parse_analogy_questions(
+        [b": capital-common-countries", b"Athens Greece Baghdad Iraq"]
+    )
+
+    included = evaluate_analogies(lookup, questions, vocabulary_limit=5, batch_size=1)
+    excluded = evaluate_analogies(lookup, questions, vocabulary_limit=3, batch_size=1)
+
+    assert included.overall.score == 1.0
+    assert (included.overall.valid_count, included.overall.total_count) == (1, 1)
+    assert (excluded.overall.valid_count, excluded.overall.total_count) == (0, 1)
+
+
 def test_similarity_sentence_completion_and_oov_policies() -> None:
     lookup = Lookup(
         {

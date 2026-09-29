@@ -8,15 +8,16 @@ evaluated reproduction runs.
 
 | work | affected specifications | completion condition |
 |---|---|---|
-| Materialize pinned `questions-words.txt` | W2V1 and W2V2 word evaluations | Download the catalog URI, verify the pinned SHA-256 and inject the immutable local path into canonical configs. |
-| Materialize pinned `questions-phrases.txt` | W2V2 phrase evaluations | Download, verify SHA-256 and replace the checked-in smoke fixture in canonical configs. |
+| Materialize pinned `questions-words.txt` | W2V1 and W2V2 word evaluations | Download the catalog URI, verify the pinned SHA-256 and pass its immutable local path to the standalone evaluator. |
+| Materialize pinned `questions-phrases.txt` | W2V2 phrase evaluations | Download, verify the pinned SHA-256 and pass its immutable local path to the standalone evaluator. |
 | Resolve MSR syntactic word-relations data | W2V1 Table 3 | Record exact files, license, version and checksums; add parser and scorer wiring. |
 | Resolve MSR Sentence Completion files | `w2v1-msr-sentence-skipgram` | Pin official training/test files and checksums and connect the existing sentence-completion scorer. |
 | Pin published-vector baselines | W2V1 NNLM comparisons and W2V2 qualitative tables | Record licenses, immutable artifacts and checksums and implement import adapters. |
 
-Canonical W2V YAML currently points to small repository fixtures for analogy
-evaluation. Those fixtures are appropriate for smoke tests only and must not be
-reported as full paper evaluation results.
+Canonical W2V YAML contains training inputs only. Evaluation resources are
+resolved independently after a durable model artifact exists. The checked-in
+question files remain test fixtures and must not be reported as full paper
+evaluation results.
 
 ## Engine and training implementations
 

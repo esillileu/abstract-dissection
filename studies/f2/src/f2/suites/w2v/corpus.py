@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 import os
 import re
 import shutil
 import subprocess
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
@@ -38,22 +36,16 @@ class CorpusShard:
 
 @dataclass(frozen=True)
 class CorpusBinding:
-    resource_version_id: str
-    manifest_digest: str
     shards: tuple[CorpusShard, ...]
 
     @classmethod
     def from_rows(
         cls,
-        resource_version_id: str,
-        manifest_digest: str,
         rows: Sequence[Mapping[str, object]],
     ) -> CorpusBinding:
-        """Translate catalog/corpus repository rows into an immutable binding."""
+        """Translate verified corpus DB rows into ordered shard inputs."""
         return cls(
-            resource_version_id=resource_version_id,
-            manifest_digest=manifest_digest,
-            shards=tuple(
+            tuple(
                 CorpusShard(
                     index=int(row["shard_index"]),
                     uri=str(row["s3_uri"]),
@@ -63,25 +55,16 @@ class CorpusBinding:
                     document_count=int(row["doc_count"]),
                 )
                 for row in rows
-            ),
+            )
         )
 
 
 @dataclass(frozen=True)
 class MaterializedCorpus:
     path: Path
-    resource_version_id: str
-    manifest_digest: str
     corpus_sha256: str
     lexical_tokens: int
     complete_shards: int
-
-
-def ordered_manifest_digest(shards: Sequence[CorpusShard]) -> str:
-    """Hash the ordered identity fields recorded by the F2 corpus catalog."""
-    payload = [asdict(shard) for shard in shards]
-    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
-    return hashlib.sha256(encoded).hexdigest()
 
 
 class CorpusMaterializer:
@@ -111,21 +94,8 @@ class CorpusMaterializer:
             raise ValueError("lexical_token_budget must be positive")
         self._validate_binding(binding)
 
-        root = (
-            self.paths.cache_root
-            / "exp"
-            / "f2"
-            / "w2v"
-            / "corpus"
-            / binding.resource_version_id
-            / binding.manifest_digest
-        )
+        root = self.paths.cache_root / "exp" / "f2" / "w2v" / "corpus"
         root.mkdir(parents=True, exist_ok=True)
-        final = root / f"tokens-{lexical_token_budget}.txt"
-        metadata = final.with_suffix(".json")
-        cached = self._read_result(metadata, final, binding, lexical_token_budget)
-        if cached is not None:
-            return cached
 
         staging = (
             self.paths.staging_root
@@ -133,7 +103,7 @@ class CorpusMaterializer:
             / "f2"
             / "w2v"
             / "corpus"
-            / f"{binding.manifest_digest}-{lexical_token_budget}-{os.getpid()}"
+            / f"materialize-{lexical_token_budget}-{os.getpid()}"
         )
         if staging.exists():
             shutil.rmtree(staging)
@@ -148,26 +118,14 @@ class CorpusMaterializer:
                 progress=progress,
             )
             corpus_sha256 = sha256_file(output)
-            result_payload = {
-                "schema_version": 1,
-                "resource_version_id": binding.resource_version_id,
-                "manifest_digest": binding.manifest_digest,
-                "lexical_token_budget": lexical_token_budget,
-                "lexical_tokens": tokens,
-                "complete_shards": complete_shards,
-                "corpus_sha256": corpus_sha256,
-            }
-            output.replace(final)
-            temporary_metadata = staging / "materialization.json"
-            temporary_metadata.write_text(
-                json.dumps(result_payload, sort_keys=True, indent=2) + "\n",
-                encoding="utf-8",
-            )
-            temporary_metadata.replace(metadata)
+            final = root / "materialized" / f"{corpus_sha256}.txt"
+            final.parent.mkdir(parents=True, exist_ok=True)
+            if final.is_file() and sha256_file(final) == corpus_sha256:
+                output.unlink()
+            else:
+                output.replace(final)
             return MaterializedCorpus(
                 final,
-                binding.resource_version_id,
-                binding.manifest_digest,
                 corpus_sha256,
                 tokens,
                 complete_shards,
@@ -177,8 +135,8 @@ class CorpusMaterializer:
 
     @staticmethod
     def _validate_binding(binding: CorpusBinding) -> None:
-        if not binding.resource_version_id or not binding.shards:
-            raise ValueError("corpus binding must identify a version and shards")
+        if not binding.shards:
+            raise ValueError("corpus binding must contain shards")
         expected_indices = list(range(len(binding.shards)))
         actual_indices = [shard.index for shard in binding.shards]
         if actual_indices != expected_indices:
@@ -194,8 +152,6 @@ class CorpusMaterializer:
                 raise ValueError(
                     f"invalid corpus shard metadata at index {shard.index}"
                 )
-        if ordered_manifest_digest(binding.shards) != binding.manifest_digest:
-            raise ValueError("ordered corpus manifest digest mismatch")
 
     def _cached_shard(self, shard: CorpusShard, object_root: Path) -> Path:
         target = object_root / f"shard-{shard.index:05d}-{shard.sha256}.txt.zst"
@@ -265,37 +221,6 @@ class CorpusMaterializer:
             raise ValueError("corpus binding contains no lexical tokens")
         return tokens, complete_shards
 
-    @staticmethod
-    def _read_result(
-        metadata: Path,
-        corpus: Path,
-        binding: CorpusBinding,
-        budget: int,
-    ) -> MaterializedCorpus | None:
-        if not metadata.is_file() or not corpus.is_file():
-            return None
-        try:
-            payload = json.loads(metadata.read_text(encoding="utf-8"))
-            digest = sha256_file(corpus)
-            if (
-                payload["schema_version"] != 1
-                or payload["resource_version_id"] != binding.resource_version_id
-                or payload["manifest_digest"] != binding.manifest_digest
-                or payload["lexical_token_budget"] != budget
-                or payload["corpus_sha256"] != digest
-            ):
-                return None
-            return MaterializedCorpus(
-                corpus,
-                binding.resource_version_id,
-                binding.manifest_digest,
-                digest,
-                int(payload["lexical_tokens"]),
-                int(payload["complete_shards"]),
-            )
-        except (KeyError, OSError, TypeError, ValueError, json.JSONDecodeError):
-            return None
-
 
 def _decompressed_lines(path: Path):
     process = subprocess.Popen(
@@ -316,5 +241,4 @@ __all__ = [
     "CorpusMaterializer",
     "CorpusShard",
     "MaterializedCorpus",
-    "ordered_manifest_digest",
 ]

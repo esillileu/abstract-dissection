@@ -59,11 +59,28 @@ pub enum RngAlgorithm {
     Xorshift = 1,
 }
 
+#[repr(i32)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum UpdateStrategy {
+    AtomicCas = 0,
+    Hogwild = 1,
+}
+
+#[repr(i32)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ContextPolicy {
+    Dynamic = 0,
+    Fixed = 1,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VocabularyConfig {
     pub initial_capacity: usize,
     pub hash_capacity: usize,
     pub min_count: u64,
+    /// Maximum lexical entries, excluding the internal sentence token.
+    /// Zero keeps every entry passing `min_count`.
+    pub max_lexical_words: usize,
 }
 impl Default for VocabularyConfig {
     fn default() -> Self {
@@ -71,6 +88,7 @@ impl Default for VocabularyConfig {
             initial_capacity: 1000,
             hash_capacity: 30_000_000,
             min_count: 5,
+            max_lexical_words: 0,
         }
     }
 }
@@ -95,6 +113,7 @@ pub struct TrainingConfig {
     pub objective_kind: ObjectiveKind,
     pub embedding_dimension: usize,
     pub window_radius: usize,
+    pub context_policy: ContextPolicy,
     pub epochs: usize,
     pub thread_count: usize,
     pub learning_rate_update_interval: usize,
@@ -110,6 +129,7 @@ pub struct TrainingConfig {
     pub sigmoid_table_size: usize,
     pub sigmoid_max: Real,
     pub hs_out_of_range_policy: HsOutOfRangePolicy,
+    pub update_strategy: UpdateStrategy,
 }
 impl Default for TrainingConfig {
     fn default() -> Self {
@@ -118,6 +138,7 @@ impl Default for TrainingConfig {
             objective_kind: ObjectiveKind::NegativeSampling,
             embedding_dimension: 100,
             window_radius: 5,
+            context_policy: ContextPolicy::Dynamic,
             epochs: 5,
             thread_count: 12,
             learning_rate_update_interval: 10_000,
@@ -131,6 +152,7 @@ impl Default for TrainingConfig {
             sigmoid_table_size: 1000,
             sigmoid_max: 6.0,
             hs_out_of_range_policy: HsOutOfRangePolicy::Skip,
+            update_strategy: UpdateStrategy::Hogwild,
         }
     }
 }

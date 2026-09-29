@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-import hashlib
+from pathlib import Path
 
-import numpy as np
 import pytest
 
 from f2.definition import DEFINITION
@@ -10,13 +9,13 @@ from f2.suites.w2v.artifacts import (
     load_checkpoint,
     load_lookup_artifact,
 )
+from f2.suites.w2v.evaluate import evaluate_lookup_artifact
 from f2.suites.w2v.evaluation import (
     additive_composition,
     nearest_tokens,
     pca_projection,
 )
 from f2.suites.w2v.phrases import PhrasePolicy, materialize_phrase_corpus
-from f2.suites.w2v1.executor import restore_session
 from repro_core.context import ExperimentContext, RuntimePaths
 from repro_core.execution.runner import run_config
 
@@ -62,14 +61,29 @@ def test_phrase_materialization_reports_each_streaming_pass(tmp_path):
     assert any("phrase pass=2/2 complete" in message for message in messages)
 
 
-def test_w2v2_local_phrase_run_resume_lookup_and_reports(tmp_path):
+def test_w2v2_phrase_run_completes_declared_schedule_and_reports(tmp_path):
     definition = DEFINITION.get_suite("w2v2")
     assert definition.executor_module == "f2.suites.w2v2.executor"
     spec = definition.load_run_spec(
-        definition.config_root / "e01_phrase_skipgram.yaml",
-        atomic_run_id="local-smoke",
-        overrides={},
-    )
+        definition.config_root / "e02_table3_phrase_skipgram.yaml",
+        atomic_run_id="wmt--neg5-subsampling",
+        overrides={
+            "corpus": {"path": str(Path(__file__).parent / "fixtures/w2v2-corpus.txt")},
+            "vocabulary": {
+                "initial_capacity": 16,
+                "hash_capacity": 128,
+                "min_count": 1,
+            },
+            "training": {
+                "embedding_dimension": 8,
+                "window_radius": 2,
+                "epochs": 2,
+                "thread_count": 1,
+                "negative_table_size": 100,
+            },
+            "phrase_detection": {"passes": 1, "threshold": 0.0, "min_count": 1},
+        },
+    ).with_seed(1)
     config = spec.to_executor_config()
     paths = _paths(tmp_path)
     result = run_config(
@@ -80,34 +94,57 @@ def test_w2v2_local_phrase_run_resume_lookup_and_reports(tmp_path):
     state = load_checkpoint(result.checkpoint)
     assert state.completed_epochs == 2
     assert (result.root / "phrase_lineage.json").is_file()
-    assert (result.root / "phrase_evaluation.json").is_file()
+    assert not (result.root / "phrase_evaluation.json").exists()
     lookup = load_lookup_artifact(result.lookup)
     assert lookup.row(b"new_york") is not None
     assert nearest_tokens(lookup, b"new_york", limit=2)
     assert additive_composition(lookup, [b"new_york", b"city"], limit=2)
     projection = pca_projection(lookup, [b"new_york", b"city_san", b"francisco"])
     assert set(projection) == {b"new_york", b"city_san", b"francisco"}
-
-    interrupted_config = dict(config)
-    phrase_path = (
-        paths.staging_root
-        / "exp/f2/w2v2/phrase-corpus/derived/w2v2-local-smoke-s1/phrases.txt"
+    evaluation = evaluate_lookup_artifact(
+        "w2v2",
+        result.lookup,
+        Path(__file__).parent / "fixtures/questions-phrases.txt",
     )
-    interrupted_config["corpus"] = {
-        "path": str(phrase_path),
-        "sha256": hashlib.sha256(phrase_path.read_bytes()).hexdigest(),
-    }
-    session = restore_session(interrupted_config, result.checkpoint, paths.repo_root)
-    np.testing.assert_array_equal(
-        session.export_state().input_embeddings(), state.input_embeddings()
-    )
+    assert evaluation["analogy"]["overall"]["total_count"] > 0
+    assert evaluation["phrase"]["nearest_entities"]
+    assert evaluation["phrase"]["additive_composition"]["tokens"]
+    assert evaluation["phrase"]["pca"]
 
 
 def test_w2v2_rejects_nce_substitution():
     definition = DEFINITION.get_suite("w2v2")
     with pytest.raises(ValueError, match="NCE is not substituted"):
         definition.load_run_spec(
-            definition.config_root / "e01_phrase_skipgram.yaml",
-            atomic_run_id="local-smoke",
+            definition.config_root / "e02_table3_phrase_skipgram.yaml",
+            atomic_run_id="wmt--neg5-subsampling",
             overrides={"training": {"objective_kind": "nce"}},
         )
+
+
+def test_canonical_phrase_training_uses_twenty_workers() -> None:
+    definition = DEFINITION.get_suite("w2v2")
+    config = definition.load_run_spec(
+        definition.config_root / "e02_table3_phrase_skipgram.yaml",
+        atomic_run_id="wmt--neg5-subsampling",
+        overrides={},
+    ).to_executor_config()
+
+    assert config["training"]["thread_count"] == 20
+
+
+def test_evaluation_resources_do_not_change_w2v2_training_identity() -> None:
+    definition = DEFINITION.get_suite("w2v2")
+    source = definition.config_root / "e02_table3_phrase_skipgram.yaml"
+    first = definition.load_run_spec(
+        source,
+        atomic_run_id="wmt--neg5-subsampling",
+        overrides={"evaluation": {"questions_path": "first.txt"}},
+    ).to_executor_config()
+    second = definition.load_run_spec(
+        source,
+        atomic_run_id="wmt--neg5-subsampling",
+        overrides={"evaluation": {"questions_path": "second.txt"}},
+    ).to_executor_config()
+    assert "evaluation" not in first
+    assert first["identity"]["config_digest"] == second["identity"]["config_digest"]

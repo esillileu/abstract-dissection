@@ -5,7 +5,6 @@ from .corpus import (
     CorpusMaterializer,
     CorpusShard,
     MaterializedCorpus,
-    ordered_manifest_digest,
 )
 from .evaluation import EvaluationResult
 from .observations import (
@@ -22,6 +21,5 @@ __all__ = [
     "EvaluationResult",
     "MaterializedCorpus",
     "ObservationRow",
-    "ordered_manifest_digest",
     "sparse_metric_rows",
 ]

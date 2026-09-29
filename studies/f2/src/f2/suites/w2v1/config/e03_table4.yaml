@@ -1,0 +1,51 @@
+domain: f2.w2v1
+kind: word2vec
+execution: {mode: seeded, default_device: cpu}
+seed_policy: {seed_set: research_v1, seed_count: 3}
+identity: {planned_run_slot_id: resolved-from-atomic-run-and-seed, seed: 1, study: table4}
+corpus: {}
+# Reconstruction decision: Table 4 does not state its vocabulary cap.
+vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 1, max_lexical_words: 1000000}
+training:
+  objective_kind: hierarchical_softmax
+  embedding_dimension: 300
+  epochs: 3
+  thread_count: 20
+  learning_rate_update_interval: 10000
+  observation_interval: 100000
+  initial_learning_rate: 0.025
+  subsampling_threshold: 0.0
+  negative_sample_count: 0
+  rng_algorithm: lcg
+  negative_table_size: 100
+  sigmoid_table_size: 1000
+  sigmoid_max: 6.0
+  hs_out_of_range_policy: skip
+checkpoint: {save_latest: true, save_final: true, best_payload: full}
+tracking: {experiment: f2.w2v1}
+
+resources:
+  wmt: &wmt
+    identity: {execution_plan_id: w2v1-table4-wmt-r1}
+  lm1b: &lm1b
+    identity: {execution_plan_id: w2v1-table4-lm1b-r1}
+  umbc: &umbc
+    identity: {execution_plan_id: w2v1-table4-umbc-r1}
+
+conditions:
+  cbow: &cbow
+    experiment_spec_id: w2v1-google-news-cbow-scale
+    corpus: {lexical_token_budget: 783000000}
+    training: {model_kind: cbow, window_radius: 4, context_policy: fixed}
+  skipgram: &skipgram
+    experiment_spec_id: w2v1-google-news-skipgram-scale
+    corpus: {lexical_token_budget: 783000000}
+    training: {model_kind: skip_gram, window_radius: 10, context_policy: dynamic}
+
+variants:
+  wmt--cbow-d300-w783m: {<<: [*wmt, *cbow]}
+  wmt--skipgram-d300-w783m: {<<: [*wmt, *skipgram]}
+  lm1b--cbow-d300-w783m: {<<: [*lm1b, *cbow]}
+  lm1b--skipgram-d300-w783m: {<<: [*lm1b, *skipgram]}
+  umbc--cbow-d300-w783m: {<<: [*umbc, *cbow]}
+  umbc--skipgram-d300-w783m: {<<: [*umbc, *skipgram]}

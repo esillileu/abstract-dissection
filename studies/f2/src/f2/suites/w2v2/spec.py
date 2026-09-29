@@ -19,7 +19,6 @@ class RunSpec(CommonRunSpec):
                 "corpus",
                 "vocabulary",
                 "training",
-                "evaluation",
                 "phrase_detection",
             )
         }
@@ -51,8 +50,6 @@ def parse_run_spec(
     required = {
         "execution_plan_id",
         "planned_run_slot_id",
-        "resource_version",
-        "corpus_manifest_digest",
         "seed",
     }
     if missing := sorted(required - identity.keys()):
@@ -70,7 +67,6 @@ def parse_run_spec(
         corpus=mapping(raw, "corpus"),
         vocabulary=mapping(raw, "vocabulary"),
         training=training,
-        evaluation=mapping(raw, "evaluation"),
         checkpoint=mapping(raw, "checkpoint"),
         tracking=mapping(raw, "tracking"),
         path=path,

@@ -12,8 +12,8 @@ For each paper condition:
 1. enumerate every verified normalized corpus with enough lexical words;
 2. materialize the requested lexical-token budget as an ordered prefix;
 3. run the same model condition and seeds independently for every eligible corpus;
-4. preserve corpus resource version, ordered-manifest digest and materialized
-   corpus digest in the planned slot and MLflow lineage;
+4. resolve verified training shards directly from the planned slot without exposing
+   catalog resource versions or ordered-manifest digests to the runner;
 5. report each corpus separately and compare corpus-domain sensitivity across
    corpora; and
 6. label every result as a reconstruction, never as an exact reproduction.
@@ -41,7 +41,7 @@ execution-plan binding creates runnable slots.
 | catalog condition | WMT | LM1B | UMBC | action |
 |---|---|---|---|---|
 | W2V1 Table 2, 24M-783M | full | full | full | Run all three corpora and compare all dimensions/seeds. |
-| W2V1 Table 3, 320M | full | full | full | Run all three after non-corpus blockers are resolved. |
+| W2V1 Table 3, 320M | full | full | full | Run all three for CBOW and Skip-gram comparisons. |
 | W2V1 Table 4/5, 783M | full | full | full | Run all three. |
 | W2V1 Table 4/5, 1.6B | full | insufficient | full | Run WMT and UMBC; report LM1B only as a separate 791,844,834-word reduced condition if desired. |
 | W2V1 sentence training, 50M | full | full | full | Run all three as explicitly domain-substituted training conditions. |
@@ -54,25 +54,34 @@ slot identity and reports. They must not occupy a nominal 1B or 1.6B slot.
 
 ## Current executability
 
-Training code exists today for these WMT-bound plans:
+Training code exists today for these plans:
 
 - W2V1 Table 2 CBOW: 24 conditions × seeds 1, 7 and 19;
+- W2V1 Table 3 CBOW and Skip-gram: 6 conditions × seeds 1, 7 and 19;
 - W2V2 1B phrase Skip-gram: six objective/subsampling conditions × the same seeds.
 
 They can start through the tracked runner after F2 database, corpus S3 and MLflow
-preflight and explicit large-run approval. However, the canonical YAML currently
-uses small checked-in evaluation fixtures rather than the pinned full evaluation
-files. The engine training and durable checkpoint lifecycle are runnable, but the
-result is not yet a complete paper evaluation until that evaluation-resource work
-is finished.
+preflight and explicit large-run approval. Training ends after durable checkpoint,
+lookup, observation and lineage publication; it does not resolve or read an
+evaluation dataset. Full paper evaluation remains a later, independent operation
+against the saved lookup artifact.
 
 Corpus-specific execution-plan bindings, immutable slot IDs and runtime configs
-for WMT, LM1B and UMBC are now materialized. The catalog contains 270 slots:
-216 W2V1 slots and 54 W2V2 slots. LM1B W2V2 uses a separate 791,844,834-word
+for WMT, LM1B and UMBC are now materialized. The catalog contains 288 slots:
+234 W2V1 slots (216 Table 2 slots and 18 Table 3 slots) and 54 W2V2 slots. LM1B W2V2 uses a separate 791,844,834-word
 reduced plan and is never placed in the nominal 1B plan.
 
-The remaining gate before execution is external: the corpus S3/DB/MLflow
-preflight must pass and `--approve-large-run` must be supplied. Full paper
-evaluation still needs the non-corpus resources listed separately; until then,
-the checked-in evaluation fixtures make these training-ready smoke/evaluation
-runs, not final paper-result runs.
+Runtime experiment numbers identify paper experiments, not corpus substitutes.
+W2V1 Table 2 is `e01_table2_cbow.yaml`; W2V1 Table 3 320M architecture comparisons
+(CBOW and Skip-gram) are consolidated in `e02_table3.yaml`; W2V2 Table 3 phrase training is
+`e02_table3_phrase_skipgram.yaml`. Each file contains all eligible corpora, and
+canonical atomic-run selectors use `<corpus>--<condition>` (for example,
+`wmt--d50-w24m`, `wmt--cbow-d640-w320m` or `umbc--hs-subsampling`). W2V2 `e01` is intentionally absent:
+the paper's word-level comparison is cataloged but is not yet a runnable suite.
+The catalog keeps condition-only IDs within its corpus-specific execution plans,
+so this runtime consolidation does not change immutable planned slot IDs.
+
+The remaining training gate is external: the corpus S3/DB/MLflow preflight must
+pass and `--approve-large-run` must be supplied. Full paper evaluation still
+needs the non-corpus resources listed separately. Checked-in question fixtures
+are used only to test the standalone artifact evaluator, not canonical training.
