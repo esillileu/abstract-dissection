@@ -44,3 +44,77 @@ def test_table5_plan_and_catalog_slots() -> None:
         assert training["objective_kind"] == "hierarchical_softmax"
         assert training["initial_learning_rate"] == 0.025
         assert training["subsampling_threshold"] == 0.0
+
+
+def test_table5_smoke_execution(tmp_path: Path) -> None:
+    import csv
+
+    from f2.suites.w2v.artifacts import load_checkpoint, load_lookup_artifact
+    from f2.suites.w2v.evaluation import evaluate_analogies, parse_analogy_questions
+    from repro_core.context import ExperimentContext, RuntimePaths
+    from repro_core.execution.runner import run_config
+
+    definition = DEFINITION.get_suite("w2v1")
+    fixture_corpus = Path(__file__).parent / "fixtures/w2v1-corpus.txt"
+    fixture_questions = Path(__file__).parent / "fixtures/questions-words.txt"
+    questions = parse_analogy_questions(fixture_questions.read_bytes().splitlines())
+
+    root = tmp_path / "repo"
+    root.mkdir()
+    paths = RuntimePaths(
+        repo_root=Path(__file__).resolve().parents[3],
+        data_root=root / "data",
+        artifacts_root=root / "artifacts",
+        cache_root=root / "cache",
+        staging_root=root / "staging",
+        references_root=root / "references",
+        studies_root=root / "studies",
+    )
+
+    for atomic_run_id, dim, _model in [
+        ("wmt--cbow-d300-w783m-ep1", 300, "cbow"),
+        ("wmt--skipgram-d600-w783m-ep1", 600, "skip_gram"),
+    ]:
+        spec = definition.load_run_spec(
+            "studies/f2/src/f2/suites/w2v1/config/e04_table5.yaml",
+            atomic_run_id=atomic_run_id,
+            overrides={
+                "corpus": {"path": str(fixture_corpus)},
+                "vocabulary": {
+                    "initial_capacity": 16,
+                    "hash_capacity": 128,
+                    "min_count": 1,
+                    "max_lexical_words": 1000,
+                },
+                "training": {
+                    "embedding_dimension": dim,
+                    "epochs": 1,
+                    "thread_count": 1,
+                    "learning_rate_update_interval": 5,
+                    "observation_interval": 1,
+                },
+            },
+        ).with_seed(1)
+
+        result = run_config(
+            spec.to_executor_config(),
+            ExperimentContext(paths=paths),
+            executor_module=definition.executor_module,
+        )
+
+        ckpt = load_checkpoint(result.checkpoint)
+        assert ckpt.completed_epochs == 1
+
+        obs_file = result.root / "metrics/observations.csv"
+        with open(obs_file, encoding="utf-8") as f:
+            rows = list(csv.DictReader(f))
+        lrs = [float(r["learning_rate"]) for r in rows]
+        assert lrs[0] <= 0.025
+        assert lrs[-1] < lrs[0]
+
+        lookup = load_lookup_artifact(result.root / "lookup")
+        assert lookup.embeddings.shape[1] == dim
+        eval_res = evaluate_analogies(
+            lookup, questions, vocabulary_limit=None, batch_size=16
+        )
+        assert eval_res.overall.valid_count > 0
