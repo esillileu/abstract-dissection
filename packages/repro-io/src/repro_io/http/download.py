@@ -132,11 +132,27 @@ class SerialDownloader:
                         partial.unlink()
                         offset = 0
                     mode = "ab" if offset else "wb"
+                    bytes_received = 0
                     with partial.open(mode) as output:
                         while chunk := response.read(CHUNK_SIZE):
                             if self.bandwidth is not None:
                                 self.bandwidth.drain(len(chunk))
                             output.write(chunk)
+                            bytes_received += len(chunk)
+
+                    resp_headers = getattr(response, "headers", None)
+                    if resp_headers is not None:
+                        cl_str = None
+                        if hasattr(resp_headers, "get"):
+                            cl_str = resp_headers.get(
+                                "Content-Length"
+                            ) or resp_headers.get("content-length")
+                        if isinstance(cl_str, str) and cl_str.strip().isdigit():
+                            expected_bytes = int(cl_str.strip())
+                            if bytes_received != expected_bytes:
+                                raise OSError(
+                                    f"incomplete transfer: expected {expected_bytes} bytes, received {bytes_received}"
+                                )
                 size = partial.stat().st_size
                 if expected_length is not None and size != expected_length:
                     raise ValueError(
@@ -149,6 +165,17 @@ class SerialDownloader:
                     )
                 partial.replace(destination)
                 return destination
+            except urllib.error.HTTPError as exc:
+                if exc.code == 416 and offset:
+                    partial.unlink(missing_ok=True)
+                    offset = 0
+                    if attempt == self.retries:
+                        raise
+                    time.sleep(self.backoff_seconds * (2**attempt))
+                    continue
+                if attempt == self.retries:
+                    raise
+                time.sleep(self.backoff_seconds * (2**attempt))
             except (OSError, urllib.error.URLError, ValueError):
                 if attempt == self.retries:
                     raise

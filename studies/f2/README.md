@@ -93,3 +93,27 @@ uv run repro f2 catalog load-manifest studies/f2/catalog/w2v.json
 # Inspect expected run slots with MLflow execution pointers
 uv run repro f2 catalog matrix
 ```
+
+### C. FineWeb 2013 News Surrogate Corpus Commands (`repro f2 corpus fineweb`)
+```bash
+# Inspect FineWeb dataset configuration, dump metadata, and pinned revision
+uv run repro f2 corpus fineweb info
+
+# Run fast end-to-end smoke test on remote parquet records
+uv run repro f2 corpus fineweb smoke --sample-size 50
+
+# Run feasibility study and news yield estimation for 33B scale
+uv run repro f2 corpus fineweb feasibility --sample-size 1000
+
+# Execute production materialization with bounded pipeline (prefetch + async zstd -19 compression)
+uv run repro f2 corpus fineweb build \
+  --output-dir /data/iso/f2-corpus/fineweb-33b \
+  --target-words 33000000000 \
+  --target-words-per-shard 10000000 \
+  --peak-mbps 40.0 \
+  --offpeak-mbps 100.0
+
+# Sync completed shards to SeaweedFS S3 and register into PostgreSQL catalog DB
+uv run repro f2 corpus fineweb register --max-shards 600
+```
+
