@@ -326,3 +326,65 @@ instructions; it does not implement full production materialization. The command
 example above describes its intended interface, not a completed production pipeline.
 Shards preserve record boundaries and use a word target/threshold; they do not
 promise exactly ten million words per shard. These behaviors are unchanged.
+
+---
+
+## 4. FineWeb 2013 News Surrogate Corpus Pipeline & Registration
+
+To unblock large-scale Word2Vec conditions (W2V1 Table 6 6B words and W2V2 33B words) where historical Google News and LDC corpora are unavailable, `studies/f2` provides a production-grade surrogate pipeline built on Hugging Face FineWeb (`HuggingFaceFW/fineweb`, dump `CC-MAIN-2013-20`, pinned revision `9bb295ddab0e05d785b879661af7260fed5140fc`).
+
+### 1) Pipeline Architecture & Concurrency Model
+
+```text
+Remote Parquet (HuggingFace)
+          │
+          ▼ [Background Thread: ParquetPrefetcher (queue maxsize=1)]
+Local Parquet Cache
+          │
+          ▼ [Main Thread: Filter & Normalization]
+1. Domain Classifier (URL heuristics + news metadata)
+2. Raw length filter (min_words >= 100)
+3. Word2Vec text normalization (Mikolov 2013 demo parity)
+4. Line/document assembly (10M words per shard target)
+          │
+          ▼ [queue.Queue(maxsize=2) backpressure]
+[Background Worker: FineWebCompressor (zstd -19 -T1)]
+          │
+          ▼
+Compressed Shards (shard-XXXXX.txt.zst) + checkpoint.json + provenance.jsonl
+```
+
+* **Bounded Pipeline Parallelism**: Prefetching the next Parquet file occurs asynchronously while the current file is processed. Shard compression (`zstd -19 -T1`) runs on a dedicated background worker thread with `maxsize=2` backpressure, ensuring the CPU compressor never starves and text processing is not stalled.
+* **Bandwidth Scheduling**: `TokenBucketBandwidthLimiter` dynamically toggles between peak (e.g. 40 Mbps) and off-peak (e.g. 100 Mbps) limits based on local time.
+* **Checkpoint & Recovery**: Every completed shard is recorded in `checkpoint.json` with physical SHA-256, logical SHA-256, compressed/uncompressed byte sizes, word count, record count, and provenance span.
+
+### 2) Deterministic Prefix Invariant ($C_{6B} \subset C_{33B}$)
+
+The pipeline enforces strict monotonic shard ordering:
+* **6B Verified Prefix**: Shards `shard-00000.txt.zst` through `shard-00599.txt.zst` (600 shards, 5,999,250,706 words, 7.95 GB compressed) are finalized, uploaded to SeaweedFS S3 (`s3://f2-corpus/processed/fineweb/normalized/`), and cataloged in PostgreSQL.
+* **Catalog Resource**: `f2-fineweb-normalized` (version: `f2-fineweb-2013-news-normalized-v1`, readiness: `ready`).
+* **Execution Plan**: `w2v1-fineweb-reconstruction-r1` generates 84 runnable planned run slots (Table 2: 72 slots, Table 3: 6 slots, Table 6: 6 slots). `CorpusMaterializer` streams shards in ascending index order and slices the exact `lexical_token_budget` at runtime.
+* **33B Full Scale Extension**: The ongoing background build targets 3,300 shards. When complete, additional shards (600..3299) are appended to S3 and DB without modifying or invalidating the existing 6B prefix.
+
+### 3) CLI Commands
+
+```bash
+# Display pinned revision and remote Parquet manifest
+uv run repro f2 corpus fineweb info
+
+# Run fast end-to-end smoke test
+uv run repro f2 corpus fineweb smoke --sample-size 50
+
+# Run feasibility yield estimation
+uv run repro f2 corpus fineweb feasibility --sample-size 1000
+
+# Run production materialization with rate limiting and checkpointing
+uv run repro f2 corpus fineweb build \
+  --output-dir /data/iso/f2-corpus/fineweb-33b \
+  --target-words 33000000000 \
+  --target-words-per-shard 10000000
+
+# Register verified shards into SeaweedFS S3 and PostgreSQL catalog
+uv run repro f2 corpus fineweb register --max-shards 600
+```
+

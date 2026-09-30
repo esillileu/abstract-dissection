@@ -31,23 +31,24 @@ condition.
 | `f2-wmt-news-2007-2012-normalized-v1` | news | 1,646,423,517 | 24M, 49M, 50M, 98M, 196M, 320M, 391M, 783M, 1B, 1.6B |
 | `f2-lm1b-r13output-normalized-v1` | language-model benchmark/news | 791,844,834 | 24M, 49M, 50M, 98M, 196M, 320M, 391M, 783M |
 | `f2-umbc-webbase-normalized-v1` | web | 3,398,076,749 | 24M, 49M, 50M, 98M, 196M, 320M, 391M, 783M, 1B, 1.6B |
+| `f2-fineweb-2013-news-normalized-v1` | news | 5,999,250,706 | 24M, 49M, 50M, 98M, 196M, 320M, 391M, 783M, 1B, 1.6B, 6B (33B ongoing) |
 
-All three are connected to applicable catalog requirements through
-`requirement_candidates`. A candidate records a reviewed possibility; only an
-execution-plan binding creates runnable slots.
+All four are connected to applicable catalog requirements through
+`requirement_candidates` or dedicated reconstruction plans (`w2v1-fineweb-reconstruction-r1`).
+A candidate records a reviewed possibility; only an execution-plan binding creates runnable slots.
 
 ## Experiment coverage
 
-| catalog condition | WMT | LM1B | UMBC | action |
-|---|---|---|---|---|
-| W2V1 Table 2, 24M-783M | full | full | full | Run all three corpora and compare all dimensions/seeds. |
-| W2V1 Table 3, 320M | full | full | full | Run all three for CBOW and Skip-gram comparisons. |
-| W2V1 Table 4/5, 783M | full | full | full | Run all three. |
-| W2V1 Table 4/5, 1.6B | full | insufficient | full | Run WMT and UMBC; report LM1B only as a separate 791,844,834-word reduced condition if desired. |
-| W2V1 sentence training, 50M | full | full | full | Run all three as explicitly domain-substituted training conditions. |
-| W2V2 word/phrase, 1B | full | insufficient | full | Run WMT and UMBC; optionally compare the labeled LM1B reduced condition. |
-| W2V1 6B | insufficient | insufficient | insufficient | Corpus-blocked. |
-| W2V2 6B/33B | insufficient | insufficient | insufficient | Corpus-blocked. |
+| catalog condition | WMT | LM1B | UMBC | FineWeb | action |
+|---|---|---|---|---|---|
+| W2V1 Table 2, 24M-783M | full | full | full | full | Run all eligible corpora and compare all dimensions/seeds. |
+| W2V1 Table 3, 320M | full | full | full | full | Run all eligible corpora for CBOW and Skip-gram comparisons. |
+| W2V1 Table 4/5, 783M | full | full | full | full | Run all eligible corpora. |
+| W2V1 Table 4/5, 1.6B | full | insufficient | full | full | Run WMT, UMBC, and FineWeb; report LM1B as reduced condition. |
+| W2V1 sentence training, 50M | full | full | full | full | Run all eligible corpora as explicitly domain-substituted training conditions. |
+| W2V2 word/phrase, 1B | full | insufficient | full | full | Run WMT, UMBC, and FineWeb; optionally compare labeled LM1B. |
+| W2V1 6B | insufficient | insufficient | insufficient | full | Run FineWeb 2013 news surrogate via `w2v1-fineweb-reconstruction-r1`. |
+| W2V2 6B/33B | insufficient | insufficient | insufficient | 6B full / 33B building | 6B unblocked; 33B full materialization actively building in background. |
 
 Partial LM1B conditions must have their actual 791,844,834-word budget in their
 slot identity and reports. They must not occupy a nominal 1B or 1.6B slot.
