@@ -44,6 +44,7 @@ htmlcov/
 Thumbs.db
 mlruns/
 mlruns
+mlflow.db
 
 .env
 
