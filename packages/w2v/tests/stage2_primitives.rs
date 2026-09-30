@@ -68,6 +68,13 @@ fn c_tokenizer_boundaries_and_eof() {
     assert_eq!(tokenizer.read_token().unwrap().token, b"</s>");
     assert_eq!(tokenizer.read_token().unwrap().token, b"</s>");
     assert!(tokenizer.read_token().unwrap().at_eof);
+
+    let mut tokenizer = Tokenizer::new(Cursor::new(b"word1 \x00\x00 word2\x00\x00 word3\n"));
+    assert_eq!(tokenizer.read_token().unwrap().token, b"word1");
+    assert_eq!(tokenizer.read_token().unwrap().token, b"word2");
+    assert_eq!(tokenizer.read_token().unwrap().token, b"word3");
+    assert_eq!(tokenizer.read_token().unwrap().token, b"</s>");
+    assert!(tokenizer.read_token().unwrap().at_eof);
 }
 
 #[test]
