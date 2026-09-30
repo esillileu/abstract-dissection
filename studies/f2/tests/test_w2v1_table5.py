@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 from f2.catalog.manifest import read_manifest
 from f2.definition import DEFINITION
@@ -118,3 +119,34 @@ def test_table5_smoke_execution(tmp_path: Path) -> None:
             lookup, questions, vocabulary_limit=None, batch_size=16
         )
         assert eval_res.overall.valid_count > 0
+
+
+def test_collect_table5_runs() -> None:
+    from types import SimpleNamespace
+
+    from f2.suites.w2v1.table5 import collect_table5_runs
+
+    def make_run(slot: str, run_id: str) -> Any:
+        return SimpleNamespace(
+            info=SimpleNamespace(run_id=run_id),
+            data=SimpleNamespace(tags={"f2.planned_run_slot_id": slot}),
+        )
+
+    runs = [
+        make_run("w2v1-table4-wmt-r1-cbow-d300-w783m-s1", "run-t4-cbow-s1"),
+        make_run("w2v1-table4-wmt-r1-skipgram-d300-w783m-s7", "run-t4-sg-s7"),
+        make_run("w2v1-table5-wmt-r1-cbow-d300-w783m-ep1-s1", "run-t5-cbow-783-s1"),
+        make_run("w2v1-table5-wmt-r1-cbow-d300-w1600m-ep1-s19", "run-t5-cbow-1600-s19"),
+        make_run("w2v1-table5-wmt-r1-skipgram-d600-w783m-ep1-s7", "run-t5-sg-600-s7"),
+        make_run("w2v1-table5-umbc-r1-cbow-d300-w783m-ep1-s1", "run-t5-umbc-ignore"),
+    ]
+
+    grouped = collect_table5_runs(runs, "wmt")
+    assert grouped[("cbow", 300, 783, 3)][1].info.run_id == "run-t4-cbow-s1"
+    assert grouped[("skipgram", 300, 783, 3)][7].info.run_id == "run-t4-sg-s7"
+    assert grouped[("cbow", 300, 783, 1)][1].info.run_id == "run-t5-cbow-783-s1"
+    assert grouped[("cbow", 300, 1600, 1)][19].info.run_id == "run-t5-cbow-1600-s19"
+    assert grouped[("skipgram", 600, 783, 1)][7].info.run_id == "run-t5-sg-600-s7"
+    assert ("cbow", 300, 783, 1) in grouped
+    # Check that umbc run is ignored
+    assert len(grouped.get(("cbow", 300, 783, 1), {})) == 1
