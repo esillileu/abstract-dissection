@@ -1784,6 +1784,16 @@
       "source_hash": "b67cd751472d44880959be958a243cd6d49ed9962870292a1fcba56140086a08",
       "is_canonical": true,
       "notes": "Table 4 reconstruction on verified substitute corpus; 1M lexical vocabulary is a reconstruction decision."
+    },
+    {
+      "execution_plan_id": "w2v1-table5-wmt-r1",
+      "plan_key": "w2v1-table5-wmt",
+      "revision": 1,
+      "status": "runnable",
+      "source_ref": "studies/f2/catalog/w2v.json",
+      "source_hash": "83a2d40e038916e0bba3998d9eff97fe9d001040059eb324aa1af6cc961f18c2",
+      "is_canonical": true,
+      "notes": "Table 5 reconstruction on verified WMT substitute corpus; 1M lexical vocabulary matches Table 4."
     }
   ],
   "plan_experiments": [
@@ -2280,6 +2290,84 @@
         }
       },
       "notes": "Table 4 3-epoch row only; 1M lexical vocabulary cap is a reconstruction decision, not an exact paper fact."
+    },
+    {
+      "plan_experiment_id": "w2v1-table5-wmt-r1-w2v1-google-news-cbow-scale",
+      "execution_plan_id": "w2v1-table5-wmt-r1",
+      "experiment_spec_id": "w2v1-google-news-cbow-scale",
+      "enabled": true,
+      "parameters": {
+        "classification": "reconstruction",
+        "corpus": "wmt",
+        "variant": {
+          "dimensions": [
+            300,
+            600
+          ],
+          "training_words": [
+            783000000,
+            1600000000
+          ],
+          "epochs": 1
+        },
+        "vocabulary_max_lexical_words": 1000000,
+        "seed_policy": {
+          "repetitions": [
+            1,
+            7,
+            19
+          ]
+        },
+        "runtime_policy": {
+          "device": "cpu",
+          "threads": 1
+        },
+        "approval_policy": "explicit approval required before large execution",
+        "evaluation_policy": {
+          "vocabulary_limit": null,
+          "oov": "exclude and report coverage"
+        }
+      },
+      "notes": "Table 5 1-epoch CBOW conditions; 1M lexical vocabulary cap matches Table 4."
+    },
+    {
+      "plan_experiment_id": "w2v1-table5-wmt-r1-w2v1-google-news-skipgram-scale",
+      "execution_plan_id": "w2v1-table5-wmt-r1",
+      "experiment_spec_id": "w2v1-google-news-skipgram-scale",
+      "enabled": true,
+      "parameters": {
+        "classification": "reconstruction",
+        "corpus": "wmt",
+        "variant": {
+          "dimensions": [
+            300,
+            600
+          ],
+          "training_words": [
+            783000000,
+            1600000000
+          ],
+          "epochs": 1
+        },
+        "vocabulary_max_lexical_words": 1000000,
+        "seed_policy": {
+          "repetitions": [
+            1,
+            7,
+            19
+          ]
+        },
+        "runtime_policy": {
+          "device": "cpu",
+          "threads": 1
+        },
+        "approval_policy": "explicit approval required before large execution",
+        "evaluation_policy": {
+          "vocabulary_limit": null,
+          "oov": "exclude and report coverage"
+        }
+      },
+      "notes": "Table 5 1-epoch Skip-gram conditions; 1M lexical vocabulary cap matches Table 4."
     }
   ],
   "resource_bindings": [
@@ -2565,6 +2653,38 @@
     },
     {
       "plan_experiment_id": "w2v1-table4-umbc-r1-w2v1-google-news-skipgram-scale",
+      "requirement_id": "w2v1-google-news-eval-sg",
+      "resource_version_id": "w2v-questions-words-google-code-export",
+      "binding_type": "exact",
+      "justification": "Pinned verified evaluation resource.",
+      "notes": null
+    },
+    {
+      "plan_experiment_id": "w2v1-table5-wmt-r1-w2v1-google-news-cbow-scale",
+      "requirement_id": "w2v1-cbow-scale-train",
+      "resource_version_id": "f2-wmt-news-2007-2012-normalized-v1",
+      "binding_type": "substitute",
+      "justification": "Verified substitute corpus for Table 5.",
+      "notes": null
+    },
+    {
+      "plan_experiment_id": "w2v1-table5-wmt-r1-w2v1-google-news-cbow-scale",
+      "requirement_id": "w2v1-google-news-eval-cbow",
+      "resource_version_id": "w2v-questions-words-google-code-export",
+      "binding_type": "exact",
+      "justification": "Pinned verified evaluation resource.",
+      "notes": null
+    },
+    {
+      "plan_experiment_id": "w2v1-table5-wmt-r1-w2v1-google-news-skipgram-scale",
+      "requirement_id": "w2v1-sg-scale-train",
+      "resource_version_id": "f2-wmt-news-2007-2012-normalized-v1",
+      "binding_type": "substitute",
+      "justification": "Verified substitute corpus for Table 5.",
+      "notes": null
+    },
+    {
+      "plan_experiment_id": "w2v1-table5-wmt-r1-w2v1-google-news-skipgram-scale",
       "requirement_id": "w2v1-google-news-eval-sg",
       "resource_version_id": "w2v-questions-words-google-code-export",
       "binding_type": "exact",
@@ -2904,6 +3024,72 @@
       "device": "cpu",
       "threads": 1,
       "notes": "Table 4 full-vocabulary reconstruction; large execution requires approval."
+    },
+    {
+      "plan_experiment_id": "w2v1-table5-wmt-r1-w2v1-google-news-cbow-scale",
+      "execution_plan_id": "w2v1-table5-wmt-r1",
+      "classification": "reconstruction",
+      "conditions": [
+        {
+          "atomic_run_id": "cbow-d300-w783m-ep1",
+          "training_tokens": 783000000,
+          "embedding_dimension": 300,
+          "epochs": 1
+        },
+        {
+          "atomic_run_id": "cbow-d300-w1600m-ep1",
+          "training_tokens": 1600000000,
+          "embedding_dimension": 300,
+          "epochs": 1
+        },
+        {
+          "atomic_run_id": "cbow-d600-w783m-ep1",
+          "training_tokens": 783000000,
+          "embedding_dimension": 600,
+          "epochs": 1
+        }
+      ],
+      "seeds": [
+        1,
+        7,
+        19
+      ],
+      "device": "cpu",
+      "threads": 1,
+      "notes": "Table 5 full-vocabulary 1-epoch CBOW reconstruction; large execution requires approval."
+    },
+    {
+      "plan_experiment_id": "w2v1-table5-wmt-r1-w2v1-google-news-skipgram-scale",
+      "execution_plan_id": "w2v1-table5-wmt-r1",
+      "classification": "reconstruction",
+      "conditions": [
+        {
+          "atomic_run_id": "skipgram-d300-w783m-ep1",
+          "training_tokens": 783000000,
+          "embedding_dimension": 300,
+          "epochs": 1
+        },
+        {
+          "atomic_run_id": "skipgram-d300-w1600m-ep1",
+          "training_tokens": 1600000000,
+          "embedding_dimension": 300,
+          "epochs": 1
+        },
+        {
+          "atomic_run_id": "skipgram-d600-w783m-ep1",
+          "training_tokens": 783000000,
+          "embedding_dimension": 600,
+          "epochs": 1
+        }
+      ],
+      "seeds": [
+        1,
+        7,
+        19
+      ],
+      "device": "cpu",
+      "threads": 1,
+      "notes": "Table 5 full-vocabulary 1-epoch Skip-gram reconstruction; large execution requires approval."
     }
   ],
   "planned_run_slots": [
