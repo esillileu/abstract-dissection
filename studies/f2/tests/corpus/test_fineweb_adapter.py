@@ -77,7 +77,7 @@ def test_adapter_metadata_and_url_resolution() -> None:
     files_20 = adapter.list_parquet_files("CC-MAIN-2013-20")
     assert len(files_20) == 205
     assert files_20[0] == "data/CC-MAIN-2013-20/000_00000.parquet"
-    assert files_20[-1] == "data/CC-MAIN-2013-20/000_00204.parquet"
+    assert files_20[-1] == "data/CC-MAIN-2013-20/004_00004.parquet"
 
     url = adapter.resolve_url(files_20[0])
     assert url.startswith(

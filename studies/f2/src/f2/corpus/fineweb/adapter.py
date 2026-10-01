@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -19,6 +20,17 @@ FINEWEB_TOTAL_PARQUET_FILES: dict[str, int] = {
     "CC-MAIN-2013-20": 205,
     "CC-MAIN-2013-48": 212,
 }
+_DUMP_FILES_PATH: Path = Path(__file__).parent / "dump_files.json"
+
+
+def _load_dump_files() -> dict[str, list[str]]:
+    if _DUMP_FILES_PATH.is_file():
+        try:
+            with _DUMP_FILES_PATH.open("r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return {}
+    return {}
 
 
 class FineWebSourceAdapter:
@@ -34,10 +46,13 @@ class FineWebSourceAdapter:
 
     def parquet_filename(self, index: int) -> str:
         """Deterministic parquet filename for a part index."""
-        return f"000_{index:05d}.parquet"
+        return f"{index // 50:03d}_{index % 50:05d}.parquet"
 
     def list_parquet_files(self, dump: str = FINEWEB_DEFAULT_DUMP) -> list[str]:
         """Ordered list of relative parquet paths for a given dump."""
+        cached = _load_dump_files().get(dump)
+        if cached:
+            return list(cached)
         count = FINEWEB_TOTAL_PARQUET_FILES.get(dump, 205)
         return [f"data/{dump}/{self.parquet_filename(i)}" for i in range(count)]
 
