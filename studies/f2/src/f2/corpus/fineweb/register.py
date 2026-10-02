@@ -20,9 +20,9 @@ from f2.corpus.sources import stable_id
 def load_and_validate_checkpoint(
     checkpoint_path: Path,
     shards_dir: Path,
-    max_shards: int,
+    max_shards: int | None = None,
 ) -> list[dict[str, Any]]:
-    """Load checkpoint.json and validate the first max_shards against local disk."""
+    """Load checkpoint.json and validate shards against local disk."""
     if not checkpoint_path.is_file():
         raise FileNotFoundError(f"FineWeb checkpoint not found: {checkpoint_path}")
 
@@ -30,12 +30,14 @@ def load_and_validate_checkpoint(
         checkpoint = json.load(f)
 
     completed = checkpoint.get("completed_shards", [])
-    if len(completed) < max_shards:
-        raise ValueError(
-            f"Checkpoint contains only {len(completed)} shards; requested {max_shards}"
-        )
-
-    shards: list[dict[str, Any]] = completed[:max_shards]
+    if max_shards is not None and max_shards > 0:
+        if len(completed) < max_shards:
+            raise ValueError(
+                f"Checkpoint contains only {len(completed)} shards; requested {max_shards}"
+            )
+        shards: list[dict[str, Any]] = completed[:max_shards]
+    else:
+        shards = completed
 
     # Validate indices and files
     for idx, shard in enumerate(shards):
@@ -84,6 +86,13 @@ def upload_shards_to_s3(
     """Upload verified shards and manifest to SeaweedFS S3 concurrently."""
     store.probe()
 
+    try:
+        existing_sizes = {
+            m.uri: m.byte_size for m in store.list(store.uri(f"{prefix}/"))
+        }
+    except Exception:
+        existing_sizes = {}
+
     tasks: list[tuple[Path, str, int]] = []
     for shard in shards:
         idx = shard["index"]
@@ -94,7 +103,9 @@ def upload_shards_to_s3(
 
     def _worker(item: tuple[Path, str, int]) -> bool:
         path, uri, size = item
-        if _object_exists(store, uri, expected_size=size):
+        if uri in existing_sizes and existing_sizes[uri] == size:
+            return False
+        if uri not in existing_sizes and _object_exists(store, uri, expected_size=size):
             return False
         store.put_file(path, uri)
         return True
@@ -235,7 +246,12 @@ def register_corpus_in_db(
             )
 
         # 3. artifacts and corpus_shards
-        for s in shards:
+        for s in tqdm(
+            shards,
+            desc="Registering shards in DB",
+            unit="shard",
+            ncols=90,
+        ):
             artifact_id = "normalized-" + stable_id(
                 resource_version_id, s["index"], s["physical_sha256"]
             )
