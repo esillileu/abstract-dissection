@@ -292,3 +292,8 @@ def test_load_and_validate_checkpoint(tmp_path: Path) -> None:
     assert len(shards) == 1
     assert shards[0]["index"] == 0
     assert shards[0]["word_count"] == 100
+
+    shards_all = load_and_validate_checkpoint(
+        checkpoint_file, shards_dir, max_shards=None
+    )
+    assert len(shards_all) == 1

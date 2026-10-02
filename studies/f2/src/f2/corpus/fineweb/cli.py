@@ -218,9 +218,9 @@ def fineweb_register(
         Path("/data/iso/f2-corpus/fineweb-33b/shards"),
         help="Directory containing shard files",
     ),
-    max_shards: int = typer.Option(
-        600,
-        help="Maximum number of shards to register (default 600 for 6B words)",
+    max_shards: int | None = typer.Option(
+        None,
+        help="Maximum number of shards to register (default: all completed shards)",
     ),
     resource_id: str = typer.Option(
         "f2-fineweb-normalized",
@@ -260,8 +260,9 @@ def fineweb_register(
         upload_shards_to_s3,
     )
 
+    shard_target = f"first {max_shards}" if max_shards else "all completed"
     typer.echo(
-        f"Loading and validating first {max_shards} shards from {checkpoint_path}..."
+        f"Loading and validating {shard_target} shards from {checkpoint_path}..."
     )
     shards = load_and_validate_checkpoint(checkpoint_path, shards_dir, max_shards)
     total_words = sum(s["word_count"] for s in shards)
