@@ -183,8 +183,11 @@ def _plan_revision(execution_plan_id: str) -> int:
 
 
 def _publish(client: Any, run_id: str, root: Path) -> None:
-    write_result_manifest(root)
+    write_result_manifest(root, exclude_dirs=("checkpoints",))
     for path in sorted(item for item in root.rglob("*") if item.is_file()):
+        rel = path.relative_to(root)
+        if any(part == "checkpoints" for part in rel.parts):
+            continue
         parent = path.parent.relative_to(root)
         client.log_artifact(
             run_id,

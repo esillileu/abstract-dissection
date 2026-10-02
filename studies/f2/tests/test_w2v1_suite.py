@@ -347,6 +347,13 @@ def test_w2v_tracked_run_publishes_one_complete_mlflow_run(
     assert "f2.attempt" not in run.data.tags
     assert "f2.predecessor_run_id" not in run.data.tags
 
+    uploaded_artifacts = {item.path for item in client.list_artifacts(run.info.run_id)}
+    assert "lookup" in uploaded_artifacts
+    assert "result.json" in uploaded_artifacts
+    assert "result_manifest.json" in uploaded_artifacts
+    assert "checkpoints" not in uploaded_artifacts
+    assert (receipt.staging_root / "checkpoints").is_dir()
+
 
 @pytest.mark.parametrize(
     (
