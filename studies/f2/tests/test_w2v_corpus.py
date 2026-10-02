@@ -139,3 +139,37 @@ def test_recovers_from_interrupted_download_and_invalid_cached_result(
     assert rebuilt.lexical_tokens == 10
     assert rebuilt.path.read_bytes().endswith(b"eight nine ten\n")
     assert store.calls == 3
+
+
+def test_manifest_cache_skips_stream_and_rebuilds_on_size_mismatch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    binding, objects = _fixture_binding(tmp_path)
+    store = FixtureStore(objects)
+    materializer = CorpusMaterializer(store, paths=_paths(tmp_path))
+
+    # First call: materializes and writes manifest
+    first = materializer.materialize(binding, lexical_token_budget=7)
+
+    # Second call: monkeypatch _write_corpus to fail if called
+    def fail_if_written(*args, **kwargs):
+        raise AssertionError("unexpected _write_corpus call on manifest cache hit")
+
+    monkeypatch.setattr(materializer, "_write_corpus", fail_if_written)
+    second = materializer.materialize(binding, lexical_token_budget=7)
+    assert second == first
+
+    # Corrupt the file size -> manifest cache hit should fail and rebuild
+    first.path.write_bytes(b"short")
+    rebuilt_calls = 0
+    orig_write = CorpusMaterializer._write_corpus
+
+    def counted_write(*args, **kwargs):
+        nonlocal rebuilt_calls
+        rebuilt_calls += 1
+        return orig_write(materializer, *args, **kwargs)
+
+    monkeypatch.setattr(materializer, "_write_corpus", counted_write)
+    third = materializer.materialize(binding, lexical_token_budget=7)
+    assert third == first
+    assert rebuilt_calls == 1

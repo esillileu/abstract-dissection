@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import re
 import shutil
@@ -67,6 +69,18 @@ class MaterializedCorpus:
     complete_shards: int
 
 
+def _binding_manifest_key(binding: CorpusBinding, budget: int) -> str:
+    payload = {
+        "budget": budget,
+        "format": "f2-w2v-materialized-v1",
+        "shards": [
+            (shard.index, shard.sha256, shard.byte_size) for shard in binding.shards
+        ],
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
 class CorpusMaterializer:
     """Fetch, verify, cache, and stream an ordered binding to one local file."""
 
@@ -96,6 +110,30 @@ class CorpusMaterializer:
 
         root = self.paths.cache_root / "exp" / "f2" / "w2v" / "corpus"
         root.mkdir(parents=True, exist_ok=True)
+        manifest_root = root / "manifests"
+        manifest_root.mkdir(parents=True, exist_ok=True)
+        manifest_key = _binding_manifest_key(binding, lexical_token_budget)
+        manifest_file = manifest_root / f"{manifest_key}.json"
+
+        if manifest_file.is_file():
+            try:
+                manifest_data = json.loads(manifest_file.read_text(encoding="utf-8"))
+                cached_sha256 = manifest_data["corpus_sha256"]
+                cached_tokens = int(manifest_data["lexical_tokens"])
+                cached_shards = int(manifest_data["complete_shards"])
+                cached_size = int(manifest_data["byte_size"])
+                final = root / "materialized" / f"{cached_sha256}.txt"
+                if final.is_file() and final.stat().st_size == cached_size:
+                    if progress is not None:
+                        progress(cached_shards, len(binding.shards), cached_tokens)
+                    return MaterializedCorpus(
+                        final,
+                        cached_sha256,
+                        cached_tokens,
+                        cached_shards,
+                    )
+            except Exception:
+                manifest_file.unlink(missing_ok=True)
 
         staging = (
             self.paths.staging_root
@@ -124,6 +162,21 @@ class CorpusMaterializer:
                 output.unlink()
             else:
                 output.replace(final)
+
+            manifest_data = {
+                "manifest_key": manifest_key,
+                "corpus_sha256": corpus_sha256,
+                "lexical_tokens": tokens,
+                "complete_shards": complete_shards,
+                "byte_size": final.stat().st_size,
+            }
+            staging_manifest = staging / "manifest.json"
+            staging_manifest.write_text(
+                json.dumps(manifest_data, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            os.replace(staging_manifest, manifest_file)
+
             return MaterializedCorpus(
                 final,
                 corpus_sha256,

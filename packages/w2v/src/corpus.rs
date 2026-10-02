@@ -70,53 +70,58 @@ impl<R: Read> Tokenizer<R> {
     }
 
     pub fn read_token(&mut self) -> Result<TokenRead, Status> {
-        let mut token = [0u8; MAX_TOKEN_LENGTH];
-        let mut length = 0;
-        let mut at_eof = false;
         loop {
-            let character = if self.pending_newline {
-                self.pending_newline = false;
-                Some(b'\n')
-            } else {
-                let mut byte = [0u8; 1];
-                match self.reader.read(&mut byte) {
-                    Ok(0) => None,
-                    Ok(_) => Some(byte[0]),
-                    Err(_) => return Err(Status::IoError),
-                }
-            };
-            let Some(character) = character else {
-                at_eof = true;
-                break;
-            };
-            match character {
-                b'\r' => continue,
-                b'\n' if length != 0 => {
-                    self.pending_newline = true;
+            let mut token = [0u8; MAX_TOKEN_LENGTH];
+            let mut length = 0;
+            let mut at_eof = false;
+            loop {
+                let character = if self.pending_newline {
+                    self.pending_newline = false;
+                    Some(b'\n')
+                } else {
+                    let mut byte = [0u8; 1];
+                    match self.reader.read(&mut byte) {
+                        Ok(0) => None,
+                        Ok(_) => Some(byte[0]),
+                        Err(_) => return Err(Status::IoError),
+                    }
+                };
+                let Some(character) = character else {
+                    at_eof = true;
                     break;
+                };
+                match character {
+                    b'\r' => continue,
+                    b'\n' if length != 0 => {
+                        self.pending_newline = true;
+                        break;
+                    }
+                    b'\n' => {
+                        return Ok(TokenRead {
+                            token: b"</s>".to_vec(),
+                            at_eof: false,
+                        });
+                    }
+                    b' ' | b'\t' if length != 0 => break,
+                    b' ' | b'\t' => continue,
+                    _ if length < MAX_TOKEN_LENGTH - 1 => {
+                        token[length] = character;
+                        length += 1;
+                    }
+                    _ => {}
                 }
-                b'\n' => {
-                    return Ok(TokenRead {
-                        token: b"</s>".to_vec(),
-                        at_eof: false,
-                    });
-                }
-                b' ' | b'\t' if length != 0 => break,
-                b' ' | b'\t' => continue,
-                _ if length < MAX_TOKEN_LENGTH - 1 => {
-                    token[length] = character;
-                    length += 1;
-                }
-                _ => {}
             }
+            let visible_length = token[..length]
+                .iter()
+                .position(|&byte| byte == 0)
+                .unwrap_or(length);
+            if visible_length == 0 && !at_eof {
+                continue;
+            }
+            return Ok(TokenRead {
+                token: token[..visible_length].to_vec(),
+                at_eof,
+            });
         }
-        let visible_length = token[..length]
-            .iter()
-            .position(|&byte| byte == 0)
-            .unwrap_or(length);
-        Ok(TokenRead {
-            token: token[..visible_length].to_vec(),
-            at_eof,
-        })
     }
 }
