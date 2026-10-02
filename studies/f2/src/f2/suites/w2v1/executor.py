@@ -11,6 +11,8 @@ from typing import Any
 from repro_io.checksum import sha256_file
 from w2v import (
     Corpus,
+    DownpourConfig,
+    DownpourTrainingSession,
     Model,
     TrainingConfig,
     TrainingSession,
@@ -130,7 +132,7 @@ def create_session(
     *,
     cache_root: Path | None = None,
     corpus_digest: str | None = None,
-) -> TrainingSession:
+) -> TrainingSession | DownpourTrainingSession:
     corpus_path = Path(str(_mapping(config, "corpus")["path"]))
     corpus = Corpus(
         corpus_path if corpus_path.is_absolute() else repo_root / corpus_path
@@ -148,6 +150,36 @@ def create_session(
     values["root_seed"] = int(_mapping(config, "identity")["seed"])
     training = TrainingConfig(**values)
     model = Model.create(vocabulary, training)
+
+    distribution = config.get("distribution")
+    if distribution is not None and isinstance(distribution, dict):
+        dist_dict = dict(distribution)
+        mode = dist_dict.get("mode")
+        if mode == "downpour":
+            downpour_kwargs: dict[str, Any] = {}
+            for field in (
+                "parameter_server_shards",
+                "mini_batch_targets",
+                "adagrad_gamma",
+                "adagrad_epsilon",
+                "queue_capacity",
+                "fetch_interval",
+                "push_interval",
+            ):
+                if field in dist_dict:
+                    downpour_kwargs[field] = dist_dict[field]
+            downpour_cfg = DownpourConfig(**downpour_kwargs)
+            return DownpourTrainingSession(
+                corpus,
+                vocabulary,
+                model,
+                training,
+                downpour_cfg,
+                corpus_digest=corpus_digest,
+            )
+        if mode != "none":
+            raise ValueError(f"unsupported distribution mode: {mode}")
+
     return TrainingSession(
         corpus, vocabulary, model, training, corpus_digest=corpus_digest
     )
