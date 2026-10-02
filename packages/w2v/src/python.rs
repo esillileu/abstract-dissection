@@ -1,3 +1,9 @@
+use crate::config::Real;
+use crate::downpour::{
+    DEFAULT_ADAGRAD_EPSILON, DEFAULT_ADAGRAD_GAMMA, DEFAULT_MINI_BATCH_TARGETS, DEFAULT_PS_SHARDS,
+    DEFAULT_QUEUE_CAPACITY, DownpourConfig, DownpourStateDescriptor, DownpourTrainingSession,
+    DownpourTrainingState, replica::ReplicaState,
+};
 use crate::training::worker::WorkerState;
 use crate::{
     Corpus, EmbeddingKind, EpochReport, HsOutOfRangePolicy, Model, ModelKind, ObjectiveKind,
@@ -1002,6 +1008,402 @@ impl PyTrainingSession {
     }
 }
 
+#[pyclass(name = "DownpourConfig")]
+#[derive(Clone, Debug)]
+pub struct PyDownpourConfig {
+    pub(crate) inner: DownpourConfig,
+}
+
+#[pymethods]
+impl PyDownpourConfig {
+    #[new]
+    #[pyo3(signature = (
+        parameter_server_shards=DEFAULT_PS_SHARDS,
+        mini_batch_targets=DEFAULT_MINI_BATCH_TARGETS,
+        adagrad_gamma=DEFAULT_ADAGRAD_GAMMA,
+        adagrad_epsilon=DEFAULT_ADAGRAD_EPSILON,
+        fetch_interval=1,
+        push_interval=1,
+        queue_capacity=DEFAULT_QUEUE_CAPACITY,
+    ))]
+    fn new(
+        parameter_server_shards: usize,
+        mini_batch_targets: usize,
+        adagrad_gamma: Real,
+        adagrad_epsilon: Real,
+        fetch_interval: usize,
+        push_interval: usize,
+        queue_capacity: usize,
+    ) -> PyResult<Self> {
+        let config = DownpourConfig {
+            parameter_server_shards,
+            mini_batch_targets,
+            adagrad_gamma,
+            adagrad_epsilon,
+            fetch_interval,
+            push_interval,
+            queue_capacity,
+        };
+        if config.validate() != Status::Ok {
+            return Err(status_error(Status::InvalidArgument));
+        }
+        Ok(Self { inner: config })
+    }
+
+    #[getter]
+    fn parameter_server_shards(&self) -> usize {
+        self.inner.parameter_server_shards
+    }
+    #[getter]
+    fn mini_batch_targets(&self) -> usize {
+        self.inner.mini_batch_targets
+    }
+    #[getter]
+    fn adagrad_gamma(&self) -> Real {
+        self.inner.adagrad_gamma
+    }
+    #[getter]
+    fn adagrad_epsilon(&self) -> Real {
+        self.inner.adagrad_epsilon
+    }
+    #[getter]
+    fn fetch_interval(&self) -> usize {
+        self.inner.fetch_interval
+    }
+    #[getter]
+    fn push_interval(&self) -> usize {
+        self.inner.push_interval
+    }
+    #[getter]
+    fn queue_capacity(&self) -> usize {
+        self.inner.queue_capacity
+    }
+    fn __repr__(&self) -> String {
+        format!(
+            "DownpourConfig(parameter_server_shards={}, mini_batch_targets={}, adagrad_gamma={}, adagrad_epsilon={}, queue_capacity={})",
+            self.inner.parameter_server_shards,
+            self.inner.mini_batch_targets,
+            self.inner.adagrad_gamma,
+            self.inner.adagrad_epsilon,
+            self.inner.queue_capacity,
+        )
+    }
+}
+
+#[pyclass(name = "DownpourTrainingState")]
+pub struct PyDownpourTrainingState {
+    pub(crate) inner: DownpourTrainingState,
+    vocab_size: usize,
+    embedding_dimension: usize,
+}
+
+#[pymethods]
+impl PyDownpourTrainingState {
+    #[classmethod]
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (
+        schema_version,
+        config_digest,
+        vocabulary_digest,
+        corpus_digest,
+        completed_epochs,
+        processed_tokens,
+        vocabulary_state,
+        input_embeddings,
+        output_embeddings,
+        input_adagrad,
+        output_adagrad,
+        workers,
+    ))]
+    fn from_parts(
+        _cls: &Bound<'_, PyType>,
+        schema_version: u32,
+        config_digest: String,
+        vocabulary_digest: String,
+        corpus_digest: String,
+        completed_epochs: usize,
+        processed_tokens: u64,
+        vocabulary_state: &PyVocabularyState,
+        input_embeddings: PyReadonlyArray2<f32>,
+        output_embeddings: PyReadonlyArray2<f32>,
+        input_adagrad: PyReadonlyArray2<f32>,
+        output_adagrad: PyReadonlyArray2<f32>,
+        workers: Vec<PyWorkerState>,
+    ) -> PyResult<Self> {
+        let input_shape = input_embeddings.shape();
+        let output_shape = output_embeddings.shape();
+        let input_adagrad_shape = input_adagrad.shape();
+        let output_adagrad_shape = output_adagrad.shape();
+        let vocab_size = vocabulary_state.inner.entries.len();
+        if input_shape != output_shape
+            || input_shape != input_adagrad_shape
+            || input_shape != output_adagrad_shape
+            || input_shape[0] != vocab_size
+        {
+            return Err(status_error(Status::InvalidArgument));
+        }
+        let input_values = input_embeddings.as_slice().map_err(|_| {
+            PyValueError::new_err("embedding arrays must be C-contiguous and float32")
+        })?;
+        let output_values = output_embeddings.as_slice().map_err(|_| {
+            PyValueError::new_err("embedding arrays must be C-contiguous and float32")
+        })?;
+        let input_adagrad_values = input_adagrad.as_slice().map_err(|_| {
+            PyValueError::new_err("adagrad arrays must be C-contiguous and float32")
+        })?;
+        let output_adagrad_values = output_adagrad.as_slice().map_err(|_| {
+            PyValueError::new_err("adagrad arrays must be C-contiguous and float32")
+        })?;
+        if input_values
+            .iter()
+            .chain(output_values)
+            .chain(input_adagrad_values)
+            .chain(output_adagrad_values)
+            .any(|value| !value.is_finite())
+        {
+            return Err(status_error(Status::CorruptData));
+        }
+        let replicas = workers
+            .into_iter()
+            .map(|worker| ReplicaState {
+                replica_id: worker.inner.worker_id,
+                local_token_count: worker.inner.local_token_count,
+                window_rng_state: worker.inner.window_rng_state,
+                subsampling_rng_state: worker.inner.subsampling_rng_state,
+                negative_rng_state: worker.inner.negative_rng_state,
+                objective_count: worker.inner.objective_count,
+            })
+            .collect();
+        Ok(Self {
+            inner: DownpourTrainingState {
+                descriptor: DownpourStateDescriptor {
+                    schema_version,
+                    config_digest,
+                    vocabulary_digest,
+                    corpus_digest,
+                },
+                completed_epochs,
+                processed_tokens,
+                vocabulary: vocabulary_state.inner.clone(),
+                input_embeddings: input_values.to_vec(),
+                output_embeddings: output_values.to_vec(),
+                input_adagrad: input_adagrad_values.to_vec(),
+                output_adagrad: output_adagrad_values.to_vec(),
+                replicas,
+            },
+            vocab_size,
+            embedding_dimension: input_shape[1],
+        })
+    }
+
+    #[getter]
+    fn schema_version(&self) -> u32 {
+        self.inner.descriptor.schema_version
+    }
+    #[getter]
+    fn config_digest(&self) -> String {
+        self.inner.descriptor.config_digest.clone()
+    }
+    #[getter]
+    fn vocabulary_digest(&self) -> String {
+        self.inner.descriptor.vocabulary_digest.clone()
+    }
+    #[getter]
+    fn corpus_digest(&self) -> String {
+        self.inner.descriptor.corpus_digest.clone()
+    }
+    #[getter]
+    fn completed_epochs(&self) -> usize {
+        self.inner.completed_epochs
+    }
+    #[getter]
+    fn processed_tokens(&self) -> u64 {
+        self.inner.processed_tokens
+    }
+
+    fn input_embeddings<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray2<f32>>> {
+        array2_from_values(
+            py,
+            &self.inner.input_embeddings,
+            self.vocab_size,
+            self.embedding_dimension,
+        )
+    }
+
+    fn output_embeddings<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray2<f32>>> {
+        array2_from_values(
+            py,
+            &self.inner.output_embeddings,
+            self.vocab_size,
+            self.embedding_dimension,
+        )
+    }
+
+    fn input_adagrad<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray2<f32>>> {
+        array2_from_values(
+            py,
+            &self.inner.input_adagrad,
+            self.vocab_size,
+            self.embedding_dimension,
+        )
+    }
+
+    fn output_adagrad<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray2<f32>>> {
+        array2_from_values(
+            py,
+            &self.inner.output_adagrad,
+            self.vocab_size,
+            self.embedding_dimension,
+        )
+    }
+
+    fn vocabulary_state(&self) -> PyVocabularyState {
+        PyVocabularyState {
+            inner: self.inner.vocabulary.clone(),
+        }
+    }
+
+    fn workers(&self) -> Vec<PyWorkerState> {
+        self.inner
+            .replicas
+            .iter()
+            .map(|r| PyWorkerState {
+                inner: WorkerState {
+                    worker_id: r.replica_id,
+                    local_token_count: r.local_token_count,
+                    last_learning_rate_update_count: 0,
+                    learning_rate: 0.0,
+                    window_rng_state: r.window_rng_state,
+                    subsampling_rng_state: r.subsampling_rng_state,
+                    negative_rng_state: r.negative_rng_state,
+                    objective_count: r.objective_count,
+                },
+            })
+            .collect()
+    }
+}
+
+#[pyclass(name = "DownpourTrainingSession")]
+pub struct PyDownpourTrainingSession {
+    inner: DownpourTrainingSession,
+    vocab_size: usize,
+    embedding_dimension: usize,
+}
+
+#[pymethods]
+impl PyDownpourTrainingSession {
+    #[new]
+    #[pyo3(signature = (corpus, vocabulary, model, config, downpour_config=None, corpus_digest=None))]
+    fn new(
+        corpus: &PyCorpus,
+        vocabulary: &PyVocabulary,
+        model: &PyModel,
+        config: &PyTrainingConfig,
+        downpour_config: Option<&PyDownpourConfig>,
+        corpus_digest: Option<String>,
+    ) -> PyResult<Self> {
+        let trainer = Arc::new(
+            Trainer::create_with_digest(
+                Arc::clone(&corpus.inner),
+                Arc::clone(&vocabulary.inner),
+                Arc::clone(&model.inner),
+                &config.inner,
+                corpus_digest,
+            )
+            .map_err(status_error)?,
+        );
+        let downpour = downpour_config.map(|c| c.inner.clone()).unwrap_or_default();
+        Ok(Self {
+            inner: DownpourTrainingSession::create(trainer, downpour).map_err(status_error)?,
+            vocab_size: model.inner.vocab_size,
+            embedding_dimension: model.inner.embedding_dimension,
+        })
+    }
+
+    #[classmethod]
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (corpus, vocabulary, model, config, downpour_config, state, corpus_digest=None))]
+    fn restore(
+        _cls: &Bound<'_, PyType>,
+        corpus: &PyCorpus,
+        vocabulary: &PyVocabulary,
+        model: &PyModel,
+        config: &PyTrainingConfig,
+        downpour_config: &PyDownpourConfig,
+        state: &PyDownpourTrainingState,
+        corpus_digest: Option<String>,
+    ) -> PyResult<Self> {
+        let trainer = Arc::new(
+            Trainer::create_with_digest(
+                Arc::clone(&corpus.inner),
+                Arc::clone(&vocabulary.inner),
+                Arc::clone(&model.inner),
+                &config.inner,
+                corpus_digest,
+            )
+            .map_err(status_error)?,
+        );
+        Ok(Self {
+            inner: DownpourTrainingSession::restore(
+                trainer,
+                downpour_config.inner.clone(),
+                &state.inner,
+            )
+            .map_err(status_error)?,
+            vocab_size: model.inner.vocab_size,
+            embedding_dimension: model.inner.embedding_dimension,
+        })
+    }
+
+    #[getter]
+    fn completed_epochs(&self) -> usize {
+        self.inner.completed_epochs()
+    }
+
+    #[getter]
+    fn is_complete(&self) -> bool {
+        self.inner.is_complete()
+    }
+
+    #[pyo3(signature = (callback=None))]
+    fn train_epoch(
+        &mut self,
+        py: Python<'_>,
+        callback: Option<Py<PyAny>>,
+    ) -> PyResult<PyEpochReport> {
+        let report = py
+            .allow_threads(|| self.inner.train_epoch())
+            .map_err(status_error)?;
+        let report = PyEpochReport::from(report);
+        if let Some(callback) = callback {
+            let callback_report = Py::new(
+                py,
+                PyEpochReport {
+                    epoch: report.epoch,
+                    epoch_tokens: report.epoch_tokens,
+                    processed_tokens: report.processed_tokens,
+                    learning_rate: report.learning_rate,
+                    elapsed_seconds: report.elapsed_seconds,
+                    tokens_per_second: report.tokens_per_second,
+                    objective_loss_sum: report.objective_loss_sum,
+                    objective_loss_count: report.objective_loss_count,
+                    observations: report.observations.clone(),
+                },
+            )?;
+            callback.call1(py, (callback_report,))?;
+        }
+        Ok(report)
+    }
+
+    fn export_state(&self) -> PyResult<PyDownpourTrainingState> {
+        Ok(PyDownpourTrainingState {
+            inner: self.inner.export_state().map_err(status_error)?,
+            vocab_size: self.vocab_size,
+            embedding_dimension: self.embedding_dimension,
+        })
+    }
+}
+
 #[pymodule]
 fn w2v(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyCorpus>()?;
@@ -1009,11 +1411,14 @@ fn w2v(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyVocabulary>()?;
     m.add_class::<PyVocabularyState>()?;
     m.add_class::<PyTrainingConfig>()?;
+    m.add_class::<PyDownpourConfig>()?;
     m.add_class::<PyModel>()?;
     m.add_class::<PyEpochReport>()?;
     m.add_class::<PyObservation>()?;
     m.add_class::<PyTrainingState>()?;
+    m.add_class::<PyDownpourTrainingState>()?;
     m.add_class::<PyWorkerState>()?;
     m.add_class::<PyTrainingSession>()?;
+    m.add_class::<PyDownpourTrainingSession>()?;
     Ok(())
 }

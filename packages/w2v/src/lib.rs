@@ -5,6 +5,7 @@
 pub mod atomic_float;
 pub mod config;
 pub mod corpus;
+pub mod downpour;
 mod identity;
 pub mod model;
 pub mod random;
@@ -21,6 +22,9 @@ pub use config::{
     TrainingConfig, UpdateStrategy, VocabularyConfig,
 };
 pub use corpus::Corpus;
+pub use downpour::{
+    DownpourConfig, DownpourStateDescriptor, DownpourTrainingSession, DownpourTrainingState,
+};
 pub use model::{EmbeddingKind, Model, SigmoidTable};
 pub use trainer::{
     EpochReport, Observation, StateDescriptor, Trainer, TrainingSession, TrainingState,
