@@ -1,17 +1,25 @@
 use super::{
-    ModelStep, ObjectiveLoss, ObjectiveScratch, context_position, context_radius_with_policy,
-    hierarchical_softmax, negative_sampling, shared_add,
+    ModelStep, ObjectiveLoss, ObjectiveScratch, backend::ParameterBackend,
+    backend::SharedModelBackend, context_position, context_radius_with_policy,
+    hierarchical_softmax, negative_sampling,
 };
 use crate::{
-    atomic_float,
     config::{ObjectiveKind, Real, Status},
     simd,
 };
 
 #[inline]
 pub fn train(step: &mut ModelStep<'_, '_>) -> Result<ObjectiveLoss, Status> {
-    let model = &step.trainer.model;
-    let dimension = model.embedding_dimension;
+    let mut backend =
+        SharedModelBackend::new(&step.trainer.model, step.trainer.config.update_strategy);
+    train_with_backend(step, &mut backend)
+}
+
+#[inline]
+pub fn train_with_backend<B: ParameterBackend>(
+    step: &mut ModelStep<'_, '_>,
+    backend: &mut B,
+) -> Result<ObjectiveLoss, Status> {
     let radius = context_radius_with_policy(
         step.window_rng,
         step.trainer.config.window_radius,
@@ -26,11 +34,7 @@ pub fn train(step: &mut ModelStep<'_, '_>) -> Result<ObjectiveLoss, Status> {
             context_position(step.sentence.len(), step.sentence_position, radius, offset)
         {
             let token = step.sentence[position];
-            let start = token * dimension;
-            let input_row = &model.input_embeddings[start..start + dimension];
-            for (coordinate, value) in input_row.iter().enumerate() {
-                step.hidden[coordinate] += atomic_float::load(value);
-            }
+            backend.accumulate_input_row(token, step.hidden);
             context_count += 1;
         }
     }
@@ -39,8 +43,9 @@ pub fn train(step: &mut ModelStep<'_, '_>) -> Result<ObjectiveLoss, Status> {
     }
     simd::divide_in_place(step.hidden, context_count as Real);
     let loss = match step.trainer.config.objective_kind {
-        ObjectiveKind::HierarchicalSoftmax => hierarchical_softmax::train_with_scratch(
+        ObjectiveKind::HierarchicalSoftmax => hierarchical_softmax::train_with_backend(
             step.trainer,
+            backend,
             step.target_token,
             step.learning_rate,
             step.hidden,
@@ -50,8 +55,9 @@ pub fn train(step: &mut ModelStep<'_, '_>) -> Result<ObjectiveLoss, Status> {
             },
             step.observe_objective,
         ),
-        ObjectiveKind::NegativeSampling => negative_sampling::train_with_scratch(
+        ObjectiveKind::NegativeSampling => negative_sampling::train_with_backend(
             step.trainer,
+            backend,
             step.target_token,
             step.learning_rate,
             step.negative_rng,
@@ -68,15 +74,7 @@ pub fn train(step: &mut ModelStep<'_, '_>) -> Result<ObjectiveLoss, Status> {
             context_position(step.sentence.len(), step.sentence_position, radius, offset)
         {
             let token = step.sentence[position];
-            let start = token * dimension;
-            let input_row = &model.input_embeddings[start..start + dimension];
-            for (coordinate, value) in input_row.iter().enumerate() {
-                shared_add(
-                    value,
-                    step.hidden_gradient[coordinate],
-                    step.trainer.config.update_strategy,
-                );
-            }
+            backend.apply_input_gradient(token, step.hidden_gradient, step.learning_rate);
         }
     }
     Ok(loss)

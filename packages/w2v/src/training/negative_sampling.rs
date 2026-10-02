@@ -1,7 +1,10 @@
-use super::{ObjectiveLoss, ObjectiveScratch, objective_step};
+use super::{
+    ObjectiveLoss, ObjectiveScratch, backend::ParameterBackend, backend::SharedModelBackend,
+};
 use crate::{
     config::{Real, Status},
     random::Rng,
+    simd,
     trainer::Trainer,
 };
 
@@ -15,8 +18,10 @@ pub fn train(
     observe: bool,
 ) -> Result<ObjectiveLoss, Status> {
     let mut output_snapshot = vec![0.0; hidden.len()];
-    train_with_scratch(
+    let mut backend = SharedModelBackend::new(&trainer.model, trainer.config.update_strategy);
+    train_with_backend(
         trainer,
+        &mut backend,
         target_token,
         learning_rate,
         negative_rng,
@@ -29,8 +34,10 @@ pub fn train(
     )
 }
 
-pub(crate) fn train_with_scratch(
+#[allow(clippy::too_many_arguments)]
+pub fn train_with_backend<B: ParameterBackend>(
     trainer: &Trainer,
+    backend: &mut B,
     target_token: usize,
     learning_rate: Real,
     negative_rng: &mut Rng,
@@ -38,7 +45,6 @@ pub(crate) fn train_with_scratch(
     scratch: ObjectiveScratch<'_>,
     observe: bool,
 ) -> Result<ObjectiveLoss, Status> {
-    let dimension = trainer.model.embedding_dimension;
     let mut loss = ObjectiveLoss::default();
     for sample_index in 0..=trainer.config.negative_sample_count {
         let (sampled_token, label) = if sample_index == 0 {
@@ -54,35 +60,34 @@ pub(crate) fn train_with_scratch(
             }
             (sampled_token, 0.0)
         };
-        let start = sampled_token * dimension;
-        let output_row = &trainer.model.output_embeddings[start..start + dimension];
-        objective_step(
+        backend.load_output_row(sampled_token, scratch.output_snapshot);
+        let score = simd::dot(hidden, scratch.output_snapshot);
+        let prediction = trainer.sigmoid_table.lookup(score);
+        if !prediction.is_finite() {
+            return Err(Status::InvalidState);
+        }
+        if observe {
+            let probability = if label == 1.0 {
+                prediction
+            } else {
+                1.0 - prediction
+            };
+            let value = -(probability as f64).max(f64::EPSILON).ln();
+            if !value.is_finite() {
+                return Err(Status::InvalidState);
+            }
+            loss.sum += value;
+            loss.count += 1;
+        }
+        let raw_error = label - prediction;
+        backend.apply_output_gradient(
+            sampled_token,
             hidden,
-            scratch.hidden_gradient,
-            output_row,
             scratch.output_snapshot,
-            trainer.config.update_strategy,
-            |score| {
-                let prediction = trainer.sigmoid_table.lookup(score);
-                if !prediction.is_finite() {
-                    return Err(Status::InvalidState);
-                }
-                if observe {
-                    let probability = if label == 1.0 {
-                        prediction
-                    } else {
-                        1.0 - prediction
-                    };
-                    let value = -(probability as f64).max(f64::EPSILON).ln();
-                    if !value.is_finite() {
-                        return Err(Status::InvalidState);
-                    }
-                    loss.sum += value;
-                    loss.count += 1;
-                }
-                Ok(Some((label - prediction) * learning_rate))
-            },
-        )?;
+            raw_error,
+            learning_rate,
+            scratch.hidden_gradient,
+        );
     }
     Ok(loss)
 }
