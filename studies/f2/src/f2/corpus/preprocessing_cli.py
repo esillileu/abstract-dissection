@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import typer
 
-from .cli import sources_app
+from .cli import fineweb_app, sources_app
 
 app = typer.Typer(
     name="corpus",
@@ -15,5 +15,6 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 app.add_typer(sources_app, name="sources")
+app.add_typer(fineweb_app, name="fineweb")
 
 __all__ = ["app"]

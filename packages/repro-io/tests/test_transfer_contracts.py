@@ -13,9 +13,10 @@ from repro_io.http import RangeFetcher, SerialDownloader
 from repro_io.s3 import S3Config, S3ObjectStore
 
 
-def response(payload, status=200):
+def response(payload, status=200, headers=None):
     stream = io.BytesIO(payload)
     stream.status = status
+    stream.headers = headers or {}
     return stream
 
 
@@ -60,6 +61,30 @@ def test_downloader_retry_keeps_partial(tmp_path, monkeypatch):
     )
     assert destination.read_bytes() == b"abcdef"
     assert sleeps == [2]
+    assert requests[1].get_header("Range") == "bytes=3-"
+
+
+def test_downloader_incomplete_content_length_triggers_retry(tmp_path, monkeypatch):
+    destination = tmp_path / "payload"
+    requests = []
+
+    def open_url(request, **kwargs):
+        requests.append(request)
+        if len(requests) == 1:
+            # Server advertises 6 bytes, but stream cuts off at 3 bytes
+            return response(b"abc", 200, headers={"Content-Length": "6"})
+        # Retry with range gets remaining 3 bytes
+        return response(b"def", 206, headers={"Content-Length": "3"})
+
+    sleeps = []
+    monkeypatch.setattr("urllib.request.urlopen", open_url)
+    monkeypatch.setattr("repro_io.http.download.time.sleep", sleeps.append)
+    # Note: expected_length is NOT supplied; detection relies purely on HTTP Content-Length
+    SerialDownloader(retries=1, backoff_seconds=1).download(
+        "https://example.test/object", destination
+    )
+    assert destination.read_bytes() == b"abcdef"
+    assert len(sleeps) == 1
     assert requests[1].get_header("Range") == "bytes=3-"
 
 

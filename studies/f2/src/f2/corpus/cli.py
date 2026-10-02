@@ -29,6 +29,10 @@ sources_app = typer.Typer(
 )
 app.add_typer(sources_app, name="sources")
 
+from .fineweb.cli import fineweb_app
+
+app.add_typer(fineweb_app, name="fineweb")
+
 sources_app.command("preflight")(sources_preflight)
 sources_app.command("catalog")(sources_catalog)
 sources_app.command("acquire")(sources_acquire)
@@ -47,6 +51,7 @@ __all__ = [
     "_selected",
     "_store",
     "app",
+    "fineweb_app",
     "import_gigaword",
     "sources_acquire",
     "sources_app",
