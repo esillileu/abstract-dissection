@@ -250,6 +250,13 @@ def analyze(
             "--msr-questions", help="Table 3 MSR syntactic word-analogy benchmark path."
         ),
     ] = None,
+    publish: Annotated[
+        bool,
+        typer.Option(
+            "--publish/--no-publish",
+            help="Publish analysis results to canonical MLflow experiment f2.w2v1.analysis.",
+        ),
+    ] = False,
 ) -> None:
     """Render or summarize F2 experiment results."""
     if suite == "corpus":
@@ -301,21 +308,63 @@ def analyze(
                 )
                 for output in outputs:
                     typer.echo(f"W2V1 Table 3 analysis written: {output}")
-                return
+                analyzer = None
             elif table == 4:
                 analyzer = analyze_table4_sources
             elif table == 5:
                 analyzer = analyze_table5_sources
             else:
                 analyzer = analyze_table6_sources
-            outputs = analyzer(
-                resolve_tracking_uri(tracking_uri),
-                questions,
-                corpus_source=corpus,
-                paths=paths,
+
+            if analyzer is not None:
+                outputs = analyzer(
+                    resolve_tracking_uri(tracking_uri),
+                    questions,
+                    corpus_source=corpus,
+                    paths=paths,
+                )
+                for output in outputs:
+                    typer.echo(f"W2V1 Table {table} analysis written: {output}")
+
+        if publish:
+            from mlflow import MlflowClient
+
+            from .suites.w2v1.publish_analysis import (
+                ANALYSIS_EXPERIMENT_NAME,
+                ensure_analysis_experiment,
+                publish_table2_analysis,
+                publish_table3_analysis,
+                publish_table4_analysis,
+                publish_table5_analysis,
+                publish_table7_analysis,
             )
-        for output in outputs:
-            typer.echo(f"W2V1 Table {table} analysis written: {output}")
+
+            client = MlflowClient(tracking_uri=resolve_tracking_uri(tracking_uri))
+            exp_id = ensure_analysis_experiment(client)
+            published = []
+            if table == 7:
+                published = publish_table7_analysis(
+                    client, exp_id, paths.analysis_output("f2", "table7")
+                )
+            elif table == 5:
+                published = publish_table5_analysis(
+                    client, exp_id, paths.analysis_output("f2", "w2v1")
+                )
+            elif table == 4:
+                published = publish_table4_analysis(
+                    client, exp_id, paths.analysis_output("f2", "w2v1")
+                )
+            elif table == 3:
+                published = publish_table3_analysis(
+                    client, exp_id, paths.analysis_output("f2", "w2v1")
+                )
+            elif table == 2:
+                published = publish_table2_analysis(
+                    client, exp_id, paths.analysis_output("f2", "w2v1")
+                )
+            typer.echo(
+                f"Published {len(published)} analysis runs to MLflow experiment '{ANALYSIS_EXPERIMENT_NAME}'"
+            )
         return
     typer.echo(f"Analysis orchestration for F2 suite '{suite}' is initialized.")
 
