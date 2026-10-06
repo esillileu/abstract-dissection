@@ -85,7 +85,9 @@ def parse_run_spec(
     training = mapping(raw, "training")
     distribution = mapping(raw, "distribution") if "distribution" in raw else None
     if "study" not in identity:
-        if "table6" in path.name:
+        if "table7" in path.name:
+            identity["study"] = "table7"
+        elif "table6" in path.name:
             identity["study"] = "table6"
         elif "table3" in path.name:
             identity["study"] = "table3"
@@ -98,6 +100,8 @@ def parse_run_spec(
     if "experiment_spec_id" not in identity:
         if raw.get("experiment_spec_id"):
             identity["experiment_spec_id"] = raw["experiment_spec_id"]
+        elif identity.get("study") == "table7" or "table7" in path.name:
+            identity["experiment_spec_id"] = "w2v1-msr-sentence-skipgram"
         elif identity.get("study") == "table6" or "table6" in path.name:
             model_kind = training.get("model_kind")
             if model_kind == "cbow":

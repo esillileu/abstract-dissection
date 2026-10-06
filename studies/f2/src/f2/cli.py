@@ -62,10 +62,15 @@ app.add_typer(catalog_app, name="catalog")
 def evaluate(
     suite: Annotated[
         str,
-        typer.Argument(help="Evaluation policy: w2v1-table2, w2v1-table4, or w2v2."),
+        typer.Argument(
+            help="Evaluation policy: w2v1-table2, w2v1-table4, w2v1-table7, or w2v2."
+        ),
     ],
     lookup: Annotated[Path, typer.Option(help="Saved lookup artifact directory.")],
-    questions: Annotated[Path, typer.Option(help="Analogy questions file.")],
+    questions: Annotated[
+        Path,
+        typer.Option(help="Evaluation benchmark file or directory."),
+    ],
     output: Annotated[Path, typer.Option(help="New evaluation report JSON path.")],
     phrase_separator: Annotated[
         str, typer.Option(help="W2V2 phrase token separator.")
@@ -237,7 +242,7 @@ def analyze(
         ),
     ] = None,
     table: Annotated[
-        int, typer.Option("--table", help="W2V1 table number: 2, 4, or 5.")
+        int, typer.Option("--table", help="W2V1 table number: 2, 4, 5, or 7.")
     ] = 2,
 ) -> None:
     """Render or summarize F2 experiment results."""
@@ -251,24 +256,41 @@ def analyze(
         from .suites.w2v1.analysis import analyze_table2_sources
         from .suites.w2v1.table4 import analyze_table4_sources
         from .suites.w2v1.table5 import analyze_table5_sources
+        from .suites.w2v1.table7 import analyze_table7_sources
         from .tracking import resolve_tracking_uri
 
         paths = RuntimePaths.from_environment()
-        questions = questions or get_benchmark_data_dir(paths) / "questions-words.txt"
-        if table not in (2, 4, 5):
-            raise ValueError("W2V1 analysis table must be 2, 4, or 5")
-        if table == 2:
-            analyzer = analyze_table2_sources
-        elif table == 4:
-            analyzer = analyze_table4_sources
+        if table not in (2, 4, 5, 7):
+            raise ValueError("W2V1 analysis table must be 2, 4, 5, or 7")
+        if table == 7:
+            questions = (
+                questions
+                or get_benchmark_data_dir(paths)
+                / "msr_sentence_completion"
+                / "Holmes.lm_format.questions.txt"
+            )
+            analyzer = analyze_table7_sources
+            outputs = analyzer(
+                resolve_tracking_uri(tracking_uri),
+                questions,
+                paths=paths,
+            )
         else:
-            analyzer = analyze_table5_sources
-        outputs = analyzer(
-            resolve_tracking_uri(tracking_uri),
-            questions,
-            corpus_source=corpus,
-            paths=paths,
-        )
+            questions = (
+                questions or get_benchmark_data_dir(paths) / "questions-words.txt"
+            )
+            if table == 2:
+                analyzer = analyze_table2_sources
+            elif table == 4:
+                analyzer = analyze_table4_sources
+            else:
+                analyzer = analyze_table5_sources
+            outputs = analyzer(
+                resolve_tracking_uri(tracking_uri),
+                questions,
+                corpus_source=corpus,
+                paths=paths,
+            )
         for output in outputs:
             typer.echo(f"W2V1 Table {table} analysis written: {output}")
         return
