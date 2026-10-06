@@ -19,8 +19,26 @@ from repro_mlflow.artifact_cache import MlflowArtifactCache, artifact_download_p
 from .analysis import CORPUS_SOURCES, ensure_questions_words, observed_training_seconds
 
 _CONDITION = re.compile(r"(wmt|lm1b|umbc)--(cbow|skipgram)-d300-w783m")
+_NNLM_CONDITION = re.compile(r"fineweb--nnlm-d(20|50|100)-w6000m")
+TABLE4_CORPUS_SOURCES = (*CORPUS_SOURCES, "fineweb")
 _SEEDS = {1, 7, 19}
-_REFERENCE = {"cbow": (15.5, 53.1, 36.1), "skipgram": (50.0, 55.9, 53.3)}
+_REFERENCE = {
+    "cbow": (15.5, 53.1, 36.1),
+    "skipgram": (50.0, 55.9, 53.3),
+    "nnlm-d20": (12.9, 26.4, 20.3),
+    "nnlm-d50": (27.9, 55.8, 43.2),
+    "nnlm-d100": (34.2, 64.5, 50.8),
+}
+_EXTERNAL_REFERENCE = (
+    ("Collobert-Weston NNLM", 50, "660M", 9.3, 12.3, 11.0),
+    ("Turian NNLM", 50, "37M", 1.4, 2.6, 2.1),
+    ("Turian NNLM", 200, "37M", 1.4, 2.2, 1.8),
+    ("Mnih NNLM", 50, "37M", 1.8, 9.1, 5.8),
+    ("Mnih NNLM", 100, "37M", 3.3, 13.2, 8.8),
+    ("Mikolov RNNLM", 80, "320M", 4.9, 18.4, 12.7),
+    ("Mikolov RNNLM", 640, "320M", 8.6, 36.5, 24.6),
+    ("Huang NNLM", 50, "990M", 13.3, 11.6, 12.3),
+)
 
 
 @dataclass(frozen=True)
@@ -40,17 +58,31 @@ class Table4RunResult:
 def complete_conditions(runs: list[Any], corpus: str) -> dict[str, dict[int, Any]]:
     grouped: dict[str, dict[int, Any]] = {}
     for run in runs:
-        match = _CONDITION.fullmatch(run.data.tags.get("implementation.variant", ""))
-        if match is None or match.group(1) != corpus:
-            continue
-        architecture = match.group(2)
-        if (
-            run.data.tags.get("experiment_spec.id")
-            != f"w2v1-google-news-{architecture}-scale"
-        ):
-            continue
-        seed = int(run.data.tags.get("seed", "0"))
-        slot = f"w2v1-table4-{corpus}-r1-{architecture}-d300-w783m-s{seed}"
+        tags = run.data.tags
+        variant = tags.get("implementation.variant", "")
+        nnlm = _NNLM_CONDITION.fullmatch(variant)
+        if nnlm is not None and corpus == "fineweb":
+            dimension = nnlm.group(1)
+            architecture = f"nnlm-d{dimension}"
+            if (
+                tags.get("experiment_spec.id") != "w2v1-google-news-nnlm-6b"
+                or tags.get("result.durable_complete") != "true"
+            ):
+                continue
+            seed = int(tags.get("seed", "0"))
+            slot = f"w2v1-fineweb-reconstruction-r1-nnlm-d{dimension}-w6000m-s{seed}"
+        else:
+            match = _CONDITION.fullmatch(variant)
+            if match is None or match.group(1) != corpus:
+                continue
+            architecture = match.group(2)
+            if (
+                tags.get("experiment_spec.id")
+                != f"w2v1-google-news-{architecture}-scale"
+            ):
+                continue
+            seed = int(tags.get("seed", "0"))
+            slot = f"w2v1-table4-{corpus}-r1-{architecture}-d300-w783m-s{seed}"
         if seed not in _SEEDS or run.data.tags.get("f2.planned_run_slot_id") != slot:
             continue
         grouped.setdefault(architecture, {}).setdefault(seed, run)
@@ -67,7 +99,7 @@ def analyze_table4_sources(
     from mlflow import MlflowClient
 
     paths = paths or RuntimePaths.from_environment()
-    if corpus_source is not None and corpus_source not in CORPUS_SOURCES:
+    if corpus_source is not None and corpus_source not in TABLE4_CORPUS_SOURCES:
         raise ValueError(f"unsupported W2V1 corpus source: {corpus_source}")
     questions_path = ensure_questions_words(questions_path)
     question_bytes = questions_path.read_bytes()
@@ -90,7 +122,7 @@ def analyze_table4_sources(
     artifact_cache = MlflowArtifactCache(
         client, tracking_uri, root=paths.cache_root / "mlflow_artifact"
     )
-    sources = CORPUS_SOURCES if corpus_source is None else (corpus_source,)
+    sources = TABLE4_CORPUS_SOURCES if corpus_source is None else (corpus_source,)
     outputs = []
     with artifact_download_progress():
         for corpus in sources:
@@ -165,9 +197,16 @@ def _write_summary(
         "| Architecture | Corpus | Runs | Semantic mean ± sample SD (%) | Syntactic mean ± sample SD (%) | Total mean ± sample SD (%) | Questions included / total | Observed training time mean ± sample SD (s) | MLflow run IDs | Paper reference: semantic / syntactic / total (%) |",
         "|---|---|---:|---:|---:|---:|---|---:|---|---|",
     ]
-    for architecture in ("cbow", "skipgram"):
+    for architecture in _REFERENCE:
         values = [record for record in records if record.architecture == architecture]
         if not values:
+            if architecture.startswith("nnlm-") and corpus == "fineweb":
+                reference = " / ".join(
+                    f"{number:.1f}" for number in _REFERENCE[architecture]
+                )
+                lines.append(
+                    f"| {architecture} | {corpus} | 0 | unavailable | unavailable | unavailable | — | — | awaiting canonical runs | {reference} |"
+                )
             continue
         coverage = ", ".join(
             f"{x.included_questions}/{x.total_questions}" for x in values
@@ -183,6 +222,22 @@ def _write_summary(
     lines.extend(
         [
             "",
+            "External published vectors — paper reference only; no reproduction runs:",
+            "",
+            "| Model | Dimensions | Words | Semantic | Syntactic | Total (%) |",
+            "|---|---:|---|---:|---:|---:|",
+        ]
+    )
+    lines.extend(
+        f"| {name} | {dim} | {words} | {sem} | {synt} | {total} |"
+        for name, dim, words, sem, synt, total in _EXTERNAL_REFERENCE
+    )
+    lines.extend(
+        [
+            "",
+            "Our NNLM 20/50/100d uses the existing FineWeb 2013 6B surrogate policy. History=8/hidden=640/tanh and concrete PS/AdaGrad schedule are reconstruction decisions, not Table 4/6 specifications.",
+            "Table 6 reuses the canonical Our NNLM 100d run IDs; it adds no NNLM training run.",
+            "Paper reference: https://arxiv.org/pdf/1301.3781 (Tables 4 and 6).",
             "The 1M lexical vocabulary cap is a reconstruction decision; Table 4 does not state it explicitly.",
             "Evaluation uses the full saved lookup vocabulary. OOV questions are excluded.",
             "Scores preserve the existing compute-accuracy casing, cosine normalization, positive-score, and source-exclusion behavior.",

@@ -14,6 +14,9 @@ from w2v import (
     DownpourConfig,
     DownpourTrainingSession,
     Model,
+    NnlmDownpourTrainingSession,
+    NnlmTrainingConfig,
+    NnlmTrainingSession,
     TrainingConfig,
     TrainingSession,
 )
@@ -22,6 +25,9 @@ from f2.suites.w2v.artifacts import (
     create_checkpoint_manager,
     resolve_or_build_vocabulary,
     save_lookup_artifact,
+)
+from f2.suites.w2v.nnlm_artifacts import (
+    create_checkpoint_manager as create_nnlm_checkpoint_manager,
 )
 from f2.suites.w2v.observations import DenseObservationWriter
 from repro_core.context import ExperimentContext
@@ -72,7 +78,12 @@ class W2V1Executor:
             cache_root=context.paths.cache_root,
             corpus_digest=corpus_digest,
         )
-        manager = create_checkpoint_manager(
+        checkpoint_factory = (
+            create_nnlm_checkpoint_manager
+            if _mapping(config, "training")["model_kind"] == "feedforward_nnlm"
+            else create_checkpoint_manager
+        )
+        manager = checkpoint_factory(
             root / "checkpoints",
             session=session,
         )
@@ -132,7 +143,12 @@ def create_session(
     *,
     cache_root: Path | None = None,
     corpus_digest: str | None = None,
-) -> TrainingSession | DownpourTrainingSession:
+) -> (
+    TrainingSession
+    | DownpourTrainingSession
+    | NnlmTrainingSession
+    | NnlmDownpourTrainingSession
+):
     corpus_path = Path(str(_mapping(config, "corpus")["path"]))
     corpus = Corpus(
         corpus_path if corpus_path.is_absolute() else repo_root / corpus_path
@@ -148,6 +164,26 @@ def create_session(
     )
     values = dict(_mapping(config, "training"))
     values["root_seed"] = int(_mapping(config, "identity")["seed"])
+    if values.get("model_kind") == "feedforward_nnlm":
+        values.pop("model_kind")
+        training = NnlmTrainingConfig(**values)
+        distribution = config.get("distribution")
+        if distribution is not None:
+            distribution = _mapping(config, "distribution")
+            mode = distribution.pop("mode", None)
+            if mode == "downpour":
+                return NnlmDownpourTrainingSession(
+                    corpus,
+                    vocabulary,
+                    training,
+                    DownpourConfig(**distribution),
+                    corpus_digest=corpus_digest,
+                )
+            if mode != "none":
+                raise ValueError(f"unsupported NNLM distribution mode: {mode}")
+        return NnlmTrainingSession(
+            corpus, vocabulary, training, corpus_digest=corpus_digest
+        )
     training = TrainingConfig(**values)
     model = Model.create(vocabulary, training)
 
