@@ -86,7 +86,13 @@ def run_tracked_yaml(
             ),
             executor_module=executor_module,
         )
-        _publish(client, run_id, result.root)
+        _publish(
+            client,
+            run_id,
+            result.root,
+            include_checkpoints=_mapping(config, "training").get("model_kind")
+            == "feedforward_nnlm",
+        )
         _verify_uploaded_manifest(client, run_id)
         client.set_tag(run_id, "trial.status", "finished")
         client.set_tag(run_id, "result.durable_complete", "true")
@@ -206,11 +212,15 @@ def _plan_revision(execution_plan_id: str) -> int:
     return int(match.group(1))
 
 
-def _publish(client: Any, run_id: str, root: Path) -> None:
-    write_result_manifest(root, exclude_dirs=("checkpoints",))
+def _publish(
+    client: Any, run_id: str, root: Path, *, include_checkpoints: bool = False
+) -> None:
+    write_result_manifest(
+        root, exclude_dirs=() if include_checkpoints else ("checkpoints",)
+    )
     for path in sorted(item for item in root.rglob("*") if item.is_file()):
         rel = path.relative_to(root)
-        if any(part == "checkpoints" for part in rel.parts):
+        if not include_checkpoints and "checkpoints" in rel.parts:
             continue
         parent = path.parent.relative_to(root)
         client.log_artifact(
