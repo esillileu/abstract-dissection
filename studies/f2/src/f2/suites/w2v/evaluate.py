@@ -35,10 +35,51 @@ def evaluate_lookup_artifact(
     phrase_separator: bytes = b"_",
 ) -> dict[str, Any]:
     """Evaluate one immutable lookup artifact without a training session."""
-    if suite not in {"w2v1-table2", "w2v1-table4", "w2v2"}:
-        raise ValueError("evaluation policy must be w2v1-table2, w2v1-table4, or w2v2")
-    vocabulary_limit = 30_000 if suite == "w2v1-table2" else None
+    if suite not in {"w2v1-table2", "w2v1-table4", "w2v2", "w2v1-table7"}:
+        raise ValueError(
+            "evaluation policy must be w2v1-table2, w2v1-table4, w2v1-table7, or w2v2"
+        )
     lookup = load_lookup_artifact(lookup_path)
+
+    if suite == "w2v1-table7":
+        from .evaluation import (
+            evaluate_msr_sentence_completion,
+            parse_msr_sentence_completion_questions,
+        )
+
+        if questions_path.is_dir():
+            q_file = questions_path / "Holmes.lm_format.questions.txt"
+            a_file = questions_path / "Holmes.lm_format.answers.txt"
+        else:
+            q_file = questions_path
+            a_file = questions_path.parent / "Holmes.lm_format.answers.txt"
+        if not q_file.is_file():
+            raise ValueError(f"sentence completion questions do not exist: {q_file}")
+        if not a_file.is_file():
+            raise ValueError(f"sentence completion answers do not exist: {a_file}")
+
+        q_bytes = q_file.read_bytes()
+        a_bytes = a_file.read_bytes()
+        msr_questions = parse_msr_sentence_completion_questions(
+            q_bytes.splitlines(), a_bytes.splitlines()
+        )
+        completion = evaluate_msr_sentence_completion(lookup, msr_questions)
+        return {
+            "suite": suite,
+            "lookup_identity": {key: lookup.manifest[key] for key in _IDENTITY_KEYS},
+            "evaluation_identity": {
+                "questions_sha256": hashlib.sha256(q_bytes).hexdigest(),
+                "answers_sha256": hashlib.sha256(a_bytes).hexdigest(),
+                "total_questions": len(msr_questions),
+            },
+            "sentence_completion": {
+                "overall": asdict(completion.overall),
+                "dev": asdict(completion.dev),
+                "test": asdict(completion.test),
+            },
+        }
+
+    vocabulary_limit = 30_000 if suite == "w2v1-table2" else None
     if not questions_path.is_file():
         raise ValueError(f"analogy questions do not exist: {questions_path}")
     try:
