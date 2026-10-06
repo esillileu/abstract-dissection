@@ -870,7 +870,7 @@
       "description": "W2V1 Table-7 resource. The benchmark has 1,040 sentence-completion questions; W2V1 states that its Skip-gram model is trained on 50M words provided with/reference [32].",
       "access_status": "public",
       "acquisition_status": "located",
-      "readiness_status": "download",
+      "readiness_status": "ready",
       "canonical_version_id": "w2v1-msr-sentence-completion-official",
       "notes": null
     },
@@ -1130,16 +1130,23 @@
       "resource_id": "w2v1-msr-sentence-completion",
       "version_label": "Microsoft Research official challenge resource",
       "uri": "https://www.microsoft.com/en-us/research/project/msr-sentence-completion-challenge/",
-      "local_path": null,
+      "local_path": "data/f2/benchmarks/msr_sentence_completion",
       "checksum_algo": "sha256",
-      "checksum": null,
-      "size_bytes": null,
+      "checksum": "659b752b219e64b748f54333d0019a2878645ae430c8fb9d3254c2e561d220dc",
+      "size_bytes": 587046,
       "metadata": {
         "test_questions": 1040,
-        "training_words_w2v1_reported": 50000000
+        "training_words_w2v1_reported": 50000000,
+        "questions_file": "Holmes.lm_format.questions.txt",
+        "questions_sha256": "659b752b219e64b748f54333d0019a2878645ae430c8fb9d3254c2e561d220dc",
+        "answers_file": "Holmes.lm_format.answers.txt",
+        "answers_sha256": "c9dec1e8c9168cb67260dad36ebd2041d12776c0f36cbfc295d9b8f08a699fad",
+        "training_corpus_books": 522,
+        "training_corpus_sha256": "2d37eb27d9de873da4f6419740230e23cb9f75b91cc67b456d1e1a3fc34b680f",
+        "training_corpus_bytes": 236110188
       },
-      "is_verified": false,
-      "notes": "Official page located; concrete downloaded files/hashes are not yet recorded here."
+      "is_verified": true,
+      "notes": "Verified against MSR Challenge benchmark files and 522 Gutenberg training books."
     }
   ],
   "requirements": [

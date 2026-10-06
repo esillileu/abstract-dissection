@@ -25,6 +25,7 @@ class RunSpec:
     checkpoint: dict[str, object]
     tracking: dict[str, object]
     path: Path
+    distribution: dict[str, object] | None = None
 
     def with_seed(self, seed: int) -> RunSpec:
         """Bind a planner-selected seed to its immutable catalog slot."""
@@ -43,14 +44,17 @@ class RunSpec:
             checkpoint=self.checkpoint,
             tracking=self.tracking,
             path=self.path,
+            distribution=self.distribution,
         )
 
     def to_executor_config(self) -> dict[str, object]:
-        resolved = {
+        resolved: dict[str, object] = {
             "corpus": self.corpus,
             "vocabulary": self.vocabulary,
             "training": self.training,
         }
+        if self.distribution is not None:
+            resolved["distribution"] = self.distribution
         return {
             "kind": "word2vec",
             "atomic_run_id": self.atomic_run_id,
@@ -79,11 +83,33 @@ def parse_run_spec(
     if missing := sorted(required - identity.keys()):
         raise ValueError(f"W2V1 identity is missing: {', '.join(missing)}")
     training = mapping(raw, "training")
+    distribution = mapping(raw, "distribution") if "distribution" in raw else None
     if "study" not in identity:
-        identity["study"] = "table3" if "table3" in path.name else "table2"
+        if "table7" in path.name:
+            identity["study"] = "table7"
+        elif "table6" in path.name:
+            identity["study"] = "table6"
+        elif "table3" in path.name:
+            identity["study"] = "table3"
+        elif "table4" in path.name:
+            identity["study"] = "table4"
+        elif "table5" in path.name:
+            identity["study"] = "table5"
+        else:
+            identity["study"] = "table2"
     if "experiment_spec_id" not in identity:
         if raw.get("experiment_spec_id"):
             identity["experiment_spec_id"] = raw["experiment_spec_id"]
+        elif identity.get("study") == "table7" or "table7" in path.name:
+            identity["experiment_spec_id"] = "w2v1-msr-sentence-skipgram"
+        elif identity.get("study") == "table6" or "table6" in path.name:
+            model_kind = training.get("model_kind")
+            if model_kind == "cbow":
+                identity["experiment_spec_id"] = "w2v1-table6-cbow-6b"
+            elif model_kind == "skip_gram":
+                identity["experiment_spec_id"] = "w2v1-table6-skipgram-6b"
+            else:
+                identity["experiment_spec_id"] = "w2v1-table6"
         elif identity.get("study") == "table3" or "table3" in path.name:
             model_kind = training.get("model_kind")
             if model_kind == "cbow":
@@ -103,6 +129,7 @@ def parse_run_spec(
         checkpoint=mapping(raw, "checkpoint"),
         tracking=mapping(raw, "tracking"),
         path=path,
+        distribution=distribution,
     )
 
 

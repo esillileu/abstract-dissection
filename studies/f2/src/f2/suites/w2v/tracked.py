@@ -113,6 +113,30 @@ def _materialize_corpus(
         lexical_token_budget = int(corpus["lexical_token_budget"])
     except (KeyError, TypeError, ValueError) as exc:
         raise ValueError("canonical W2V1 corpus requires lexical_token_budget") from exc
+    if "path" in corpus:
+        raw_path = Path(str(corpus["path"]))
+        corpus_path = raw_path if raw_path.is_absolute() else paths.repo_root / raw_path
+        if "holmes" in str(raw_path):
+            from f2.suites.w2v1.table7 import ensure_holmes_corpus
+
+            if progress_reporter is not None:
+                progress_reporter.write(f"materializing Holmes corpus at {corpus_path}")
+            corpus_path = ensure_holmes_corpus(corpus_path)
+        if not corpus_path.is_file():
+            raise FileNotFoundError(
+                f"configured corpus path does not exist: {corpus_path}"
+            )
+        if "sha256" not in corpus:
+            from repro_io.checksum import sha256_file
+
+            corpus["sha256"] = sha256_file(corpus_path)
+        config["corpus"] = {
+            "path": str(corpus_path),
+            "sha256": corpus["sha256"],
+            "lexical_tokens": lexical_token_budget,
+        }
+        return
+
     slot_id = str(identity["planned_run_slot_id"])
     with corpus_connection(validate_contract=True) as connection:
         rows = CorpusStateRepository(connection).list_verified_training_shards(slot_id)
@@ -183,8 +207,11 @@ def _plan_revision(execution_plan_id: str) -> int:
 
 
 def _publish(client: Any, run_id: str, root: Path) -> None:
-    write_result_manifest(root)
+    write_result_manifest(root, exclude_dirs=("checkpoints",))
     for path in sorted(item for item in root.rglob("*") if item.is_file()):
+        rel = path.relative_to(root)
+        if any(part == "checkpoints" for part in rel.parts):
+            continue
         parent = path.parent.relative_to(root)
         client.log_artifact(
             run_id,

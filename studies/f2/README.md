@@ -53,10 +53,11 @@ resume exercise, reduced fixture, smoke scenario, or test-only variant.
 Tests may call executors with test-owned fixtures under `studies/f2/tests`, but
 test fixtures and test variants are forbidden from `studies/f2/src`, suite YAML,
 the CLI run catalog, and tracked MLflow execution. Input digest checks, corpus
-manifest matching, checkpoint serialization, and final upload-manifest checks
+manifest matching, checkpoint serialization into volatile local staging, and final upload-manifest checks
 remain mandatory because they establish the identity and durability of the
 reproduction result; they must not alter the training schedule or create extra
-runs.
+runs. Resumable checkpoints are retained locally in staging for interruption recovery, while
+durable MLflow publication includes the evaluated lookup artifact, metrics, and manifest.
 
 ### A. Word2Vec Corpus Source Commands (`repro f2 corpus sources`)
 ```bash

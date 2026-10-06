@@ -11,6 +11,8 @@ from ..runtime import write_json
 def write_result_manifest(
     artifact_root: Path,
     checkpoint_paths: dict[str, Path] | None = None,
+    *,
+    exclude_dirs: tuple[str, ...] = (),
 ) -> Path:
     """Write the immutable file inventory uploaded with a SchemaV1 result."""
     manifest_path = artifact_root / "result_manifest.json"
@@ -18,13 +20,16 @@ def write_result_manifest(
     for path in sorted(item for item in artifact_root.rglob("*") if item.is_file()):
         if path == manifest_path:
             continue
+        rel = path.relative_to(artifact_root)
+        if any(part in exclude_dirs for part in rel.parts):
+            continue
         digest = hashlib.sha256()
         with path.open("rb") as stream:
             for chunk in iter(lambda: stream.read(1024 * 1024), b""):
                 digest.update(chunk)
         files.append(
             {
-                "path": path.relative_to(artifact_root).as_posix(),
+                "path": rel.as_posix(),
                 "size": path.stat().st_size,
                 "sha256": digest.hexdigest(),
             }

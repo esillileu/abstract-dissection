@@ -8,16 +8,23 @@ use crate::{
 };
 use std::sync::atomic::AtomicU32;
 
+pub mod backend;
 mod cbow;
 mod hierarchical_softmax;
 mod negative_sampling;
 mod skip_gram;
 pub mod worker;
 
-pub use cbow::train as cbow_train;
-pub use hierarchical_softmax::train as hierarchical_softmax_train;
-pub use negative_sampling::train as negative_sampling_train;
-pub use skip_gram::train as skip_gram_train;
+pub use backend::{ParameterBackend, SharedModelBackend};
+pub use cbow::{train as cbow_train, train_with_backend as cbow_train_with_backend};
+pub use hierarchical_softmax::{
+    train as hierarchical_softmax_train,
+    train_with_backend as hierarchical_softmax_train_with_backend,
+};
+pub use negative_sampling::{
+    train as negative_sampling_train, train_with_backend as negative_sampling_train_with_backend,
+};
+pub use skip_gram::{train as skip_gram_train, train_with_backend as skip_gram_train_with_backend};
 
 #[inline(always)]
 pub(crate) fn shared_add(destination: &AtomicU32, delta: Real, strategy: UpdateStrategy) {
@@ -43,50 +50,9 @@ pub struct ModelStep<'t, 'w> {
     pub observe_objective: bool,
 }
 
-pub(crate) struct ObjectiveScratch<'a> {
+pub struct ObjectiveScratch<'a> {
     pub hidden_gradient: &'a mut [Real],
     pub output_snapshot: &'a mut [Real],
-}
-
-pub(crate) fn objective_step<F>(
-    hidden: &[Real],
-    hidden_gradient: &mut [Real],
-    output_row: &[AtomicU32],
-    output_snapshot: &mut [Real],
-    update_strategy: UpdateStrategy,
-    gradient: F,
-) -> Result<(), Status>
-where
-    F: FnOnce(Real) -> Result<Option<Real>, Status>,
-{
-    assert_eq!(hidden.len(), hidden_gradient.len());
-    assert_eq!(hidden.len(), output_row.len());
-    assert_eq!(hidden.len(), output_snapshot.len());
-    for (snapshot, shared) in output_snapshot.iter_mut().zip(output_row) {
-        *snapshot = atomic_float::load(shared);
-    }
-    let score = simd::dot(hidden, output_snapshot);
-    let Some(gradient_scale) = gradient(score)? else {
-        return Ok(());
-    };
-    simd::scaled_accumulate(hidden_gradient, output_snapshot, gradient_scale);
-    match update_strategy {
-        UpdateStrategy::AtomicCas => {
-            for (snapshot, value) in output_snapshot.iter_mut().zip(hidden) {
-                *snapshot = gradient_scale * value;
-            }
-            for (shared, delta) in output_row.iter().zip(output_snapshot) {
-                atomic_float::add(shared, *delta);
-            }
-        }
-        UpdateStrategy::Hogwild => {
-            simd::scaled_accumulate(output_snapshot, hidden, gradient_scale);
-            for (shared, value) in output_row.iter().zip(output_snapshot) {
-                atomic_float::store(shared, *value);
-            }
-        }
-    }
-    Ok(())
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
