@@ -6,6 +6,7 @@ import csv
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 from f2.suites.w2v.evaluation import (
     SentenceCompletionQuestion,
@@ -290,3 +291,43 @@ def test_evaluate_lookup_artifact_w2v1_table7(tmp_path: Path) -> None:
     assert overall["total_count"] == 1040
     assert overall["valid_count"] == 1040
     assert 0.0 <= overall["score"] <= 1.0
+
+
+def test_materialize_corpus_for_table7(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Verify _materialize_corpus resolves direct file path without querying database shards."""
+    from f2.suites.w2v.tracked import _materialize_corpus
+    from repro_core.context import RuntimePaths
+
+    fake_corpus = tmp_path / "holmes.txt"
+    fake_corpus.write_text("sample content")
+
+    config = {
+        "identity": {
+            "planned_run_slot_id": "w2v1-table7-holmes-r1-skipgram-d640-w50m-s1",
+            "execution_plan_id": "w2v1-table7-holmes-r1",
+            "config_digest": "dummy",
+        },
+        "corpus": {
+            "path": str(fake_corpus),
+            "lexical_token_budget": 50_000_000,
+        },
+    }
+    paths = RuntimePaths(
+        repo_root=tmp_path,
+        data_root=tmp_path / "data",
+        artifacts_root=tmp_path / "artifacts",
+        cache_root=tmp_path / "cache",
+        staging_root=tmp_path / "staging",
+        references_root=tmp_path / "references",
+        studies_root=tmp_path / "studies",
+    )
+    monkeypatch.setattr(
+        "f2.suites.w2v1.table7.ensure_holmes_corpus",
+        lambda p: fake_corpus,
+    )
+    _materialize_corpus(config, paths)
+    assert config["corpus"]["path"] == str(fake_corpus)
+    assert "sha256" in config["corpus"]
+    assert config["corpus"]["lexical_tokens"] == 50_000_000
