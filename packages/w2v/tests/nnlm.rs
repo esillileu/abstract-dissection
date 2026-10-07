@@ -93,7 +93,7 @@ fn numerical_gradients_cover_every_parameter_and_repeated_history() {
                         .embeddings
                         .get(&(index / 2))
                         .map_or(0.0, |row| row[index % 2]),
-                    1 => gradient.hidden_weights[index],
+                    1 => gradient.hidden_weights()[index],
                     2 => gradient.hidden_bias[index],
                     _ => gradient
                         .output
