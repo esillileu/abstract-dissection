@@ -119,9 +119,17 @@ def _materialize_corpus(
         lexical_token_budget = int(corpus["lexical_token_budget"])
     except (KeyError, TypeError, ValueError) as exc:
         raise ValueError("canonical W2V1 corpus requires lexical_token_budget") from exc
+    from f2.common.paths import get_corpus_data_dir
+
+    corpus_dir = get_corpus_data_dir(paths)
     if "path" in corpus:
         raw_path = Path(str(corpus["path"]))
-        corpus_path = raw_path if raw_path.is_absolute() else paths.repo_root / raw_path
+        if raw_path.is_absolute():
+            corpus_path = raw_path
+        elif (corpus_dir / raw_path.name).is_file():
+            corpus_path = corpus_dir / raw_path.name
+        else:
+            corpus_path = paths.repo_root / raw_path
         if "holmes" in str(raw_path):
             from f2.suites.w2v1.table7 import ensure_holmes_corpus
 
@@ -146,16 +154,13 @@ def _materialize_corpus(
     atomic_run_id = str(config.get("atomic_run_id", ""))
     corpus_id = atomic_run_id.split("--", 1)[0] if "--" in atomic_run_id else ""
     candidate_paths = [
-        paths.dataset("f2") / "corpus" / f"{corpus_id}.txt",
-        paths.dataset("f2") / "corpus" / corpus_id / "corpus.txt",
-        paths.data_root / "f2" / "corpus" / f"{corpus_id}.txt",
-        paths.data_root / "f2" / "corpus" / corpus_id / "corpus.txt",
+        corpus_dir / f"{corpus_id}.txt",
+        corpus_dir / corpus_id / "corpus.txt",
     ]
     if corpus_id == "holmes":
         from f2.suites.w2v1.table7 import ensure_holmes_corpus
 
-        target = paths.dataset("f2") / "corpus" / "holmes.txt"
-        candidate_paths.insert(0, ensure_holmes_corpus(target))
+        candidate_paths.insert(0, ensure_holmes_corpus(corpus_dir / "holmes.txt"))
 
     for candidate in candidate_paths:
         if candidate.is_file():

@@ -33,7 +33,7 @@ resources:
 conditions:
   skipgram-d640-w50m: &skipgram-d640-w50m
     experiment_spec_id: w2v1-msr-sentence-skipgram
-    corpus: {path: data/f2/corpus/holmes.txt, lexical_token_budget: 50000000}
+    corpus: {lexical_token_budget: 50000000}
     training: {model_kind: skip_gram, window_radius: 10, context_policy: dynamic}
 
 variants:
