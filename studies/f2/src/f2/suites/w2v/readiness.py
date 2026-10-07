@@ -55,13 +55,13 @@ DISPOSITIONS = (
     ),
     TargetDisposition(
         "w2v1-table3-nnlm",
-        "unsupported",
-        "the Word2Vec engine does not implement NNLM",
+        "reconstruction",
+        "feed-forward NNLM with local asynchronous PS/AdaGrad on verified substitute corpora; activation and training schedule are reconstruction decisions",
     ),
     TargetDisposition(
         "w2v1-google-news-nnlm-6b",
-        "external_baseline",
-        "published NNLM result is retained for comparison only",
+        "reconstruction",
+        "Our NNLM 20/50/100d uses existing FineWeb 6B surrogate and local PS/AdaGrad; Table 6 reuses 100d",
     ),
     *(
         TargetDisposition(spec, "unsupported", reason)

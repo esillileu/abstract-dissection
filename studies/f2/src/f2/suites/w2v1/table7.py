@@ -196,7 +196,22 @@ def analyze_table7_sources(
 ) -> list[Path]:
     """Aggregate durable Table 7 runs, evaluate sentence completion, and write reports."""
     paths = paths or RuntimePaths.from_environment()
-    cache = MlflowArtifactCache(paths.cache_root / "mlflow")
+    from mlflow import MlflowClient
+
+    client = MlflowClient(tracking_uri=tracking_uri)
+    experiment = client.get_experiment_by_name("f2.w2v1")
+    if experiment is None:
+        raise ValueError("MLflow experiment f2.w2v1 does not exist")
+
+    runs = client.search_runs(
+        [experiment.experiment_id],
+        filter_string="tags.`result.durable_complete` = 'true'",
+        order_by=["attributes.start_time DESC"],
+        max_results=10_000,
+    )
+    artifact_cache = MlflowArtifactCache(
+        client, tracking_uri, root=paths.cache_root / "mlflow_artifact"
+    )
     q_file, a_file = ensure_msr_benchmark_data(
         questions_path.parent
         if questions_path and questions_path.is_file()
@@ -208,37 +223,35 @@ def analyze_table7_sources(
         a_file.read_bytes().splitlines(),
     )
 
-    runs = cache.search_runs(tracking_uri, "f2.w2v1")
     grouped_runs = collect_table7_runs(runs)
 
     run_results: list[Table7RunResult] = []
-    for seed, run in sorted(grouped_runs.items()):
-        lookup_dir = cache.download_artifact(
-            run.info.artifact_uri,
-            "lookup",
-            progress=artifact_download_progress(
-                f"table7-holmes-skipgram-640d-s{seed}", "lookup"
-            ),
-        )
-        lookup = load_lookup_artifact(lookup_dir)
-        evaluation = evaluate_msr_sentence_completion(lookup, questions)
-
-        run_results.append(
-            Table7RunResult(
-                architecture="skipgram",
-                dimension=640,
-                training_words_millions=50,
-                epochs=1,
-                corpus="holmes",
-                seed=seed,
-                mlflow_run_id=run.info.run_id,
-                overall_accuracy_percent=round(evaluation.overall.score * 100.0, 2),
-                dev_accuracy_percent=round(evaluation.dev.score * 100.0, 2),
-                test_accuracy_percent=round(evaluation.test.score * 100.0, 2),
-                total_questions=len(questions),
-                observed_training_seconds=observed_training_seconds(run),
+    with artifact_download_progress():
+        for seed, run in sorted(grouped_runs.items()):
+            lookup_dir = artifact_cache.get(run.info.run_id, "lookup")
+            lookup = load_lookup_artifact(lookup_dir)
+            evaluation = evaluate_msr_sentence_completion(lookup, questions)
+            metrics_file = artifact_cache.get(
+                run.info.run_id, "metrics/observations.csv"
             )
-        )
+            seconds = observed_training_seconds(metrics_file)
+
+            run_results.append(
+                Table7RunResult(
+                    architecture="skipgram",
+                    dimension=640,
+                    training_words_millions=50,
+                    epochs=1,
+                    corpus="holmes",
+                    seed=seed,
+                    mlflow_run_id=run.info.run_id,
+                    overall_accuracy_percent=round(evaluation.overall.score * 100.0, 2),
+                    dev_accuracy_percent=round(evaluation.dev.score * 100.0, 2),
+                    test_accuracy_percent=round(evaluation.test.score * 100.0, 2),
+                    total_questions=len(questions),
+                    observed_training_seconds=seconds,
+                )
+            )
 
     out_dir = paths.analysis_output("f2", "table7")
     out_dir.mkdir(parents=True, exist_ok=True)

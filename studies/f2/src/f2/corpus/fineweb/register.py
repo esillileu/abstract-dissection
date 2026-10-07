@@ -456,6 +456,54 @@ def register_execution_plan(
             justification="Pinned verified evaluation resource.",
         )
 
+        # Our Table 4 NNLM uses the same 6B surrogate; its 100d run also supplies Table 6.
+        from f2.definition import DEFINITION
+        from f2.suites.w2v1.spec import parse_run_spec
+
+        exp_nnlm = f"{plan_id}-w2v1-google-news-nnlm-6b"
+        config_path = DEFINITION.get_suite("w2v1").config_root / "e03_table4.yaml"
+        nnlm_configs = [
+            parse_run_spec(
+                config_path, atomic_run_id=f"fineweb--nnlm-d{dim}-w6000m"
+            ).to_executor_config()
+            for dim in (20, 50, 100)
+        ]
+        catalog.upsert_plan_experiment(
+            plan_experiment_id=exp_nnlm,
+            execution_plan_id=plan_id,
+            experiment_spec_id="w2v1-google-news-nnlm-6b",
+            enabled=True,
+            parameters={
+                "classification": "reconstruction",
+                "corpus": "fineweb",
+                "training": nnlm_configs[0]["training"],
+                "distribution": nnlm_configs[0]["distribution"],
+                "dimensions": [20, 50, 100],
+            },
+            notes="Our Table 4 NNLM 6B; unspecified history/hidden/optimizer settings are explicit reconstruction decisions in YAML and catalog notes. Table 6 reuses 100d.",
+        )
+        for requirement, version, binding, justification in (
+            (
+                "w2v1-nnlm-6b-train",
+                resource_version_id,
+                "substitute",
+                "Same FineWeb 2013 news surrogate and exact prefix policy as existing W2V1 6B runs.",
+            ),
+            (
+                "w2v1-google-news-eval-nnlm",
+                "w2v-questions-words-google-code-export",
+                "exact",
+                "Pinned verified full-vocabulary benchmark.",
+            ),
+        ):
+            catalog.bind_plan_requirement(
+                plan_experiment_id=exp_nnlm,
+                requirement_id=requirement,
+                resource_version_id=version,
+                binding_type=binding,
+                justification=justification,
+            )
+
         # 3. Generate planned run slots
         slot_count = 0
 
@@ -556,9 +604,37 @@ def register_execution_plan(
                 )
                 slot_count += 1
 
+        for config in nnlm_configs:
+            condition = str(config["atomic_run_id"]).split("--", 1)[1]
+            for seed in seeds:
+                catalog.upsert_planned_run_slot(
+                    planned_run_slot_id=f"{plan_id}-{condition}-s{seed}",
+                    plan_experiment_id=exp_nnlm,
+                    slot_key=f"{condition}-s{seed}",
+                    atomic_run_id=condition,
+                    variant_key=condition,
+                    seed=seed,
+                    parameters={
+                        "device": "cpu",
+                        "epochs": 3,
+                        "threads": 14,
+                        "classification": "reconstruction",
+                        "training_tokens": 6_000_000_000,
+                        "embedding_dimension": config["training"][
+                            "embedding_dimension"
+                        ],
+                        "training": config["training"],
+                        "distribution": config["distribution"],
+                        "requires_approval": True,
+                    },
+                    expected=True,
+                    notes="Table 4 Our NNLM; canonical 100d is reused by Table 6.",
+                )
+                slot_count += 1
+
     return {
         "execution_plan_id": plan_id,
-        "experiments_count": 5,
+        "experiments_count": 6,
         "planned_slots_count": slot_count,
     }
 
