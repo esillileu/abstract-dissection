@@ -6,10 +6,22 @@ use std::collections::BTreeMap;
 #[derive(Clone, Debug)]
 pub struct NnlmGradient {
     pub embeddings: BTreeMap<usize, Vec<Real>>,
-    pub hidden_weights: Vec<Real>,
+    pub projection: Vec<Real>,
     pub hidden_bias: Vec<Real>,
     pub output: BTreeMap<usize, Vec<Real>>,
     pub loss: f64,
+}
+
+impl NnlmGradient {
+    pub fn hidden_weights(&self) -> Vec<Real> {
+        let mut weights = Vec::with_capacity(self.hidden_bias.len() * self.projection.len());
+        for &dz in &self.hidden_bias {
+            for &p in &self.projection {
+                weights.push(dz * p);
+            }
+        }
+        weights
+    }
 }
 
 /// NNLM parameter access for a dense model or a sparse replica cache.
@@ -96,7 +108,7 @@ pub(crate) fn forward_backward_parameters(
     }
     let mut gradient = NnlmGradient {
         embeddings: BTreeMap::new(),
-        hidden_weights: vec![0.0; h * p],
+        projection: Vec::new(),
         hidden_bias: vec![0.0; h],
         output: BTreeMap::new(),
         loss: 0.0,
@@ -123,10 +135,7 @@ pub(crate) fn forward_backward_parameters(
         };
         let dz = dh[j] * derivative;
         gradient.hidden_bias[j] = dz;
-        for k in 0..p {
-            gradient.hidden_weights[j * p + k] = dz * projection[k];
-            dp[k] += dz * model.hidden_weights()[j * p + k];
-        }
+        crate::simd::scaled_accumulate(&mut dp, &model.hidden_weights()[j * p..(j + 1) * p], dz);
     }
     for (position, id) in history.iter().enumerate() {
         let row = gradient
@@ -137,10 +146,11 @@ pub(crate) fn forward_backward_parameters(
             row[k] += dp[position * d + k];
         }
     }
+    gradient.projection = projection;
     Ok(gradient)
 }
 
-fn logistic(x: Real) -> Real {
+pub(crate) fn logistic(x: Real) -> Real {
     if x >= 0.0 {
         1.0 / (1.0 + (-x).exp())
     } else {
@@ -159,12 +169,12 @@ pub fn apply_sgd(model: &mut NnlmModel, gradient: &NnlmGradient, rate: Real) {
             *value -= rate * derivative;
         }
     }
-    for (value, derivative) in model
-        .hidden_weights
-        .iter_mut()
-        .zip(&gradient.hidden_weights)
-    {
-        *value -= rate * derivative;
+    let p = model.history_length * model.embedding_dimension;
+    for (j, &dz) in gradient.hidden_bias.iter().enumerate() {
+        let row = &mut model.hidden_weights[j * p..(j + 1) * p];
+        for (value, &proj) in row.iter_mut().zip(&gradient.projection) {
+            *value -= rate * dz * proj;
+        }
     }
     for (value, derivative) in model.hidden_bias.iter_mut().zip(&gradient.hidden_bias) {
         *value -= rate * derivative;
