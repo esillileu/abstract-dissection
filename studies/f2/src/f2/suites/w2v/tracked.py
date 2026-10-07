@@ -143,6 +143,32 @@ def _materialize_corpus(
         }
         return
 
+    atomic_run_id = str(config.get("atomic_run_id", ""))
+    corpus_id = atomic_run_id.split("--", 1)[0] if "--" in atomic_run_id else ""
+    candidate_paths = [
+        paths.dataset("f2") / "corpus" / f"{corpus_id}.txt",
+        paths.dataset("f2") / "corpus" / corpus_id / "corpus.txt",
+        paths.data_root / "f2" / "corpus" / f"{corpus_id}.txt",
+        paths.data_root / "f2" / "corpus" / corpus_id / "corpus.txt",
+    ]
+    if corpus_id == "holmes":
+        from f2.suites.w2v1.table7 import ensure_holmes_corpus
+
+        target = paths.dataset("f2") / "corpus" / "holmes.txt"
+        candidate_paths.insert(0, ensure_holmes_corpus(target))
+
+    for candidate in candidate_paths:
+        if candidate.is_file():
+            from repro_io.checksum import sha256_file
+
+            digest = corpus.get("sha256") or sha256_file(candidate)
+            config["corpus"] = {
+                "path": str(candidate),
+                "sha256": str(digest),
+                "lexical_tokens": lexical_token_budget,
+            }
+            return
+
     slot_id = str(identity["planned_run_slot_id"])
     with corpus_connection(validate_contract=True) as connection:
         rows = CorpusStateRepository(connection).list_verified_training_shards(slot_id)

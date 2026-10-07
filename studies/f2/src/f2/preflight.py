@@ -47,7 +47,7 @@ def database_identity(connection_url: str | None = None) -> ServiceIdentity:
         with psycopg.connect(
             url, options="-c default_transaction_read_only=on"
         ) as conn:
-            validate_connection(conn, schema="catalog")
+            validate_connection(conn, schema="corpus", required_schemas=("corpus",))
     except Exception as exc:
         raise PreflightError(str(exc)) from None
     parsed = urlsplit(url)

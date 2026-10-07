@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 from mlflow import MlflowClient
@@ -112,19 +113,26 @@ def publish_table7_analysis(
     return published_run_ids
 
 
-def publish_table4_analysis(
+def _publish_analogy_table(
     client: MlflowClient,
     experiment_id: str,
     base_dir: Path,
+    *,
+    table_number: str,
+    get_table_dir: Callable[[Path, str], Path],
+    csv_filename: str,
+    summary_filename: str,
+    extract_identity: Callable[[str, dict[str, str]], tuple[str, dict[str, str]]],
+    corpora: tuple[str, ...] = ("wmt", "lm1b", "umbc"),
 ) -> list[str]:
-    """Publish Table 4 Word Analogy (Words vs Epochs) results to MLflow."""
+    """Publish a Word Analogy evaluation table with common MLflow run lifecycle."""
     published: list[str] = []
     now_ms = int(time.time() * 1000)
 
-    for corpus in ("wmt", "lm1b", "umbc"):
-        c_dir = base_dir / corpus / "table4"
-        runs_csv = c_dir / "runs.csv"
-        summary_md = c_dir / "summary.md"
+    for corpus in corpora:
+        c_dir = get_table_dir(base_dir, corpus)
+        runs_csv = c_dir / csv_filename
+        summary_md = c_dir / summary_filename
         if not runs_csv.is_file():
             continue
 
@@ -132,19 +140,13 @@ def publish_table4_analysis(
             rows = list(csv.DictReader(f))
 
         for row in rows:
-            dim = row.get("dimension", "300")
-            words = row.get("training_words_millions", "783")
-            epochs = row.get("epochs", "3")
-            run_name = f"table4-{corpus}-{row['architecture']}-d{dim}-s{row['seed']}"
+            run_name, extra_tags = extract_identity(corpus, row)
             tags = {
                 "paper.id": "mikolov-2013-efficient-estimation",
-                "paper.table": "4",
+                "paper.table": table_number,
                 "suite.name": "w2v1",
                 "analysis.kind": "word_analogy",
-                "model.architecture": row["architecture"],
-                "model.dimension": str(dim),
-                "training.words_millions": str(words),
-                "training.epochs": str(epochs),
+                **extra_tags,
                 "corpus": corpus,
                 "seed": row["seed"],
                 "upstream.training_run_id": row["mlflow_run_id"],
@@ -180,13 +182,12 @@ def publish_table4_analysis(
             client.set_terminated(run_id, status="FINISHED")
             published.append(run_id)
 
-        # Corpus aggregate summary
-        s_run_name = f"w2v1-table4-{corpus}-summary"
+        # Summary run
         s_run = client.create_run(
             experiment_id,
             start_time=now_ms,
-            tags={"paper.table": "4", "corpus": corpus, "suite.name": "w2v1"},
-            run_name=s_run_name,
+            tags={"paper.table": table_number, "corpus": corpus, "suite.name": "w2v1"},
+            run_name=f"w2v1-table{table_number}-{corpus}-summary",
         )
         s_id = s_run.info.run_id
         if summary_md.is_file():
@@ -196,6 +197,59 @@ def publish_table4_analysis(
         published.append(s_id)
 
     return published
+
+
+def _table2_identity(corpus: str, row: dict[str, str]) -> tuple[str, dict[str, str]]:
+    dim = row["vector_dimension"]
+    words = row["training_words_millions"]
+    return (
+        f"table2-{corpus}-cbow-d{dim}-w{words}m-s{row['seed']}",
+        {
+            "model.architecture": "cbow",
+            "model.dimension": dim,
+            "training.words_millions": words,
+        },
+    )
+
+
+def _table3_identity(corpus: str, row: dict[str, str]) -> tuple[str, dict[str, str]]:
+    arch = row.get("architecture") or row.get("model_kind", "unknown")
+    dim = row.get("dimension") or row.get("vector_dimension", "unknown")
+    return (
+        f"table3-{corpus}-{arch}-d{dim}-s{row['seed']}",
+        {
+            "model.architecture": arch,
+            "model.dimension": dim,
+            "training.words_millions": row["training_words_millions"],
+        },
+    )
+
+
+def _table4_identity(corpus: str, row: dict[str, str]) -> tuple[str, dict[str, str]]:
+    dim = row.get("dimension", "300")
+    words = row.get("training_words_millions", "783")
+    epochs = row.get("epochs", "3")
+    return (
+        f"table4-{corpus}-{row['architecture']}-d{dim}-s{row['seed']}",
+        {
+            "model.architecture": row["architecture"],
+            "model.dimension": str(dim),
+            "training.words_millions": str(words),
+            "training.epochs": str(epochs),
+        },
+    )
+
+
+def _table5_identity(corpus: str, row: dict[str, str]) -> tuple[str, dict[str, str]]:
+    return (
+        f"table5-{corpus}-{row['architecture']}-d{row['dimension']}-w{row['training_words_millions']}m-s{row['seed']}",
+        {
+            "model.architecture": row["architecture"],
+            "model.dimension": row["dimension"],
+            "training.words_millions": row["training_words_millions"],
+            "training.epochs": row["epochs"],
+        },
+    )
 
 
 def publish_table2_analysis(
@@ -204,76 +258,16 @@ def publish_table2_analysis(
     base_dir: Path,
 ) -> list[str]:
     """Publish Table 2 scaling results to MLflow."""
-    published: list[str] = []
-    now_ms = int(time.time() * 1000)
-
-    for corpus in ("wmt", "lm1b", "umbc"):
-        c_dir = base_dir / corpus
-        runs_csv = c_dir / "table2-runs.csv"
-        summary_md = c_dir / "summary.md"
-        if not runs_csv.is_file():
-            continue
-
-        with runs_csv.open(encoding="utf-8") as f:
-            rows = list(csv.DictReader(f))
-
-        for row in rows:
-            run_name = f"table2-{corpus}-cbow-d{row['vector_dimension']}-w{row['training_words_millions']}m-s{row['seed']}"
-            tags = {
-                "paper.id": "mikolov-2013-efficient-estimation",
-                "paper.table": "2",
-                "suite.name": "w2v1",
-                "analysis.kind": "word_analogy",
-                "model.architecture": "cbow",
-                "model.dimension": row["vector_dimension"],
-                "training.words_millions": row["training_words_millions"],
-                "corpus": corpus,
-                "seed": row["seed"],
-                "upstream.training_run_id": row["mlflow_run_id"],
-            }
-            run = client.create_run(
-                experiment_id, start_time=now_ms, tags=tags, run_name=run_name
-            )
-            run_id = run.info.run_id
-
-            client.log_metric(
-                run_id,
-                "eval/total_accuracy_percent",
-                float(row["total_accuracy_percent"]),
-            )
-            client.log_metric(
-                run_id,
-                "eval/semantic_accuracy_percent",
-                float(row["semantic_accuracy_percent"]),
-            )
-            client.log_metric(
-                run_id,
-                "eval/syntactic_accuracy_percent",
-                float(row["syntactic_accuracy_percent"]),
-            )
-            client.log_metric(
-                run_id,
-                "runtime/training_seconds",
-                float(row["observed_training_seconds"]),
-            )
-            client.set_terminated(run_id, status="FINISHED")
-            published.append(run_id)
-
-        # Summary run
-        s_run = client.create_run(
-            experiment_id,
-            start_time=now_ms,
-            tags={"paper.table": "2", "corpus": corpus, "suite.name": "w2v1"},
-            run_name=f"w2v1-table2-{corpus}-summary",
-        )
-        s_id = s_run.info.run_id
-        if summary_md.is_file():
-            client.log_artifact(s_id, str(summary_md))
-        client.log_artifact(s_id, str(runs_csv))
-        client.set_terminated(s_id, status="FINISHED")
-        published.append(s_id)
-
-    return published
+    return _publish_analogy_table(
+        client,
+        experiment_id,
+        base_dir,
+        table_number="2",
+        get_table_dir=lambda base, corpus: base / corpus,
+        csv_filename="table2-runs.csv",
+        summary_filename="summary.md",
+        extract_identity=_table2_identity,
+    )
 
 
 def publish_table3_analysis(
@@ -282,81 +276,34 @@ def publish_table3_analysis(
     base_dir: Path,
 ) -> list[str]:
     """Publish Table 3 vector dimension / architecture comparison results to MLflow."""
-    published: list[str] = []
-    now_ms = int(time.time() * 1000)
+    return _publish_analogy_table(
+        client,
+        experiment_id,
+        base_dir,
+        table_number="3",
+        get_table_dir=lambda base, corpus: base / corpus,
+        csv_filename="table3-runs.csv",
+        summary_filename="table3-summary.md",
+        extract_identity=_table3_identity,
+    )
 
-    for corpus in ("wmt", "lm1b", "umbc"):
-        c_dir = base_dir / corpus
-        runs_csv = c_dir / "table3-runs.csv"
-        summary_md = c_dir / "table3-summary.md"
-        if not runs_csv.is_file():
-            continue
 
-        with runs_csv.open(encoding="utf-8") as f:
-            rows = list(csv.DictReader(f))
-
-        for row in rows:
-            arch = row.get("architecture") or row.get("model_kind", "unknown")
-            dim = row.get("dimension") or row.get("vector_dimension", "unknown")
-            run_name = f"table3-{corpus}-{arch}-d{dim}-s{row['seed']}"
-            tags = {
-                "paper.id": "mikolov-2013-efficient-estimation",
-                "paper.table": "3",
-                "suite.name": "w2v1",
-                "analysis.kind": "word_analogy",
-                "model.architecture": arch,
-                "model.dimension": dim,
-                "training.words_millions": row["training_words_millions"],
-                "corpus": corpus,
-                "seed": row["seed"],
-                "upstream.training_run_id": row["mlflow_run_id"],
-            }
-            run = client.create_run(
-                experiment_id, start_time=now_ms, tags=tags, run_name=run_name
-            )
-            run_id = run.info.run_id
-
-            client.log_metric(
-                run_id,
-                "eval/total_accuracy_percent",
-                float(row["total_accuracy_percent"]),
-            )
-            client.log_metric(
-                run_id,
-                "eval/semantic_accuracy_percent",
-                float(row["semantic_accuracy_percent"]),
-            )
-            client.log_metric(
-                run_id,
-                "eval/syntactic_accuracy_percent",
-                float(row["syntactic_accuracy_percent"]),
-            )
-            client.log_metric(
-                run_id, "eval/included_questions", int(row["included_questions"])
-            )
-            client.log_metric(
-                run_id,
-                "runtime/training_seconds",
-                float(row["observed_training_seconds"]),
-            )
-            client.set_terminated(run_id, status="FINISHED")
-            published.append(run_id)
-
-        # Summary run
-        s_run = client.create_run(
-            experiment_id,
-            start_time=now_ms,
-            tags={"paper.table": "3", "corpus": corpus, "suite.name": "w2v1"},
-            run_name=f"w2v1-table3-{corpus}-summary",
-        )
-        s_id = s_run.info.run_id
-        if summary_md.is_file():
-            client.log_artifact(s_id, str(summary_md))
-        client.log_artifact(s_id, str(runs_csv))
-        client.set_terminated(s_id, status="FINISHED")
-        published.append(s_id)
-
-    return published
+def publish_table4_analysis(
+    client: MlflowClient,
+    experiment_id: str,
+    base_dir: Path,
+) -> list[str]:
+    """Publish Table 4 Word Analogy (Words vs Epochs) results to MLflow."""
+    return _publish_analogy_table(
+        client,
+        experiment_id,
+        base_dir,
+        table_number="4",
+        get_table_dir=lambda base, corpus: base / corpus / "table4",
+        csv_filename="runs.csv",
+        summary_filename="summary.md",
+        extract_identity=_table4_identity,
+    )
 
 
 def publish_table5_analysis(
@@ -365,80 +312,16 @@ def publish_table5_analysis(
     base_dir: Path,
 ) -> list[str]:
     """Publish Table 5 architecture comparison results to MLflow."""
-    published: list[str] = []
-    now_ms = int(time.time() * 1000)
-
-    for corpus in ("wmt", "lm1b", "umbc"):
-        c_dir = base_dir / corpus / "table5"
-        runs_csv = c_dir / "runs.csv"
-        summary_md = c_dir / "summary.md"
-        if not runs_csv.is_file():
-            continue
-
-        with runs_csv.open(encoding="utf-8") as f:
-            rows = list(csv.DictReader(f))
-
-        for row in rows:
-            run_name = f"table5-{corpus}-{row['architecture']}-d{row['dimension']}-w{row['training_words_millions']}m-s{row['seed']}"
-            tags = {
-                "paper.id": "mikolov-2013-efficient-estimation",
-                "paper.table": "5",
-                "suite.name": "w2v1",
-                "analysis.kind": "word_analogy",
-                "model.architecture": row["architecture"],
-                "model.dimension": row["dimension"],
-                "training.words_millions": row["training_words_millions"],
-                "training.epochs": row["epochs"],
-                "corpus": corpus,
-                "seed": row["seed"],
-                "upstream.training_run_id": row["mlflow_run_id"],
-            }
-            run = client.create_run(
-                experiment_id, start_time=now_ms, tags=tags, run_name=run_name
-            )
-            run_id = run.info.run_id
-
-            client.log_metric(
-                run_id,
-                "eval/total_accuracy_percent",
-                float(row["total_accuracy_percent"]),
-            )
-            client.log_metric(
-                run_id,
-                "eval/semantic_accuracy_percent",
-                float(row["semantic_accuracy_percent"]),
-            )
-            client.log_metric(
-                run_id,
-                "eval/syntactic_accuracy_percent",
-                float(row["syntactic_accuracy_percent"]),
-            )
-            client.log_metric(
-                run_id, "eval/included_questions", int(row["included_questions"])
-            )
-            client.log_metric(
-                run_id,
-                "runtime/training_seconds",
-                float(row["observed_training_seconds"]),
-            )
-            client.set_terminated(run_id, status="FINISHED")
-            published.append(run_id)
-
-        # Summary run
-        s_run = client.create_run(
-            experiment_id,
-            start_time=now_ms,
-            tags={"paper.table": "5", "corpus": corpus, "suite.name": "w2v1"},
-            run_name=f"w2v1-table5-{corpus}-summary",
-        )
-        s_id = s_run.info.run_id
-        if summary_md.is_file():
-            client.log_artifact(s_id, str(summary_md))
-        client.log_artifact(s_id, str(runs_csv))
-        client.set_terminated(s_id, status="FINISHED")
-        published.append(s_id)
-
-    return published
+    return _publish_analogy_table(
+        client,
+        experiment_id,
+        base_dir,
+        table_number="5",
+        get_table_dir=lambda base, corpus: base / corpus / "table5",
+        csv_filename="runs.csv",
+        summary_filename="summary.md",
+        extract_identity=_table5_identity,
+    )
 
 
 def publish_all_w2v1_analysis(
