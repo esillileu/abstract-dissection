@@ -9,6 +9,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from f2.common.paths import get_benchmark_data_dir
 from f2.suites.w2v.artifacts import load_lookup_artifact
 from f2.suites.w2v.evaluation import (
     _analogy_rows,
@@ -48,7 +49,7 @@ def run_table3_diagnosis(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     if questions_path is None:
-        questions_path = Path("data/f2/benchmarks/questions-words.txt")
+        questions_path = get_benchmark_data_dir(paths) / "questions-words.txt"
     if not questions_path.is_file():
         raise FileNotFoundError(f"Questions words file not found: {questions_path}")
 

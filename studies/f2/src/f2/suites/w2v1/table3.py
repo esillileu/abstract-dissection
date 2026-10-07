@@ -12,6 +12,7 @@ from typing import Any
 from repro_io.checksum import sha256_file
 from repro_io.http import SerialDownloader
 
+from f2.common.paths import get_benchmark_data_dir
 from f2.suites.w2v.artifacts import load_lookup_artifact
 from f2.suites.w2v.evaluation import evaluate_analogies, parse_analogy_questions
 from repro_core.context import RuntimePaths
@@ -132,7 +133,7 @@ def analyze_table3_sources(
             f"canonical questions-words.txt must contain 19,544 questions; found {len(questions)}"
         )
     msr_path = ensure_msr_syntactic(
-        msr_questions_path or paths.dataset("f2") / "benchmarks" / "MSR-syntax.txt"
+        msr_questions_path or get_benchmark_data_dir(paths) / "MSR-syntax.txt"
     )
     msr_bytes = msr_path.read_bytes()
     msr = parse_analogy_questions(msr_bytes.splitlines())
