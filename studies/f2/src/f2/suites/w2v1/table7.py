@@ -13,6 +13,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+from f2.common.paths import get_benchmark_data_dir, get_corpus_data_dir
 from f2.suites.w2v.artifacts import load_lookup_artifact
 from f2.suites.w2v.evaluation import (
     evaluate_msr_sentence_completion,
@@ -88,7 +89,7 @@ def ensure_msr_benchmark_data(
     base_dir = (
         Path(benchmark_dir)
         if benchmark_dir
-        else paths.dataset("f2") / "benchmarks" / "msr_sentence_completion"
+        else get_benchmark_data_dir(paths) / "msr_sentence_completion"
     )
     base_dir.mkdir(parents=True, exist_ok=True)
 
@@ -105,9 +106,7 @@ def ensure_holmes_corpus(corpus_path: Path | None = None) -> Path:
     """Ensure the verified 522-book Holmes training corpus exists at corpus_path."""
     paths = RuntimePaths.from_environment()
     target = (
-        Path(corpus_path)
-        if corpus_path
-        else paths.dataset("f2") / "corpus" / "holmes.txt"
+        Path(corpus_path) if corpus_path else get_corpus_data_dir(paths) / "holmes.txt"
     )
     target.parent.mkdir(parents=True, exist_ok=True)
 
