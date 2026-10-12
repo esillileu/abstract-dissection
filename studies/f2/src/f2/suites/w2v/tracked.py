@@ -263,32 +263,38 @@ def _publish(
     if metrics.is_file():
         from mlflow.entities import Metric
 
+        batch: list[Metric] = []
+        now_ms = int(time.time() * 1000)
         with metrics.open(encoding="utf-8", newline="") as stream:
             for row in csv.DictReader(stream):
                 step = int(row["processed_tokens"])
-                client.log_batch(
-                    run_id,
-                    metrics=[
+                batch.extend(
+                    [
                         Metric(
                             "train/objective_loss",
                             float(row["objective_loss"]),
-                            int(time.time() * 1000),
+                            now_ms,
                             step,
                         ),
                         Metric(
                             "train/learning_rate",
                             float(row["learning_rate"]),
-                            int(time.time() * 1000),
+                            now_ms,
                             step,
                         ),
                         Metric(
                             "runtime/tokens_per_second",
                             float(row["tokens_per_second"]),
-                            int(time.time() * 1000),
+                            now_ms,
                             step,
                         ),
-                    ],
+                    ]
                 )
+                if len(batch) >= 750:
+                    client.log_batch(run_id, metrics=batch)
+                    batch = []
+            if batch:
+                client.log_batch(run_id, metrics=batch)
 
 
 def _mapping(config: dict[str, object], key: str) -> dict[str, Any]:
