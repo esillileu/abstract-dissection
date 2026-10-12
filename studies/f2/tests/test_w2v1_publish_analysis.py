@@ -10,6 +10,7 @@ from f2.suites.w2v1.publish_analysis import (
     ANALYSIS_EXPERIMENT_NAME,
     ensure_analysis_experiment,
     publish_table4_analysis,
+    publish_table6_analysis,
     publish_table7_analysis,
 )
 
@@ -124,3 +125,54 @@ def test_publish_table4_analysis(tmp_path: Path) -> None:
     run_ids = publish_table4_analysis(client, "exp-analysis", tmp_path)
     assert len(run_ids) == 2  # 1 run + 1 summary run
     assert client.log_metric.called
+
+
+def test_publish_table6_analysis(tmp_path: Path) -> None:
+    client = MagicMock()
+    client.create_run.return_value = MagicMock(info=MagicMock(run_id="run-t6-1"))
+
+    fineweb_dir = tmp_path / "fineweb" / "table6"
+    fineweb_dir.mkdir(parents=True)
+    csv_file = fineweb_dir / "runs.csv"
+    with csv_file.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(
+            f,
+            fieldnames=[
+                "architecture",
+                "embedding_dimension",
+                "seed",
+                "mlflow_run_id",
+                "source_table",
+                "semantic_accuracy_percent",
+                "syntactic_accuracy_percent",
+                "total_accuracy_percent",
+                "included_questions",
+                "total_questions",
+                "observed_training_seconds",
+                "paper_training_days",
+                "paper_cpu_cores",
+            ],
+        )
+        writer.writeheader()
+        writer.writerow(
+            {
+                "architecture": "cbow",
+                "embedding_dimension": "1000",
+                "seed": "1",
+                "mlflow_run_id": "cbow_6b_run_id",
+                "source_table": "6",
+                "semantic_accuracy_percent": "26.0",
+                "syntactic_accuracy_percent": "56.8",
+                "total_accuracy_percent": "42.8",
+                "included_questions": "19544",
+                "total_questions": "19544",
+                "observed_training_seconds": "25000.0",
+                "paper_training_days": "2",
+                "paper_cpu_cores": "140",
+            }
+        )
+
+    run_ids = publish_table6_analysis(client, "exp-analysis", tmp_path)
+    assert len(run_ids) == 2  # 1 run + 1 summary run
+    assert client.log_metric.called
+    assert client.set_terminated.called

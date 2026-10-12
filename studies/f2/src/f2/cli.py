@@ -336,6 +336,7 @@ def analyze(
                 publish_table3_analysis,
                 publish_table4_analysis,
                 publish_table5_analysis,
+                publish_table6_analysis,
                 publish_table7_analysis,
             )
 
@@ -345,6 +346,10 @@ def analyze(
             if table == 7:
                 published = publish_table7_analysis(
                     client, exp_id, paths.analysis_output("f2", "table7")
+                )
+            elif table == 6:
+                published = publish_table6_analysis(
+                    client, exp_id, paths.analysis_output("f2", "w2v1")
                 )
             elif table == 5:
                 published = publish_table5_analysis(

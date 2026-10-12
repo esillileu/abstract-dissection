@@ -252,6 +252,19 @@ def _table5_identity(corpus: str, row: dict[str, str]) -> tuple[str, dict[str, s
     )
 
 
+def _table6_identity(corpus: str, row: dict[str, str]) -> tuple[str, dict[str, str]]:
+    arch = row["architecture"]
+    dim = row.get("embedding_dimension") or row.get("dimension", "1000")
+    return (
+        f"table6-{corpus}-{arch}-d{dim}-s{row['seed']}",
+        {
+            "model.architecture": arch,
+            "model.dimension": str(dim),
+            "training.words_millions": "6000",
+        },
+    )
+
+
 def publish_table2_analysis(
     client: MlflowClient,
     experiment_id: str,
@@ -324,6 +337,25 @@ def publish_table5_analysis(
     )
 
 
+def publish_table6_analysis(
+    client: MlflowClient,
+    experiment_id: str,
+    base_dir: Path,
+) -> list[str]:
+    """Publish Table 6 FineWeb 6B scale results to MLflow."""
+    return _publish_analogy_table(
+        client,
+        experiment_id,
+        base_dir,
+        table_number="6",
+        get_table_dir=lambda base, corpus: base / corpus / "table6",
+        csv_filename="runs.csv",
+        summary_filename="summary.md",
+        extract_identity=_table6_identity,
+        corpora=("fineweb",),
+    )
+
+
 def publish_all_w2v1_analysis(
     tracking_uri: str,
     paths: RuntimePaths | None = None,
@@ -350,6 +382,9 @@ def publish_all_w2v1_analysis(
     results["table5"] = publish_table5_analysis(
         client, experiment_id, w2v1_analysis_dir
     )
+    results["table6"] = publish_table6_analysis(
+        client, experiment_id, w2v1_analysis_dir
+    )
     results["table7"] = publish_table7_analysis(client, experiment_id, t7_analysis_dir)
 
     return results
@@ -363,5 +398,6 @@ __all__ = [
     "publish_table3_analysis",
     "publish_table4_analysis",
     "publish_table5_analysis",
+    "publish_table6_analysis",
     "publish_table7_analysis",
 ]
