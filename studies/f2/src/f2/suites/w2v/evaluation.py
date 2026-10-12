@@ -124,25 +124,11 @@ def evaluate_analogies(
         counts[1] += 1
         valid.append((question, tuple(int(row) for row in rows)))
 
-    for start in range(0, len(valid), batch_size):
-        batch = valid[start : start + batch_size]
-        rows = np.asarray([item[1] for item in batch], dtype=np.int64)
-        queries = (
-            normalized[rows[:, 1]] - normalized[rows[:, 0]] + normalized[rows[:, 2]]
-        )
-        scores = normalized @ queries.T
-        columns = np.arange(len(batch))
-        scores[rows[:, 0], columns] = -np.inf
-        scores[rows[:, 1], columns] = -np.inf
-        scores[rows[:, 2], columns] = -np.inf
-        predictions = np.argmax(scores, axis=0)
-        positive = np.max(scores, axis=0) > 0.0
-        for (question, row), prediction, has_positive in zip(
-            batch, predictions, positive, strict=True
-        ):
-            category_counts[question.category][2] += int(
-                has_positive and int(prediction) == row[3]
-            )
+    question_rows = [item[1] for item in valid]
+    for (question, row), (prediction, positive) in zip(
+        valid, _analogy_predictions(normalized, question_rows, batch_size), strict=True
+    ):
+        category_counts[question.category][2] += int(positive and prediction == row[3])
 
     categories = tuple(
         _accuracy_result(name, total, valid, correct)
@@ -162,6 +148,29 @@ def evaluate_analogies(
         syntactic=syntactic,
         categories=categories,
     )
+
+
+def _analogy_predictions(
+    normalized: np.ndarray,
+    question_rows: Sequence[tuple[int, int, int, int]],
+    batch_size: int,
+) -> Iterable[tuple[int, bool]]:
+    """Shared compute-accuracy scoring for aggregate and question-level analysis."""
+    for start in range(0, len(question_rows), batch_size):
+        rows = np.asarray(question_rows[start : start + batch_size], dtype=np.int64)
+        queries = (
+            normalized[rows[:, 1]] - normalized[rows[:, 0]] + normalized[rows[:, 2]]
+        )
+        scores = normalized @ queries.T
+        columns = np.arange(len(rows))
+        for column in range(3):
+            scores[rows[:, column], columns] = -np.inf
+        predictions = np.argmax(scores, axis=0)
+        positive = np.max(scores, axis=0) > 0.0
+        yield from (
+            (int(row), bool(valid))
+            for row, valid in zip(predictions, positive, strict=True)
+        )
 
 
 def evaluate_word_similarity(
