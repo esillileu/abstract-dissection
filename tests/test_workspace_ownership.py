@@ -10,6 +10,15 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def source_files(root, suffixes):
+    for directory, subdirectories, filenames in root.walk():
+        subdirectories[:] = [name for name in subdirectories if name != "target"]
+        for filename in filenames:
+            path = directory / filename
+            if path.suffix in suffixes:
+                yield path
+
+
 def imports(path):
     for node in ast.walk(ast.parse(path.read_text())):
         if isinstance(node, ast.Import):
@@ -83,9 +92,7 @@ def test_f2_schema_and_migration_bytes_and_ownership():
     for name, digest in baseline.items():
         assert hashlib.sha256((ROOT / name).read_bytes()).hexdigest() == digest, name
     for area in ("packages", "infra"):
-        for path in (ROOT / area).rglob("*"):
-            if path.suffix not in {".sql", ".py", ".dbml"}:
-                continue
+        for path in source_files(ROOT / area, {".sql", ".py", ".dbml"}):
             assert not re.search(
                 r"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:catalog|corpus)\.",
                 path.read_text(),
@@ -112,7 +119,7 @@ def test_production_code_does_not_import_one_time_maintenance():
     assert not any((ROOT / "maintenance").rglob("*.py"))
 
     for root in (ROOT / "packages", ROOT / "studies"):
-        for source in root.rglob("*.py"):
+        for source in source_files(root, {".py"}):
             assert "maintenance" not in set(imports(source)), source
 
     corpus_cli = (ROOT / "studies/f2/src/f2/corpus/cli.py").read_text()
