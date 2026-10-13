@@ -72,7 +72,11 @@ def run_tracked_yaml(
         if experiment is None
         else experiment.experiment_id
     )
-    run_id = _create_run(client, experiment_id, config)
+    run_id = _find_resumable_run(client, experiment_id, config, paths, suite)
+    if run_id is None:
+        run_id = _create_run(client, experiment_id, config)
+    elif progress_reporter is not None:
+        progress_reporter.write(f"resuming uncompleted tracked run {run_id}")
     run_root = paths.staging_root / f"exp/f2/{suite}/tracked" / run_id
     try:
         result = run_config(
@@ -197,6 +201,42 @@ def _materialize_corpus(
         "sha256": materialized.corpus_sha256,
         "lexical_tokens": materialized.lexical_tokens,
     }
+
+
+def _find_resumable_run(
+    client: Any,
+    experiment_id: str,
+    config: dict[str, object],
+    paths: RuntimePaths,
+    suite: str,
+) -> str | None:
+    from mlflow.entities import ViewType
+
+    identity = _identity(config)
+    slot_id = str(identity["planned_run_slot_id"])
+    runs = client.search_runs(
+        [experiment_id],
+        filter_string=f"tags.`f2.planned_run_slot_id` = '{slot_id}'",
+        run_view_type=ViewType.ALL,
+        order_by=["attributes.start_time DESC"],
+        max_results=10,
+    )
+    for run in runs:
+        if run.data.tags.get("result.durable_complete") == "true":
+            continue
+        run_id = str(run.info.run_id)
+        ckpt_meta = (
+            paths.staging_root
+            / f"exp/f2/{suite}/tracked"
+            / run_id
+            / "checkpoints"
+            / "latest.json"
+        )
+        if ckpt_meta.is_file():
+            if run.info.lifecycle_stage == "deleted":
+                client.restore_run(run_id)
+            return run_id
+    return None
 
 
 def _create_run(

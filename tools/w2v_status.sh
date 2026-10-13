@@ -195,7 +195,17 @@ if [ -n "$PROC_TTY" ] && [ "$PROC_TTY" != "?" ] && command -v tmux >/dev/null 2>
   TARGET_PANE=$(tmux list-panes -a -F "#{pane_tty} #{session_name}:#{window_index}.#{pane_index}" 2>/dev/null | awk -v tty="/dev/$PROC_TTY" '$1 == tty {print $2}' | head -n 1 || true)
   if [ -n "$TARGET_PANE" ]; then
     PANE_LOG=$(tmux capture-pane -t "$TARGET_PANE" -p -S -500 2>/dev/null || true)
-    LAST_EPOCH_LINE=$(echo "$PANE_LOG" | grep -E "epoch=[0-9]+/[0-9]+" | tail -n 1 || true)
+    SLOT_LINE=$(echo "$PANE_LOG" | grep -E "preparing .* slot=" | tail -n 1 || true)
+    if [ -n "$SLOT_LINE" ]; then
+      VARIANT_SLOT=$(echo "$SLOT_LINE" | sed -E 's/.*slot=([^ ]+).*/\1/' || echo "unknown")
+      PREP_COMPLETED=$(echo "$SLOT_LINE" | sed -E 's/.*completed=([0-9]+).*/\1/' || echo 0)
+      if [[ "$PREP_COMPLETED" =~ ^[0-9]+$ ]]; then
+        COMPLETED_EPOCHS="$PREP_COMPLETED"
+      fi
+    fi
+    # Only parse epoch lines that appeared AFTER the current preparing slot boundary
+    CURRENT_RUN_LOG=$(echo "$PANE_LOG" | awk '/preparing .* slot=/ {buf=""} {buf = buf "\n" $0} END {print buf}')
+    LAST_EPOCH_LINE=$(echo "$CURRENT_RUN_LOG" | grep -E "epoch=[0-9]+/[0-9]+" | tail -n 1 || true)
     if [ -n "$LAST_EPOCH_LINE" ]; then
       LOG_COMPLETED=$(echo "$LAST_EPOCH_LINE" | sed -E 's/.*epoch=([0-9]+)\/([0-9]+).*/\1/' || echo 0)
       LOG_TOTAL=$(echo "$LAST_EPOCH_LINE" | sed -E 's/.*epoch=([0-9]+)\/([0-9]+).*/\2/' || echo 1)
@@ -205,10 +215,6 @@ if [ -n "$PROC_TTY" ] && [ "$PROC_TTY" != "?" ] && command -v tmux >/dev/null 2>
       if [[ "$LOG_TOTAL" =~ ^[0-9]+$ ]] && [ "$LOG_TOTAL" -gt 0 ]; then
         TOTAL_EPOCHS="$LOG_TOTAL"
       fi
-    fi
-    SLOT_LINE=$(echo "$PANE_LOG" | grep -E "preparing .* slot=" | tail -n 1 || true)
-    if [ -n "$SLOT_LINE" ]; then
-      VARIANT_SLOT=$(echo "$SLOT_LINE" | sed -E 's/.*slot=([^ ]+).*/\1/' || echo "unknown")
     fi
   fi
 fi
