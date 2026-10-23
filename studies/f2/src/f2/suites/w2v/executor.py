@@ -167,6 +167,10 @@ class Word2VecExecutor:
         final = manager.save_final()
         state = session.export_state()
         lookup_path = root / "lookup"
+        # Lookup is derived from the restored final state and may already exist
+        # when a completed run is invoked again or publication is retried.
+        if lookup_path.exists():
+            shutil.rmtree(lookup_path)
         save_lookup_artifact(state, lookup_path)
         report = {
             "identity": identity,
