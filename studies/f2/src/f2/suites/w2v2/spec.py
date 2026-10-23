@@ -1,4 +1,4 @@
-"""Validated W2V2 phrase run specification."""
+"""Validated W2V2 word and phrase run specifications."""
 
 from __future__ import annotations
 
@@ -11,13 +11,19 @@ from repro_core.execution.spec import load_variant, mapping
 
 @dataclass(frozen=True)
 class RunSpec(Word2VecRunSpec):
-    """W2V2 phrase specification extending Word2VecRunSpec with phrase detection."""
+    """Select word or phrase input without changing historical phrase identities."""
 
     phrase_detection: dict[str, object] = field(default_factory=dict)
+    corpus_mode: str = "phrase"
+    subsampling_policy: str | None = None
 
     def resolved_config(self) -> dict[str, object]:
         resolved = super().resolved_config()
-        resolved["phrase_detection"] = self.phrase_detection
+        if self.corpus_mode == "phrase":
+            resolved["phrase_detection"] = self.phrase_detection
+        else:
+            resolved["corpus_mode"] = self.corpus_mode
+            resolved["subsampling_policy"] = self.subsampling_policy
         return resolved
 
 
@@ -45,7 +51,17 @@ def parse_run_spec(
         raise ValueError(
             f"unsupported W2V2 objective: {objective}; NCE is not substituted with NEG"
         )
-    phrase = mapping(raw, "phrase_detection")
+    mode = raw.get("corpus_mode", "phrase")
+    if mode not in {"word", "phrase"}:
+        raise ValueError(f"unsupported W2V2 corpus_mode: {mode}")
+    policy = raw.get("subsampling_policy")
+    if policy is not None and policy != "word2vec_c":
+        raise ValueError("W2V2 supports only subsampling_policy word2vec_c")
+    if mode == "word" and policy is None:
+        raise ValueError("word-only W2V2 requires explicit subsampling_policy")
+    if mode == "word" and "phrase_detection" in raw:
+        raise ValueError("word-only W2V2 cannot configure phrase_detection")
+    phrase = mapping(raw, "phrase_detection") if mode == "phrase" else {}
     return RunSpec(
         atomic_run_id=str(raw["atomic_run_id"]),
         identity=identity,
@@ -56,6 +72,8 @@ def parse_run_spec(
         tracking=mapping(raw, "tracking"),
         path=path,
         phrase_detection=phrase,
+        corpus_mode=str(mode),
+        subsampling_policy=policy,
     )
 
 

@@ -1,4 +1,4 @@
-"""Phrase policy layered on the shared Word2Vec executor."""
+"""Word and phrase corpus policies for the shared Word2Vec executor."""
 
 from __future__ import annotations
 
@@ -14,13 +14,22 @@ from repro_core.context import ExperimentContext
 
 
 class W2V2Executor(Word2VecExecutor):
-    """W2V2 phrase executor extending Word2VecExecutor with phrase corpus materialization."""
+    """Train word input directly or materialize a phrase corpus first."""
 
     suite_name = "w2v2"
 
     def run(
         self, config: dict[str, object], context: ExperimentContext
     ) -> Word2VecResult:
+        mode = config.get("corpus_mode", "phrase")
+        if mode == "word":
+            if config.get("subsampling_policy") != "word2vec_c":
+                raise ValueError("word-only W2V2 requires word2vec_c subsampling")
+            if "phrase_detection" in config:
+                raise ValueError("word-only W2V2 cannot configure phrase_detection")
+            return super().run(config, context)
+        if mode != "phrase":
+            raise ValueError(f"unsupported W2V2 corpus_mode: {mode}")
         resolved = dict(config)
         corpus = _mapping(config, "corpus")
         source = Path(str(corpus["path"]))

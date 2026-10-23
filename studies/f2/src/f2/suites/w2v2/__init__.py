@@ -1,4 +1,4 @@
-"""W2V2 phrase reconstruction suite composition."""
+"""W2V2 word and phrase reconstruction suite composition."""
 
 from pathlib import Path
 
