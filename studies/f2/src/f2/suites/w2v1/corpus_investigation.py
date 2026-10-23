@@ -20,7 +20,6 @@ from threadpoolctl import threadpool_limits
 
 from f2.common.paths import get_benchmark_data_dir
 from f2.suites.w2v.artifacts import load_lookup_artifact
-from f2.suites.w2v.corpus import _TOKEN, _decompressed_lines
 from f2.suites.w2v.evaluation import (
     _analogy_predictions,
     _analogy_rows,
@@ -31,6 +30,7 @@ from f2.suites.w2v.evaluation import (
 from repro_core.context import RuntimePaths
 
 from .corpus_statistics import (
+    TOKEN_PATTERN,
     WINDOWS,
     CorpusStatistics,
     entropy,
@@ -40,7 +40,7 @@ from .corpus_statistics import (
     spelling_key,
 )
 from .diagnostic import MODELS, SEEDS
-from .relations import decode_tokens, write_csv
+from .relations import corpus_lines, decode_tokens, write_csv
 
 CORPORA = ("lm1b", "wmt", "umbc")
 MAIN_CATEGORIES = (
@@ -201,8 +201,8 @@ def bound_lines(shards, store, staging, budget=320_000_000):
                 or sha256_file(source) != shard["sha256"]
             ):
                 raise ValueError("Shard checksum mismatch")
-            for line in _decompressed_lines(source):
-                matches = list(_TOKEN.finditer(line))
+            for line in corpus_lines(source):
+                matches = list(TOKEN_PATTERN.finditer(line))
                 available = budget - tokens
                 if len(matches) <= available:
                     yield index, line

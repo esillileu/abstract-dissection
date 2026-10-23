@@ -89,7 +89,7 @@ def test_annotated_materialization_keeps_exact_partial_line_and_cleans_shard(
 
     monkeypatch.setattr(module, "sha256_file", lambda path: "checksum")
     monkeypatch.setattr(
-        module, "_decompressed_lines", lambda path: iter([b"a b\n", b"\n", b"c d e\n"])
+        module, "corpus_lines", lambda path: iter([b"a b\n", b"\n", b"c d e\n"])
     )
     shards = [
         dict(

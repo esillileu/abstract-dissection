@@ -12,7 +12,7 @@ from pathlib import Path
 
 import numpy as np
 
-from f2.suites.w2v.corpus import _TOKEN
+TOKEN_PATTERN = re.compile(rb"[^ \t\r\n]+")
 
 WINDOWS = ("fixed4", "dynamic10_expected")
 PUNCTUATION = b".,:;!?()[]{}\"'`"
@@ -321,8 +321,12 @@ class CorpusStatistics:
 
     def consume(self, line, shard):
         self.digest.update(line)
-        original = _TOKEN.findall(line)
-        fields = _TOKEN.findall(line.replace(b"\r", b"")) if b"\r" in line else original
+        original = TOKEN_PATTERN.findall(line)
+        fields = (
+            TOKEN_PATTERN.findall(line.replace(b"\r", b""))
+            if b"\r" in line
+            else original
+        )
         self.total["lexical_tokens"] += len(original)
         self.total["lines"] += 1
         self.shards[shard]["lexical_tokens"] += len(original)

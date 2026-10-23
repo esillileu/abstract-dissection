@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from f2.suites.w2v.phrases import PhrasePolicy
 from f2.suites.w2v.spec import Word2VecRunSpec
 from repro_core.execution.spec import load_variant, mapping
 
@@ -62,6 +63,8 @@ def parse_run_spec(
     if mode == "word" and "phrase_detection" in raw:
         raise ValueError("word-only W2V2 cannot configure phrase_detection")
     phrase = mapping(raw, "phrase_detection") if mode == "phrase" else {}
+    if mode == "phrase":
+        PhrasePolicy.from_config(phrase)
     return RunSpec(
         atomic_run_id=str(raw["atomic_run_id"]),
         identity=identity,

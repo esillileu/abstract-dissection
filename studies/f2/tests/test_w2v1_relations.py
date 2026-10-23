@@ -75,7 +75,7 @@ def test_bound_corpus_bytes_match_budget_truncation_and_blank_lines(
     ]
     monkeypatch.setattr(
         relations,
-        "_decompressed_lines",
+        "corpus_lines",
         lambda path: iter(payload.splitlines(keepends=True)),
     )
     # The materializer preserves blank lines after an exactly exhausted line.

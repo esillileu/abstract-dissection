@@ -9,6 +9,7 @@ import json
 import os
 import tempfile
 from collections.abc import Iterable
+from contextlib import closing
 from pathlib import Path
 
 import numpy as np
@@ -17,7 +18,7 @@ from repro_io.s3 import S3Config, S3ObjectStore
 
 from f2.common.paths import get_benchmark_data_dir
 from f2.suites.w2v.artifacts import LookupEmbeddings, load_lookup_artifact
-from f2.suites.w2v.corpus import _TOKEN, _decompressed_lines
+from f2.suites.w2v.corpus import _decompressed_chunks
 from f2.suites.w2v.evaluation import (
     _analogy_rows,
     _analogy_tokens,
@@ -26,7 +27,25 @@ from f2.suites.w2v.evaluation import (
 from repro_core.context import RuntimePaths
 
 from .analysis import QUESTIONS_WORDS_SHA256
+from .corpus_statistics import TOKEN_PATTERN
 from .diagnostic import MODELS, SEEDS, TABLE3_RUNS
+
+
+def corpus_lines(path):
+    """Reassemble documents for the line-based W2V1 context diagnostics."""
+    pending = bytearray()
+    with closing(_decompressed_chunks(path)) as chunks:
+        for chunk in chunks:
+            pieces = chunk.split(b"\n")
+            for piece in pieces[:-1]:
+                pending.extend(piece)
+                pending.append(10)
+                yield bytes(pending)
+                pending.clear()
+            pending.extend(pieces[-1])
+        if pending:
+            yield bytes(pending)
+
 
 CATEGORIES = ("capital-world", "city-in-state", "family")
 WINDOWS = ("fixed4", "fixed10", "dynamic10_expected")
@@ -296,8 +315,8 @@ def bound_corpus_lines(
                 or sha256_file(source) != shard["sha256"]
             ):
                 raise ValueError("Corpus shard checksum mismatch")
-            for line in _decompressed_lines(source):
-                matches = list(_TOKEN.finditer(line))
+            for line in corpus_lines(source):
+                matches = list(TOKEN_PATTERN.finditer(line))
                 available = budget - tokens
                 if len(matches) <= available:
                     yield line
@@ -327,12 +346,12 @@ def context_counts(lines: Iterable[bytes], tokens: list[bytes], targets: list[in
     sentences = 0
     for line in lines:
         digest.update(line)
-        fields = _TOKEN.findall(line)
+        fields = TOKEN_PATTERN.findall(line)
         lexical += len(fields)
         # The engine removes CR, truncates to 99 bytes, and uses exact case.
         ids = [
             exact_rows.get(t.replace(b"\r", b"")[:99].split(b"\0", 1)[0])
-            for t in _TOKEN.findall(line.replace(b"\r", b""))
+            for t in TOKEN_PATTERN.findall(line.replace(b"\r", b""))
         ]
         # OOV tokens are skipped before window distances are measured.
         ids = [r for r in ids if r is not None]

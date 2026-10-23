@@ -173,3 +173,84 @@ def test_manifest_cache_skips_stream_and_rebuilds_on_size_mismatch(
     third = materializer.materialize(binding, lexical_token_budget=7)
     assert third == first
     assert rebuilt_calls == 1
+
+
+def test_recovers_same_size_corruption_of_materialized_corpus(tmp_path):
+    binding, objects = _fixture_binding(tmp_path)
+    materializer = CorpusMaterializer(FixtureStore(objects), paths=_paths(tmp_path))
+    original = materializer.materialize(binding, lexical_token_budget=10)
+    data = original.path.read_bytes()
+    original.path.write_bytes(b"x" * len(data))
+    rebuilt = materializer.materialize(binding, lexical_token_budget=10)
+    assert rebuilt.path.read_bytes() == data
+    assert rebuilt.corpus_sha256 == original.corpus_sha256
+
+
+def test_concurrent_materialization_uses_private_work_and_verified_results(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+
+    binding, objects = _fixture_binding(tmp_path)
+    materializer = CorpusMaterializer(FixtureStore(objects), paths=_paths(tmp_path))
+    budgets = (3, 7, 10, 3, 7, 10)
+    with ThreadPoolExecutor(3) as pool:
+        results = list(
+            pool.map(
+                lambda budget: materializer.materialize(
+                    binding, lexical_token_budget=budget
+                ),
+                budgets,
+            )
+        )
+    for i in range(3):
+        assert results[i] == results[i + 3]
+        assert len(results[i].path.read_bytes().split()) == budgets[i]
+    assert not list((_paths(tmp_path).cache_root / "exp/f2/w2v/corpus/work").iterdir())
+
+
+def test_shards_without_final_newline_cannot_join_documents(tmp_path):
+    source = []
+    for i, data in enumerate((b"alpha", b"beta\n")):
+        raw = tmp_path / f"raw-{i}"
+        raw.write_bytes(data)
+        compressed = tmp_path / f"shard-{i}.zst"
+        subprocess.run(
+            ["zstd", "-q", "-f", str(raw), "-o", str(compressed)], check=True
+        )
+        source.append(compressed)
+    binding = CorpusBinding(
+        tuple(
+            CorpusShard(
+                i,
+                f"s3://fixture/{i}",
+                hashlib.sha256(path.read_bytes()).hexdigest(),
+                path.stat().st_size,
+                1,
+                1,
+            )
+            for i, path in enumerate(source)
+        )
+    )
+    store = FixtureStore({f"s3://fixture/{i}": path for i, path in enumerate(source)})
+    result = CorpusMaterializer(store, paths=_paths(tmp_path)).materialize(
+        binding, lexical_token_budget=2
+    )
+    assert result.path.read_bytes() == b"alpha\nbeta\n"
+
+
+def test_swapped_manifest_does_not_supply_another_budget_corpus(tmp_path):
+    from f2.suites.w2v.corpus import _binding_manifest_key
+
+    materializer_binding, objects = _fixture_binding(tmp_path)
+    materializer = CorpusMaterializer(FixtureStore(objects), paths=_paths(tmp_path))
+    small = materializer.materialize(materializer_binding, lexical_token_budget=3)
+    large = materializer.materialize(materializer_binding, lexical_token_budget=10)
+    manifests = _paths(tmp_path).cache_root / "exp/f2/w2v/corpus/manifests"
+    small_manifest = (
+        manifests / f"{_binding_manifest_key(materializer_binding, 3)}.json"
+    )
+    large_manifest = (
+        manifests / f"{_binding_manifest_key(materializer_binding, 10)}.json"
+    )
+    large_manifest.write_bytes(small_manifest.read_bytes())
+    recovered = materializer.materialize(materializer_binding, lexical_token_budget=10)
+    assert recovered == large and recovered != small
