@@ -82,41 +82,70 @@ class Word2VecExecutor:
         resumed_session = None
         prior_reports: list[dict[str, Any]] = []
 
-        if latest_json.is_file():
-            try:
-                resumed_session = restore_session(
-                    config,
-                    context.paths.repo_root,
-                    latest_json,
-                    cache_root=context.paths.cache_root,
-                    corpus_digest=corpus_digest,
+        execution_identity = {
+            "config_digest": str(identity["config_digest"]),
+            "seed": int(identity["seed"]),
+            "planned_run_slot_id": str(identity["planned_run_slot_id"]),
+            "corpus_sha256": corpus_digest,
+        }
+        identity_path = root / "execution_identity.json"
+        if identity_path.is_file():
+            if json.loads(identity_path.read_text()) != execution_identity:
+                raise ValueError(
+                    f"run identity mismatch; existing results preserved: {root}"
                 )
-                obs_file = root / "metrics" / "observations.csv"
-                if obs_file.is_file():
-                    import csv
+        elif (root / "result.json").is_file():
+            previous = json.loads((root / "result.json").read_text())["identity"]
+            if any(
+                previous.get(key) != identity.get(key)
+                for key in ("config_digest", "seed", "planned_run_slot_id")
+            ):
+                raise ValueError(
+                    f"run identity mismatch; existing results preserved: {root}"
+                )
 
-                    prior_by_epoch: dict[int, dict[str, Any]] = {}
-                    with obs_file.open("r", encoding="utf-8") as f:
-                        for row in csv.DictReader(f):
-                            ep = int(row["epoch"])
-                            prior_by_epoch[ep] = {
-                                "epoch": ep,
-                                "processed_tokens": int(row["processed_tokens"]),
-                                "objective_loss": float(row["objective_loss"]),
-                            }
-                    for ep in sorted(prior_by_epoch):
-                        if ep <= resumed_session.completed_epochs:
-                            prior_reports.append(prior_by_epoch[ep])
-            except Exception:
-                resumed_session = None
+        if latest_json.is_file():
+            if (
+                "phrase_detection" in config
+                and not identity_path.is_file()
+                and not (root / "result.json").is_file()
+            ):
+                raise ValueError(
+                    f"missing phrase run identity; existing checkpoint preserved: {root}"
+                )
+            resumed_session = restore_session(
+                config,
+                context.paths.repo_root,
+                latest_json,
+                cache_root=context.paths.cache_root,
+                corpus_digest=corpus_digest,
+            )
+            obs_file = root / "metrics" / "observations.csv"
+            if obs_file.is_file():
+                import csv
+
+                prior_by_epoch: dict[int, dict[str, Any]] = {}
+                with obs_file.open("r", encoding="utf-8") as f:
+                    for row in csv.DictReader(f):
+                        ep = int(row["epoch"])
+                        prior_by_epoch[ep] = {
+                            "epoch": ep,
+                            "processed_tokens": int(row["processed_tokens"]),
+                            "objective_loss": float(row["objective_loss"]),
+                        }
+                for ep in sorted(prior_by_epoch):
+                    if ep <= resumed_session.completed_epochs:
+                        prior_reports.append(prior_by_epoch[ep])
 
         if resumed_session is not None:
             session = resumed_session
             reports = prior_reports
         else:
-            if root.exists():
-                shutil.rmtree(root)
-            root.mkdir(parents=True)
+            if root.exists() and any(root.iterdir()):
+                raise ValueError(
+                    f"existing run has no resumable checkpoint; preserved: {root}"
+                )
+            root.mkdir(parents=True, exist_ok=True)
             session = create_session(
                 config,
                 context.paths.repo_root,
@@ -124,6 +153,12 @@ class Word2VecExecutor:
                 corpus_digest=corpus_digest,
             )
             reports = []
+
+        temporary_identity = root / ".execution_identity.json"
+        temporary_identity.write_text(
+            json.dumps(execution_identity, sort_keys=True) + "\n"
+        )
+        temporary_identity.replace(identity_path)
 
         checkpoint_factory = (
             create_nnlm_checkpoint_manager

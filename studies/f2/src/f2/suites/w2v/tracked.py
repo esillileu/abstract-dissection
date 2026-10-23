@@ -221,7 +221,16 @@ def _find_resumable_run(
         order_by=["attributes.start_time DESC"],
         max_results=10,
     )
+    expected = {
+        "f2.config_digest": str(identity["config_digest"]),
+        "f2.source_corpus_sha256": str(_mapping(config, "corpus")["sha256"]),
+        "suite.name": suite,
+        "implementation.variant": str(config["atomic_run_id"]),
+        "seed": str(identity["seed"]),
+    }
     for run in runs:
+        if any(run.data.tags.get(key) != value for key, value in expected.items()):
+            continue
         if run.data.tags.get("result.durable_complete") == "true":
             continue
         run_id = str(run.info.run_id)
@@ -253,6 +262,7 @@ def _create_run(
     )
     tags = {
         **run_identity.tags(),
+        "f2.source_corpus_sha256": str(_mapping(config, "corpus")["sha256"]),
         "paper.id": "mikolov-2013-efficient-estimation",
         "suite.name": suite,
         "experiment_spec.id": str(
