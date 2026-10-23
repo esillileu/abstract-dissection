@@ -5,9 +5,11 @@ from __future__ import annotations
 import csv
 import glob
 import hashlib
+import json
 import re
 import statistics
 import subprocess
+import sys
 import urllib.request
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -174,6 +176,97 @@ class Table7RunResult:
     observed_training_seconds: float
 
 
+_EVALUATION_PROTOCOL = "table7-v1"
+
+
+class Table7EvaluationCache:
+    """Signature-checked per-run cache for reconstructible Table 7 evaluation results."""
+
+    def __init__(
+        self, root: Path, *, questions_sha256: str, answers_sha256: str
+    ) -> None:
+        self.root = root
+        self.signature = {
+            "schema_version": 1,
+            "evaluation_protocol": _EVALUATION_PROTOCOL,
+            "questions_sha256": questions_sha256,
+            "answers_sha256": answers_sha256,
+        }
+
+    def load(self, run_id: str) -> Table7RunResult | None:
+        path = self._path(run_id)
+        if not path.is_file():
+            return None
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            if payload.get("signature") != self.signature:
+                return None
+            result = Table7RunResult(**payload["result"])
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+            return None
+        return result if result.mlflow_run_id == run_id else None
+
+    def store(
+        self, result: Table7RunResult, *, lookup_identity: dict[str, object]
+    ) -> None:
+        path = self._path(result.mlflow_run_id)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(
+                {
+                    "signature": self.signature,
+                    "lookup_identity": lookup_identity,
+                    "result": asdict(result),
+                },
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+    def seed_from_csv(self, csv_path: Path) -> int:
+        """Seed cache from an existing summary.csv if present."""
+        if not csv_path.is_file():
+            return 0
+        count = 0
+        try:
+            with csv_path.open(encoding="utf-8") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    run_id = row.get("mlflow_run_id")
+                    if not run_id:
+                        continue
+                    if self.load(run_id) is not None:
+                        continue
+                    result = Table7RunResult(
+                        architecture=str(row["architecture"]),
+                        dimension=int(row["dimension"]),
+                        training_words_millions=int(row["training_words_millions"]),
+                        epochs=int(row["epochs"]),
+                        corpus=str(row["corpus"]),
+                        seed=int(row["seed"]),
+                        mlflow_run_id=str(row["mlflow_run_id"]),
+                        overall_accuracy_percent=float(row["overall_accuracy_percent"]),
+                        dev_accuracy_percent=float(row["dev_accuracy_percent"]),
+                        test_accuracy_percent=float(row["test_accuracy_percent"]),
+                        total_questions=int(row["total_questions"]),
+                        observed_training_seconds=float(
+                            row["observed_training_seconds"]
+                        ),
+                    )
+                    self.store(result, lookup_identity={"source": "summary.csv"})
+                    count += 1
+        except Exception:
+            return count
+        return count
+
+    def _path(self, run_id: str) -> Path:
+        if re.fullmatch(r"[0-9a-zA-Z_-]+", run_id) is None:
+            raise ValueError(f"invalid MLflow run ID: {run_id}")
+        return self.root / f"{run_id}.json"
+
+
 def collect_table7_runs(runs: list[Any]) -> dict[int, Any]:
     """Group durable Table 7 runs by seed -> run."""
     grouped: dict[int, Any] = {}
@@ -222,11 +315,31 @@ def analyze_table7_sources(
         a_file.read_bytes().splitlines(),
     )
 
+    out_dir = paths.analysis_output("f2", "table7")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    summary_md = out_dir / "summary.md"
+    summary_csv = out_dir / "summary.csv"
+
+    evaluation_cache = Table7EvaluationCache(
+        paths.cache_root / "f2/w2v1/table7",
+        questions_sha256=MSR_QUESTIONS_SHA256,
+        answers_sha256=MSR_ANSWERS_SHA256,
+    )
+    evaluation_cache.seed_from_csv(summary_csv)
+
     grouped_runs = collect_table7_runs(runs)
 
     run_results: list[Table7RunResult] = []
+    cache_hits = 0
+    cache_misses = 0
     with artifact_download_progress():
         for seed, run in sorted(grouped_runs.items()):
+            cached = evaluation_cache.load(run.info.run_id)
+            if cached is not None and cached.seed == seed:
+                run_results.append(cached)
+                cache_hits += 1
+                continue
+            cache_misses += 1
             lookup_dir = artifact_cache.get(run.info.run_id, "lookup")
             lookup = load_lookup_artifact(lookup_dir)
             evaluation = evaluate_msr_sentence_completion(lookup, questions)
@@ -235,28 +348,29 @@ def analyze_table7_sources(
             )
             seconds = observed_training_seconds(metrics_file)
 
-            run_results.append(
-                Table7RunResult(
-                    architecture="skipgram",
-                    dimension=640,
-                    training_words_millions=50,
-                    epochs=1,
-                    corpus="holmes",
-                    seed=seed,
-                    mlflow_run_id=run.info.run_id,
-                    overall_accuracy_percent=round(evaluation.overall.score * 100.0, 2),
-                    dev_accuracy_percent=round(evaluation.dev.score * 100.0, 2),
-                    test_accuracy_percent=round(evaluation.test.score * 100.0, 2),
-                    total_questions=len(questions),
-                    observed_training_seconds=seconds,
-                )
+            record = Table7RunResult(
+                architecture="skipgram",
+                dimension=640,
+                training_words_millions=50,
+                epochs=1,
+                corpus="holmes",
+                seed=seed,
+                mlflow_run_id=run.info.run_id,
+                overall_accuracy_percent=round(evaluation.overall.score * 100.0, 2),
+                dev_accuracy_percent=round(evaluation.dev.score * 100.0, 2),
+                test_accuracy_percent=round(evaluation.test.score * 100.0, 2),
+                total_questions=len(questions),
+                observed_training_seconds=seconds,
             )
+            evaluation_cache.store(
+                record, lookup_identity=getattr(lookup, "manifest", {})
+            )
+            run_results.append(record)
 
-    out_dir = paths.analysis_output("f2", "table7")
-    out_dir.mkdir(parents=True, exist_ok=True)
-    summary_md = out_dir / "summary.md"
-    summary_csv = out_dir / "summary.csv"
-
+    print(
+        f"W2V1 Table 7 evaluation cache: {cache_hits} hit(s), {cache_misses} miss(es)",
+        file=sys.stderr,
+    )
     _write_table7_markdown(summary_md, run_results)
     _write_table7_csv(summary_csv, run_results)
 

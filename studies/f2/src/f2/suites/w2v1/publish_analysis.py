@@ -171,9 +171,24 @@ def _publish_analogy_table(
                 "eval/syntactic_accuracy_percent",
                 float(row["syntactic_accuracy_percent"]),
             )
-            client.log_metric(
-                run_id, "eval/included_questions", int(row["included_questions"])
+            included_questions = (
+                int(row["included_questions"])
+                if "included_questions" in row
+                else int(row["semantic_included"]) + int(row["syntactic_included"])
             )
+            client.log_metric(run_id, "eval/included_questions", included_questions)
+            if "msr_accuracy_percent" in row:
+                client.log_metric(
+                    run_id,
+                    "eval/msr_accuracy_percent",
+                    float(row["msr_accuracy_percent"]),
+                )
+            if "msr_included" in row:
+                client.log_metric(
+                    run_id,
+                    "eval/msr_included_questions",
+                    int(row["msr_included"]),
+                )
             client.log_metric(
                 run_id,
                 "runtime/training_seconds",
@@ -214,25 +229,33 @@ def _table2_identity(corpus: str, row: dict[str, str]) -> tuple[str, dict[str, s
 
 def _table3_identity(corpus: str, row: dict[str, str]) -> tuple[str, dict[str, str]]:
     arch = row.get("architecture") or row.get("model_kind", "unknown")
-    dim = row.get("dimension") or row.get("vector_dimension", "unknown")
+    dim = row.get("dimension") or row.get("vector_dimension", "640")
+    words = row.get("training_words_millions", "320")
     return (
         f"table3-{corpus}-{arch}-d{dim}-s{row['seed']}",
         {
             "model.architecture": arch,
-            "model.dimension": dim,
-            "training.words_millions": row["training_words_millions"],
+            "model.dimension": str(dim),
+            "training.words_millions": str(words),
         },
     )
 
 
 def _table4_identity(corpus: str, row: dict[str, str]) -> tuple[str, dict[str, str]]:
-    dim = row.get("dimension", "300")
-    words = row.get("training_words_millions", "783")
+    arch = row["architecture"]
+    if arch.startswith("nnlm-d"):
+        dim = arch.removeprefix("nnlm-d")
+        model_arch = "nnlm"
+        words = row.get("training_words_millions", "6000")
+    else:
+        dim = row.get("dimension", "300")
+        model_arch = arch
+        words = row.get("training_words_millions", "783")
     epochs = row.get("epochs", "3")
     return (
-        f"table4-{corpus}-{row['architecture']}-d{dim}-s{row['seed']}",
+        f"table4-{corpus}-{model_arch}-d{dim}-s{row['seed']}",
         {
-            "model.architecture": row["architecture"],
+            "model.architecture": model_arch,
             "model.dimension": str(dim),
             "training.words_millions": str(words),
             "training.epochs": str(epochs),
@@ -252,10 +275,25 @@ def _table5_identity(corpus: str, row: dict[str, str]) -> tuple[str, dict[str, s
     )
 
 
+def _table6_identity(corpus: str, row: dict[str, str]) -> tuple[str, dict[str, str]]:
+    arch = row["architecture"]
+    dim = row.get("embedding_dimension") or row.get("dimension", "1000")
+    return (
+        f"table6-{corpus}-{arch}-d{dim}-s{row['seed']}",
+        {
+            "model.architecture": arch,
+            "model.dimension": str(dim),
+            "training.words_millions": "6000",
+        },
+    )
+
+
 def publish_table2_analysis(
     client: MlflowClient,
     experiment_id: str,
     base_dir: Path,
+    *,
+    corpora: tuple[str, ...] | None = None,
 ) -> list[str]:
     """Publish Table 2 scaling results to MLflow."""
     return _publish_analogy_table(
@@ -267,6 +305,7 @@ def publish_table2_analysis(
         csv_filename="table2-runs.csv",
         summary_filename="summary.md",
         extract_identity=_table2_identity,
+        corpora=corpora or ("wmt", "lm1b", "umbc"),
     )
 
 
@@ -274,6 +313,8 @@ def publish_table3_analysis(
     client: MlflowClient,
     experiment_id: str,
     base_dir: Path,
+    *,
+    corpora: tuple[str, ...] | None = None,
 ) -> list[str]:
     """Publish Table 3 vector dimension / architecture comparison results to MLflow."""
     return _publish_analogy_table(
@@ -281,10 +322,11 @@ def publish_table3_analysis(
         experiment_id,
         base_dir,
         table_number="3",
-        get_table_dir=lambda base, corpus: base / corpus,
-        csv_filename="table3-runs.csv",
-        summary_filename="table3-summary.md",
+        get_table_dir=lambda base, corpus: base / corpus / "table3",
+        csv_filename="runs.csv",
+        summary_filename="summary.md",
         extract_identity=_table3_identity,
+        corpora=corpora or ("wmt", "lm1b", "umbc"),
     )
 
 
@@ -292,6 +334,8 @@ def publish_table4_analysis(
     client: MlflowClient,
     experiment_id: str,
     base_dir: Path,
+    *,
+    corpora: tuple[str, ...] | None = None,
 ) -> list[str]:
     """Publish Table 4 Word Analogy (Words vs Epochs) results to MLflow."""
     return _publish_analogy_table(
@@ -303,6 +347,7 @@ def publish_table4_analysis(
         csv_filename="runs.csv",
         summary_filename="summary.md",
         extract_identity=_table4_identity,
+        corpora=corpora or ("wmt", "lm1b", "umbc", "fineweb"),
     )
 
 
@@ -310,6 +355,8 @@ def publish_table5_analysis(
     client: MlflowClient,
     experiment_id: str,
     base_dir: Path,
+    *,
+    corpora: tuple[str, ...] | None = None,
 ) -> list[str]:
     """Publish Table 5 architecture comparison results to MLflow."""
     return _publish_analogy_table(
@@ -321,6 +368,28 @@ def publish_table5_analysis(
         csv_filename="runs.csv",
         summary_filename="summary.md",
         extract_identity=_table5_identity,
+        corpora=corpora or ("wmt", "lm1b", "umbc"),
+    )
+
+
+def publish_table6_analysis(
+    client: MlflowClient,
+    experiment_id: str,
+    base_dir: Path,
+    *,
+    corpora: tuple[str, ...] | None = None,
+) -> list[str]:
+    """Publish Table 6 FineWeb 6B scale results to MLflow."""
+    return _publish_analogy_table(
+        client,
+        experiment_id,
+        base_dir,
+        table_number="6",
+        get_table_dir=lambda base, corpus: base / corpus / "table6",
+        csv_filename="runs.csv",
+        summary_filename="summary.md",
+        extract_identity=_table6_identity,
+        corpora=corpora or ("fineweb",),
     )
 
 
@@ -350,6 +419,9 @@ def publish_all_w2v1_analysis(
     results["table5"] = publish_table5_analysis(
         client, experiment_id, w2v1_analysis_dir
     )
+    results["table6"] = publish_table6_analysis(
+        client, experiment_id, w2v1_analysis_dir
+    )
     results["table7"] = publish_table7_analysis(client, experiment_id, t7_analysis_dir)
 
     return results
@@ -363,5 +435,6 @@ __all__ = [
     "publish_table3_analysis",
     "publish_table4_analysis",
     "publish_table5_analysis",
+    "publish_table6_analysis",
     "publish_table7_analysis",
 ]

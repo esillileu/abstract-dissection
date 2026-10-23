@@ -22,6 +22,7 @@ def test_retired_tracking_contracts_are_absent() -> None:
         )
     )
     excluded = {
+        "target",
         ".git",
         ".venv",
         "references",

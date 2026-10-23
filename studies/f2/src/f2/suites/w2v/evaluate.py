@@ -91,7 +91,7 @@ def evaluate_lookup_artifact(
         lookup,
         parse_analogy_questions(questions.splitlines()),
         vocabulary_limit=vocabulary_limit,
-        batch_size=16 if suite == "w2v1-table4" else 256,
+        batch_size=256,
     )
     evaluation_identity = {
         "questions_sha256": hashlib.sha256(questions).hexdigest(),

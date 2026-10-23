@@ -7,6 +7,7 @@ import hashlib
 import json
 import re
 import statistics
+import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -53,6 +54,96 @@ class Table4RunResult:
     included_questions: int
     total_questions: int
     observed_training_seconds: float
+
+
+_EVALUATION_PROTOCOL = "table4-v1"
+
+
+class Table4EvaluationCache:
+    """Signature-checked per-run cache for reconstructible Table 4 analogy results."""
+
+    def __init__(self, root: Path, *, questions_sha256: str) -> None:
+        self.root = root
+        self.signature = {
+            "schema_version": 1,
+            "evaluation_protocol": _EVALUATION_PROTOCOL,
+            "questions_sha256": questions_sha256,
+        }
+
+    def load(self, run_id: str) -> Table4RunResult | None:
+        path = self._path(run_id)
+        if not path.is_file():
+            return None
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            if payload.get("signature") != self.signature:
+                return None
+            result = Table4RunResult(**payload["result"])
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+            return None
+        return result if result.mlflow_run_id == run_id else None
+
+    def store(
+        self, result: Table4RunResult, *, lookup_identity: dict[str, object]
+    ) -> None:
+        path = self._path(result.mlflow_run_id)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(
+                {
+                    "signature": self.signature,
+                    "lookup_identity": lookup_identity,
+                    "result": asdict(result),
+                },
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+    def seed_from_csv(self, csv_path: Path) -> int:
+        """Seed cache from an existing runs.csv if present."""
+        if not csv_path.is_file():
+            return 0
+        count = 0
+        try:
+            with csv_path.open(encoding="utf-8") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    run_id = row.get("mlflow_run_id")
+                    if not run_id:
+                        continue
+                    if self.load(run_id) is not None:
+                        continue
+                    result = Table4RunResult(
+                        architecture=str(row["architecture"]),
+                        corpus=str(row["corpus"]),
+                        seed=int(row["seed"]),
+                        mlflow_run_id=str(row["mlflow_run_id"]),
+                        semantic_accuracy_percent=float(
+                            row["semantic_accuracy_percent"]
+                        ),
+                        syntactic_accuracy_percent=float(
+                            row["syntactic_accuracy_percent"]
+                        ),
+                        total_accuracy_percent=float(row["total_accuracy_percent"]),
+                        included_questions=int(row["included_questions"]),
+                        total_questions=int(row["total_questions"]),
+                        observed_training_seconds=float(
+                            row["observed_training_seconds"]
+                        ),
+                    )
+                    self.store(result, lookup_identity={"source": "runs.csv"})
+                    count += 1
+        except Exception:
+            return count
+        return count
+
+    def _path(self, run_id: str) -> Path:
+        if re.fullmatch(r"[0-9a-zA-Z_-]+", run_id) is None:
+            raise ValueError(f"invalid MLflow run ID: {run_id}")
+        return self.root / f"{run_id}.json"
 
 
 def complete_conditions(runs: list[Any], corpus: str) -> dict[str, dict[int, Any]]:
@@ -122,40 +213,63 @@ def analyze_table4_sources(
     artifact_cache = MlflowArtifactCache(
         client, tracking_uri, root=paths.cache_root / "mlflow_artifact"
     )
+    evaluation_cache = Table4EvaluationCache(
+        paths.cache_root / "f2/w2v1/table4", questions_sha256=question_digest
+    )
     sources = TABLE4_CORPUS_SOURCES if corpus_source is None else (corpus_source,)
     outputs = []
     with artifact_download_progress():
         for corpus in sources:
+            output = paths.analysis_output("f2", "w2v1") / corpus / "table4"
+            output.mkdir(parents=True, exist_ok=True)
+            evaluation_cache.seed_from_csv(output / "runs.csv")
             records = []
+            cache_hits = 0
+            cache_misses = 0
             for architecture, condition_runs in sorted(
                 complete_conditions(runs, corpus).items()
             ):
                 for seed, run in sorted(condition_runs.items()):
+                    cached = evaluation_cache.load(run.info.run_id)
+                    if (
+                        cached is not None
+                        and cached.seed == seed
+                        and cached.architecture == architecture
+                        and cached.corpus == corpus
+                    ):
+                        records.append(cached)
+                        cache_hits += 1
+                        continue
+                    cache_misses += 1
                     lookup = load_lookup_artifact(
                         artifact_cache.get(run.info.run_id, "lookup")
                     )
                     result = evaluate_analogies(
-                        lookup, questions, vocabulary_limit=None, batch_size=16
+                        lookup, questions, vocabulary_limit=None, batch_size=256
                     )
                     seconds = observed_training_seconds(
                         artifact_cache.get(run.info.run_id, "metrics/observations.csv")
                     )
-                    records.append(
-                        Table4RunResult(
-                            architecture,
-                            corpus,
-                            seed,
-                            run.info.run_id,
-                            100 * result.semantic.score,
-                            100 * result.syntactic.score,
-                            100 * result.overall.score,
-                            result.overall.valid_count,
-                            result.overall.total_count,
-                            seconds,
-                        )
+                    record = Table4RunResult(
+                        architecture,
+                        corpus,
+                        seed,
+                        run.info.run_id,
+                        100 * result.semantic.score,
+                        100 * result.syntactic.score,
+                        100 * result.overall.score,
+                        result.overall.valid_count,
+                        result.overall.total_count,
+                        seconds,
                     )
-            output = paths.analysis_output("f2", "w2v1") / corpus / "table4"
-            output.mkdir(parents=True, exist_ok=True)
+                    evaluation_cache.store(
+                        record, lookup_identity=getattr(lookup, "manifest", {})
+                    )
+                    records.append(record)
+            print(
+                f"W2V1 {corpus} Table 4 analogy cache: {cache_hits} hit(s), {cache_misses} miss(es)",
+                file=sys.stderr,
+            )
             with (output / "runs.csv").open(
                 "w", encoding="utf-8", newline=""
             ) as stream:

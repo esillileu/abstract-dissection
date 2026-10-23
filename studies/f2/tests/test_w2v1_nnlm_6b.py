@@ -307,10 +307,12 @@ def test_final_w2v1_table_training_matrix_has_no_duplicate_nnlm_100d_run():
             RunSelection(experiment_ids=(experiment,)), RunOptions()
         )
         assert len(plans) == count
+        # Model kind belongs to the atomic condition, independent of seed.
+        conditions = {(p.path, p.atomic_run_id) for p in plans}
         actual = {
             definition.load_run_spec(
-                p.path, atomic_run_id=p.atomic_run_id, overrides={}
+                path, atomic_run_id=atomic_run_id, overrides={}
             ).to_executor_config()["training"]["model_kind"]
-            for p in plans
+            for path, atomic_run_id in conditions
         }
         assert actual == architectures
