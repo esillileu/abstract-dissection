@@ -167,8 +167,27 @@ fn c_learning_rate_interval() {
 
 #[test]
 fn single_thread_epoch_resume_matches_continuous_training() {
+    verify_epoch_resume(
+        ModelKind::SkipGram,
+        ObjectiveKind::NegativeSampling,
+        RngAlgorithm::Lcg,
+    );
+}
+
+#[test]
+fn nce_epoch_resume_matches_continuous_training() {
+    for model in [ModelKind::SkipGram, ModelKind::Cbow] {
+        for rng in [RngAlgorithm::Lcg, RngAlgorithm::Xorshift] {
+            verify_epoch_resume(model, ObjectiveKind::Nce, rng);
+        }
+    }
+}
+
+fn verify_epoch_resume(model: ModelKind, objective: ObjectiveKind, rng: RngAlgorithm) {
     let (corpus, vocab) = fixture();
-    let mut config = TrainingConfig::for_model(ModelKind::SkipGram);
+    let mut config = TrainingConfig::for_model(model);
+    config.objective_kind = objective;
+    config.rng_algorithm = rng;
     config.embedding_dimension = 8;
     config.window_radius = 2;
     config.epochs = 3;
@@ -439,5 +458,75 @@ fn objective_observation_is_finite_and_does_not_change_training() {
         every_second.observations.len(),
         observed.observations.len() / 2
     );
+    fs::remove_file(&corpus.path).unwrap();
+}
+
+#[test]
+fn checkpoint_identity_preserves_hs_neg_and_rejects_prior_nce_semantics() {
+    use w2v::{DownpourConfig, DownpourTrainingSession};
+    let (corpus, vocab) = fixture();
+    // Historical digests from the pre-snapshot identity encoding, for the
+    // fixed configuration below. Both persistence paths must reject old NCE.
+    for (objective, old_shared, old_downpour) in [
+        (
+            ObjectiveKind::HierarchicalSoftmax,
+            "fnv1a64:5ae7cdfdd63cefe6",
+            "fnv1a64:4f8337bc4a55a433",
+        ),
+        (
+            ObjectiveKind::NegativeSampling,
+            "fnv1a64:ff44b5ffaa22bfab",
+            "fnv1a64:1f9349eef73bfb8e",
+        ),
+        (
+            ObjectiveKind::Nce,
+            "fnv1a64:bbd9f20a8ed97138",
+            "fnv1a64:1cebb6a6ab82e161",
+        ),
+    ] {
+        let config = TrainingConfig {
+            objective_kind: objective,
+            embedding_dimension: 4,
+            thread_count: 1,
+            negative_table_size: 17,
+            ..TrainingConfig::default()
+        };
+        let model =
+            Arc::new(Model::create(&vocab, 4, config.root_seed, config.rng_algorithm).unwrap());
+        let trainer = Arc::new(
+            Trainer::create(Arc::clone(&corpus), Arc::clone(&vocab), model, &config).unwrap(),
+        );
+        let session = trainer.session().unwrap();
+        let mut state = session.export_state().unwrap();
+        if objective == ObjectiveKind::Nce {
+            assert_ne!(state.descriptor.config_digest, old_shared);
+        } else {
+            assert_eq!(state.descriptor.config_digest, old_shared);
+        }
+        state.descriptor.config_digest = old_shared.into();
+        let restored = TrainingSession::restore(Arc::clone(&trainer), &state);
+        if objective == ObjectiveKind::Nce {
+            assert!(matches!(restored, Err(w2v::Status::IdentityMismatch)));
+        } else {
+            assert!(restored.is_ok());
+        }
+
+        let distribution = DownpourConfig::default();
+        let session =
+            DownpourTrainingSession::create(Arc::clone(&trainer), distribution.clone()).unwrap();
+        let mut state = session.export_state().unwrap();
+        if objective == ObjectiveKind::Nce {
+            assert_ne!(state.descriptor.config_digest, old_downpour);
+        } else {
+            assert_eq!(state.descriptor.config_digest, old_downpour);
+        }
+        state.descriptor.config_digest = old_downpour.into();
+        let restored = DownpourTrainingSession::restore(trainer, distribution, &state);
+        if objective == ObjectiveKind::Nce {
+            assert!(matches!(restored, Err(w2v::Status::IdentityMismatch)));
+        } else {
+            assert!(restored.is_ok());
+        }
+    }
     fs::remove_file(&corpus.path).unwrap();
 }

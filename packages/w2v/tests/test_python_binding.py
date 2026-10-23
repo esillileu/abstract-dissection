@@ -14,7 +14,13 @@ from w2v import (
 )
 
 
-def _objects(path: Path, *, epochs: int = 2, observation_interval: int = 0):
+def _objects(
+    path: Path,
+    *,
+    epochs: int = 2,
+    observation_interval: int = 0,
+    objective: str = "negative_sampling",
+):
     path.write_bytes(b"alpha beta alpha gamma\nbeta alpha delta\ngamma beta alpha\n")
     corpus = Corpus(path)
     vocabulary = Vocabulary.build(
@@ -23,6 +29,7 @@ def _objects(path: Path, *, epochs: int = 2, observation_interval: int = 0):
     )
     config = TrainingConfig(
         model_kind="skip_gram",
+        objective_kind=objective,
         embedding_dimension=4,
         window_radius=2,
         epochs=epochs,
@@ -132,8 +139,15 @@ def test_embedding_restore_rejects_invalid_arrays_atomically(tmp_path: Path) -> 
     np.testing.assert_array_equal(model.input_embeddings(), original)
 
 
-def test_epoch_state_resume_matches_continuous_training(tmp_path: Path) -> None:
-    corpus, vocabulary, config, checkpoint_model = _objects(tmp_path / "checkpoint.txt")
+@pytest.mark.parametrize(
+    "objective", ["negative_sampling", "hierarchical_softmax", "nce"]
+)
+def test_epoch_state_resume_matches_continuous_training(
+    tmp_path: Path, objective: str
+) -> None:
+    corpus, vocabulary, config, checkpoint_model = _objects(
+        tmp_path / "checkpoint.txt", objective=objective
+    )
     checkpoint_session = TrainingSession(corpus, vocabulary, checkpoint_model, config)
     first_report = checkpoint_session.train_epoch()
     state = checkpoint_session.export_state()
@@ -252,3 +266,21 @@ def test_dense_objective_observations_are_exposed_to_python(tmp_path: Path) -> N
         and observation.processed_tokens <= report.processed_tokens
         for observation in observations
     )
+
+
+def test_nce_binding_changes_training_and_checkpoint_identity(tmp_path: Path) -> None:
+    states = {}
+    for objective in ("negative_sampling", "nce"):
+        corpus, vocabulary, config, model = _objects(
+            tmp_path / "corpus.txt", objective=objective, observation_interval=1
+        )
+        session = TrainingSession(corpus, vocabulary, model, config)
+        report = session.train_epoch()
+        assert report.objective_loss_count > 0
+        assert np.isfinite(report.objective_loss)
+        states[objective] = session.export_state()
+    neg, nce = states["negative_sampling"], states["nce"]
+    assert neg.config_digest != nce.config_digest
+    assert not np.array_equal(neg.output_embeddings(), nce.output_embeddings())
+    with pytest.raises(ValueError, match="identity mismatch"):
+        TrainingSession.restore(corpus, vocabulary, model, config, neg)
