@@ -36,6 +36,7 @@ def test_suite_plans_match_canonical_matrix() -> None:
     for suite, experiment_id, expected in (
         ("w2v1", "e01", 216),
         ("w2v1", "e02", 27),
+        ("w2v2", "e01", 54),
         ("w2v2", "e02", 54),
     ):
         plans = Planner(DEFINITION.get_suite(suite)).build(

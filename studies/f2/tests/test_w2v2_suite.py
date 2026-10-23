@@ -148,3 +148,172 @@ def test_evaluation_resources_do_not_change_w2v2_training_identity() -> None:
     ).to_executor_config()
     assert "evaluation" not in first
     assert first["identity"]["config_digest"] == second["identity"]["config_digest"]
+
+
+TABLE1_CONDITIONS = (
+    "neg5-no-subsampling",
+    "neg15-no-subsampling",
+    "hs-no-subsampling",
+    "neg5-subsampling",
+    "neg15-subsampling",
+    "hs-subsampling",
+)
+
+
+def test_table1_plans_and_catalog_slots_are_distinct_and_bound():
+    from f2.catalog.manifest import read_manifest
+    from repro_core.execution.definition import RunOptions, RunSelection
+    from repro_core.execution.planning import Planner
+
+    definition = DEFINITION.get_suite("w2v2")
+    plans = Planner(definition).build(
+        RunSelection(experiment_ids=("e01",)), RunOptions()
+    )
+    assert len(plans) == 54
+    manifest = read_manifest(Path(__file__).parents[1] / "catalog/w2v.json")
+    slots = {row["planned_run_slot_id"]: row for row in manifest["planned_run_slots"]}
+    seen = set()
+    for plan in plans:
+        spec = definition.load_run_spec(
+            plan.path, atomic_run_id=plan.atomic_run_id, overrides={}
+        ).with_seed(plan.seed)
+        config = spec.to_executor_config()
+        slot = str(config["identity"]["planned_run_slot_id"])
+        assert slot not in seen
+        seen.add(slot)
+        assert slots[slot]["seed"] == plan.seed
+        assert slots[slot]["parameters"]["threads"] == 20
+        assert config["corpus_mode"] == "word"
+        assert "phrase_detection" not in config
+        assert config["training"]["embedding_dimension"] == 300
+        assert config["vocabulary"]["min_count"] == 5
+        assert config["vocabulary"].get("max_lexical_words", 0) == 0
+        corpus, condition = plan.atomic_run_id.split("--")
+        assert condition in TABLE1_CONDITIONS
+        assert config["corpus"]["lexical_token_budget"] == (
+            791_844_834 if corpus == "lm1b" else 1_000_000_000
+        )
+        assert config["training"]["subsampling_threshold"] == (
+            0.0 if condition.endswith("no-subsampling") else 1e-5
+        )
+        objective = config["training"]["objective_kind"]
+        assert objective == (
+            "hierarchical_softmax"
+            if condition.startswith("hs")
+            else "negative_sampling"
+        )
+        assert config["training"]["negative_sample_count"] == (
+            0
+            if condition.startswith("hs")
+            else 15
+            if condition.startswith("neg15")
+            else 5
+        )
+
+
+@pytest.mark.parametrize("condition", TABLE1_CONDITIONS)
+def test_table1_word_training_restore_and_rerun(tmp_path, monkeypatch, condition):
+    import numpy as np
+
+    from f2.suites.w2v import executor as shared_executor
+    from f2.suites.w2v.artifacts import create_checkpoint_manager
+    from f2.suites.w2v.executor import create_session
+
+    definition = DEFINITION.get_suite("w2v2")
+    source = tmp_path / "words.txt"
+    # Long sentences ensure real context pairs survive the canonical 1e-5 threshold.
+    sentence = b"king queen man woman paris france berlin germany " * 100 + b"\n"
+    source.write_bytes(sentence * 100)
+    spec = definition.load_run_spec(
+        definition.config_root / "e01_table1_word_skipgram.yaml",
+        atomic_run_id=f"wmt--{condition}",
+        overrides={
+            "corpus": {"path": str(source)},
+            "vocabulary": {"initial_capacity": 16, "hash_capacity": 128},
+            "training": {
+                "embedding_dimension": 8,
+                "epochs": 2,
+                "thread_count": 1,
+                "negative_table_size": 1000,
+                "observation_interval": 1000,
+            },
+        },
+    ).with_seed(7)
+    config = spec.to_executor_config()
+    paths = _paths(tmp_path)
+
+    def no_phrases(*args, **kwargs):
+        pytest.fail("word-only training attempted phrase materialization")
+
+    monkeypatch.setattr("f2.suites.w2v2.executor.materialize_phrase_corpus", no_phrases)
+    baseline = run_config(
+        config,
+        ExperimentContext(paths=paths, metadata={"run_root": tmp_path / "baseline"}),
+        executor_module=definition.executor_module,
+    )
+    expected = load_checkpoint(baseline.checkpoint)
+    assert expected.completed_epochs == 2
+    assert np.any(expected.output_embeddings() != 0)
+    assert np.isfinite(expected.input_embeddings()).all()
+    lookup = load_lookup_artifact(baseline.lookup)
+    assert lookup.row(b"king") is not None
+    assert nearest_tokens(lookup, b"king", limit=2)
+    questions = tmp_path / "questions-words.txt"
+    questions.write_bytes(b": capital-common-countries\nparis france berlin germany\n")
+    evaluation = evaluate_lookup_artifact("w2v2", baseline.lookup, questions)
+    assert evaluation["analogy"]["overall"]["total_count"] == 1
+    assert evaluation["analogy"]["overall"]["valid_count"] == 1
+    assert not list(paths.staging_root.rglob("phrases*"))
+    assert not (baseline.root / "phrase_lineage.json").exists()
+
+    # Build an epoch-boundary checkpoint through the production adapter, then
+    # let the ordinary executor restore and finish the remaining schedule.
+    session = create_session(config, paths.repo_root, cache_root=paths.cache_root)
+    session.train_epoch()
+    resumed_root = tmp_path / "resumed"
+    manager = create_checkpoint_manager(resumed_root / "checkpoints", session=session)
+    manager.save_latest()
+
+    def no_restart(*args, **kwargs):
+        pytest.fail("checkpoint was ignored and training restarted")
+
+    monkeypatch.setattr(shared_executor, "create_session", no_restart)
+    context = ExperimentContext(paths=paths, metadata={"run_root": resumed_root})
+    resumed = run_config(config, context, executor_module=definition.executor_module)
+    restored = load_checkpoint(resumed.checkpoint)
+    np.testing.assert_array_equal(
+        expected.input_embeddings(), restored.input_embeddings()
+    )
+    np.testing.assert_array_equal(
+        expected.output_embeddings(), restored.output_embeddings()
+    )
+    rerun = run_config(config, context, executor_module=definition.executor_module)
+    np.testing.assert_array_equal(
+        expected.input_embeddings(),
+        load_checkpoint(rerun.checkpoint).input_embeddings(),
+    )
+    assert not (resumed.root / "phrase_lineage.json").exists()
+    # All objectives and the resumed execution reuse a single word vocabulary.
+    assert (
+        len(list((paths.cache_root / "f2/w2v/vocabulary").glob("*/manifest.json"))) == 1
+    )
+
+
+@pytest.mark.parametrize(
+    "override, message",
+    [
+        ({"corpus_mode": "unknown"}, "corpus_mode"),
+        ({"subsampling_policy": "paper"}, "subsampling_policy"),
+        ({"subsampling_policy": None}, "subsampling_policy"),
+        ({"phrase_detection": {}}, "phrase_detection"),
+        ({"training": {"objective_kind": "nce"}}, "NCE is not substituted"),
+    ],
+)
+def test_table1_rejects_unsupported_policies(override, message):
+    definition = DEFINITION.get_suite("w2v2")
+    with pytest.raises(ValueError, match=message):
+        definition.load_run_spec(
+            definition.config_root / "e01_table1_word_skipgram.yaml",
+            atomic_run_id="wmt--neg5-subsampling",
+            overrides=override,
+        )
