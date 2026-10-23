@@ -42,6 +42,7 @@ fn run_fixed_step(kind: ModelKind, objective: ObjectiveKind) -> StepOutput {
     let corpus = Arc::new(Corpus {
         path: PathBuf::new(),
         byte_size: 0,
+        full_tokens: false,
     });
     let vocab = Arc::new(fixture_vocab());
     let model = Arc::new(Model::create(&vocab, 2, 1, RngAlgorithm::Lcg).unwrap());
@@ -200,6 +201,7 @@ fn c_hs_boundary_policy() {
     let corpus = Arc::new(Corpus {
         path: PathBuf::new(),
         byte_size: 0,
+        full_tokens: false,
     });
     let vocab = Arc::new(fixture_vocab());
     let model = Arc::new(Model::create(&vocab, 2, 1, RngAlgorithm::Lcg).unwrap());
@@ -248,6 +250,7 @@ fn c_negative_boundary_fallback() {
     let corpus = Arc::new(Corpus {
         path: PathBuf::new(),
         byte_size: 0,
+        full_tokens: false,
     });
     let vocab = Arc::new(fixture_vocab());
     let model = Arc::new(Model::create(&vocab, 2, 1, RngAlgorithm::Lcg).unwrap());

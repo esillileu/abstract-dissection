@@ -66,6 +66,8 @@ def resolve_or_build_vocabulary(
         "hash_capacity": int(config_values.get("hash_capacity", 30_000_000)),
         "semantics_version": 1,
     }
+    if corpus.full_tokens:
+        semantic_config["full_tokens"] = True
     config_digest = _json_digest(semantic_config)
     identity = _json_digest(
         {"corpus_digest": corpus_digest, "vocabulary_config_digest": config_digest}

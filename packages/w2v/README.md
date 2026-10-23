@@ -168,6 +168,12 @@ CBOW와 Skip-gram은 `TrainingConfig::for_model(ModelKind::Cbow | ModelKind::Ski
 않습니다. 병렬 학습은 좌표별 갱신의 데이터 레이스를 없앴지만 워커 간
 연산 순서는 고정되지 않아 결과의 비트 단위 재현성을 보장하지 않습니다.
 
+Rust `Corpus::create`와 Python `Corpus(path)`는 기본적으로 기존 C 호환
+토큰 동작을 유지합니다. Python `Corpus(path, full_tokens=True)` 또는 Rust
+`corpus.full_tokens = true`는 긴 Phrase를 자르지 않고 전체 바이트로 읽습니다.
+전체 토큰 모드는 EOF 직전 마지막 토큰도 보존합니다. 이 모드를 사용하는
+호출자는 vocabulary 캐시 identity에 tokenization 정책을 포함해야 합니다.
+
 ## 검증
 
 `tests/stage1_contract.rs`부터 `tests/stage6_trainer.rs`까지 C의 상수,

@@ -10,6 +10,8 @@ use std::{
 pub struct Corpus {
     pub path: PathBuf,
     pub byte_size: usize,
+    /// Preserve full byte tokens for phrase corpora; false keeps C-compatible truncation.
+    pub full_tokens: bool,
 }
 impl Corpus {
     pub fn create(path: impl AsRef<Path>) -> Result<Self, Status> {
@@ -25,6 +27,7 @@ impl Corpus {
         Ok(Self {
             path: path.to_path_buf(),
             byte_size: length as usize,
+            full_tokens: false,
         })
     }
 
@@ -32,7 +35,9 @@ impl Corpus {
         let mut file = File::open(&self.path).map_err(|_| Status::IoError)?;
         file.seek(SeekFrom::Start(byte_offset as u64))
             .map_err(|_| Status::IoError)?;
-        Ok(Tokenizer::new(BufReader::new(file)))
+        let mut tokenizer = Tokenizer::new(BufReader::new(file));
+        tokenizer.full_tokens = self.full_tokens;
+        Ok(tokenizer)
     }
 
     pub fn digest(&self) -> Result<String, Status> {
@@ -60,18 +65,20 @@ pub struct TokenRead {
 pub struct Tokenizer<R: Read> {
     reader: R,
     pending_newline: bool,
+    full_tokens: bool,
 }
 impl<R: Read> Tokenizer<R> {
     pub fn new(reader: R) -> Self {
         Self {
             reader,
             pending_newline: false,
+            full_tokens: false,
         }
     }
 
     pub fn read_token(&mut self) -> Result<TokenRead, Status> {
         loop {
-            let mut token = [0u8; MAX_TOKEN_LENGTH];
+            let mut token = Vec::with_capacity(MAX_TOKEN_LENGTH);
             let mut length = 0;
             let mut at_eof = false;
             loop {
@@ -104,24 +111,67 @@ impl<R: Read> Tokenizer<R> {
                     }
                     b' ' | b'\t' if length != 0 => break,
                     b' ' | b'\t' => continue,
-                    _ if length < MAX_TOKEN_LENGTH - 1 => {
-                        token[length] = character;
+                    _ if self.full_tokens || length < MAX_TOKEN_LENGTH - 1 => {
+                        token.try_reserve(1).map_err(|_| Status::OutOfMemory)?;
+                        token.push(character);
                         length += 1;
                     }
                     _ => {}
                 }
             }
-            let visible_length = token[..length]
-                .iter()
-                .position(|&byte| byte == 0)
-                .unwrap_or(length);
+            let visible_length = if self.full_tokens {
+                length
+            } else {
+                token.iter().position(|&byte| byte == 0).unwrap_or(length)
+            };
             if visible_length == 0 && !at_eof {
                 continue;
             }
+            let at_eof = at_eof && !(self.full_tokens && visible_length > 0);
             return Ok(TokenRead {
-                token: token[..visible_length].to_vec(),
+                token: {
+                    token.truncate(visible_length);
+                    token
+                },
                 at_eof,
             });
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Cursor;
+
+    #[test]
+    fn full_tokens_are_distinct_while_default_retains_c_truncation() {
+        let prefix = vec![b'a'; 120];
+        let mut input = prefix.clone();
+        input.extend_from_slice(b"x ");
+        input.extend_from_slice(&prefix);
+        input.extend_from_slice(b"y\n");
+        let mut legacy = Tokenizer::new(Cursor::new(input.clone()));
+        assert_eq!(legacy.read_token().unwrap().token, vec![b'a'; 99]);
+        assert_eq!(legacy.read_token().unwrap().token, vec![b'a'; 99]);
+        let mut exact = Tokenizer::new(Cursor::new(input));
+        exact.full_tokens = true;
+        let first = exact.read_token().unwrap();
+        let second = exact.read_token().unwrap();
+        assert_eq!(first.token.len(), 121);
+        assert_eq!(second.token.len(), 121);
+        assert_ne!(first.token, second.token);
+        assert_eq!(exact.read_token().unwrap().token, b"</s>");
+        assert!(exact.read_token().unwrap().at_eof);
+    }
+
+    #[test]
+    fn full_tokens_emit_the_last_token_before_eof() {
+        let mut exact = Tokenizer::new(Cursor::new(vec![b'x'; 200]));
+        exact.full_tokens = true;
+        let token = exact.read_token().unwrap();
+        assert_eq!(token.token.len(), 200);
+        assert!(!token.at_eof);
+        assert!(exact.read_token().unwrap().at_eof);
     }
 }

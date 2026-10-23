@@ -201,7 +201,8 @@ def create_session(
 ):
     corpus_path = Path(str(_mapping(config, "corpus")["path"]))
     corpus = Corpus(
-        corpus_path if corpus_path.is_absolute() else repo_root / corpus_path
+        corpus_path if corpus_path.is_absolute() else repo_root / corpus_path,
+        full_tokens="phrase_detection" in config,
     )
     corpus_digest = corpus_digest or _corpus_digest(
         _mapping(config, "corpus"), Path(corpus.path)
@@ -290,7 +291,8 @@ def restore_session(
 
     corpus_path = Path(str(_mapping(config, "corpus")["path"]))
     corpus = Corpus(
-        corpus_path if corpus_path.is_absolute() else repo_root / corpus_path
+        corpus_path if corpus_path.is_absolute() else repo_root / corpus_path,
+        full_tokens="phrase_detection" in config,
     )
     corpus_digest = corpus_digest or _corpus_digest(
         _mapping(config, "corpus"), Path(corpus.path)

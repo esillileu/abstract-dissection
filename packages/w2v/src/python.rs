@@ -111,10 +111,18 @@ pub struct PyCorpus {
 #[pymethods]
 impl PyCorpus {
     #[new]
-    fn new(path: PathBuf) -> PyResult<Self> {
+    #[pyo3(signature = (path, *, full_tokens=false))]
+    fn new(path: PathBuf, full_tokens: bool) -> PyResult<Self> {
+        let mut corpus = Corpus::create(path).map_err(status_error)?;
+        corpus.full_tokens = full_tokens;
         Ok(Self {
-            inner: Arc::new(Corpus::create(path).map_err(status_error)?),
+            inner: Arc::new(corpus),
         })
+    }
+
+    #[getter]
+    fn full_tokens(&self) -> bool {
+        self.inner.full_tokens
     }
 
     #[getter]
