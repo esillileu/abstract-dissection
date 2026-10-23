@@ -1088,7 +1088,11 @@ mod tests {
             std::process::id(),
             std::thread::current().name().unwrap_or("t")
         ));
-        std::fs::write(&path, b"the quick brown fox jumps over the lazy dog\na quick dog jumps\n").unwrap();
+        std::fs::write(
+            &path,
+            b"the quick brown fox jumps over the lazy dog\na quick dog jumps\n",
+        )
+        .unwrap();
         let corpus = Arc::new(Corpus::create(path).unwrap());
         let vocab = Arc::new(
             Vocabulary::build(
@@ -1137,7 +1141,12 @@ mod tests {
         let mut samples = Vec::new();
         for i in 0..250 {
             samples.push(BatchTarget {
-                history: vec![(i % 5) + 1, ((i + 1) % 5) + 1, ((i + 2) % 5) + 1, ((i + 3) % 5) + 1],
+                history: vec![
+                    (i % 5) + 1,
+                    ((i + 1) % 5) + 1,
+                    ((i + 2) % 5) + 1,
+                    ((i + 3) % 5) + 1,
+                ],
                 target: ((i + 4) % 5) + 1,
                 objective_count: (i + 1) as u64,
             });
@@ -1146,7 +1155,11 @@ mod tests {
         let p = config.embedding_dimension * config.history_length;
         let mut scratch = ReplicaScratch::new(samples.len(), p, config.hidden_dimension);
         let mut gradient = AccumulatedGradient::new(config.hidden_dimension, p);
-        let mut report = ReplicaReport { loss: 0.0, targets: 0, observations: Vec::new() };
+        let mut report = ReplicaReport {
+            loss: 0.0,
+            targets: 0,
+            observations: Vec::new(),
+        };
         let processed = AtomicU64::new(0);
         let start = Instant::now();
         let (tx, _rx) = sync_channel::<Batch>(1);
@@ -1174,7 +1187,8 @@ mod tests {
             &execution,
             0,
             0,
-        ).unwrap();
+        )
+        .unwrap();
 
         // 2. Run single-sample forward_backward on fresh cache and accumulate
         let mut expected_loss = 0.0;
@@ -1191,7 +1205,8 @@ mod tests {
                 config.hidden_activation,
                 &sample.history,
                 sample.target,
-            ).unwrap();
+            )
+            .unwrap();
 
             expected_loss += single_grad.loss;
             let hw = single_grad.hidden_weights();
@@ -1202,13 +1217,17 @@ mod tests {
                 *dest += src;
             }
             for (node, row) in single_grad.output {
-                let entry = expected_output.entry(node).or_insert_with(|| vec![0.0; config.hidden_dimension]);
+                let entry = expected_output
+                    .entry(node)
+                    .or_insert_with(|| vec![0.0; config.hidden_dimension]);
                 for (dest, src) in entry.iter_mut().zip(&row) {
                     *dest += src;
                 }
             }
             for (id, row) in single_grad.embeddings {
-                let entry = expected_input.entry(id).or_insert_with(|| vec![0.0; config.embedding_dimension]);
+                let entry = expected_input
+                    .entry(id)
+                    .or_insert_with(|| vec![0.0; config.embedding_dimension]);
                 for (dest, src) in entry.iter_mut().zip(&row) {
                     *dest += src;
                 }
@@ -1219,16 +1238,20 @@ mod tests {
         assert!(
             (report.loss - expected_loss).abs() < 1e-5,
             "Loss mismatch: batch={}, expected={}",
-            report.loss, expected_loss
+            report.loss,
+            expected_loss
         );
 
         // 4. Compare hidden bias
-        for j in 0..config.hidden_dimension {
-            let diff = (gradient.bias_row[j] - expected_bias[j]).abs();
+        for (j, expected) in expected_bias.iter().enumerate() {
+            let diff = (gradient.bias_row[j] - expected).abs();
             assert!(
                 diff < 1e-5,
                 "Bias[{}] mismatch: batch={}, expected={}, diff={}",
-                j, gradient.bias_row[j], expected_bias[j], diff
+                j,
+                gradient.bias_row[j],
+                expected_bias[j],
+                diff
             );
         }
 
@@ -1241,7 +1264,11 @@ mod tests {
                 assert!(
                     diff < 1e-5,
                     "HiddenWeight[{}, {}] mismatch: batch={}, expected={}, diff={}",
-                    j, k, batch_row[k], exp_row[k], diff
+                    j,
+                    k,
+                    batch_row[k],
+                    exp_row[k],
+                    diff
                 );
             }
         }
@@ -1249,12 +1276,17 @@ mod tests {
         // 6. Compare output weights
         let mut batch_output: BTreeMap<usize, Vec<Real>> = BTreeMap::new();
         for (node, row) in &gradient.output_rows {
-            let entry = batch_output.entry(*node).or_insert_with(|| vec![0.0; config.hidden_dimension]);
+            let entry = batch_output
+                .entry(*node)
+                .or_insert_with(|| vec![0.0; config.hidden_dimension]);
             for (dest, src) in entry.iter_mut().zip(row) {
                 *dest += src;
             }
         }
-        assert_eq!(batch_output.keys().collect::<Vec<_>>(), expected_output.keys().collect::<Vec<_>>());
+        assert_eq!(
+            batch_output.keys().collect::<Vec<_>>(),
+            expected_output.keys().collect::<Vec<_>>()
+        );
         for (node, exp_row) in &expected_output {
             let b_row = &batch_output[node];
             for j in 0..config.hidden_dimension {
@@ -1262,7 +1294,11 @@ mod tests {
                 assert!(
                     diff < 1e-5,
                     "Output[node={}, j={}] mismatch: batch={}, expected={}, diff={}",
-                    node, j, b_row[j], exp_row[j], diff
+                    node,
+                    j,
+                    b_row[j],
+                    exp_row[j],
+                    diff
                 );
             }
         }
@@ -1270,12 +1306,17 @@ mod tests {
         // 7. Compare input embeddings
         let mut batch_input: BTreeMap<usize, Vec<Real>> = BTreeMap::new();
         for (id, row) in &gradient.input_rows {
-            let entry = batch_input.entry(*id).or_insert_with(|| vec![0.0; config.embedding_dimension]);
+            let entry = batch_input
+                .entry(*id)
+                .or_insert_with(|| vec![0.0; config.embedding_dimension]);
             for (dest, src) in entry.iter_mut().zip(row) {
                 *dest += src;
             }
         }
-        assert_eq!(batch_input.keys().collect::<Vec<_>>(), expected_input.keys().collect::<Vec<_>>());
+        assert_eq!(
+            batch_input.keys().collect::<Vec<_>>(),
+            expected_input.keys().collect::<Vec<_>>()
+        );
         for (id, exp_row) in &expected_input {
             let b_row = &batch_input[id];
             for k in 0..config.embedding_dimension {
@@ -1283,10 +1324,13 @@ mod tests {
                 assert!(
                     diff < 1e-5,
                     "Input[id={}, k={}] mismatch: batch={}, expected={}, diff={}",
-                    id, k, b_row[k], exp_row[k], diff
+                    id,
+                    k,
+                    b_row[k],
+                    exp_row[k],
+                    diff
                 );
             }
         }
     }
 }
-

@@ -2,10 +2,7 @@ use std::sync::Arc;
 use w2v::{
     Corpus, DownpourConfig, ObjectiveKind, RngAlgorithm, Vocabulary, VocabularyConfig,
     config::Real,
-    nnlm::{
-        HiddenActivation, NnlmModel, NnlmTrainingConfig,
-        training::forward_backward,
-    },
+    nnlm::{HiddenActivation, NnlmModel, NnlmTrainingConfig, training::forward_backward},
 };
 
 fn create_small_model() -> (
@@ -20,7 +17,11 @@ fn create_small_model() -> (
         std::process::id(),
         std::thread::current().name().unwrap_or("t")
     ));
-    std::fs::write(&path, b"the quick brown fox jumps over the lazy dog\na quick dog jumps\n").unwrap();
+    std::fs::write(
+        &path,
+        b"the quick brown fox jumps over the lazy dog\na quick dog jumps\n",
+    )
+    .unwrap();
     let corpus = Arc::new(Corpus::create(path).unwrap());
     let vocab = Arc::new(
         Vocabulary::build(
@@ -67,15 +68,22 @@ fn test_gradient_against_finite_differences() {
     let eps = 1e-3 as Real;
 
     // Baseline analytical gradient
-    let grad = forward_backward(&model, &vocab, config.hidden_activation, &history, target).unwrap();
+    let grad =
+        forward_backward(&model, &vocab, config.hidden_activation, &history, target).unwrap();
 
     // 1. Check hidden bias gradient
     for j in 0..model.hidden_dimension {
         let orig = model.hidden_bias[j];
         model.hidden_bias[j] = orig + eps;
-        let loss_plus = forward_backward(&model, &vocab, config.hidden_activation, &history, target).unwrap().loss;
+        let loss_plus =
+            forward_backward(&model, &vocab, config.hidden_activation, &history, target)
+                .unwrap()
+                .loss;
         model.hidden_bias[j] = orig - eps;
-        let loss_minus = forward_backward(&model, &vocab, config.hidden_activation, &history, target).unwrap().loss;
+        let loss_minus =
+            forward_backward(&model, &vocab, config.hidden_activation, &history, target)
+                .unwrap()
+                .loss;
         model.hidden_bias[j] = orig;
 
         let num_grad = ((loss_plus - loss_minus) / (2.0 * eps as f64)) as Real;
@@ -84,71 +92,100 @@ fn test_gradient_against_finite_differences() {
         assert!(
             diff < 1e-3,
             "hidden_bias[{}] diff {} too large: num={}, ana={}",
-            j, diff, num_grad, ana_grad
+            j,
+            diff,
+            num_grad,
+            ana_grad
         );
     }
 
     // 2. Check hidden weights gradient
     let _p = config.history_length * config.embedding_dimension;
     let ana_hw = grad.hidden_weights();
-    for idx in 0..model.hidden_weights.len() {
+    for (idx, &ana_grad) in ana_hw.iter().enumerate() {
         let orig = model.hidden_weights[idx];
         model.hidden_weights[idx] = orig + eps;
-        let loss_plus = forward_backward(&model, &vocab, config.hidden_activation, &history, target).unwrap().loss;
+        let loss_plus =
+            forward_backward(&model, &vocab, config.hidden_activation, &history, target)
+                .unwrap()
+                .loss;
         model.hidden_weights[idx] = orig - eps;
-        let loss_minus = forward_backward(&model, &vocab, config.hidden_activation, &history, target).unwrap().loss;
+        let loss_minus =
+            forward_backward(&model, &vocab, config.hidden_activation, &history, target)
+                .unwrap()
+                .loss;
         model.hidden_weights[idx] = orig;
 
         let num_grad = ((loss_plus - loss_minus) / (2.0 * eps as f64)) as Real;
-        let ana_grad = ana_hw[idx];
         let diff = (num_grad - ana_grad).abs();
         assert!(
             diff < 1e-3,
             "hidden_weights[{}] diff {} too large: num={}, ana={}",
-            idx, diff, num_grad, ana_grad
+            idx,
+            diff,
+            num_grad,
+            ana_grad
         );
     }
 
     // 3. Check output weights gradient
     for (&node, ana_row) in &grad.output {
-        for j in 0..config.hidden_dimension {
+        for (j, &ana_grad) in ana_row.iter().enumerate() {
             let idx = node * config.hidden_dimension + j;
             let orig = model.output_weights[idx];
             model.output_weights[idx] = orig + eps;
-            let loss_plus = forward_backward(&model, &vocab, config.hidden_activation, &history, target).unwrap().loss;
+            let loss_plus =
+                forward_backward(&model, &vocab, config.hidden_activation, &history, target)
+                    .unwrap()
+                    .loss;
             model.output_weights[idx] = orig - eps;
-            let loss_minus = forward_backward(&model, &vocab, config.hidden_activation, &history, target).unwrap().loss;
+            let loss_minus =
+                forward_backward(&model, &vocab, config.hidden_activation, &history, target)
+                    .unwrap()
+                    .loss;
             model.output_weights[idx] = orig;
 
             let num_grad = ((loss_plus - loss_minus) / (2.0 * eps as f64)) as Real;
-            let ana_grad = ana_row[j];
             let diff = (num_grad - ana_grad).abs();
             assert!(
                 diff < 1e-3,
                 "output_weights node {} j {} diff {} too large: num={}, ana={}",
-                node, j, diff, num_grad, ana_grad
+                node,
+                j,
+                diff,
+                num_grad,
+                ana_grad
             );
         }
     }
 
     // 4. Check input embeddings gradient
     for (&w_id, ana_row) in &grad.embeddings {
-        for k in 0..config.embedding_dimension {
+        for (k, &ana_grad) in ana_row.iter().enumerate() {
             let idx = w_id * config.embedding_dimension + k;
             let orig = model.input_embeddings[idx];
             model.input_embeddings[idx] = orig + eps;
-            let loss_plus = forward_backward(&model, &vocab, config.hidden_activation, &history, target).unwrap().loss;
+            let loss_plus =
+                forward_backward(&model, &vocab, config.hidden_activation, &history, target)
+                    .unwrap()
+                    .loss;
             model.input_embeddings[idx] = orig - eps;
-            let loss_minus = forward_backward(&model, &vocab, config.hidden_activation, &history, target).unwrap().loss;
+            let loss_minus =
+                forward_backward(&model, &vocab, config.hidden_activation, &history, target)
+                    .unwrap()
+                    .loss;
             model.input_embeddings[idx] = orig;
 
             let num_grad = ((loss_plus - loss_minus) / (2.0 * eps as f64)) as Real;
-            let ana_grad = ana_row[k];
             let diff = (num_grad - ana_grad).abs();
             assert!(
                 diff < 1e-3,
                 "input_embeddings w_id {} k {} diff {} too large: num={}, ana={}",
-                w_id, k, diff, num_grad, ana_grad
+                w_id,
+                k,
+                diff,
+                num_grad,
+                ana_grad
             );
         }
     }
