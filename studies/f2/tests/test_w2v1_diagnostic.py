@@ -1,136 +1,51 @@
-"""Tests for W2V1 Table 3 diagnostic evaluation results and aggregation invariants."""
+"""Question-level diagnostic scoring must retain the aggregate evaluator protocol."""
 
-from __future__ import annotations
+import numpy as np
 
-import csv
-
+from f2.suites.w2v.evaluation import _analogy_predictions, _normalized_embeddings
 from f2.suites.w2v1.diagnostic import _build_summary_markdown
-from repro_core.context import RuntimePaths
 
 
-def test_diagnostic_category_accuracy_csv_integrity() -> None:
-    paths = RuntimePaths.from_environment()
-    csv_path = paths.analysis_output("f2", "w2v1") / "diagnostic/category_accuracy.csv"
-    if not csv_path.is_file():
-        return
-
-    with csv_path.open(encoding="utf-8") as f:
-        rows = list(csv.DictReader(f))
-
-    assert len(rows) == 17  # 14 categories + 3 aggregates
-
-    # Check Total row
-    total_row = next(r for r in rows if r["category"] == "Total")
-    assert total_row["total_questions"] == "19544"
-    assert total_row["included_questions"] == "18568"
-    assert total_row["oov_questions"] == "976"
-    assert float(total_row["cbow_accuracy_percent"]) == 34.89
-    assert float(total_row["skipgram_accuracy_percent"]) == 55.95
-
-    # Check Semantic Total row
-    sem_row = next(r for r in rows if r["category"] == "Semantic Total")
-    assert sem_row["total_questions"] == "8869"
-    assert sem_row["included_questions"] == "8091"
-    assert sem_row["oov_questions"] == "778"
-    assert float(sem_row["cbow_accuracy_percent"]) == 13.67
-    assert float(sem_row["skipgram_accuracy_percent"]) == 58.98
-
-    # Check Syntactic Total row
-    syn_row = next(r for r in rows if r["category"] == "Syntactic Total")
-    assert syn_row["total_questions"] == "10675"
-    assert syn_row["included_questions"] == "10477"
-    assert syn_row["oov_questions"] == "198"
-    assert float(syn_row["cbow_accuracy_percent"]) == 51.27
-    assert float(syn_row["skipgram_accuracy_percent"]) == 53.62
-
-
-def test_diagnostic_frequency_quantile_accuracy_csv_integrity() -> None:
-    paths = RuntimePaths.from_environment()
-    csv_path = (
-        paths.analysis_output("f2", "w2v1")
-        / "diagnostic/frequency_quantile_accuracy.csv"
+def test_predictions_exclude_inputs_and_require_positive_score():
+    vectors = _normalized_embeddings(
+        np.array([[1.0, 0.0], [1.0, 1.0], [2.0, 0.0], [2.0, 1.0]], dtype=np.float32),
+        dtype=np.float32,
     )
-    if not csv_path.is_file():
-        return
-
-    with csv_path.open(encoding="utf-8") as f:
-        rows = list(csv.DictReader(f))
-
-    assert len(rows) == 8  # 4 semantic + 4 syntactic
-
-    sem_rows = [r for r in rows if r["section"] == "semantic"]
-    syn_rows = [r for r in rows if r["section"] == "syntactic"]
-
-    assert sum(int(r["question_count"]) for r in sem_rows) == 8091
-    assert sum(int(r["question_count"]) for r in syn_rows) == 10477
-
-    # In syntactic, CBOW and SG are within 5% across all quantiles
-    for r in syn_rows:
-        diff = abs(float(r["accuracy_diff_percent"]))
-        assert diff < 5.0
+    prediction, positive = next(_analogy_predictions(vectors, [(0, 1, 2, 3)], 1))
+    assert prediction == 3 and positive
+    zero = np.zeros((4, 2), dtype=np.float32)
+    prediction, positive = next(_analogy_predictions(zero, [(0, 1, 2, 3)], 1))
+    assert prediction == 3 and not positive
 
 
-def test_diagnostic_top30k_csv_integrity() -> None:
-    paths = RuntimePaths.from_environment()
-    csv_path = paths.analysis_output("f2", "w2v1") / "diagnostic/top30k_diagnostic.csv"
-    if not csv_path.is_file():
-        return
-
-    with csv_path.open(encoding="utf-8") as f:
-        rows = list(csv.DictReader(f))
-
-    assert len(rows) == 4
-
-    cbow_full = next(
-        r for r in rows if r["model"] == "CBOW" and r["eval_subset"] == "Full Table 3"
-    )
-    cbow_30k = next(
-        r for r in rows if r["model"] == "CBOW" and r["eval_subset"] == "Top-30K-only"
-    )
-
-    assert float(cbow_full["total_accuracy_percent"]) == 34.89
-    assert float(cbow_30k["total_accuracy_percent"]) == 41.51
-    assert cbow_30k["included_questions"] == "14085"
-
-
-def test_build_summary_markdown_generates_valid_text() -> None:
-    text = _build_summary_markdown(
-        category_rows=[
-            {
-                "category": "family",
-                "section": "semantic",
-                "total_questions": 506,
-                "included_questions": 506,
-                "oov_questions": 0,
-                "min_frequency_median": 1118.0,
-                "cbow_accuracy_percent": 58.17,
-                "skipgram_accuracy_percent": 62.06,
-                "accuracy_diff_percent": -3.89,
-            }
-        ],
-        quantile_rows=[
-            {
-                "section": "semantic",
-                "quantile": "Q1",
-                "frequency_range": "[32, 159]",
-                "question_count": 2067,
-                "cbow_accuracy_percent": 7.40,
-                "skipgram_accuracy_percent": 57.75,
-                "accuracy_diff_percent": -50.35,
-            }
-        ],
-        top30k_rows=[
-            {
-                "model": "CBOW",
-                "eval_subset": "Full Table 3",
-                "semantic_accuracy_percent": 13.67,
-                "syntactic_accuracy_percent": 51.27,
-                "total_accuracy_percent": 34.89,
-                "included_questions": 18568,
-                "total_questions": 19544,
-                "coverage_ratio_percent": 95.01,
-            }
-        ],
-    )
-    assert "# W2V1 Table 3 CBOW vs Skip-gram Diagnostic Report" in text
-    assert "CBOW Acc (%)" in text
+def test_report_uses_computed_results_without_fixed_claims():
+    rows = [
+        {
+            "category": "fixture",
+            "section": "semantic",
+            "included_questions": 2,
+            "cbow_accuracy_percent": 12.345,
+            "skipgram_accuracy_percent": 20.0,
+            "accuracy_diff_percent": -7.655,
+        }
+    ]
+    quantiles = [
+        dict(rows[0], section=section) for section in ("semantic", "syntactic")
+    ]
+    subsets = [
+        dict(
+            model=model,
+            eval_subset=subset,
+            semantic_accuracy_percent=12.345,
+            syntactic_accuracy_percent=20.0,
+            total_accuracy_percent=16.1725,
+            syntactic_included_questions=1,
+            included_questions=2,
+        )
+        for model in ("CBOW", "Skip-gram")
+        for subset in ("Full Table 3", "Top-30K-only")
+    ]
+    report = _build_summary_markdown(rows, quantiles, subsets)
+    assert "12.35" in report
+    assert "13.67" not in report
+    assert "capital-world" not in report

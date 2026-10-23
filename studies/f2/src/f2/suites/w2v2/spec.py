@@ -2,38 +2,23 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from pathlib import Path
 
-from f2.suites.w2v1.spec import RunSpec as CommonRunSpec
-from f2.suites.w2v1.spec import _digest
+from f2.suites.w2v.spec import Word2VecRunSpec
 from repro_core.execution.spec import load_variant, mapping
 
 
-class RunSpec(CommonRunSpec):
-    def to_executor_config(self) -> dict[str, object]:
-        config = super().to_executor_config()
-        config["phrase_detection"] = self.phrase_detection
-        resolved = {
-            key: config[key]
-            for key in (
-                "corpus",
-                "vocabulary",
-                "training",
-                "phrase_detection",
-            )
-        }
-        config["identity"] = {**self.identity, "config_digest": _digest(resolved)}
-        return config
+@dataclass(frozen=True)
+class RunSpec(Word2VecRunSpec):
+    """W2V2 phrase specification extending Word2VecRunSpec with phrase detection."""
 
-    @property
-    def phrase_detection(self) -> dict[str, object]:
-        return self._phrase_detection
+    phrase_detection: dict[str, object] = field(default_factory=dict)
 
-    def with_seed(self, seed: int) -> RunSpec:
-        seeded = super().with_seed(seed)
-        spec = RunSpec(**vars(seeded))
-        object.__setattr__(spec, "_phrase_detection", self.phrase_detection)
-        return spec
+    def resolved_config(self) -> dict[str, object]:
+        resolved = super().resolved_config()
+        resolved["phrase_detection"] = self.phrase_detection
+        return resolved
 
 
 def parse_run_spec(
@@ -61,7 +46,7 @@ def parse_run_spec(
             f"unsupported W2V2 objective: {objective}; NCE is not substituted with NEG"
         )
     phrase = mapping(raw, "phrase_detection")
-    spec = RunSpec(
+    return RunSpec(
         atomic_run_id=str(raw["atomic_run_id"]),
         identity=identity,
         corpus=mapping(raw, "corpus"),
@@ -70,9 +55,8 @@ def parse_run_spec(
         checkpoint=mapping(raw, "checkpoint"),
         tracking=mapping(raw, "tracking"),
         path=path,
+        phrase_detection=phrase,
     )
-    object.__setattr__(spec, "_phrase_detection", phrase)
-    return spec
 
 
 __all__ = ["RunSpec", "parse_run_spec"]

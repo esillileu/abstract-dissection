@@ -10,7 +10,7 @@ evaluated reproduction runs.
 |---|---|---|
 | Materialize pinned `questions-words.txt` | W2V1 and W2V2 word evaluations | Download the catalog URI, verify the pinned SHA-256 and pass its immutable local path to the standalone evaluator. |
 | Materialize pinned `questions-phrases.txt` | W2V2 phrase evaluations | Download, verify the pinned SHA-256 and pass its immutable local path to the standalone evaluator. |
-| Resolve MSR syntactic word-relations data | W2V1 Table 3 | Record exact files, license, version and checksums; add parser and scorer wiring. |
+| Materialize MSR syntactic word-relations mirror | W2V1 Table 3 | `table3.ensure_msr_syntactic` verifies the 8,000-question ResponsiblyAI mirror at commit `715c13ff`; catalog records SHA-256, size and origin. Original Microsoft distribution bytes are not claimed. |
 | Resolve MSR Sentence Completion files | `w2v1-msr-sentence-skipgram` | Pin official training/test files and checksums and connect the existing sentence-completion scorer. |
 | Pin published-vector baselines | W2V1 NNLM comparisons and W2V2 qualitative tables | Record licenses, immutable artifacts and checksums and implement import adapters. |
 
@@ -23,10 +23,10 @@ evaluation results.
 
 | work | affected specifications | required implementation |
 |---|---|---|
-| Feed-forward NNLM | `w2v1-table3-nnlm`, `w2v1-google-news-nnlm-6b` | Model, optimizer/training loop, complete checkpoint state and evaluation adapter; otherwise retain as external baseline only. |
+| Feed-forward NNLM | `w2v1-table3-nnlm`, `w2v1-google-news-nnlm-6b` | Implemented as an independent Rust subsystem with PS/AdaGrad, epoch-boundary checkpoint/resume and shared lookup evaluation. Table 3/4/6 wiring is complete; see [NNLM reproduction](NNLM_REPRODUCTION.md). |
 | NCE objective | W2V2 Table 1 NCE row | Implement actual NCE and its checkpoint state. NEG must not be substituted for NCE. |
-| DistBelief surrogate | W2V1 Table 6 | Define replica/asynchrony semantics, Adagrad state, missing learning-rate choices and reproducible hardware reporting. |
-| Remaining W2V1 suites | Table 3, Table 4/5 and sentence completion | Add validated configs, execution definitions, checkpoint/evaluation scheduling and runnable plans after underspecified policies are fixed. |
+| DistBelief surrogate | W2V1 Table 3/4/6 | Local asynchronous PS/AdaGrad exists for W2V and NNLM. Paper days x CPU cores remain separate from observed runtime; multi-replica scheduling is nondeterministic. |
+| RNNLM | Table 3/7 reference rows | Separate follow-up; no RNNLM training is added by the NNLM implementation. |
 | W2V2 word-only suite | `w2v2-word-skipgram-1b-objectives` | Add the word-only objective matrix and bind the full word-analogy evaluation. |
 
 ## Research-policy decisions

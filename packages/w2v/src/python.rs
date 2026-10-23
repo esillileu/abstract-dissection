@@ -20,6 +20,9 @@ use pyo3::{
 };
 use std::{path::PathBuf, sync::Arc};
 
+#[path = "nnlm/python.rs"]
+mod nnlm_binding;
+
 fn status_error(status: Status) -> PyErr {
     let message = status.as_str();
     match status {
@@ -1406,6 +1409,7 @@ impl PyDownpourTrainingSession {
 
 #[pymodule]
 fn w2v(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    nnlm_binding::register(m)?;
     m.add_class::<PyCorpus>()?;
     m.add_class::<PyVocabularyConfig>()?;
     m.add_class::<PyVocabulary>()?;

@@ -15,6 +15,8 @@ def test_table4_plan_and_catalog_slots() -> None:
     plans = Planner(definition).build(
         RunSelection(experiment_ids=("03",)), RunOptions()
     )
+    assert len(plans) == 27
+    plans = [plan for plan in plans if "--nnlm-" not in plan.atomic_run_id]
     assert len(plans) == 18
     catalog = read_manifest(Path("studies/f2/catalog/w2v.json"))
     slots = {slot["planned_run_slot_id"]: slot for slot in catalog["planned_run_slots"]}

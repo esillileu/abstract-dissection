@@ -13,7 +13,7 @@ import typer
 from repro_core.execution.definition import RunOrder
 
 from .catalog.cli import app as catalog_app
-from .corpus.preprocessing_cli import app as corpus_app
+from .corpus.cli import app as corpus_app
 from .definition import DEFINITION
 
 Experiments = Annotated[
@@ -238,12 +238,25 @@ def analyze(
         str | None,
         typer.Option(
             "--corpus",
-            help="W2V1 corpus source: wmt, lm1b, or umbc. Omit to analyze all.",
+            help="W2V1 corpus source: wmt, lm1b, umbc; fineweb for Tables 4/6. Omit to analyze all.",
         ),
     ] = None,
     table: Annotated[
-        int, typer.Option("--table", help="W2V1 table number: 2, 4, 5, or 7.")
+        int, typer.Option("--table", help="W2V1 table number: 2, 3, 4, 5, 6, or 7.")
     ] = 2,
+    msr_questions: Annotated[
+        Path | None,
+        typer.Option(
+            "--msr-questions", help="Table 3 MSR syntactic word-analogy benchmark path."
+        ),
+    ] = None,
+    publish: Annotated[
+        bool,
+        typer.Option(
+            "--publish/--no-publish",
+            help="Publish analysis results to canonical MLflow experiment f2.w2v1.analysis.",
+        ),
+    ] = False,
 ) -> None:
     """Render or summarize F2 experiment results."""
     if suite == "corpus":
@@ -254,14 +267,18 @@ def analyze(
 
         from .common.paths import get_benchmark_data_dir
         from .suites.w2v1.analysis import analyze_table2_sources
+        from .suites.w2v1.table3 import analyze_table3_sources
         from .suites.w2v1.table4 import analyze_table4_sources
         from .suites.w2v1.table5 import analyze_table5_sources
+        from .suites.w2v1.table6 import analyze_table6_sources
         from .suites.w2v1.table7 import analyze_table7_sources
         from .tracking import resolve_tracking_uri
 
         paths = RuntimePaths.from_environment()
-        if table not in (2, 4, 5, 7):
-            raise ValueError("W2V1 analysis table must be 2, 4, 5, or 7")
+        if table not in (2, 3, 4, 5, 6, 7):
+            raise ValueError("W2V1 analysis table must be 2, 3, 4, 5, 6, or 7")
+        if msr_questions is not None and table != 3:
+            raise ValueError("--msr-questions applies only to Table 3")
         if table == 7:
             questions = (
                 questions
@@ -281,18 +298,94 @@ def analyze(
             )
             if table == 2:
                 analyzer = analyze_table2_sources
+            elif table == 3:
+                outputs = analyze_table3_sources(
+                    resolve_tracking_uri(tracking_uri),
+                    questions,
+                    msr_questions_path=msr_questions,
+                    corpus_source=corpus,
+                    paths=paths,
+                )
+                for output in outputs:
+                    typer.echo(f"W2V1 Table 3 analysis written: {output}")
+                analyzer = None
             elif table == 4:
                 analyzer = analyze_table4_sources
-            else:
+            elif table == 5:
                 analyzer = analyze_table5_sources
-            outputs = analyzer(
-                resolve_tracking_uri(tracking_uri),
-                questions,
-                corpus_source=corpus,
-                paths=paths,
+            else:
+                analyzer = analyze_table6_sources
+
+            if analyzer is not None:
+                outputs = analyzer(
+                    resolve_tracking_uri(tracking_uri),
+                    questions,
+                    corpus_source=corpus,
+                    paths=paths,
+                )
+                for output in outputs:
+                    typer.echo(f"W2V1 Table {table} analysis written: {output}")
+
+        if publish:
+            from mlflow import MlflowClient
+
+            from .suites.w2v1.publish_analysis import (
+                ANALYSIS_EXPERIMENT_NAME,
+                ensure_analysis_experiment,
+                publish_table2_analysis,
+                publish_table3_analysis,
+                publish_table4_analysis,
+                publish_table5_analysis,
+                publish_table6_analysis,
+                publish_table7_analysis,
             )
-        for output in outputs:
-            typer.echo(f"W2V1 Table {table} analysis written: {output}")
+
+            client = MlflowClient(tracking_uri=resolve_tracking_uri(tracking_uri))
+            exp_id = ensure_analysis_experiment(client)
+            corpora = (corpus,) if corpus is not None else None
+            published = []
+            if table == 7:
+                published = publish_table7_analysis(
+                    client, exp_id, paths.analysis_output("f2", "table7")
+                )
+            elif table == 6:
+                published = publish_table6_analysis(
+                    client,
+                    exp_id,
+                    paths.analysis_output("f2", "w2v1"),
+                    corpora=corpora,
+                )
+            elif table == 5:
+                published = publish_table5_analysis(
+                    client,
+                    exp_id,
+                    paths.analysis_output("f2", "w2v1"),
+                    corpora=corpora,
+                )
+            elif table == 4:
+                published = publish_table4_analysis(
+                    client,
+                    exp_id,
+                    paths.analysis_output("f2", "w2v1"),
+                    corpora=corpora,
+                )
+            elif table == 3:
+                published = publish_table3_analysis(
+                    client,
+                    exp_id,
+                    paths.analysis_output("f2", "w2v1"),
+                    corpora=corpora,
+                )
+            elif table == 2:
+                published = publish_table2_analysis(
+                    client,
+                    exp_id,
+                    paths.analysis_output("f2", "w2v1"),
+                    corpora=corpora,
+                )
+            typer.echo(
+                f"Published {len(published)} analysis runs to MLflow experiment '{ANALYSIS_EXPERIMENT_NAME}'"
+            )
         return
     typer.echo(f"Analysis orchestration for F2 suite '{suite}' is initialized.")
 
@@ -302,7 +395,7 @@ def check(
     suite: Annotated[
         str,
         typer.Argument(
-            help="Target F2 suite (e.g. w2v_pretrain)",
+            help="Target F2 suite (e.g. w2v1, w2v2)",
         ),
     ],
     experiment: Experiments = None,
@@ -315,7 +408,61 @@ def check(
     tracking_uri: Annotated[str | None, typer.Option("--tracking-uri")] = None,
 ) -> None:
     """Compare declared plans with recorded F2 run state in MLflow."""
-    typer.echo(f"Checking run state for F2 suite '{suite}'...")
+    from mlflow.tracking import MlflowClient
+
+    from repro_core.execution import RunOptions, RunSelection
+    from repro_core.execution.parsing import parse_overrides
+    from repro_core.execution.planning import Planner
+
+    from .definition import DEFINITION
+    from .tracking import resolve_tracking_uri
+
+    suite_def = DEFINITION.get_suite(suite)
+    overrides = parse_overrides(override_values or [])
+    plans = Planner(suite_def).build(
+        RunSelection(
+            experiment_ids=tuple(experiment or []),
+            all_experiments=all_experiments or not experiment,
+            atomic_run_ids=tuple(atomic_run or []),
+            excluded_atomic_run_ids=tuple(exclude_atomic_run or []),
+            seed_values=seed,
+            seed_set=seed_set,
+        ),
+        RunOptions(overrides=overrides),
+    )
+    uri = resolve_tracking_uri(tracking_uri)
+    client = MlflowClient(tracking_uri=uri)
+    experiment_name = f"f2.{suite}"
+    exp = client.get_experiment_by_name(experiment_name)
+    if exp is None:
+        typer.echo(
+            f"No MLflow experiment found for '{experiment_name}'. "
+            f"All {len(plans)} planned runs are missing."
+        )
+        return
+
+    runs = client.search_runs([exp.experiment_id], max_results=10000)
+    completed_slots = {
+        r.data.tags.get("planned_run_slot_id")
+        or r.data.tags.get("f2.planned_run_slot_id")
+        for r in runs
+        if r.data.tags.get("result.durable_complete") == "true"
+    }
+    completed_count = 0
+    missing_count = 0
+    for plan in plans:
+        spec = suite_def.load_run_spec(
+            plan.path, atomic_run_id=plan.atomic_run_id, overrides=overrides
+        )
+        seeded_spec = spec.with_seed(plan.seed) if plan.seed is not None else spec
+        slot_id = str(seeded_spec.identity.get("planned_run_slot_id", ""))
+        if slot_id in completed_slots:
+            completed_count += 1
+        else:
+            missing_count += 1
+    typer.echo(
+        f"f2/{suite}: planned={len(plans)} completed={completed_count} missing={missing_count}"
+    )
 
 
 __all__ = ["analyze", "app", "check", "evaluate", "list_suites", "plan", "run"]

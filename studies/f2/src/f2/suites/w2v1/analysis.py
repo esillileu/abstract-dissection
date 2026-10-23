@@ -111,8 +111,46 @@ class Table2EvaluationCache:
             encoding="utf-8",
         )
 
+    def seed_from_csv(self, csv_path: Path) -> int:
+        """Seed cache from an existing table2-runs.csv if present."""
+        if not csv_path.is_file():
+            return 0
+        count = 0
+        try:
+            with csv_path.open(encoding="utf-8") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    run_id = row.get("mlflow_run_id")
+                    if not run_id:
+                        continue
+                    if self.load(run_id) is not None:
+                        continue
+                    result = Table2RunResult(
+                        training_words_millions=int(row["training_words_millions"]),
+                        vector_dimension=int(row["vector_dimension"]),
+                        seed=int(row["seed"]),
+                        mlflow_run_id=str(row["mlflow_run_id"]),
+                        total_accuracy_percent=float(row["total_accuracy_percent"]),
+                        semantic_accuracy_percent=float(
+                            row["semantic_accuracy_percent"]
+                        ),
+                        syntactic_accuracy_percent=float(
+                            row["syntactic_accuracy_percent"]
+                        ),
+                        observed_training_seconds=float(
+                            row["observed_training_seconds"]
+                        ),
+                        included_questions=int(row["included_questions"]),
+                        total_questions=int(row["total_questions"]),
+                    )
+                    self.store(result, lookup_identity={"source": "table2-runs.csv"})
+                    count += 1
+        except Exception:
+            return count
+        return count
+
     def _path(self, run_id: str) -> Path:
-        if re.fullmatch(r"[0-9a-f]{32}", run_id) is None:
+        if re.fullmatch(r"[0-9a-zA-Z_-]+", run_id) is None:
             raise ValueError(f"invalid MLflow run ID: {run_id}")
         return self.root / f"{run_id}.json"
 
@@ -163,6 +201,9 @@ def analyze_table2(
     evaluation_cache = Table2EvaluationCache(
         paths.cache_root / "f2/w2v1/analogy", questions_sha256=questions_sha256
     )
+    output = paths.analysis_output("f2", "w2v1") / corpus_source
+    output.mkdir(parents=True, exist_ok=True)
+    evaluation_cache.seed_from_csv(output / "table2-runs.csv")
     records: list[Table2RunResult] = []
     cache_hits = 0
     cache_misses = 0
@@ -184,6 +225,7 @@ def analyze_table2(
                     lookup,
                     questions,
                     vocabulary_limit=_VOCABULARY_LIMIT,
+                    batch_size=256,
                 )
                 training_seconds = observed_training_seconds(
                     cache.get(run.info.run_id, "metrics/observations.csv")
@@ -200,7 +242,9 @@ def analyze_table2(
                     included_questions=result.overall.valid_count,
                     total_questions=result.overall.total_count,
                 )
-                evaluation_cache.store(record, lookup_identity=lookup.manifest)
+                evaluation_cache.store(
+                    record, lookup_identity=getattr(lookup, "manifest", {})
+                )
                 records.append(record)
 
     print(
@@ -209,8 +253,6 @@ def analyze_table2(
         file=sys.stderr,
     )
 
-    output = paths.analysis_output("f2", "w2v1") / corpus_source
-    output.mkdir(parents=True, exist_ok=True)
     _write_run_results(output / "table2-runs.csv", records)
     _write_summary(
         output / "summary.md",

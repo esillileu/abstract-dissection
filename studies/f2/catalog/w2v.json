@@ -359,7 +359,7 @@
         ]
       },
       "source_locator": "\u00a72.1, \u00a72.3, \u00a74.3; printed pp.3-4,7",
-      "notes": "History=8 and 640 hidden units are explicit; epoch count and concrete LR are not reported."
+      "notes": "History=8 and 640 hidden units are explicit; epoch count and concrete LR are not reported. Reconstruction decision (not paper-specified): tanh, 3 epochs, AdaGrad gamma=0.05, epsilon=1e-6, summed mini-batches of 250 targets, 20 local replicas, 4 PS shards, queue_capacity=128 and fetch/push once per batch. No separate LR decay. Initialization: embeddings uniform +/-0.5/D, hidden Xavier uniform, zero bias/HS output. History resets at sentence boundaries/OOV; targets require a full history; no subsampling."
     },
     {
       "experiment_spec_id": "w2v1-google-news-cbow-scale",
@@ -492,7 +492,7 @@
         ]
       },
       "source_locator": "\u00a72.3, Table 4, \u00a74.4/Table 6; printed pp.4,8-9",
-      "notes": "The 100d row is reused in Table 6 with 14 days x 180 CPU cores. Table 4 does not fully restate NNLM history/hidden-size/training details for the 6B runs."
+      "notes": "The 100d row is reused in Table 6 with 14 days x 180 CPU cores. Table 4 does not fully restate NNLM history/hidden-size/training details for the 6B runs. Local reconstruction decisions: history=8 and hidden=640 carried from Table 3 (not stated for Table 4/6), tanh, 3 epochs, 14 local replicas, 4 PS shards, AdaGrad gamma=0.05/epsilon=1e-6, summed mini-batches of 250 targets, queue_capacity=128, fetch/push once per batch, no separate LR decay or subsampling. Initialization/history policy matches Table 3 NNLM. FineWeb surrogate, bindings and nine seed slots use the existing fineweb/register.py materialization. Table 6 selects the same canonical Table 4 100d durable runs, with no new training slots."
     },
     {
       "experiment_spec_id": "w2v1-table6-cbow-6b",
@@ -857,11 +857,11 @@
       "kind": "dataset",
       "name": "MSR syntactic word relationship test set",
       "description": "Secondary syntactic relationship evaluation used in W2V1 Table 3.",
-      "access_status": "unknown",
-      "acquisition_status": "unresolved",
-      "readiness_status": "blocked",
-      "canonical_version_id": null,
-      "notes": "Distinct from the MSR Sentence Completion Challenge."
+      "access_status": "public",
+      "acquisition_status": "verified",
+      "readiness_status": "ready",
+      "canonical_version_id": "w2v1-msr-syntactic-responsibly-715c13ff",
+      "notes": "Distinct from MSR Sentence Completion. Commit-pinned public mirror of the 8,000-question MSR syntactic benchmark; checksum and question count verified. Original Microsoft distribution bytes are not claimed."
     },
     {
       "resource_id": "w2v1-msr-sentence-completion",
@@ -1147,6 +1147,25 @@
       },
       "is_verified": true,
       "notes": "Verified against MSR Challenge benchmark files and 522 Gutenberg training books."
+    },
+    {
+      "resource_version_id": "w2v1-msr-syntactic-responsibly-715c13ff",
+      "resource_id": "w2v1-msr-syntactic-word-relations",
+      "version_label": "responsibly-715c13ff",
+      "uri": "https://raw.githubusercontent.com/ResponsiblyAI/responsibly/715c13ff7cf19de9d42f92d2e8c4de697dd4c638/responsibly/we/data/benchmark/MSR-syntax.txt",
+      "local_path": null,
+      "size_bytes": 231634,
+      "checksum_algo": "sha256",
+      "checksum": "ac90a8f492d19fd892cc0e27c5f63dcd9a520b0044b91acd99e521668cc1ebc5",
+      "metadata": {
+        "representation": "questions_words",
+        "question_count": 8000,
+        "category": "all",
+        "original_source": "http://research.microsoft.com/en-us/projects/rnn/default.aspx",
+        "source_paper": "https://aclanthology.org/N13-1090/"
+      },
+      "is_verified": true,
+      "notes": "MSR benchmark mirror published by ResponsiblyAI; single all category header. Pinned bytes verified by SHA-256 and parsed as exactly 8,000 four-token analogy questions."
     }
   ],
   "requirements": [
@@ -1255,7 +1274,7 @@
       "required_resource_id": "w2v1-msr-syntactic-word-relations",
       "requirement_spec": null,
       "required": false,
-      "notes": "MSR syntactic evaluation is blocked pending dataset acquisition; not required for training execution."
+      "notes": "Pinned MSR syntactic mirror is available; this is distinct from Sentence Completion. Existing training/evaluation requirement status is preserved."
     },
     {
       "requirement_id": "w2v1-table3-sg-msr-eval",
@@ -1264,7 +1283,7 @@
       "required_resource_id": "w2v1-msr-syntactic-word-relations",
       "requirement_spec": null,
       "required": false,
-      "notes": "MSR syntactic evaluation is blocked pending dataset acquisition; not required for training execution."
+      "notes": "Pinned MSR syntactic mirror is available; this is distinct from Sentence Completion. Existing training/evaluation requirement status is preserved."
     },
     {
       "requirement_id": "w2v1-table3-nnlm-msr-eval",
@@ -1273,7 +1292,7 @@
       "required_resource_id": "w2v1-msr-syntactic-word-relations",
       "requirement_spec": null,
       "required": true,
-      "notes": null
+      "notes": "Pinned MSR syntactic mirror is available; this is distinct from Sentence Completion. Existing training/evaluation requirement status is preserved."
     },
     {
       "requirement_id": "w2v1-cbow-scale-train",
@@ -1312,7 +1331,7 @@
         "word_count": 6000000000
       },
       "required": true,
-      "notes": "Exact resource unavailable; surrogate binding not yet canonicalized."
+      "notes": "Exact Google News unavailable; NNLM uses the same FineWeb 2013 surrogate and existing fineweb/register.py plan materialization as W2V1 6B. Exact 6B materialization requires enough verified lexical words."
     },
     {
       "requirement_id": "w2v1-table6-cbow-train",
@@ -2375,6 +2394,149 @@
         }
       },
       "notes": "Table 5 1-epoch Skip-gram conditions; 1M lexical vocabulary cap matches Table 4."
+    },
+    {
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table3-nnlm",
+      "execution_plan_id": "w2v1-reconstruction-r2",
+      "experiment_spec_id": "w2v1-table3-nnlm",
+      "enabled": true,
+      "parameters": {
+        "classification": "reconstruction",
+        "corpus": "wmt",
+        "seed_policy": {
+          "repetitions": [
+            1,
+            7,
+            19
+          ]
+        },
+        "runtime_policy": {
+          "device": "cpu",
+          "threads": 20
+        },
+        "approval_policy": "explicit approval required before large execution",
+        "evaluation_policy": {
+          "oov": "exclude and report coverage",
+          "confidence_interval": "seed percentile 95",
+          "throughput": "report with hardware identity"
+        },
+        "training": {
+          "objective_kind": "hierarchical_softmax",
+          "embedding_dimension": 640,
+          "epochs": 3,
+          "thread_count": 20,
+          "observation_interval": 100000,
+          "initial_learning_rate": 0.05,
+          "rng_algorithm": "lcg",
+          "model_kind": "feedforward_nnlm",
+          "hidden_dimension": 640,
+          "history_length": 8,
+          "hidden_activation": "tanh"
+        },
+        "distribution": {
+          "mode": "downpour",
+          "parameter_server_shards": 4,
+          "mini_batch_targets": 250,
+          "adagrad_gamma": 0.05,
+          "adagrad_epsilon": 1e-06,
+          "queue_capacity": 128,
+          "fetch_interval": 1,
+          "push_interval": 1
+        }
+      },
+      "notes": "History=8 and 640 hidden units are explicit; epoch count and concrete LR are not reported. Reconstruction decision (not paper-specified): tanh, 3 epochs, AdaGrad gamma=0.05, epsilon=1e-6, summed mini-batches of 250 targets, 20 local replicas, 4 PS shards, queue_capacity=128 and fetch/push once per batch. No separate LR decay. Initialization: embeddings uniform +/-0.5/D, hidden Xavier uniform, zero bias/HS output. History resets at sentence boundaries/OOV; targets require a full history; no subsampling."
+    },
+    {
+      "plan_experiment_id": "w2v1-lm1b-reconstruction-r1-w2v1-table3-nnlm",
+      "execution_plan_id": "w2v1-lm1b-reconstruction-r1",
+      "experiment_spec_id": "w2v1-table3-nnlm",
+      "enabled": true,
+      "parameters": {
+        "classification": "reconstruction",
+        "corpus": "lm1b",
+        "seed_policy": {
+          "repetitions": [
+            1,
+            7,
+            19
+          ]
+        },
+        "runtime_policy": {
+          "device": "cpu",
+          "threads": 20
+        },
+        "approval_policy": "explicit approval required before large execution",
+        "training": {
+          "objective_kind": "hierarchical_softmax",
+          "embedding_dimension": 640,
+          "epochs": 3,
+          "thread_count": 20,
+          "observation_interval": 100000,
+          "initial_learning_rate": 0.05,
+          "rng_algorithm": "lcg",
+          "model_kind": "feedforward_nnlm",
+          "hidden_dimension": 640,
+          "history_length": 8,
+          "hidden_activation": "tanh"
+        },
+        "distribution": {
+          "mode": "downpour",
+          "parameter_server_shards": 4,
+          "mini_batch_targets": 250,
+          "adagrad_gamma": 0.05,
+          "adagrad_epsilon": 1e-06,
+          "queue_capacity": 128,
+          "fetch_interval": 1,
+          "push_interval": 1
+        }
+      },
+      "notes": "History=8 and 640 hidden units are explicit; epoch count and concrete LR are not reported. Reconstruction decision (not paper-specified): tanh, 3 epochs, AdaGrad gamma=0.05, epsilon=1e-6, summed mini-batches of 250 targets, 20 local replicas, 4 PS shards, queue_capacity=128 and fetch/push once per batch. No separate LR decay. Initialization: embeddings uniform +/-0.5/D, hidden Xavier uniform, zero bias/HS output. History resets at sentence boundaries/OOV; targets require a full history; no subsampling."
+    },
+    {
+      "plan_experiment_id": "w2v1-umbc-reconstruction-r1-w2v1-table3-nnlm",
+      "execution_plan_id": "w2v1-umbc-reconstruction-r1",
+      "experiment_spec_id": "w2v1-table3-nnlm",
+      "enabled": true,
+      "parameters": {
+        "classification": "reconstruction",
+        "corpus": "umbc",
+        "seed_policy": {
+          "repetitions": [
+            1,
+            7,
+            19
+          ]
+        },
+        "runtime_policy": {
+          "device": "cpu",
+          "threads": 20
+        },
+        "approval_policy": "explicit approval required before large execution",
+        "training": {
+          "objective_kind": "hierarchical_softmax",
+          "embedding_dimension": 640,
+          "epochs": 3,
+          "thread_count": 20,
+          "observation_interval": 100000,
+          "initial_learning_rate": 0.05,
+          "rng_algorithm": "lcg",
+          "model_kind": "feedforward_nnlm",
+          "hidden_dimension": 640,
+          "history_length": 8,
+          "hidden_activation": "tanh"
+        },
+        "distribution": {
+          "mode": "downpour",
+          "parameter_server_shards": 4,
+          "mini_batch_targets": 250,
+          "adagrad_gamma": 0.05,
+          "adagrad_epsilon": 1e-06,
+          "queue_capacity": 128,
+          "fetch_interval": 1,
+          "push_interval": 1
+        }
+      },
+      "notes": "History=8 and 640 hidden units are explicit; epoch count and concrete LR are not reported. Reconstruction decision (not paper-specified): tanh, 3 epochs, AdaGrad gamma=0.05, epsilon=1e-6, summed mini-batches of 250 targets, 20 local replicas, 4 PS shards, queue_capacity=128 and fetch/push once per batch. No separate LR decay. Initialization: embeddings uniform +/-0.5/D, hidden Xavier uniform, zero bias/HS output. History resets at sentence boundaries/OOV; targets require a full history; no subsampling."
     }
   ],
   "resource_bindings": [
@@ -2697,6 +2859,126 @@
       "binding_type": "exact",
       "justification": "Pinned verified evaluation resource.",
       "notes": null
+    },
+    {
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table3-nnlm",
+      "requirement_id": "w2v1-table3-nnlm-train",
+      "resource_version_id": "f2-wmt-news-2007-2012-normalized-v1",
+      "binding_type": "substitute",
+      "justification": "Verified WMT 320M prefix.",
+      "notes": null
+    },
+    {
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table3-nnlm",
+      "requirement_id": "w2v1-table3-nnlm-word-eval",
+      "resource_version_id": "w2v-questions-words-google-code-export",
+      "binding_type": "exact",
+      "justification": "Pinned verified evaluation resource.",
+      "notes": null
+    },
+    {
+      "plan_experiment_id": "w2v1-lm1b-reconstruction-r1-w2v1-table3-nnlm",
+      "requirement_id": "w2v1-table3-nnlm-train",
+      "resource_version_id": "f2-lm1b-r13output-normalized-v1",
+      "binding_type": "substitute",
+      "justification": "Verified LM1B 320M prefix.",
+      "notes": null
+    },
+    {
+      "plan_experiment_id": "w2v1-lm1b-reconstruction-r1-w2v1-table3-nnlm",
+      "requirement_id": "w2v1-table3-nnlm-word-eval",
+      "resource_version_id": "w2v-questions-words-google-code-export",
+      "binding_type": "exact",
+      "justification": "Pinned verified evaluation resource.",
+      "notes": null
+    },
+    {
+      "plan_experiment_id": "w2v1-umbc-reconstruction-r1-w2v1-table3-nnlm",
+      "requirement_id": "w2v1-table3-nnlm-train",
+      "resource_version_id": "f2-umbc-webbase-normalized-v1",
+      "binding_type": "substitute",
+      "justification": "Verified UMBC 320M prefix.",
+      "notes": null
+    },
+    {
+      "plan_experiment_id": "w2v1-umbc-reconstruction-r1-w2v1-table3-nnlm",
+      "requirement_id": "w2v1-table3-nnlm-word-eval",
+      "resource_version_id": "w2v-questions-words-google-code-export",
+      "binding_type": "exact",
+      "justification": "Pinned verified evaluation resource.",
+      "notes": null
+    },
+    {
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table3-cbow",
+      "requirement_id": "w2v1-table3-cbow-msr-eval",
+      "resource_version_id": "w2v1-msr-syntactic-responsibly-715c13ff",
+      "binding_type": "substitute",
+      "justification": "Pinned, checksum-verified public mirror of the MSR 8,000-question syntactic benchmark; original Microsoft distribution bytes are unavailable.",
+      "notes": "Evaluation only; no training corpus substitution is introduced."
+    },
+    {
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table3-skipgram",
+      "requirement_id": "w2v1-table3-sg-msr-eval",
+      "resource_version_id": "w2v1-msr-syntactic-responsibly-715c13ff",
+      "binding_type": "substitute",
+      "justification": "Pinned, checksum-verified public mirror of the MSR 8,000-question syntactic benchmark; original Microsoft distribution bytes are unavailable.",
+      "notes": "Evaluation only; no training corpus substitution is introduced."
+    },
+    {
+      "plan_experiment_id": "w2v1-lm1b-reconstruction-r1-w2v1-table3-cbow",
+      "requirement_id": "w2v1-table3-cbow-msr-eval",
+      "resource_version_id": "w2v1-msr-syntactic-responsibly-715c13ff",
+      "binding_type": "substitute",
+      "justification": "Pinned, checksum-verified public mirror of the MSR 8,000-question syntactic benchmark; original Microsoft distribution bytes are unavailable.",
+      "notes": "Evaluation only; no training corpus substitution is introduced."
+    },
+    {
+      "plan_experiment_id": "w2v1-lm1b-reconstruction-r1-w2v1-table3-skipgram",
+      "requirement_id": "w2v1-table3-sg-msr-eval",
+      "resource_version_id": "w2v1-msr-syntactic-responsibly-715c13ff",
+      "binding_type": "substitute",
+      "justification": "Pinned, checksum-verified public mirror of the MSR 8,000-question syntactic benchmark; original Microsoft distribution bytes are unavailable.",
+      "notes": "Evaluation only; no training corpus substitution is introduced."
+    },
+    {
+      "plan_experiment_id": "w2v1-umbc-reconstruction-r1-w2v1-table3-cbow",
+      "requirement_id": "w2v1-table3-cbow-msr-eval",
+      "resource_version_id": "w2v1-msr-syntactic-responsibly-715c13ff",
+      "binding_type": "substitute",
+      "justification": "Pinned, checksum-verified public mirror of the MSR 8,000-question syntactic benchmark; original Microsoft distribution bytes are unavailable.",
+      "notes": "Evaluation only; no training corpus substitution is introduced."
+    },
+    {
+      "plan_experiment_id": "w2v1-umbc-reconstruction-r1-w2v1-table3-skipgram",
+      "requirement_id": "w2v1-table3-sg-msr-eval",
+      "resource_version_id": "w2v1-msr-syntactic-responsibly-715c13ff",
+      "binding_type": "substitute",
+      "justification": "Pinned, checksum-verified public mirror of the MSR 8,000-question syntactic benchmark; original Microsoft distribution bytes are unavailable.",
+      "notes": "Evaluation only; no training corpus substitution is introduced."
+    },
+    {
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table3-nnlm",
+      "requirement_id": "w2v1-table3-nnlm-msr-eval",
+      "resource_version_id": "w2v1-msr-syntactic-responsibly-715c13ff",
+      "binding_type": "substitute",
+      "justification": "Pinned, checksum-verified public mirror of the MSR 8,000-question syntactic benchmark; original Microsoft distribution bytes are unavailable.",
+      "notes": "Evaluation only; no training corpus substitution is introduced."
+    },
+    {
+      "plan_experiment_id": "w2v1-lm1b-reconstruction-r1-w2v1-table3-nnlm",
+      "requirement_id": "w2v1-table3-nnlm-msr-eval",
+      "resource_version_id": "w2v1-msr-syntactic-responsibly-715c13ff",
+      "binding_type": "substitute",
+      "justification": "Pinned, checksum-verified public mirror of the MSR 8,000-question syntactic benchmark; original Microsoft distribution bytes are unavailable.",
+      "notes": "Evaluation only; no training corpus substitution is introduced."
+    },
+    {
+      "plan_experiment_id": "w2v1-umbc-reconstruction-r1-w2v1-table3-nnlm",
+      "requirement_id": "w2v1-table3-nnlm-msr-eval",
+      "resource_version_id": "w2v1-msr-syntactic-responsibly-715c13ff",
+      "binding_type": "substitute",
+      "justification": "Pinned, checksum-verified public mirror of the MSR 8,000-question syntactic benchmark; original Microsoft distribution bytes are unavailable.",
+      "notes": "Evaluation only; no training corpus substitution is introduced."
     }
   ],
   "planned_run_matrices": [
@@ -3097,6 +3379,63 @@
       "device": "cpu",
       "threads": 1,
       "notes": "Table 5 full-vocabulary 1-epoch Skip-gram reconstruction; large execution requires approval."
+    },
+    {
+      "plan_experiment_id": "w2v1-reconstruction-r2-w2v1-table3-nnlm",
+      "execution_plan_id": "w2v1-reconstruction-r2",
+      "classification": "reconstruction",
+      "atomic_run_ids": [
+        "nnlm-d640-h640-n8-w320m"
+      ],
+      "training_tokens": 320000000,
+      "embedding_dimension": 640,
+      "epochs": 3,
+      "seeds": [
+        1,
+        7,
+        19
+      ],
+      "device": "cpu",
+      "threads": 20,
+      "notes": "Large canonical NNLM reconstruction slot; History=8 and 640 hidden units are explicit; epoch count and concrete LR are not reported. Reconstruction decision (not paper-specified): tanh, 3 epochs, AdaGrad gamma=0.05, epsilon=1e-6, summed mini-batches of 250 targets, 20 local replicas, 4 PS shards, queue_capacity=128 and fetch/push once per batch. No separate LR decay. Initialization: embeddings uniform +/-0.5/D, hidden Xavier uniform, zero bias/HS output. History resets at sentence boundaries/OOV; targets require a full history; no subsampling. Planning is not execution approval."
+    },
+    {
+      "plan_experiment_id": "w2v1-lm1b-reconstruction-r1-w2v1-table3-nnlm",
+      "execution_plan_id": "w2v1-lm1b-reconstruction-r1",
+      "classification": "reconstruction",
+      "atomic_run_ids": [
+        "nnlm-d640-h640-n8-w320m"
+      ],
+      "training_tokens": 320000000,
+      "embedding_dimension": 640,
+      "epochs": 3,
+      "seeds": [
+        1,
+        7,
+        19
+      ],
+      "device": "cpu",
+      "threads": 20,
+      "notes": "Large canonical NNLM reconstruction slot; History=8 and 640 hidden units are explicit; epoch count and concrete LR are not reported. Reconstruction decision (not paper-specified): tanh, 3 epochs, AdaGrad gamma=0.05, epsilon=1e-6, summed mini-batches of 250 targets, 20 local replicas, 4 PS shards, queue_capacity=128 and fetch/push once per batch. No separate LR decay. Initialization: embeddings uniform +/-0.5/D, hidden Xavier uniform, zero bias/HS output. History resets at sentence boundaries/OOV; targets require a full history; no subsampling. Planning is not execution approval."
+    },
+    {
+      "plan_experiment_id": "w2v1-umbc-reconstruction-r1-w2v1-table3-nnlm",
+      "execution_plan_id": "w2v1-umbc-reconstruction-r1",
+      "classification": "reconstruction",
+      "atomic_run_ids": [
+        "nnlm-d640-h640-n8-w320m"
+      ],
+      "training_tokens": 320000000,
+      "embedding_dimension": 640,
+      "epochs": 3,
+      "seeds": [
+        1,
+        7,
+        19
+      ],
+      "device": "cpu",
+      "threads": 20,
+      "notes": "Large canonical NNLM reconstruction slot; History=8 and 640 hidden units are explicit; epoch count and concrete LR are not reported. Reconstruction decision (not paper-specified): tanh, 3 epochs, AdaGrad gamma=0.05, epsilon=1e-6, summed mini-batches of 250 targets, 20 local replicas, 4 PS shards, queue_capacity=128 and fetch/push once per batch. No separate LR decay. Initialization: embeddings uniform +/-0.5/D, hidden Xavier uniform, zero bias/HS output. History resets at sentence boundaries/OOV; targets require a full history; no subsampling. Planning is not execution approval."
     }
   ],
   "planned_run_slots": [

@@ -72,7 +72,11 @@ def run_tracked_yaml(
         if experiment is None
         else experiment.experiment_id
     )
-    run_id = _create_run(client, experiment_id, config)
+    run_id = _find_resumable_run(client, experiment_id, config, paths, suite)
+    if run_id is None:
+        run_id = _create_run(client, experiment_id, config)
+    elif progress_reporter is not None:
+        progress_reporter.write(f"resuming uncompleted tracked run {run_id}")
     run_root = paths.staging_root / f"exp/f2/{suite}/tracked" / run_id
     try:
         result = run_config(
@@ -86,7 +90,13 @@ def run_tracked_yaml(
             ),
             executor_module=executor_module,
         )
-        _publish(client, run_id, result.root)
+        _publish(
+            client,
+            run_id,
+            result.root,
+            include_checkpoints=_mapping(config, "training").get("model_kind")
+            == "feedforward_nnlm",
+        )
         _verify_uploaded_manifest(client, run_id)
         client.set_tag(run_id, "trial.status", "finished")
         client.set_tag(run_id, "result.durable_complete", "true")
@@ -113,9 +123,17 @@ def _materialize_corpus(
         lexical_token_budget = int(corpus["lexical_token_budget"])
     except (KeyError, TypeError, ValueError) as exc:
         raise ValueError("canonical W2V1 corpus requires lexical_token_budget") from exc
+    from f2.common.paths import get_corpus_data_dir
+
+    corpus_dir = get_corpus_data_dir(paths)
     if "path" in corpus:
         raw_path = Path(str(corpus["path"]))
-        corpus_path = raw_path if raw_path.is_absolute() else paths.repo_root / raw_path
+        if raw_path.is_absolute():
+            corpus_path = raw_path
+        elif (corpus_dir / raw_path.name).is_file():
+            corpus_path = corpus_dir / raw_path.name
+        else:
+            corpus_path = paths.repo_root / raw_path
         if "holmes" in str(raw_path):
             from f2.suites.w2v1.table7 import ensure_holmes_corpus
 
@@ -136,6 +154,29 @@ def _materialize_corpus(
             "lexical_tokens": lexical_token_budget,
         }
         return
+
+    atomic_run_id = str(config.get("atomic_run_id", ""))
+    corpus_id = atomic_run_id.split("--", 1)[0] if "--" in atomic_run_id else ""
+    candidate_paths = [
+        corpus_dir / f"{corpus_id}.txt",
+        corpus_dir / corpus_id / "corpus.txt",
+    ]
+    if corpus_id == "holmes":
+        from f2.suites.w2v1.table7 import ensure_holmes_corpus
+
+        candidate_paths.insert(0, ensure_holmes_corpus(corpus_dir / "holmes.txt"))
+
+    for candidate in candidate_paths:
+        if candidate.is_file():
+            from repro_io.checksum import sha256_file
+
+            digest = corpus.get("sha256") or sha256_file(candidate)
+            config["corpus"] = {
+                "path": str(candidate),
+                "sha256": str(digest),
+                "lexical_tokens": lexical_token_budget,
+            }
+            return
 
     slot_id = str(identity["planned_run_slot_id"])
     with corpus_connection(validate_contract=True) as connection:
@@ -160,6 +201,42 @@ def _materialize_corpus(
         "sha256": materialized.corpus_sha256,
         "lexical_tokens": materialized.lexical_tokens,
     }
+
+
+def _find_resumable_run(
+    client: Any,
+    experiment_id: str,
+    config: dict[str, object],
+    paths: RuntimePaths,
+    suite: str,
+) -> str | None:
+    from mlflow.entities import ViewType
+
+    identity = _identity(config)
+    slot_id = str(identity["planned_run_slot_id"])
+    runs = client.search_runs(
+        [experiment_id],
+        filter_string=f"tags.`f2.planned_run_slot_id` = '{slot_id}'",
+        run_view_type=ViewType.ALL,
+        order_by=["attributes.start_time DESC"],
+        max_results=10,
+    )
+    for run in runs:
+        if run.data.tags.get("result.durable_complete") == "true":
+            continue
+        run_id = str(run.info.run_id)
+        ckpt_meta = (
+            paths.staging_root
+            / f"exp/f2/{suite}/tracked"
+            / run_id
+            / "checkpoints"
+            / "latest.json"
+        )
+        if ckpt_meta.is_file():
+            if run.info.lifecycle_stage == "deleted":
+                client.restore_run(run_id)
+            return run_id
+    return None
 
 
 def _create_run(
@@ -206,11 +283,15 @@ def _plan_revision(execution_plan_id: str) -> int:
     return int(match.group(1))
 
 
-def _publish(client: Any, run_id: str, root: Path) -> None:
-    write_result_manifest(root, exclude_dirs=("checkpoints",))
+def _publish(
+    client: Any, run_id: str, root: Path, *, include_checkpoints: bool = False
+) -> None:
+    write_result_manifest(
+        root, exclude_dirs=() if include_checkpoints else ("checkpoints",)
+    )
     for path in sorted(item for item in root.rglob("*") if item.is_file()):
         rel = path.relative_to(root)
-        if any(part == "checkpoints" for part in rel.parts):
+        if not include_checkpoints and "checkpoints" in rel.parts:
             continue
         parent = path.parent.relative_to(root)
         client.log_artifact(
@@ -222,32 +303,38 @@ def _publish(client: Any, run_id: str, root: Path) -> None:
     if metrics.is_file():
         from mlflow.entities import Metric
 
+        batch: list[Metric] = []
+        now_ms = int(time.time() * 1000)
         with metrics.open(encoding="utf-8", newline="") as stream:
             for row in csv.DictReader(stream):
                 step = int(row["processed_tokens"])
-                client.log_batch(
-                    run_id,
-                    metrics=[
+                batch.extend(
+                    [
                         Metric(
                             "train/objective_loss",
                             float(row["objective_loss"]),
-                            int(time.time() * 1000),
+                            now_ms,
                             step,
                         ),
                         Metric(
                             "train/learning_rate",
                             float(row["learning_rate"]),
-                            int(time.time() * 1000),
+                            now_ms,
                             step,
                         ),
                         Metric(
                             "runtime/tokens_per_second",
                             float(row["tokens_per_second"]),
-                            int(time.time() * 1000),
+                            now_ms,
                             step,
                         ),
-                    ],
+                    ]
                 )
+                if len(batch) >= 750:
+                    client.log_batch(run_id, metrics=batch)
+                    batch = []
+            if batch:
+                client.log_batch(run_id, metrics=batch)
 
 
 def _mapping(config: dict[str, object], key: str) -> dict[str, Any]:

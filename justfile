@@ -28,3 +28,7 @@ test-db:
 # Run repro CLI
 repro *args:
     uv run repro {{args}}
+
+# Check status, throughput, and ETA of running W2V/repro jobs
+status *args:
+    tools/w2v_status.sh {{args}}

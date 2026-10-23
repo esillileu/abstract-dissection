@@ -79,6 +79,138 @@ def test_table2_evaluation_cache_requires_matching_protocol_signature(tmp_path) 
     )
 
 
+def test_table2_evaluation_cache_seed_from_csv(tmp_path) -> None:
+    csv_file = tmp_path / "table2-runs.csv"
+    run_id = "b" * 32
+    csv_file.write_text(
+        "training_words_millions,vector_dimension,seed,mlflow_run_id,"
+        "total_accuracy_percent,semantic_accuracy_percent,syntactic_accuracy_percent,"
+        "observed_training_seconds,included_questions,total_questions\n"
+        f"24,50,1,{run_id},12.5,8.0,15.0,30.0,10,12\n",
+        encoding="utf-8",
+    )
+    cache = Table2EvaluationCache(tmp_path / "cache", questions_sha256="first")
+    assert cache.load(run_id) is None
+    seeded = cache.seed_from_csv(csv_file)
+    assert seeded == 1
+    loaded = cache.load(run_id)
+    assert loaded is not None
+    assert loaded.mlflow_run_id == run_id
+    assert loaded.total_accuracy_percent == 12.5
+
+
+def test_table6_evaluation_cache_lifecycle_and_seeding(tmp_path) -> None:
+    from f2.suites.w2v1.table6 import Table6EvaluationCache, Table6RunResult
+
+    run_id = "c" * 32
+    result = Table6RunResult(
+        architecture="cbow",
+        embedding_dimension=1000,
+        seed=1,
+        mlflow_run_id=run_id,
+        source_table=6,
+        semantic_accuracy_percent=55.0,
+        syntactic_accuracy_percent=65.0,
+        total_accuracy_percent=60.0,
+        included_questions=17000,
+        total_questions=19544,
+        observed_training_seconds=1200.0,
+        paper_training_days=2.0,
+        paper_cpu_cores=140,
+    )
+    cache = Table6EvaluationCache(tmp_path / "cache", questions_sha256="qsha")
+    cache.store(result, lookup_identity={"digest": "d"})
+    assert cache.load(run_id) == result
+
+    # Signature mismatch
+    other = Table6EvaluationCache(tmp_path / "cache", questions_sha256="different")
+    assert other.load(run_id) is None
+
+    # CSV seeding
+    csv_file = tmp_path / "runs.csv"
+    run_id_2 = "d" * 32
+    csv_file.write_text(
+        "architecture,embedding_dimension,seed,mlflow_run_id,source_table,"
+        "semantic_accuracy_percent,syntactic_accuracy_percent,total_accuracy_percent,"
+        "included_questions,total_questions,observed_training_seconds,paper_training_days,paper_cpu_cores\n"
+        f"skipgram,1000,7,{run_id_2},6,60.0,70.0,65.0,18000,19544,2000.0,2.5,125\n",
+        encoding="utf-8",
+    )
+    fresh_cache = Table6EvaluationCache(tmp_path / "fresh", questions_sha256="qsha")
+    assert fresh_cache.seed_from_csv(csv_file) == 1
+    loaded_2 = fresh_cache.load(run_id_2)
+    assert loaded_2 is not None
+    assert loaded_2.architecture == "skipgram"
+    assert loaded_2.seed == 7
+
+
+def test_table3_table4_table5_table7_evaluation_caches(tmp_path) -> None:
+    from f2.suites.w2v1.table3 import Table3EvaluationCache, Table3RunResult
+    from f2.suites.w2v1.table4 import Table4EvaluationCache, Table4RunResult
+    from f2.suites.w2v1.table5 import Table5EvaluationCache, Table5RunResult
+    from f2.suites.w2v1.table7 import Table7EvaluationCache, Table7RunResult
+
+    # Table 3
+    t3_id = "3" * 32
+    t3_res = Table3RunResult(
+        "cbow",
+        "wmt",
+        1,
+        t3_id,
+        20.0,
+        50.0,
+        35.0,
+        40.0,
+        500,
+        1000,
+        500,
+        1000,
+        400,
+        8000,
+        100.0,
+    )
+    t3_cache = Table3EvaluationCache(
+        tmp_path / "t3", questions_sha256="q", msr_sha256="m"
+    )
+    t3_cache.store(t3_res, lookup_identity={})
+    assert t3_cache.load(t3_id) == t3_res
+    assert (
+        Table3EvaluationCache(
+            tmp_path / "t3", questions_sha256="diff", msr_sha256="m"
+        ).load(t3_id)
+        is None
+    )
+
+    # Table 4
+    t4_id = "4" * 32
+    t4_res = Table4RunResult(
+        "skipgram", "lm1b", 7, t4_id, 45.0, 55.0, 50.0, 18000, 19544, 500.0
+    )
+    t4_cache = Table4EvaluationCache(tmp_path / "t4", questions_sha256="q")
+    t4_cache.store(t4_res, lookup_identity={})
+    assert t4_cache.load(t4_id) == t4_res
+
+    # Table 5
+    t5_id = "5" * 32
+    t5_res = Table5RunResult(
+        "cbow", 300, 783, 3, "wmt", 19, t5_id, 15.0, 50.0, 32.0, 17000, 19544, 300.0
+    )
+    t5_cache = Table5EvaluationCache(tmp_path / "t5", questions_sha256="q")
+    t5_cache.store(t5_res, lookup_identity={})
+    assert t5_cache.load(t5_id) == t5_res
+
+    # Table 7
+    t7_id = "7" * 32
+    t7_res = Table7RunResult(
+        "skipgram", 640, 50, 1, "holmes", 1, t7_id, 48.0, 50.0, 47.0, 1040, 50.0
+    )
+    t7_cache = Table7EvaluationCache(
+        tmp_path / "t7", questions_sha256="q", answers_sha256="a"
+    )
+    t7_cache.store(t7_res, lookup_identity={})
+    assert t7_cache.load(t7_id) == t7_res
+
+
 def test_table2_conditions_are_partitioned_by_corpus_source() -> None:
     runs = [
         SimpleNamespace(

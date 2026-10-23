@@ -1,4 +1,4 @@
-"""Phrase policy layered on the shared W2V epoch executor."""
+"""Phrase policy layered on the shared Word2Vec executor."""
 
 from __future__ import annotations
 
@@ -8,15 +8,19 @@ from pathlib import Path
 
 from repro_io.checksum import sha256_file
 
+from f2.suites.w2v.executor import Word2VecExecutor, Word2VecResult, _mapping
 from f2.suites.w2v.phrases import PhrasePolicy, materialize_phrase_corpus
-from f2.suites.w2v1.executor import W2V1Executor, W2V1Result, _mapping
 from repro_core.context import ExperimentContext
 
 
-class W2V2Executor(W2V1Executor):
+class W2V2Executor(Word2VecExecutor):
+    """W2V2 phrase executor extending Word2VecExecutor with phrase corpus materialization."""
+
     suite_name = "w2v2"
 
-    def run(self, config: dict[str, object], context: ExperimentContext) -> W2V1Result:
+    def run(
+        self, config: dict[str, object], context: ExperimentContext
+    ) -> Word2VecResult:
         resolved = dict(config)
         corpus = _mapping(config, "corpus")
         source = Path(str(corpus["path"]))
