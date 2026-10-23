@@ -1069,3 +1069,224 @@ fn run_replica(
     }
     Ok(report)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{ObjectiveKind, RngAlgorithm, VocabularyConfig};
+    use std::collections::BTreeMap;
+
+    fn test_fixture() -> (
+        Arc<Corpus>,
+        Arc<Vocabulary>,
+        NnlmTrainingConfig,
+        DownpourConfig,
+        NnlmModel,
+    ) {
+        let path = std::env::temp_dir().join(format!(
+            "nnlm-batch-test-{}-{}",
+            std::process::id(),
+            std::thread::current().name().unwrap_or("t")
+        ));
+        std::fs::write(&path, b"the quick brown fox jumps over the lazy dog\na quick dog jumps\n").unwrap();
+        let corpus = Arc::new(Corpus::create(path).unwrap());
+        let vocab = Arc::new(
+            Vocabulary::build(
+                &corpus,
+                &VocabularyConfig {
+                    initial_capacity: 16,
+                    hash_capacity: 31,
+                    min_count: 1,
+                    max_lexical_words: 0,
+                },
+            )
+            .unwrap(),
+        );
+        let config = NnlmTrainingConfig {
+            embedding_dimension: 32,
+            history_length: 4,
+            hidden_dimension: 64,
+            hidden_activation: HiddenActivation::Tanh,
+            epochs: 1,
+            thread_count: 1,
+            objective_kind: ObjectiveKind::HierarchicalSoftmax,
+            initial_learning_rate: 0.05,
+            observation_interval: 0,
+            root_seed: 42,
+            rng_algorithm: RngAlgorithm::Lcg,
+        };
+        let downpour = DownpourConfig {
+            parameter_server_shards: 1,
+            mini_batch_targets: 8,
+            adagrad_gamma: 0.05,
+            adagrad_epsilon: 1e-6,
+            queue_capacity: 16,
+            ..DownpourConfig::default()
+        };
+        let model = NnlmModel::create(&vocab, &config).unwrap();
+        (corpus, vocab, config, downpour, model)
+    }
+
+    #[test]
+    fn test_execute_batch_matches_single_sample_gradients() {
+        let (corpus, vocab, config, downpour, model) = test_fixture();
+        let shared = Arc::new(SharedParameters::new(&model));
+        let mut cache = ReplicaCache::new(shared.clone());
+
+        // Prepare a batch of 250 samples to test production batch size
+        let mut samples = Vec::new();
+        for i in 0..250 {
+            samples.push(BatchTarget {
+                history: vec![(i % 5) + 1, ((i + 1) % 5) + 1, ((i + 2) % 5) + 1, ((i + 3) % 5) + 1],
+                target: ((i + 4) % 5) + 1,
+                objective_count: (i + 1) as u64,
+            });
+        }
+
+        let p = config.embedding_dimension * config.history_length;
+        let mut scratch = ReplicaScratch::new(samples.len(), p, config.hidden_dimension);
+        let mut gradient = AccumulatedGradient::new(config.hidden_dimension, p);
+        let mut report = ReplicaReport { loss: 0.0, targets: 0, observations: Vec::new() };
+        let processed = AtomicU64::new(0);
+        let start = Instant::now();
+        let (tx, _rx) = sync_channel::<Batch>(1);
+        let senders = [tx];
+
+        let execution = ReplicaExecution {
+            corpus: &corpus,
+            vocab: &vocab,
+            config: &config,
+            downpour: &downpour,
+            shared: &shared,
+            processed: &processed,
+            start,
+            epoch: 1,
+            senders: &senders,
+        };
+
+        // 1. Run execute_batch
+        execute_batch(
+            &samples,
+            &mut cache,
+            &mut scratch,
+            &mut gradient,
+            &mut report,
+            &execution,
+            0,
+            0,
+        ).unwrap();
+
+        // 2. Run single-sample forward_backward on fresh cache and accumulate
+        let mut expected_loss = 0.0;
+        let mut expected_hidden_weights = vec![0.0; config.hidden_dimension * p];
+        let mut expected_bias = vec![0.0; config.hidden_dimension];
+        let mut expected_output: BTreeMap<usize, Vec<Real>> = BTreeMap::new();
+        let mut expected_input: BTreeMap<usize, Vec<Real>> = BTreeMap::new();
+
+        for sample in &samples {
+            let mut single_cache = ReplicaCache::new(shared.clone());
+            let single_grad = forward_backward_parameters(
+                &mut single_cache,
+                &vocab,
+                config.hidden_activation,
+                &sample.history,
+                sample.target,
+            ).unwrap();
+
+            expected_loss += single_grad.loss;
+            let hw = single_grad.hidden_weights();
+            for (dest, src) in expected_hidden_weights.iter_mut().zip(&hw) {
+                *dest += src;
+            }
+            for (dest, src) in expected_bias.iter_mut().zip(&single_grad.hidden_bias) {
+                *dest += src;
+            }
+            for (node, row) in single_grad.output {
+                let entry = expected_output.entry(node).or_insert_with(|| vec![0.0; config.hidden_dimension]);
+                for (dest, src) in entry.iter_mut().zip(&row) {
+                    *dest += src;
+                }
+            }
+            for (id, row) in single_grad.embeddings {
+                let entry = expected_input.entry(id).or_insert_with(|| vec![0.0; config.embedding_dimension]);
+                for (dest, src) in entry.iter_mut().zip(&row) {
+                    *dest += src;
+                }
+            }
+        }
+
+        // 3. Compare loss
+        assert!(
+            (report.loss - expected_loss).abs() < 1e-5,
+            "Loss mismatch: batch={}, expected={}",
+            report.loss, expected_loss
+        );
+
+        // 4. Compare hidden bias
+        for j in 0..config.hidden_dimension {
+            let diff = (gradient.bias_row[j] - expected_bias[j]).abs();
+            assert!(
+                diff < 1e-5,
+                "Bias[{}] mismatch: batch={}, expected={}, diff={}",
+                j, gradient.bias_row[j], expected_bias[j], diff
+            );
+        }
+
+        // 5. Compare hidden weights
+        for j in 0..config.hidden_dimension {
+            let batch_row = &gradient.hidden_rows[j];
+            let exp_row = &expected_hidden_weights[j * p..(j + 1) * p];
+            for k in 0..p {
+                let diff = (batch_row[k] - exp_row[k]).abs();
+                assert!(
+                    diff < 1e-5,
+                    "HiddenWeight[{}, {}] mismatch: batch={}, expected={}, diff={}",
+                    j, k, batch_row[k], exp_row[k], diff
+                );
+            }
+        }
+
+        // 6. Compare output weights
+        let mut batch_output: BTreeMap<usize, Vec<Real>> = BTreeMap::new();
+        for (node, row) in &gradient.output_rows {
+            let entry = batch_output.entry(*node).or_insert_with(|| vec![0.0; config.hidden_dimension]);
+            for (dest, src) in entry.iter_mut().zip(row) {
+                *dest += src;
+            }
+        }
+        assert_eq!(batch_output.keys().collect::<Vec<_>>(), expected_output.keys().collect::<Vec<_>>());
+        for (node, exp_row) in &expected_output {
+            let b_row = &batch_output[node];
+            for j in 0..config.hidden_dimension {
+                let diff = (b_row[j] - exp_row[j]).abs();
+                assert!(
+                    diff < 1e-5,
+                    "Output[node={}, j={}] mismatch: batch={}, expected={}, diff={}",
+                    node, j, b_row[j], exp_row[j], diff
+                );
+            }
+        }
+
+        // 7. Compare input embeddings
+        let mut batch_input: BTreeMap<usize, Vec<Real>> = BTreeMap::new();
+        for (id, row) in &gradient.input_rows {
+            let entry = batch_input.entry(*id).or_insert_with(|| vec![0.0; config.embedding_dimension]);
+            for (dest, src) in entry.iter_mut().zip(row) {
+                *dest += src;
+            }
+        }
+        assert_eq!(batch_input.keys().collect::<Vec<_>>(), expected_input.keys().collect::<Vec<_>>());
+        for (id, exp_row) in &expected_input {
+            let b_row = &batch_input[id];
+            for k in 0..config.embedding_dimension {
+                let diff = (b_row[k] - exp_row[k]).abs();
+                assert!(
+                    diff < 1e-5,
+                    "Input[id={}, k={}] mismatch: batch={}, expected={}, diff={}",
+                    id, k, b_row[k], exp_row[k], diff
+                );
+            }
+        }
+    }
+}
+

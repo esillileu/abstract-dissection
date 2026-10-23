@@ -342,6 +342,7 @@ def analyze(
 
             client = MlflowClient(tracking_uri=resolve_tracking_uri(tracking_uri))
             exp_id = ensure_analysis_experiment(client)
+            corpora = (corpus,) if corpus is not None else None
             published = []
             if table == 7:
                 published = publish_table7_analysis(
@@ -349,23 +350,38 @@ def analyze(
                 )
             elif table == 6:
                 published = publish_table6_analysis(
-                    client, exp_id, paths.analysis_output("f2", "w2v1")
+                    client,
+                    exp_id,
+                    paths.analysis_output("f2", "w2v1"),
+                    corpora=corpora,
                 )
             elif table == 5:
                 published = publish_table5_analysis(
-                    client, exp_id, paths.analysis_output("f2", "w2v1")
+                    client,
+                    exp_id,
+                    paths.analysis_output("f2", "w2v1"),
+                    corpora=corpora,
                 )
             elif table == 4:
                 published = publish_table4_analysis(
-                    client, exp_id, paths.analysis_output("f2", "w2v1")
+                    client,
+                    exp_id,
+                    paths.analysis_output("f2", "w2v1"),
+                    corpora=corpora,
                 )
             elif table == 3:
                 published = publish_table3_analysis(
-                    client, exp_id, paths.analysis_output("f2", "w2v1")
+                    client,
+                    exp_id,
+                    paths.analysis_output("f2", "w2v1"),
+                    corpora=corpora,
                 )
             elif table == 2:
                 published = publish_table2_analysis(
-                    client, exp_id, paths.analysis_output("f2", "w2v1")
+                    client,
+                    exp_id,
+                    paths.analysis_output("f2", "w2v1"),
+                    corpora=corpora,
                 )
             typer.echo(
                 f"Published {len(published)} analysis runs to MLflow experiment '{ANALYSIS_EXPERIMENT_NAME}'"

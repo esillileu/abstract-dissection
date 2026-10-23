@@ -18,7 +18,12 @@ from repro_core.context import RuntimePaths
 from repro_mlflow.artifact_cache import MlflowArtifactCache, artifact_download_progress
 
 from .analysis import ensure_questions_words, observed_training_seconds
-from .table4 import complete_conditions as table4_conditions
+from .table4 import (
+    Table4EvaluationCache,
+)
+from .table4 import (
+    complete_conditions as table4_conditions,
+)
 
 _REFERENCE = {
     "cbow": (1000, 57.3, 68.9, 63.7, 2, 140),
@@ -204,6 +209,9 @@ def analyze_table6_sources(
     evaluation_cache = Table6EvaluationCache(
         paths.cache_root / "f2/w2v1/table6", questions_sha256=digest
     )
+    table4_cache = Table4EvaluationCache(
+        paths.cache_root / "f2/w2v1/table4", questions_sha256=digest
+    )
     evaluation_cache.seed_from_csv(output / "runs.csv")
     records = []
     cache_hits = 0
@@ -221,6 +229,34 @@ def analyze_table6_sources(
                     records.append(cached)
                     cache_hits += 1
                     continue
+                if architecture == "nnlm":
+                    t4_cached = table4_cache.load(run.info.run_id)
+                    if (
+                        t4_cached is not None
+                        and t4_cached.seed == seed
+                        and t4_cached.architecture == "nnlm-d100"
+                    ):
+                        record = Table6RunResult(
+                            architecture,
+                            dimension,
+                            seed,
+                            run.info.run_id,
+                            4,
+                            t4_cached.semantic_accuracy_percent,
+                            t4_cached.syntactic_accuracy_percent,
+                            t4_cached.total_accuracy_percent,
+                            t4_cached.included_questions,
+                            t4_cached.total_questions,
+                            t4_cached.observed_training_seconds,
+                            days,
+                            cores,
+                        )
+                        evaluation_cache.store(
+                            record, lookup_identity={"source": "table4-cache"}
+                        )
+                        records.append(record)
+                        cache_hits += 1
+                        continue
                 cache_misses += 1
                 lookup = load_lookup_artifact(cache.get(run.info.run_id, "lookup"))
                 result = evaluate_analogies(

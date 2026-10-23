@@ -9,6 +9,7 @@ from unittest.mock import MagicMock
 from f2.suites.w2v1.publish_analysis import (
     ANALYSIS_EXPERIMENT_NAME,
     ensure_analysis_experiment,
+    publish_table3_analysis,
     publish_table4_analysis,
     publish_table6_analysis,
     publish_table7_analysis,
@@ -77,6 +78,62 @@ def test_publish_table7_analysis(tmp_path: Path) -> None:
     assert client.set_terminated.called
 
 
+def test_publish_table3_analysis(tmp_path: Path) -> None:
+    client = MagicMock()
+    client.create_run.return_value = MagicMock(info=MagicMock(run_id="run-t3-1"))
+
+    wmt_dir = tmp_path / "wmt" / "table3"
+    wmt_dir.mkdir(parents=True)
+    csv_file = wmt_dir / "runs.csv"
+    with csv_file.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(
+            f,
+            fieldnames=[
+                "architecture",
+                "corpus",
+                "seed",
+                "mlflow_run_id",
+                "semantic_accuracy_percent",
+                "syntactic_accuracy_percent",
+                "total_accuracy_percent",
+                "msr_accuracy_percent",
+                "semantic_included",
+                "semantic_total",
+                "syntactic_included",
+                "syntactic_total",
+                "msr_included",
+                "msr_total",
+                "observed_training_seconds",
+            ],
+        )
+        writer.writeheader()
+        writer.writerow(
+            {
+                "architecture": "nnlm",
+                "corpus": "wmt",
+                "seed": "19",
+                "mlflow_run_id": "99d5a0c4c5044c8e942f8743c080152b",
+                "semantic_accuracy_percent": "5.84",
+                "syntactic_accuracy_percent": "14.25",
+                "total_accuracy_percent": "10.71",
+                "msr_accuracy_percent": "16.09",
+                "semantic_included": "7683",
+                "semantic_total": "8869",
+                "syntactic_included": "10541",
+                "syntactic_total": "10675",
+                "msr_included": "6576",
+                "msr_total": "8000",
+                "observed_training_seconds": "173918.5",
+            }
+        )
+
+    run_ids = publish_table3_analysis(
+        client, "exp-analysis", tmp_path, corpora=("wmt",)
+    )
+    assert len(run_ids) == 2
+    assert client.log_metric.called
+
+
 def test_publish_table4_analysis(tmp_path: Path) -> None:
     client = MagicMock()
     client.create_run.return_value = MagicMock(info=MagicMock(run_id="run-t4-1"))
@@ -122,8 +179,43 @@ def test_publish_table4_analysis(tmp_path: Path) -> None:
             }
         )
 
+    fineweb_dir = tmp_path / "fineweb" / "table4"
+    fineweb_dir.mkdir(parents=True)
+    fw_csv = fineweb_dir / "runs.csv"
+    with fw_csv.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(
+            f,
+            fieldnames=[
+                "architecture",
+                "corpus",
+                "seed",
+                "mlflow_run_id",
+                "semantic_accuracy_percent",
+                "syntactic_accuracy_percent",
+                "total_accuracy_percent",
+                "included_questions",
+                "total_questions",
+                "observed_training_seconds",
+            ],
+        )
+        writer.writeheader()
+        writer.writerow(
+            {
+                "architecture": "nnlm-d100",
+                "corpus": "fineweb",
+                "seed": "7",
+                "mlflow_run_id": "6e964412233d47e6b658de102c103f7a",
+                "semantic_accuracy_percent": "9.90",
+                "syntactic_accuracy_percent": "37.96",
+                "total_accuracy_percent": "25.23",
+                "included_questions": "19544",
+                "total_questions": "19544",
+                "observed_training_seconds": "221399.8",
+            }
+        )
+
     run_ids = publish_table4_analysis(client, "exp-analysis", tmp_path)
-    assert len(run_ids) == 2  # 1 run + 1 summary run
+    assert len(run_ids) == 4  # 1 wmt + 1 wmt summary + 1 fineweb + 1 fineweb summary
     assert client.log_metric.called
 
 
