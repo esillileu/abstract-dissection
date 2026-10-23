@@ -48,10 +48,8 @@ def parse_run_spec(
         raise ValueError(f"W2V2 identity is missing: {', '.join(missing)}")
     training = mapping(raw, "training")
     objective = training.get("objective_kind")
-    if objective not in {"negative_sampling", "hierarchical_softmax"}:
-        raise ValueError(
-            f"unsupported W2V2 objective: {objective}; NCE is not substituted with NEG"
-        )
+    if objective not in {"negative_sampling", "hierarchical_softmax", "nce"}:
+        raise ValueError(f"unsupported W2V2 objective: {objective}")
     mode = raw.get("corpus_mode", "phrase")
     if mode not in {"word", "phrase"}:
         raise ValueError(f"unsupported W2V2 corpus_mode: {mode}")

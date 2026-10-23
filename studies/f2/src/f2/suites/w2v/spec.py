@@ -64,6 +64,8 @@ class Word2VecRunSpec:
         }
         if self.distribution is not None:
             resolved["distribution"] = self.distribution
+        if self.training.get("objective_kind") == "nce":
+            resolved["nce_objective_revision"] = 1
         return resolved
 
     def to_executor_config(self) -> dict[str, object]:

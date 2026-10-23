@@ -2593,7 +2593,7 @@
           "throughput": "report with hardware identity"
         }
       },
-      "notes": "Word-only; explicit word2vec_c subsampling; epochs=3 and dynamic radius=5 are reconstruction decisions. NCE-5 unsupported."
+      "notes": "Word-only; explicit word2vec_c subsampling; epochs=3 and dynamic radius=5 are reconstruction decisions. NCE-5 uses fixed Z=1 and lexical unigram^0.75 noise."
     },
     {
       "plan_experiment_id": "w2v2-table1-lm1b-reduced-r1-w2v2-word-skipgram-1b-objectives",
@@ -2617,7 +2617,7 @@
         },
         "approval_policy": "explicit approval required before large execution"
       },
-      "notes": "Word-only; explicit word2vec_c subsampling; epochs=3 and dynamic radius=5 are reconstruction decisions. NCE-5 unsupported."
+      "notes": "Word-only; explicit word2vec_c subsampling; epochs=3 and dynamic radius=5 are reconstruction decisions. NCE-5 uses fixed Z=1 and lexical unigram^0.75 noise."
     },
     {
       "plan_experiment_id": "w2v2-table1-umbc-reconstruction-r1-w2v2-word-skipgram-1b-objectives",
@@ -2641,7 +2641,7 @@
         },
         "approval_policy": "explicit approval required before large execution"
       },
-      "notes": "Word-only; explicit word2vec_c subsampling; epochs=3 and dynamic radius=5 are reconstruction decisions. NCE-5 unsupported."
+      "notes": "Word-only; explicit word2vec_c subsampling; epochs=3 and dynamic radius=5 are reconstruction decisions. NCE-5 uses fixed Z=1 and lexical unigram^0.75 noise."
     }
   ],
   "resource_bindings": [
@@ -3600,7 +3600,8 @@
         "hs-no-subsampling",
         "neg5-subsampling",
         "neg15-subsampling",
-        "hs-subsampling"
+        "hs-subsampling",
+        "nce5-no-subsampling"
       ],
       "training_tokens": 1000000000,
       "embedding_dimension": 300,
@@ -3612,7 +3613,7 @@
       ],
       "device": "cpu",
       "threads": 20,
-      "notes": "Table 1 word-only NEG/HS; NCE-5 unsupported. Planning is not execution approval."
+      "notes": "Table 1 word-only NEG/HS/NCE; NCE-5 uses fixed Z=1 and lexical unigram^0.75 noise. Planning is not execution approval."
     },
     {
       "plan_experiment_id": "w2v2-table1-lm1b-reduced-r1-w2v2-word-skipgram-1b-objectives",
@@ -3624,7 +3625,8 @@
         "hs-no-subsampling",
         "neg5-subsampling",
         "neg15-subsampling",
-        "hs-subsampling"
+        "hs-subsampling",
+        "nce5-no-subsampling"
       ],
       "training_tokens": 791844834,
       "embedding_dimension": 300,
@@ -3636,7 +3638,7 @@
       ],
       "device": "cpu",
       "threads": 20,
-      "notes": "Table 1 word-only NEG/HS; NCE-5 unsupported. Planning is not execution approval."
+      "notes": "Table 1 word-only NEG/HS/NCE; NCE-5 uses fixed Z=1 and lexical unigram^0.75 noise. Planning is not execution approval."
     },
     {
       "plan_experiment_id": "w2v2-table1-umbc-reconstruction-r1-w2v2-word-skipgram-1b-objectives",
@@ -3648,7 +3650,8 @@
         "hs-no-subsampling",
         "neg5-subsampling",
         "neg15-subsampling",
-        "hs-subsampling"
+        "hs-subsampling",
+        "nce5-no-subsampling"
       ],
       "training_tokens": 1000000000,
       "embedding_dimension": 300,
@@ -3660,7 +3663,7 @@
       ],
       "device": "cpu",
       "threads": 20,
-      "notes": "Table 1 word-only NEG/HS; NCE-5 unsupported. Planning is not execution approval."
+      "notes": "Table 1 word-only NEG/HS/NCE; NCE-5 uses fixed Z=1 and lexical unigram^0.75 noise. Planning is not execution approval."
     }
   ],
   "planned_run_slots": [

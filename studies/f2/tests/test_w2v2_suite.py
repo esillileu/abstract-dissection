@@ -112,14 +112,45 @@ def test_w2v2_phrase_run_completes_declared_schedule_and_reports(tmp_path):
     assert evaluation["phrase"]["pca"]
 
 
-def test_w2v2_rejects_nce_substitution():
+def test_w2v2_supports_independent_nce():
     definition = DEFINITION.get_suite("w2v2")
-    with pytest.raises(ValueError, match="NCE is not substituted"):
-        definition.load_run_spec(
-            definition.config_root / "e02_table3_phrase_skipgram.yaml",
-            atomic_run_id="wmt--neg5-subsampling",
-            overrides={"training": {"objective_kind": "nce"}},
+    source = definition.config_root / "e01_table1_word_skipgram.yaml"
+    nce = definition.load_run_spec(
+        source, atomic_run_id="wmt--nce5-no-subsampling", overrides={}
+    )
+    neg = definition.load_run_spec(
+        source, atomic_run_id="wmt--neg5-no-subsampling", overrides={}
+    )
+    assert nce.training["objective_kind"] == "nce"
+    assert (
+        nce.to_executor_config()["identity"]["config_digest"]
+        != neg.to_executor_config()["identity"]["config_digest"]
+    )
+
+
+def test_nce_revision_changes_only_nce_run_identity():
+    from f2.suites.w2v.spec import _digest
+
+    definition = DEFINITION.get_suite("w2v2")
+    source = definition.config_root / "e01_table1_word_skipgram.yaml"
+    for condition in (
+        "nce5-no-subsampling",
+        "neg5-no-subsampling",
+        "hs-no-subsampling",
+    ):
+        spec = definition.load_run_spec(
+            source, atomic_run_id=f"wmt--{condition}", overrides={}
         )
+        resolved = spec.resolved_config()
+        previous = dict(resolved)
+        previous.pop("nce_objective_revision", None)
+        current_digest = spec.to_executor_config()["identity"]["config_digest"]
+        if condition.startswith("nce"):
+            assert resolved["nce_objective_revision"] == 1
+            assert current_digest != _digest(previous)
+        else:
+            assert "nce_objective_revision" not in resolved
+            assert current_digest == _digest(previous)
 
 
 def test_canonical_phrase_training_uses_twenty_workers() -> None:
@@ -151,6 +182,7 @@ def test_evaluation_resources_do_not_change_w2v2_training_identity() -> None:
 
 
 TABLE1_CONDITIONS = (
+    "nce5-no-subsampling",
     "neg5-no-subsampling",
     "neg15-no-subsampling",
     "hs-no-subsampling",
@@ -169,7 +201,7 @@ def test_table1_plans_and_catalog_slots_are_distinct_and_bound():
     plans = Planner(definition).build(
         RunSelection(experiment_ids=("e01",)), RunOptions()
     )
-    assert len(plans) == 54
+    assert len(plans) == 63
     manifest = read_manifest(Path(__file__).parents[1] / "catalog/w2v.json")
     slots = {row["planned_run_slot_id"]: row for row in manifest["planned_run_slots"]}
     seen = set()
@@ -200,6 +232,8 @@ def test_table1_plans_and_catalog_slots_are_distinct_and_bound():
         assert objective == (
             "hierarchical_softmax"
             if condition.startswith("hs")
+            else "nce"
+            if condition.startswith("nce")
             else "negative_sampling"
         )
         assert config["training"]["negative_sample_count"] == (
@@ -306,7 +340,7 @@ def test_table1_word_training_restore_and_rerun(tmp_path, monkeypatch, condition
         ({"subsampling_policy": "paper"}, "subsampling_policy"),
         ({"subsampling_policy": None}, "subsampling_policy"),
         ({"phrase_detection": {}}, "phrase_detection"),
-        ({"training": {"objective_kind": "nce"}}, "NCE is not substituted"),
+        ({"training": {"objective_kind": "unknown"}}, "unsupported W2V2 objective"),
     ],
 )
 def test_table1_rejects_unsupported_policies(override, message):
@@ -332,7 +366,7 @@ def test_table3_all_conditions_and_seeds_share_phrase_cache(tmp_path):
     )
     phrase_hashes = set()
     for seed in (1, 7):
-        for condition in TABLE1_CONDITIONS:
+        for condition in TABLE1_CONDITIONS[1:]:
             spec = definition.load_run_spec(
                 definition.config_root / "e02_table3_phrase_skipgram.yaml",
                 atomic_run_id=f"wmt--{condition}",

@@ -36,6 +36,7 @@ resources:
     identity: {execution_plan_id: w2v2-table1-umbc-reconstruction-r1}
 
 conditions:
+  nce5-no-subsampling: &nce5-no-subsampling {training: {objective_kind: nce, negative_sample_count: 5, subsampling_threshold: 0.0}}
   neg5-no-subsampling: &neg5-no-subsampling {training: {negative_sample_count: 5, subsampling_threshold: 0.0}}
   neg15-no-subsampling: &neg15-no-subsampling {training: {negative_sample_count: 15, subsampling_threshold: 0.0}}
   hs-no-subsampling: &hs-no-subsampling {training: {objective_kind: hierarchical_softmax, negative_sample_count: 0, subsampling_threshold: 0.0}}
@@ -62,3 +63,6 @@ variants:
   umbc--neg5-subsampling: {<<: [*umbc, *neg5-subsampling], corpus: {lexical_token_budget: 1000000000}}
   umbc--neg15-subsampling: {<<: [*umbc, *neg15-subsampling], corpus: {lexical_token_budget: 1000000000}}
   umbc--hs-subsampling: {<<: [*umbc, *hs-subsampling], corpus: {lexical_token_budget: 1000000000}}
+  wmt--nce5-no-subsampling: {<<: [*wmt, *nce5-no-subsampling], corpus: {lexical_token_budget: 1000000000}}
+  lm1b--nce5-no-subsampling: {<<: [*lm1b, *nce5-no-subsampling], corpus: {lexical_token_budget: 791844834}}
+  umbc--nce5-no-subsampling: {<<: [*umbc, *nce5-no-subsampling], corpus: {lexical_token_budget: 1000000000}}
