@@ -4,7 +4,7 @@ use crate::{
     identity::StableDigest,
     model::{EmbeddingKind, Model, SigmoidTable},
     training::worker::{Worker, WorkerState},
-    vocab::{NegativeSampler, Vocabulary, VocabularyState},
+    vocab::{NceNoiseSampler, NegativeSampler, Vocabulary, VocabularyState},
 };
 use std::{
     sync::{
@@ -66,6 +66,7 @@ pub struct Trainer {
     pub vocab: Arc<Vocabulary>,
     pub model: Arc<Model>,
     pub negative_sampler: NegativeSampler,
+    pub nce_noise_sampler: NceNoiseSampler,
     pub sigmoid_table: SigmoidTable,
     pub config: TrainingConfig,
     pub processed_tokens: AtomicU64,
@@ -111,6 +112,9 @@ fn config_digest(config: &TrainingConfig) -> String {
     ] {
         hash.value(value);
     }
+    if config.objective_kind == ObjectiveKind::Nce {
+        hash.update(b"nce-objective-snapshot-v1");
+    }
     hash.finish()
 }
 
@@ -134,7 +138,10 @@ impl Trainer {
         if config.validate() != Status::Ok
             || model.vocab_size != vocab.entries.len()
             || model.embedding_dimension != config.embedding_dimension
-            || (config.objective_kind == ObjectiveKind::NegativeSampling && vocab.entries.len() < 2)
+            || (matches!(
+                config.objective_kind,
+                ObjectiveKind::NegativeSampling | ObjectiveKind::Nce
+            ) && vocab.entries.len() < 2)
         {
             return Err(Status::InvalidArgument);
         }
@@ -149,12 +156,18 @@ impl Trainer {
             Some(digest) => digest,
             None => corpus.digest()?,
         };
+        let nce_noise_sampler = if config.objective_kind == ObjectiveKind::Nce {
+            NceNoiseSampler::initialize(&vocab)?
+        } else {
+            NceNoiseSampler::default()
+        };
         Ok(Self {
             corpus,
             corpus_digest,
             vocab,
             model,
             negative_sampler,
+            nce_noise_sampler,
             sigmoid_table,
             config: config.clone(),
             processed_tokens: AtomicU64::new(0),

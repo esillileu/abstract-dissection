@@ -74,6 +74,7 @@ fn run_fixed_step(kind: ModelKind, objective: ObjectiveKind) -> StepOutput {
         vocab: Arc::clone(&vocab),
         model: Arc::clone(&model),
         negative_sampler,
+        nce_noise_sampler: Default::default(),
         sigmoid_table,
         config,
         processed_tokens: AtomicU64::new(0),
@@ -215,6 +216,7 @@ fn c_hs_boundary_policy() {
         corpus_digest: String::new(),
         vocab: Arc::clone(&vocab),
         model: Arc::clone(&model),
+        nce_noise_sampler: Default::default(),
         negative_sampler: NegativeSampler::default(),
         sigmoid_table: SigmoidTable::initialize(1000, 6.0).unwrap(),
         config,
@@ -267,6 +269,7 @@ fn c_negative_boundary_fallback() {
         corpus_digest: String::new(),
         vocab: Arc::clone(&vocab),
         model: Arc::clone(&model),
+        nce_noise_sampler: Default::default(),
         negative_sampler: NegativeSampler { table: vec![0; 7] },
         sigmoid_table: SigmoidTable {
             values: vec![0.5; 3],

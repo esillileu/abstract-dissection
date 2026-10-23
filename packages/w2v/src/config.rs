@@ -45,6 +45,7 @@ pub enum ModelKind {
 pub enum ObjectiveKind {
     HierarchicalSoftmax = 0,
     NegativeSampling = 1,
+    Nce = 2,
 }
 #[repr(i32)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -182,8 +183,12 @@ impl TrainingConfig {
             || self.sigmoid_max <= 0.0
             || self.sigmoid_table_size < 2
             || self.embedding_dimension > usize::MAX / size_of::<Real>()
+            || (matches!(
+                self.objective_kind,
+                ObjectiveKind::NegativeSampling | ObjectiveKind::Nce
+            ) && self.negative_sample_count == 0)
             || (self.objective_kind == ObjectiveKind::NegativeSampling
-                && (self.negative_sample_count == 0 || self.negative_table_size == 0))
+                && self.negative_table_size == 0)
         {
             Status::InvalidArgument
         } else {

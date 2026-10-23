@@ -11,6 +11,7 @@ use std::sync::atomic::AtomicU32;
 pub mod backend;
 mod cbow;
 mod hierarchical_softmax;
+pub mod nce;
 mod negative_sampling;
 mod skip_gram;
 pub mod worker;

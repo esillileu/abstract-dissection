@@ -1,7 +1,7 @@
 use super::{
     ModelStep, ObjectiveLoss, ObjectiveScratch, backend::ParameterBackend,
     backend::SharedModelBackend, context_position, context_radius_with_policy,
-    hierarchical_softmax, negative_sampling,
+    hierarchical_softmax, nce, negative_sampling,
 };
 use crate::config::{ObjectiveKind, Status};
 
@@ -45,6 +45,19 @@ pub fn train_with_backend<B: ParameterBackend>(
                     step.observe_objective,
                 ),
                 ObjectiveKind::NegativeSampling => negative_sampling::train_with_backend(
+                    step.trainer,
+                    backend,
+                    context_token,
+                    step.learning_rate,
+                    step.negative_rng,
+                    step.hidden,
+                    ObjectiveScratch {
+                        hidden_gradient: step.hidden_gradient,
+                        output_snapshot: step.output_snapshot,
+                    },
+                    step.observe_objective,
+                ),
+                ObjectiveKind::Nce => nce::train_with_backend(
                     step.trainer,
                     backend,
                     context_token,

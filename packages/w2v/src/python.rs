@@ -48,8 +48,9 @@ fn parse_objective_kind(value: &str) -> PyResult<ObjectiveKind> {
     match value {
         "hierarchical_softmax" => Ok(ObjectiveKind::HierarchicalSoftmax),
         "negative_sampling" => Ok(ObjectiveKind::NegativeSampling),
+        "nce" => Ok(ObjectiveKind::Nce),
         _ => Err(PyValueError::new_err(
-            "objective_kind must be 'hierarchical_softmax' or 'negative_sampling'",
+            "objective_kind must be 'hierarchical_softmax', 'negative_sampling' or 'nce'",
         )),
     }
 }
