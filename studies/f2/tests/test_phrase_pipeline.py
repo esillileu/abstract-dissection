@@ -9,6 +9,7 @@ import tracemalloc
 from collections import Counter
 from concurrent.futures import ProcessPoolExecutor
 from itertools import pairwise
+from pathlib import Path
 
 import pytest
 
@@ -161,3 +162,12 @@ def test_unique_bigram_growth_does_not_grow_python_count_tables(tmp_path):
 def test_invalid_threshold_schedule(thresholds):
     with pytest.raises(ValueError):
         PhrasePolicy(2, 1, 1, thresholds=thresholds)
+
+
+def test_full_benchmark_does_not_accept_fixture():
+    from f2.suites.w2v.evaluate import verify_phrase_questions
+
+    with pytest.raises(ValueError, match="3218"):
+        verify_phrase_questions(
+            Path(__file__).parent / "fixtures/questions-phrases.txt"
+        )

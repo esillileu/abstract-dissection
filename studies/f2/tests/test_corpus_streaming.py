@@ -6,7 +6,9 @@ import io
 import random
 import re
 import tracemalloc
+from pathlib import Path
 
+import numpy as np
 import pytest
 
 from f2.suites.w2v.corpus import _copy_corpus_prefix
@@ -72,3 +74,49 @@ def test_materializer_long_line_and_whitespace_use_bounded_memory(tmp_path):
         peaks.append(tracemalloc.get_traced_memory()[1])
         tracemalloc.stop()
     assert peaks[1] < peaks[0] * 2 + 1_000_000
+
+
+def test_row_index_handles_many_queries_without_repeated_scans(tmp_path, monkeypatch):
+    import gc
+    import sqlite3
+
+    from f2.suites.w2v import artifacts
+    from repro_core.context import RuntimePaths
+
+    monkeypatch.setattr(
+        RuntimePaths,
+        "from_environment",
+        lambda: type("Paths", (), {"cache_root": tmp_path})(),
+    )
+    tokens = [f"word-{i}".encode() for i in range(10000)]
+    packed = np.frombuffer(b"".join(tokens), dtype=np.uint8)
+    offsets = np.array([0, *np.cumsum([len(t) for t in tokens])], dtype=np.uint64)
+    lookup = artifacts.LookupEmbeddings(
+        np.ones((len(tokens), 2), dtype=np.float32),
+        packed,
+        offsets,
+        np.ones(len(tokens)),
+        {},
+    )
+    assert lookup.row(tokens[-1]) == len(tokens) - 1
+    directory = Path(lookup._index.execute("PRAGMA database_list").fetchone()[2]).parent
+
+    # Each subsequent query must use a primary-key index, never token-array scans.
+    class NoRead:
+        def __getitem__(self, index):
+            pytest.fail("lookup rescanned token bytes")
+
+    lookup.token_bytes = NoRead()
+    for i in range(0, 10000, 7):
+        assert lookup.row(tokens[i]) == i
+    assert lookup.row(b"missing") is None
+    plan = lookup._index.execute(
+        "EXPLAIN QUERY PLAN SELECT row FROM rows WHERE token=?", (tokens[-1],)
+    ).fetchone()
+    assert "PRIMARY KEY" in plan[-1]
+    connection = lookup._index
+    del lookup
+    gc.collect()
+    assert not directory.exists()
+    with pytest.raises(sqlite3.ProgrammingError):
+        connection.execute("SELECT 1")

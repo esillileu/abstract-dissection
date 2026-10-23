@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import asdict
+from itertools import islice
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +17,34 @@ from .evaluation import (
     parse_analogy_questions,
     pca_projection,
 )
+
+PHRASE_QUESTIONS_SHA256 = (
+    "55cfc0894d0fe6cf974d106da3e09b5fb2fa6125b6ddc633d06e298dc5aa7901"
+)
+PHRASE_QUESTIONS_SOURCE = "https://raw.githubusercontent.com/tmikolov/word2vec/ced016432bce8d62afbd11a112d353d13e422ea5/questions-phrases.txt"
+
+
+def verify_phrase_questions(path: Path) -> dict[str, object]:
+    """Require the published 3,218-question resource, never a fixture substitute."""
+    if not path.is_file():
+        raise ValueError(f"Table 3 evaluation data is not ready: {path}")
+    return _phrase_questions_identity(path.read_bytes())
+
+
+def _phrase_questions_identity(data: bytes) -> dict[str, object]:
+    digest = hashlib.sha256(data).hexdigest()
+    count = len(parse_analogy_questions(data.splitlines()))
+    if digest != PHRASE_QUESTIONS_SHA256 or count != 3218:
+        raise ValueError(
+            "Table 3 requires the original 3218 questions and pinned SHA256"
+        )
+    return {
+        "questions_sha256": digest,
+        "total_questions": count,
+        "source": PHRASE_QUESTIONS_SOURCE,
+        "verified": True,
+    }
+
 
 _IDENTITY_KEYS = (
     "schema_version",
@@ -35,10 +64,24 @@ def evaluate_lookup_artifact(
     phrase_separator: bytes = b"_",
 ) -> dict[str, Any]:
     """Evaluate one immutable lookup artifact without a training session."""
-    if suite not in {"w2v1-table2", "w2v1-table4", "w2v2", "w2v1-table7"}:
+    if suite not in {
+        "w2v1-table2",
+        "w2v1-table4",
+        "w2v2",
+        "w2v2-table3",
+        "w2v1-table7",
+    }:
         raise ValueError(
-            "evaluation policy must be w2v1-table2, w2v1-table4, w2v1-table7, or w2v2"
+            "evaluation policy must be w2v1-table2, w2v1-table4, w2v1-table7, w2v2-table3, or w2v2"
         )
+    questions = b""
+    if suite != "w2v1-table7":
+        if not questions_path.is_file():
+            raise ValueError(f"analogy questions do not exist: {questions_path}")
+        questions = questions_path.read_bytes()
+    benchmark = (
+        _phrase_questions_identity(questions) if suite == "w2v2-table3" else None
+    )
     lookup = load_lookup_artifact(lookup_path)
 
     if suite == "w2v1-table7":
@@ -80,13 +123,10 @@ def evaluate_lookup_artifact(
         }
 
     vocabulary_limit = 30_000 if suite == "w2v1-table2" else None
-    if not questions_path.is_file():
-        raise ValueError(f"analogy questions do not exist: {questions_path}")
     try:
         separator = phrase_separator.decode("ascii")
     except UnicodeDecodeError as exc:
         raise ValueError("phrase separator must be ASCII") from exc
-    questions = questions_path.read_bytes()
     analogy = evaluate_analogies(
         lookup,
         parse_analogy_questions(questions.splitlines()),
@@ -97,7 +137,9 @@ def evaluate_lookup_artifact(
         "questions_sha256": hashlib.sha256(questions).hexdigest(),
         "phrase_separator": separator,
     }
-    if suite != "w2v2":
+    if benchmark is not None:
+        evaluation_identity.update(benchmark)
+    if suite not in {"w2v2", "w2v2-table3"}:
         evaluation_identity["vocabulary_limit"] = vocabulary_limit
     payload: dict[str, Any] = {
         "suite": suite,
@@ -110,7 +152,7 @@ def evaluate_lookup_artifact(
             "categories": [asdict(category) for category in analogy.categories],
         },
     }
-    if suite == "w2v2":
+    if suite in {"w2v2", "w2v2-table3"}:
         payload["phrase"] = _phrase_report(lookup, phrase_separator)
     return payload
 
@@ -128,11 +170,16 @@ def write_evaluation_report(payload: dict[str, Any], output_path: Path) -> Path:
 
 
 def _phrase_report(lookup: LookupEmbeddings, separator: bytes) -> dict[str, object]:
-    phrase_tokens = [
-        token
-        for row in range(lookup.counts.size)
-        if separator and separator in (token := _token_at(lookup, row))
-    ][:8]
+    phrase_tokens = list(
+        islice(
+            (
+                token
+                for row in range(lookup.counts.size)
+                if separator and separator in (token := _token_at(lookup, row))
+            ),
+            8,
+        )
+    )
     neighbors = {
         token.hex(): [
             asdict(item) | {"token": item.token.hex()}

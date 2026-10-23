@@ -6,7 +6,9 @@ import hashlib
 import json
 import os
 import shutil
+import sqlite3
 import tempfile
+import weakref
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -306,19 +308,58 @@ class LookupEmbeddings:
     manifest: dict[str, Any]
 
     def __post_init__(self) -> None:
-        self._rows = {
-            bytes(
-                self.token_bytes[self.token_offsets[i] : self.token_offsets[i + 1]]
-            ): i
-            for i in range(self.counts.size)
-        }
+        self._index: sqlite3.Connection | None = None
 
     def row(self, token: bytes) -> int | None:
-        return self._rows.get(token)
+        if self._index is None:
+            from repro_core.context import RuntimePaths
+
+            root = RuntimePaths.from_environment().cache_root / "f2/w2v/lookup-index"
+            root.mkdir(parents=True, exist_ok=True)
+            directory = tempfile.TemporaryDirectory(dir=root)
+            connection = sqlite3.connect(
+                Path(directory.name) / "rows.sqlite", check_same_thread=False
+            )
+            try:
+                connection.execute("PRAGMA cache_size=-16384")
+                connection.execute("PRAGMA journal_mode=OFF")
+                connection.execute(
+                    "CREATE TABLE rows (token BLOB PRIMARY KEY, row INTEGER) WITHOUT ROWID"
+                )
+                connection.executemany(
+                    "INSERT OR IGNORE INTO rows VALUES (?,?)",
+                    (
+                        (
+                            bytes(
+                                self.token_bytes[
+                                    self.token_offsets[i] : self.token_offsets[i + 1]
+                                ]
+                            ),
+                            i,
+                        )
+                        for i in range(self.counts.size)
+                    ),
+                )
+                connection.commit()
+            except BaseException:
+                connection.close()
+                directory.cleanup()
+                raise
+            self._index = connection
+            weakref.finalize(self, _close_lookup_index, connection, directory)
+        result = self._index.execute(
+            "SELECT row FROM rows WHERE token=?", (token,)
+        ).fetchone()
+        return None if result is None else int(result[0])
 
     def vector(self, token: bytes) -> np.ndarray | None:
         row = self.row(token)
         return None if row is None else self.embeddings[row]
+
+
+def _close_lookup_index(connection, directory):
+    connection.close()
+    directory.cleanup()
 
 
 def load_lookup_artifact(

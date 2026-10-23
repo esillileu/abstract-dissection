@@ -112,13 +112,15 @@ def question_relations(
 def category_inputs(lookup: LookupEmbeddings, question_bytes: bytes):
     if hashlib.sha256(question_bytes).hexdigest() != QUESTIONS_WORDS_SHA256:
         raise ValueError("Question checksum mismatch")
-    rows = _analogy_rows(lookup, 82000)  # Recorded Table 3 evaluation boundary.
+    questions = parse_analogy_questions(question_bytes.splitlines())
+    wanted = {token.upper() for q in questions for token in _analogy_tokens(q)}
+    rows = _analogy_rows(lookup, 82000, wanted=wanted)  # Recorded evaluation boundary.
     groups = {}
     for category in CATEGORIES:
         pairs = set()
         valid = []
         total = 0
-        for q in parse_analogy_questions(question_bytes.splitlines()):
+        for q in questions:
             if q.category != category:
                 continue
             total += 1
@@ -146,7 +148,12 @@ def decode_tokens(lookup: LookupEmbeddings) -> list[bytes]:
 
 def word_inventory(lookup, questions, groups, tokens):
     inventory = []
-    evaluation_rows = _analogy_rows(lookup, 82000)
+    wanted = {
+        token.upper()
+        for q in parse_analogy_questions(questions.splitlines())
+        for token in _analogy_tokens(q)
+    }
+    evaluation_rows = _analogy_rows(lookup, 82000, wanted=wanted)
     for category in CATEGORIES:
         words = sorted(
             {

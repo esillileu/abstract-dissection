@@ -24,7 +24,6 @@ from f2.suites.w2v.evaluation import (
     _analogy_predictions,
     _analogy_rows,
     _analogy_tokens,
-    _normalized_embeddings,
     parse_analogy_questions,
 )
 from repro_core.context import RuntimePaths
@@ -92,7 +91,8 @@ def inventory(paths, questions):
             for name in ("counts", "token_bytes", "token_offsets"):
                 if not np.array_equal(getattr(sample, name), getattr(lookup, name)):
                     raise ValueError("Model/seed vocabulary differs")
-        rows = _analogy_rows(sample, 82000)
+        wanted = {token.upper() for q in questions for token in _analogy_tokens(q)}
+        rows = _analogy_rows(sample, 82000, wanted=wanted)
         mapped = [
             tuple(rows.get(t.upper()) for t in _analogy_tokens(q)) for q in questions
         ]
@@ -362,11 +362,11 @@ def evaluate(corpus, data, questions, common, paths, cache):
             or baseline["signature"]["vocabulary_limit"] != 82000
         ):
             raise ValueError("Baseline identity mismatch")
-        normalized = _normalized_embeddings(lookup.embeddings[:82000], dtype=np.float32)
+        embeddings = lookup.embeddings[:82000]
         outcomes = dict(
             zip(
                 valid,
-                _analogy_predictions(normalized, [mapped[i] for i in valid], 256),
+                _analogy_predictions(embeddings, [mapped[i] for i in valid], 256),
                 strict=True,
             )
         )

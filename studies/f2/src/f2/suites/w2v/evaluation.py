@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from heapq import nsmallest
 from typing import Iterable, Protocol, Sequence
 
 import numpy as np
@@ -111,8 +112,10 @@ def evaluate_analogies(
         if vocabulary_limit < 1:
             raise ValueError("analogy vocabulary_limit must be positive")
         row_count = min(row_count, vocabulary_limit)
-    normalized = _normalized_embeddings(lookup.embeddings[:row_count], dtype=np.float32)
-    analogy_rows = _analogy_rows(lookup, row_count)
+    wanted = {
+        token.upper() for question in questions for token in _analogy_tokens(question)
+    }
+    analogy_rows = _analogy_rows(lookup, row_count, wanted=wanted)
     category_counts: dict[str, list[int]] = {}
     valid: list[tuple[AnalogyQuestion, tuple[int, int, int, int]]] = []
     for question in questions:
@@ -126,7 +129,9 @@ def evaluate_analogies(
 
     question_rows = [item[1] for item in valid]
     for (question, row), (prediction, positive) in zip(
-        valid, _analogy_predictions(normalized, question_rows, batch_size), strict=True
+        valid,
+        _analogy_predictions(lookup.embeddings[:row_count], question_rows, batch_size),
+        strict=True,
     ):
         category_counts[question.category][2] += int(positive and prediction == row[3])
 
@@ -150,26 +155,42 @@ def evaluate_analogies(
     )
 
 
+EVALUATION_CHUNK_ROWS = 4096
+
+
 def _analogy_predictions(
-    normalized: np.ndarray,
+    embeddings: np.ndarray,
     question_rows: Sequence[tuple[int, int, int, int]],
     batch_size: int,
 ) -> Iterable[tuple[int, bool]]:
-    """Shared compute-accuracy scoring for aggregate and question-level analysis."""
+    """Scan candidates in fixed blocks, keeping original vocabulary tie order."""
     for start in range(0, len(question_rows), batch_size):
         rows = np.asarray(question_rows[start : start + batch_size], dtype=np.int64)
-        queries = (
-            normalized[rows[:, 1]] - normalized[rows[:, 0]] + normalized[rows[:, 2]]
+        selected = _normalized_embeddings(
+            embeddings[rows[:, :3].ravel()], dtype=np.float32
         )
-        scores = normalized @ queries.T
+        selected = selected.reshape(len(rows), 3, embeddings.shape[1])
+        queries = selected[:, 1] - selected[:, 0] + selected[:, 2]
+        best = np.full(len(rows), -np.inf, dtype=np.float32)
+        predictions = np.zeros(len(rows), dtype=np.int64)
         columns = np.arange(len(rows))
-        for column in range(3):
-            scores[rows[:, column], columns] = -np.inf
-        predictions = np.argmax(scores, axis=0)
-        positive = np.max(scores, axis=0) > 0.0
+        for offset in range(0, len(embeddings), EVALUATION_CHUNK_ROWS):
+            block = _normalized_embeddings(
+                embeddings[offset : offset + EVALUATION_CHUNK_ROWS], dtype=np.float32
+            )
+            scores = block @ queries.T
+            for column in range(3):
+                excluded = rows[:, column] - offset
+                inside = (excluded >= 0) & (excluded < len(block))
+                scores[excluded[inside], columns[inside]] = -np.inf
+            local = np.argmax(scores, axis=0)
+            values = scores[local, columns]
+            better = values > best
+            predictions[better] = offset + local[better]
+            best[better] = values[better]
         yield from (
-            (int(row), bool(valid))
-            for row, valid in zip(predictions, positive, strict=True)
+            (int(row), bool(score > 0.0))
+            for row, score in zip(predictions, best, strict=True)
         )
 
 
@@ -488,40 +509,41 @@ def nearest_tokens(
         return ()
     if limit < 1:
         raise ValueError("neighbor limit must be positive")
-    normalized = _normalized_embeddings(lookup.embeddings)
-    scores = normalized @ normalized[row]
-    scores[row] = -np.inf
-    ranked = sorted(
-        (index for index in range(len(scores)) if np.isfinite(scores[index])),
-        key=lambda index: (-float(scores[index]), _token_at(lookup, index)),
-    )[:limit]
-    return tuple(
-        NearestNeighbor(_token_at(lookup, index), float(scores[index]))
-        for index in ranked
-    )
+    query = _normalized_embeddings(lookup.embeddings[[row]])[0]
+    return _nearest_query(lookup, query, {row}, limit)
+
+
+def _nearest_query(lookup, query, excluded, limit):
+    def candidates():
+        for offset in range(0, len(lookup.embeddings), EVALUATION_CHUNK_ROWS):
+            block = _normalized_embeddings(
+                lookup.embeddings[offset : offset + EVALUATION_CHUNK_ROWS]
+            )
+            scores = block @ query
+            for local, score in enumerate(scores):
+                row = offset + local
+                if row not in excluded and np.isfinite(score):
+                    yield (-float(score), _token_at(lookup, row), row)
+
+    ranked = nsmallest(limit, candidates())
+    return tuple(NearestNeighbor(token, -score) for score, token, _ in ranked)
 
 
 def additive_composition(
     lookup: VectorLookup, tokens: Sequence[bytes], *, limit: int = 10
 ) -> tuple[NearestNeighbor, ...]:
-    """Rank tokens nearest to the normalized sum of all supplied token vectors."""
+    """Rank tokens nearest to the normalized sum with bounded candidate memory."""
+    if limit < 1:
+        raise ValueError("neighbor limit must be positive")
     rows = [lookup.row(token) for token in tokens]
     if not tokens or any(row is None for row in rows):
         return ()
-    normalized = _normalized_embeddings(lookup.embeddings)
-    query = normalized[[int(row) for row in rows]].sum(axis=0)
+    rows = [int(row) for row in rows]
+    query = _normalized_embeddings(lookup.embeddings[rows]).sum(axis=0)
     norm = float(np.linalg.norm(query))
     if norm == 0.0:
         return ()
-    scores = normalized @ (query / norm)
-    scores[[int(row) for row in rows]] = -np.inf
-    ranked = sorted(
-        (index for index in range(len(scores)) if np.isfinite(scores[index])),
-        key=lambda index: (-float(scores[index]), _token_at(lookup, index)),
-    )[:limit]
-    return tuple(
-        NearestNeighbor(_token_at(lookup, i), float(scores[i])) for i in ranked
-    )
+    return _nearest_query(lookup, query / norm, set(rows), limit)
 
 
 def pca_projection(
@@ -582,21 +604,27 @@ def _combine_accuracy(
     )
 
 
-def _analogy_rows(lookup: VectorLookup, row_count: int) -> dict[bytes, int]:
+def _analogy_rows(
+    lookup: VectorLookup, row_count: int, *, wanted: set[bytes]
+) -> dict[bytes, int]:
+    row_count = min(row_count, len(lookup.embeddings))
     token_bytes = getattr(lookup, "token_bytes", None)
     offsets = getattr(lookup, "token_offsets", None)
     if token_bytes is not None and offsets is not None:
         rows: dict[bytes, int] = {}
         for row in range(row_count):
             token = bytes(token_bytes[offsets[row] : offsets[row + 1]]).upper()
-            rows.setdefault(token, row)
+            if token in wanted:
+                rows.setdefault(token, row)
         return rows
 
     # Lightweight in-memory test lookups do not expose packed token arrays.
     tokens = getattr(lookup, "tokens", ())
     if tokens:
         return {
-            bytes(token).upper(): row for row, token in enumerate(tokens[:row_count])
+            bytes(token).upper(): row
+            for row, token in enumerate(tokens[:row_count])
+            if bytes(token).upper() in wanted
         }
     raise ValueError("analogy evaluation requires lookup token arrays")
 

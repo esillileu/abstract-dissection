@@ -17,7 +17,6 @@ from f2.suites.w2v.evaluation import (
     _analogy_predictions,
     _analogy_rows,
     _analogy_tokens,
-    _normalized_embeddings,
     parse_analogy_questions,
 )
 from repro_core.context import RuntimePaths
@@ -94,8 +93,11 @@ def run_table3_diagnosis(
     sample_lookup_path = cache_root / TABLE3_RUNS["cbow"][1] / "lookup"
     sample_lookup = load_lookup_artifact(sample_lookup_path)
     row_count = min(len(sample_lookup.embeddings), vocabulary_limit)
-    analogy_rows = _analogy_rows(sample_lookup, row_count)
-    training_rows = _analogy_rows(sample_lookup, len(sample_lookup.embeddings))
+    wanted = {token.upper() for q in questions for token in _analogy_tokens(q)}
+    analogy_rows = _analogy_rows(sample_lookup, row_count, wanted=wanted)
+    training_rows = _analogy_rows(
+        sample_lookup, len(sample_lookup.embeddings), wanted=wanted
+    )
     tokens = tuple(
         bytes(
             sample_lookup.token_bytes[
@@ -199,13 +201,11 @@ def run_table3_diagnosis(
         for name in ("counts", "token_bytes", "token_offsets"):
             if not np.array_equal(getattr(lookup, name), getattr(sample_lookup, name)):
                 raise ValueError(f"Vocabulary/frequencies differ: {run_id}, {name}")
-        normalized = _normalized_embeddings(
-            lookup.embeddings[:row_count], dtype=np.float32
-        )
+        embeddings = lookup.embeddings[:row_count]
         res = {}
         for qid, (prediction, positive) in zip(
             valid_indices,
-            _analogy_predictions(normalized, valid_rows, 256),
+            _analogy_predictions(embeddings, valid_rows, 256),
             strict=True,
         ):
             pred_row = int(prediction)

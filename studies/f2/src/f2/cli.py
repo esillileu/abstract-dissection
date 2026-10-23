@@ -63,7 +63,7 @@ def evaluate(
     suite: Annotated[
         str,
         typer.Argument(
-            help="Evaluation policy: w2v1-table2, w2v1-table4, w2v1-table7, or w2v2."
+            help="Evaluation policy: w2v1-table2, w2v1-table4, w2v1-table7, w2v2-table3, or w2v2."
         ),
     ],
     lookup: Annotated[Path, typer.Option(help="Saved lookup artifact directory.")],
