@@ -54,6 +54,11 @@ DISPOSITIONS = (
         "verified WMT substitute and deterministic phrase materialization",
     ),
     TargetDisposition(
+        "w2v2-word-skipgram-1b-objectives",
+        "reconstruction",
+        "Table 1 word-only NEG-5/NEG-15/HS on substitute corpora with explicit C subsampling; NCE-5 unsupported until Phase 3",
+    ),
+    TargetDisposition(
         "w2v1-table3-nnlm",
         "reconstruction",
         "feed-forward NNLM with local asynchronous PS/AdaGrad on verified substitute corpora; activation and training schedule are reconstruction decisions",
@@ -74,10 +79,6 @@ DISPOSITIONS = (
             (
                 "w2v1-msr-sentence-skipgram",
                 "evaluation files have no verified checksum",
-            ),
-            (
-                "w2v2-word-skipgram-1b-objectives",
-                "canonical word-only plan is not bound",
             ),
             ("w2v2-large-phrase-skipgram", "6B/33B source corpus is unavailable"),
         )

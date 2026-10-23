@@ -1820,6 +1820,36 @@
       "source_hash": "83a2d40e038916e0bba3998d9eff97fe9d001040059eb324aa1af6cc961f18c2",
       "is_canonical": true,
       "notes": "Table 5 reconstruction on verified WMT substitute corpus; 1M lexical vocabulary matches Table 4."
+    },
+    {
+      "execution_plan_id": "w2v2-table1-wmt-reconstruction-r1",
+      "plan_key": "w2v2-table1-wmt",
+      "revision": 1,
+      "status": "runnable",
+      "source_ref": "studies/f2/src/f2/suites/w2v2/config/e01_table1_word_skipgram.yaml",
+      "source_hash": "b38fc9d05cc454230f806d9be729d231e3be5432c09b8c219f737cbdf4b64963",
+      "is_canonical": true,
+      "notes": "Table 1 word-only NEG/HS reconstruction; NCE-5 unsupported until Phase 3."
+    },
+    {
+      "execution_plan_id": "w2v2-table1-lm1b-reduced-r1",
+      "plan_key": "w2v2-table1-lm1b",
+      "revision": 1,
+      "status": "runnable",
+      "source_ref": "studies/f2/src/f2/suites/w2v2/config/e01_table1_word_skipgram.yaml",
+      "source_hash": "b38fc9d05cc454230f806d9be729d231e3be5432c09b8c219f737cbdf4b64963",
+      "is_canonical": true,
+      "notes": "Table 1 word-only NEG/HS reconstruction; NCE-5 unsupported until Phase 3."
+    },
+    {
+      "execution_plan_id": "w2v2-table1-umbc-reconstruction-r1",
+      "plan_key": "w2v2-table1-umbc",
+      "revision": 1,
+      "status": "runnable",
+      "source_ref": "studies/f2/src/f2/suites/w2v2/config/e01_table1_word_skipgram.yaml",
+      "source_hash": "b38fc9d05cc454230f806d9be729d231e3be5432c09b8c219f737cbdf4b64963",
+      "is_canonical": true,
+      "notes": "Table 1 word-only NEG/HS reconstruction; NCE-5 unsupported until Phase 3."
     }
   ],
   "plan_experiments": [
@@ -2537,6 +2567,81 @@
         }
       },
       "notes": "History=8 and 640 hidden units are explicit; epoch count and concrete LR are not reported. Reconstruction decision (not paper-specified): tanh, 3 epochs, AdaGrad gamma=0.05, epsilon=1e-6, summed mini-batches of 250 targets, 20 local replicas, 4 PS shards, queue_capacity=128 and fetch/push once per batch. No separate LR decay. Initialization: embeddings uniform +/-0.5/D, hidden Xavier uniform, zero bias/HS output. History resets at sentence boundaries/OOV; targets require a full history; no subsampling."
+    },
+    {
+      "plan_experiment_id": "w2v2-table1-wmt-reconstruction-r1-w2v2-word-skipgram-1b-objectives",
+      "execution_plan_id": "w2v2-table1-wmt-reconstruction-r1",
+      "experiment_spec_id": "w2v2-word-skipgram-1b-objectives",
+      "enabled": true,
+      "parameters": {
+        "classification": "reconstruction",
+        "seed_policy": {
+          "repetitions": [
+            1,
+            7,
+            19
+          ]
+        },
+        "runtime_policy": {
+          "device": "cpu",
+          "threads": 20
+        },
+        "approval_policy": "explicit approval required before large execution",
+        "evaluation_policy": {
+          "oov": "exclude and report coverage",
+          "confidence_interval": "seed percentile 95",
+          "throughput": "report with hardware identity"
+        }
+      },
+      "notes": "Word-only; explicit word2vec_c subsampling; epochs=3 and dynamic radius=5 are reconstruction decisions. NCE-5 unsupported."
+    },
+    {
+      "plan_experiment_id": "w2v2-table1-lm1b-reduced-r1-w2v2-word-skipgram-1b-objectives",
+      "execution_plan_id": "w2v2-table1-lm1b-reduced-r1",
+      "experiment_spec_id": "w2v2-word-skipgram-1b-objectives",
+      "enabled": true,
+      "parameters": {
+        "classification": "reconstruction",
+        "corpus": "lm1b",
+        "training_tokens": 791844834,
+        "seed_policy": {
+          "repetitions": [
+            1,
+            7,
+            19
+          ]
+        },
+        "runtime_policy": {
+          "device": "cpu",
+          "threads": 20
+        },
+        "approval_policy": "explicit approval required before large execution"
+      },
+      "notes": "Word-only; explicit word2vec_c subsampling; epochs=3 and dynamic radius=5 are reconstruction decisions. NCE-5 unsupported."
+    },
+    {
+      "plan_experiment_id": "w2v2-table1-umbc-reconstruction-r1-w2v2-word-skipgram-1b-objectives",
+      "execution_plan_id": "w2v2-table1-umbc-reconstruction-r1",
+      "experiment_spec_id": "w2v2-word-skipgram-1b-objectives",
+      "enabled": true,
+      "parameters": {
+        "classification": "reconstruction",
+        "corpus": "umbc",
+        "training_tokens": 1000000000,
+        "seed_policy": {
+          "repetitions": [
+            1,
+            7,
+            19
+          ]
+        },
+        "runtime_policy": {
+          "device": "cpu",
+          "threads": 20
+        },
+        "approval_policy": "explicit approval required before large execution"
+      },
+      "notes": "Word-only; explicit word2vec_c subsampling; epochs=3 and dynamic radius=5 are reconstruction decisions. NCE-5 unsupported."
     }
   ],
   "resource_bindings": [
@@ -2979,6 +3084,54 @@
       "binding_type": "substitute",
       "justification": "Pinned, checksum-verified public mirror of the MSR 8,000-question syntactic benchmark; original Microsoft distribution bytes are unavailable.",
       "notes": "Evaluation only; no training corpus substitution is introduced."
+    },
+    {
+      "plan_experiment_id": "w2v2-table1-wmt-reconstruction-r1-w2v2-word-skipgram-1b-objectives",
+      "requirement_id": "w2v2-word-1b-train",
+      "resource_version_id": "f2-wmt-news-2007-2012-normalized-v1",
+      "binding_type": "substitute",
+      "justification": "Pinned verified resource used by the canonical reconstruction.",
+      "notes": null
+    },
+    {
+      "plan_experiment_id": "w2v2-table1-wmt-reconstruction-r1-w2v2-word-skipgram-1b-objectives",
+      "requirement_id": "w2v2-word-analogy-eval",
+      "resource_version_id": "w2v-questions-words-google-code-export",
+      "binding_type": "exact",
+      "justification": "Pinned verified resource used by the canonical reconstruction.",
+      "notes": null
+    },
+    {
+      "plan_experiment_id": "w2v2-table1-lm1b-reduced-r1-w2v2-word-skipgram-1b-objectives",
+      "requirement_id": "w2v2-word-1b-train",
+      "resource_version_id": "f2-lm1b-r13output-normalized-v1",
+      "binding_type": "substitute",
+      "justification": "Verified LM1B is bound as an explicitly reduced 791,844,834-word comparison.",
+      "notes": "This binding must not be reported as satisfying the nominal 1B corpus size."
+    },
+    {
+      "plan_experiment_id": "w2v2-table1-lm1b-reduced-r1-w2v2-word-skipgram-1b-objectives",
+      "requirement_id": "w2v2-word-analogy-eval",
+      "resource_version_id": "w2v-questions-words-google-code-export",
+      "binding_type": "exact",
+      "justification": "Pinned verified evaluation resource.",
+      "notes": null
+    },
+    {
+      "plan_experiment_id": "w2v2-table1-umbc-reconstruction-r1-w2v2-word-skipgram-1b-objectives",
+      "requirement_id": "w2v2-word-1b-train",
+      "resource_version_id": "f2-umbc-webbase-normalized-v1",
+      "binding_type": "substitute",
+      "justification": "Verified UMBC supports the nominal 1B lexical-token budget.",
+      "notes": null
+    },
+    {
+      "plan_experiment_id": "w2v2-table1-umbc-reconstruction-r1-w2v2-word-skipgram-1b-objectives",
+      "requirement_id": "w2v2-word-analogy-eval",
+      "resource_version_id": "w2v-questions-words-google-code-export",
+      "binding_type": "exact",
+      "justification": "Pinned verified evaluation resource.",
+      "notes": null
     }
   ],
   "planned_run_matrices": [
@@ -3436,6 +3589,78 @@
       "device": "cpu",
       "threads": 20,
       "notes": "Large canonical NNLM reconstruction slot; History=8 and 640 hidden units are explicit; epoch count and concrete LR are not reported. Reconstruction decision (not paper-specified): tanh, 3 epochs, AdaGrad gamma=0.05, epsilon=1e-6, summed mini-batches of 250 targets, 20 local replicas, 4 PS shards, queue_capacity=128 and fetch/push once per batch. No separate LR decay. Initialization: embeddings uniform +/-0.5/D, hidden Xavier uniform, zero bias/HS output. History resets at sentence boundaries/OOV; targets require a full history; no subsampling. Planning is not execution approval."
+    },
+    {
+      "plan_experiment_id": "w2v2-table1-wmt-reconstruction-r1-w2v2-word-skipgram-1b-objectives",
+      "execution_plan_id": "w2v2-table1-wmt-reconstruction-r1",
+      "classification": "reconstruction",
+      "atomic_run_ids": [
+        "neg5-no-subsampling",
+        "neg15-no-subsampling",
+        "hs-no-subsampling",
+        "neg5-subsampling",
+        "neg15-subsampling",
+        "hs-subsampling"
+      ],
+      "training_tokens": 1000000000,
+      "embedding_dimension": 300,
+      "epochs": 3,
+      "seeds": [
+        1,
+        7,
+        19
+      ],
+      "device": "cpu",
+      "threads": 20,
+      "notes": "Table 1 word-only NEG/HS; NCE-5 unsupported. Planning is not execution approval."
+    },
+    {
+      "plan_experiment_id": "w2v2-table1-lm1b-reduced-r1-w2v2-word-skipgram-1b-objectives",
+      "execution_plan_id": "w2v2-table1-lm1b-reduced-r1",
+      "classification": "reconstruction",
+      "atomic_run_ids": [
+        "neg5-no-subsampling",
+        "neg15-no-subsampling",
+        "hs-no-subsampling",
+        "neg5-subsampling",
+        "neg15-subsampling",
+        "hs-subsampling"
+      ],
+      "training_tokens": 791844834,
+      "embedding_dimension": 300,
+      "epochs": 3,
+      "seeds": [
+        1,
+        7,
+        19
+      ],
+      "device": "cpu",
+      "threads": 20,
+      "notes": "Table 1 word-only NEG/HS; NCE-5 unsupported. Planning is not execution approval."
+    },
+    {
+      "plan_experiment_id": "w2v2-table1-umbc-reconstruction-r1-w2v2-word-skipgram-1b-objectives",
+      "execution_plan_id": "w2v2-table1-umbc-reconstruction-r1",
+      "classification": "reconstruction",
+      "atomic_run_ids": [
+        "neg5-no-subsampling",
+        "neg15-no-subsampling",
+        "hs-no-subsampling",
+        "neg5-subsampling",
+        "neg15-subsampling",
+        "hs-subsampling"
+      ],
+      "training_tokens": 1000000000,
+      "embedding_dimension": 300,
+      "epochs": 3,
+      "seeds": [
+        1,
+        7,
+        19
+      ],
+      "device": "cpu",
+      "threads": 20,
+      "notes": "Table 1 word-only NEG/HS; NCE-5 unsupported. Planning is not execution approval."
     }
   ],
   "planned_run_slots": [
