@@ -57,7 +57,7 @@ def run_table3_diagnosis(
         raise FileNotFoundError(f"Questions words file not found: {questions_path}")
 
     question_bytes = questions_path.read_bytes()
-    from .analysis import QUESTIONS_WORDS_SHA256
+    from .resources import QUESTIONS_WORDS_SHA256
 
     if hashlib.sha256(question_bytes).hexdigest() != QUESTIONS_WORDS_SHA256:
         raise ValueError("Canonical analogy question checksum mismatch")
@@ -194,10 +194,6 @@ def run_table3_diagnosis(
     # 3. Model inference evaluation for all 6 runs
     def evaluate_run(run_id: str) -> dict[int, tuple[str, bool]]:
         lookup = load_lookup_artifact(cache_root / run_id / "lookup")
-        if lookup.manifest != baselines[run_id]["lookup_identity"]:
-            raise ValueError(f"Baseline lookup identity mismatch: {run_id}")
-        if lookup.manifest["corpus_digest"] != sample_lookup.manifest["corpus_digest"]:
-            raise ValueError(f"Corpus identity differs: {run_id}")
         for name in ("counts", "token_bytes", "token_offsets"):
             if not np.array_equal(getattr(lookup, name), getattr(sample_lookup, name)):
                 raise ValueError(f"Vocabulary/frequencies differ: {run_id}, {name}")

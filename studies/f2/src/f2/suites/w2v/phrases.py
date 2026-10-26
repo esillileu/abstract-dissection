@@ -28,7 +28,7 @@ def _validate_token(token: bytes) -> None:
         )
 
 
-def _tokens(path: Path):
+def _tokens(path: Path, *, max_token_bytes: int | None = None):
     """Yield byte tokens and LF boundaries with bounded chunk/token storage."""
     pending = bytearray()
     unfinished_line = False
@@ -40,6 +40,10 @@ def _tokens(path: Path):
             for index, part in enumerate(_WHITESPACE.split(chunk)):
                 if index % 2 == 0:
                     pending.extend(part)
+                    if max_token_bytes is not None and len(pending) > max_token_bytes:
+                        raise ValueError(
+                            "sentence preparation token exceeds 4096 bytes"
+                        )
                 else:
                     if pending:
                         _validate_token(pending)
@@ -385,6 +389,33 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def load_cached_phrase_corpus(
+    cache_root: Path, source_sha256: str, policy: PhrasePolicy
+) -> PhraseCorpus:
+    key = _digest({"source_sha256": source_sha256, "policy": policy.record()})
+    path = Path(cache_root) / "f2/w2v/phrases" / key / "phrases.txt"
+    lineage = json.loads(path.with_suffix(".txt.json").read_text())
+    if not isinstance(lineage, dict):
+        raise ValueError("invalid phrase lineage")
+    digest = lineage.pop("lineage_digest")
+    if (
+        digest != _digest(lineage)
+        or lineage["source_sha256"] != source_sha256
+        or lineage["policy"] != policy.record()
+        or lineage["corpus_sha256"] != _sha256(path)
+    ):
+        raise ValueError("invalid phrase cache")
+    return PhraseCorpus(
+        path,
+        source_sha256,
+        lineage["corpus_sha256"],
+        lineage["policy_digest"],
+        digest,
+        lineage["token_count"],
+        lineage["joined_count"],
+    )
+
+
 def cached_phrase_corpus(
     source: Path,
     cache_root: Path,
@@ -409,27 +440,7 @@ def cached_phrase_corpus(
             shutil.rmtree(abandoned)
         if entry.exists():
             try:
-                path = entry / "phrases.txt"
-                lineage = json.loads(path.with_suffix(".txt.json").read_text())
-                if not isinstance(lineage, dict):
-                    raise ValueError("invalid phrase lineage")
-                digest = lineage.pop("lineage_digest")
-                if (
-                    digest != _digest(lineage)
-                    or lineage["source_sha256"] != source_sha
-                    or lineage["policy"] != policy.record()
-                    or lineage["corpus_sha256"] != _sha256(path)
-                ):
-                    raise ValueError("invalid phrase cache")
-                return PhraseCorpus(
-                    path,
-                    source_sha,
-                    lineage["corpus_sha256"],
-                    lineage["policy_digest"],
-                    digest,
-                    lineage["token_count"],
-                    lineage["joined_count"],
-                )
+                return load_cached_phrase_corpus(cache_root, source_sha, policy)
             except (ValueError, KeyError, OSError, TypeError):
                 shutil.rmtree(entry)
         with tempfile.TemporaryDirectory(prefix=f".{key}-", dir=root) as work:

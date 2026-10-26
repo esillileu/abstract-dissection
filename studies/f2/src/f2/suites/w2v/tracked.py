@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import csv
+import json
 import re
+import shutil
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -18,7 +20,6 @@ from f2.run_identity import RunIdentity
 from f2.suites.w2v.corpus import CorpusBinding, CorpusMaterializer
 from repro_core.context import ExperimentContext, RuntimePaths
 from repro_core.execution.runner import run_config
-from repro_mlflow.runtime.verification import _verify_uploaded_manifest
 from repro_mlflow.schema_v1 import write_result_manifest
 
 
@@ -27,7 +28,6 @@ class W2VRunReceipt:
     result: object
     run_id: str
     staging_root: Path
-    durable_complete: bool
 
 
 def run_tracked_yaml(
@@ -72,11 +72,7 @@ def run_tracked_yaml(
         if experiment is None
         else experiment.experiment_id
     )
-    run_id = _find_resumable_run(client, experiment_id, config, paths, suite)
-    if run_id is None:
-        run_id = _create_run(client, experiment_id, config)
-    elif progress_reporter is not None:
-        progress_reporter.write(f"resuming uncompleted tracked run {run_id}")
+    run_id = _create_run(client, experiment_id, config)
     run_root = paths.staging_root / f"exp/f2/{suite}/tracked" / run_id
     try:
         result = run_config(
@@ -90,23 +86,38 @@ def run_tracked_yaml(
             ),
             executor_module=executor_module,
         )
+        (result.root / "config.json").write_text(
+            json.dumps(config, indent=2, sort_keys=True, default=str) + "\n"
+        )
+        # Preserve already available benchmark inputs for cache-only evaluation.
+        # Missing benchmarks do not change the declared training schedule.
+        from f2.common.paths import get_benchmark_data_dir
+
+        benchmarks = get_benchmark_data_dir(paths)
+        for name in (
+            "questions-words.txt",
+            "questions-phrases.txt",
+            "MSR-syntax.txt",
+            "msr_sentence_completion/Holmes.lm_format.questions.txt",
+            "msr_sentence_completion/Holmes.lm_format.answers.txt",
+        ):
+            source = benchmarks / name
+            if source.is_file():
+                target = result.root / "evaluation" / name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(source, target)
         _publish(
             client,
             run_id,
             result.root,
-            include_checkpoints=_mapping(config, "training").get("model_kind")
-            == "feedforward_nnlm",
+            include_checkpoints=bool(config.get("large_scale"))
+            or _mapping(config, "training").get("model_kind") == "feedforward_nnlm",
         )
-        _verify_uploaded_manifest(client, run_id)
-        client.set_tag(run_id, "trial.status", "finished")
-        client.set_tag(run_id, "result.durable_complete", "true")
         client.set_terminated(run_id, status="FINISHED")
-        return W2VRunReceipt(result, run_id, run_root, True)
+        return W2VRunReceipt(result, run_id, run_root)
     except BaseException:
         run = client.get_run(run_id)
         if run.info.status == "RUNNING":
-            client.set_tag(run_id, "result.durable_complete", "false")
-            client.set_tag(run_id, "trial.status", "failed")
             client.set_terminated(run_id, status="FAILED")
         raise
 
@@ -119,6 +130,18 @@ def _materialize_corpus(
 ) -> None:
     identity = _identity(config)
     corpus = _mapping(config, "corpus")
+    if config.get("large_scale"):
+        from repro_io.checksum import sha256_file
+
+        from f2.suites.w2v2.preflight import resolve_source
+
+        source = resolve_source(config, paths)
+        config["corpus"] = {
+            **corpus,
+            "path": str(source),
+            "sha256": sha256_file(source),
+        }
+        return
     try:
         lexical_token_budget = int(corpus["lexical_token_budget"])
     except (KeyError, TypeError, ValueError) as exc:
@@ -135,7 +158,7 @@ def _materialize_corpus(
         else:
             corpus_path = paths.repo_root / raw_path
         if "holmes" in str(raw_path):
-            from f2.suites.w2v1.table7 import ensure_holmes_corpus
+            from f2.suites.w2v1.resources import ensure_holmes_corpus
 
             if progress_reporter is not None:
                 progress_reporter.write(f"materializing Holmes corpus at {corpus_path}")
@@ -162,7 +185,7 @@ def _materialize_corpus(
         corpus_dir / corpus_id / "corpus.txt",
     ]
     if corpus_id == "holmes":
-        from f2.suites.w2v1.table7 import ensure_holmes_corpus
+        from f2.suites.w2v1.resources import ensure_holmes_corpus
 
         candidate_paths.insert(0, ensure_holmes_corpus(corpus_dir / "holmes.txt"))
 
@@ -203,51 +226,6 @@ def _materialize_corpus(
     }
 
 
-def _find_resumable_run(
-    client: Any,
-    experiment_id: str,
-    config: dict[str, object],
-    paths: RuntimePaths,
-    suite: str,
-) -> str | None:
-    from mlflow.entities import ViewType
-
-    identity = _identity(config)
-    slot_id = str(identity["planned_run_slot_id"])
-    runs = client.search_runs(
-        [experiment_id],
-        filter_string=f"tags.`f2.planned_run_slot_id` = '{slot_id}'",
-        run_view_type=ViewType.ALL,
-        order_by=["attributes.start_time DESC"],
-        max_results=10,
-    )
-    expected = {
-        "f2.config_digest": str(identity["config_digest"]),
-        "f2.source_corpus_sha256": str(_mapping(config, "corpus")["sha256"]),
-        "suite.name": suite,
-        "implementation.variant": str(config["atomic_run_id"]),
-        "seed": str(identity["seed"]),
-    }
-    for run in runs:
-        if any(run.data.tags.get(key) != value for key, value in expected.items()):
-            continue
-        if run.data.tags.get("result.durable_complete") == "true":
-            continue
-        run_id = str(run.info.run_id)
-        ckpt_meta = (
-            paths.staging_root
-            / f"exp/f2/{suite}/tracked"
-            / run_id
-            / "checkpoints"
-            / "latest.json"
-        )
-        if ckpt_meta.is_file():
-            if run.info.lifecycle_stage == "deleted":
-                client.restore_run(run_id)
-            return run_id
-    return None
-
-
 def _create_run(
     client: Any,
     experiment_id: str,
@@ -263,7 +241,9 @@ def _create_run(
     tags = {
         **run_identity.tags(),
         "f2.source_corpus_sha256": str(_mapping(config, "corpus")["sha256"]),
-        "paper.id": "mikolov-2013-efficient-estimation",
+        "paper.id": "mikolov-2013-efficient-estimation"
+        if suite == "w2v1"
+        else "mikolov-2013-distributed-representations",
         "suite.name": suite,
         "experiment_spec.id": str(
             identity.get(
@@ -275,8 +255,6 @@ def _create_run(
         ),
         "implementation.variant": str(config["atomic_run_id"]),
         "seed": str(identity["seed"]),
-        "trial.status": "running",
-        "result.durable_complete": "false",
     }
     return client.create_run(
         experiment_id,
@@ -294,13 +272,26 @@ def _plan_revision(execution_plan_id: str) -> int:
 
 
 def _publish(
-    client: Any, run_id: str, root: Path, *, include_checkpoints: bool = False
+    client: Any,
+    run_id: str,
+    root: Path,
+    *,
+    include_checkpoints: bool = False,
 ) -> None:
     write_result_manifest(
-        root, exclude_dirs=() if include_checkpoints else ("checkpoints",)
+        root,
+        exclude_dirs=("preparation",)
+        if include_checkpoints
+        else ("checkpoints", "preparation"),
     )
     for path in sorted(item for item in root.rglob("*") if item.is_file()):
         rel = path.relative_to(root)
+        if "preparation" in rel.parts:
+            continue
+        if "checkpoints" in rel.parts and any(
+            part.startswith(".") for part in rel.parts
+        ):
+            continue
         if not include_checkpoints and "checkpoints" in rel.parts:
             continue
         parent = path.parent.relative_to(root)

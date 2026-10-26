@@ -100,7 +100,7 @@ def test_selected_seed_is_part_of_runtime_identity() -> None:
 def test_target_dispositions_cover_catalog_and_report_is_human_readable(
     tmp_path,
 ) -> None:
-    assert len(DISPOSITIONS) == 13
+    assert len(DISPOSITIONS) == 14
     assert {item.classification for item in DISPOSITIONS} == {
         "reconstruction",
         "unsupported",

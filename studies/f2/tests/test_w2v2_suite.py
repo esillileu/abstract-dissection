@@ -246,12 +246,8 @@ def test_table1_plans_and_catalog_slots_are_distinct_and_bound():
 
 
 @pytest.mark.parametrize("condition", TABLE1_CONDITIONS)
-def test_table1_word_training_restore_and_rerun(tmp_path, monkeypatch, condition):
+def test_table1_word_training_and_evaluation(tmp_path, monkeypatch, condition):
     import numpy as np
-
-    from f2.suites.w2v import executor as shared_executor
-    from f2.suites.w2v.artifacts import create_checkpoint_manager
-    from f2.suites.w2v.executor import create_session
 
     definition = DEFINITION.get_suite("w2v2")
     source = tmp_path / "words.txt"
@@ -300,37 +296,12 @@ def test_table1_word_training_restore_and_rerun(tmp_path, monkeypatch, condition
     assert not list(paths.staging_root.rglob("phrases*"))
     assert not (baseline.root / "phrase_lineage.json").exists()
 
-    # Build an epoch-boundary checkpoint through the production adapter, then
-    # let the ordinary executor restore and finish the remaining schedule.
-    session = create_session(config, paths.repo_root, cache_root=paths.cache_root)
-    session.train_epoch()
-    resumed_root = tmp_path / "resumed"
-    manager = create_checkpoint_manager(resumed_root / "checkpoints", session=session)
-    manager.save_latest()
-
-    def no_restart(*args, **kwargs):
-        pytest.fail("checkpoint was ignored and training restarted")
-
-    monkeypatch.setattr(shared_executor, "create_session", no_restart)
-    context = ExperimentContext(paths=paths, metadata={"run_root": resumed_root})
-    resumed = run_config(config, context, executor_module=definition.executor_module)
-    restored = load_checkpoint(resumed.checkpoint)
-    np.testing.assert_array_equal(
-        expected.input_embeddings(), restored.input_embeddings()
-    )
-    np.testing.assert_array_equal(
-        expected.output_embeddings(), restored.output_embeddings()
-    )
-    rerun = run_config(config, context, executor_module=definition.executor_module)
-    np.testing.assert_array_equal(
-        expected.input_embeddings(),
-        load_checkpoint(rerun.checkpoint).input_embeddings(),
-    )
-    assert not (resumed.root / "phrase_lineage.json").exists()
-    # All objectives and the resumed execution reuse a single word vocabulary.
-    assert (
-        len(list((paths.cache_root / "f2/w2v/vocabulary").glob("*/manifest.json"))) == 1
-    )
+    with pytest.raises(ValueError, match="not empty"):
+        run_config(
+            config,
+            ExperimentContext(paths=paths, metadata={"run_root": baseline.root}),
+            executor_module=definition.executor_module,
+        )
 
 
 @pytest.mark.parametrize(
@@ -417,4 +388,13 @@ def test_table3_all_conditions_and_seeds_share_phrase_cache(tmp_path):
             assert evaluation["analogy"]["overall"]["valid_count"] == 1
             assert load_checkpoint(result.checkpoint).completed_epochs == 1
     assert len(phrase_hashes) == 1
-    assert len(list((paths.cache_root / "f2/w2v/phrases").glob("*/phrases.txt"))) == 1
+    assert (
+        len(
+            list(
+                (paths.staging_root / "f2/preparation/f2/w2v/phrases").glob(
+                    "*/phrases.txt"
+                )
+            )
+        )
+        == 1
+    )

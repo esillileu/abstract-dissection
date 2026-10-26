@@ -42,7 +42,7 @@ def summarize_evaluations(
     if target is not None and target.metric_id != metric_id:
         raise ValueError("paper target metric_id does not match evaluation results")
     normalized = BaseAnalysisOrchestrator.summarize_metric_series(
-        [run.score for run in runs], metric_id, condition_id
+        [run.require_score() for run in runs], metric_id, condition_id
     )
     comparison = compare_to_target(target, normalized) if target is not None else None
     return EvaluationSummary(
@@ -52,7 +52,8 @@ def summarize_evaluations(
         ci_lower=normalized.ci_lower,
         ci_upper=normalized.ci_upper,
         sample_size=normalized.sample_size,
-        mean_coverage=sum(run.coverage for run in runs) / len(runs),
+        mean_coverage=sum(run.coverage for run in runs if run.coverage is not None)
+        / len(runs),
         paper_comparison=comparison,
     )
 

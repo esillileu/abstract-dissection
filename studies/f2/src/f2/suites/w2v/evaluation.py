@@ -24,14 +24,19 @@ class EvaluationResult:
     """A score together with the denominator and vocabulary coverage that produced it."""
 
     metric_id: str
-    score: float
+    score: float | None
     total_count: int
     valid_count: int
     excluded_count: int
 
     @property
-    def coverage(self) -> float:
-        return self.valid_count / self.total_count if self.total_count else 0.0
+    def coverage(self) -> float | None:
+        return self.valid_count / self.total_count if self.total_count else None
+
+    def require_score(self) -> float:
+        if self.score is None:
+            raise ValueError(f"undefined evaluation: {self.metric_id}")
+        return self.score
 
 
 @dataclass(frozen=True)
@@ -207,7 +212,7 @@ def evaluate_word_similarity(
             continue
         human.append(pair.human_score)
         predicted.append(_cosine(left, right))
-    score = _pearson(_ranks(human), _ranks(predicted)) if len(human) >= 2 else 0.0
+    score = _pearson(_ranks(human), _ranks(predicted)) if len(human) >= 2 else None
     return EvaluationResult(
         "word_similarity_spearman",
         score,
@@ -254,7 +259,7 @@ def evaluate_sentence_completion(
         valid += 1
     return EvaluationResult(
         "sentence_completion_accuracy",
-        correct / valid if valid else 0.0,
+        correct / valid if valid else None,
         len(questions),
         valid,
         len(questions) - valid,
@@ -460,21 +465,21 @@ def evaluate_msr_sentence_completion(
 
     overall_res = EvaluationResult(
         metric_id="msr_sentence_completion_accuracy",
-        score=correct_total / len(questions) if questions else 0.0,
+        score=correct_total / len(questions) if questions else None,
         total_count=len(questions),
         valid_count=len(questions),
         excluded_count=0,
     )
     dev_res = EvaluationResult(
         metric_id="msr_sentence_completion_dev_accuracy",
-        score=correct_dev / dev_count if dev_count else 0.0,
+        score=correct_dev / dev_count if dev_count else None,
         total_count=dev_count,
         valid_count=dev_count,
         excluded_count=0,
     )
     test_res = EvaluationResult(
         metric_id="msr_sentence_completion_test_accuracy",
-        score=correct_test / test_count if test_count else 0.0,
+        score=correct_test / test_count if test_count else None,
         total_count=test_count,
         valid_count=test_count,
         excluded_count=0,
@@ -496,7 +501,11 @@ def select_best_epoch(
     direction = 1.0 if maximize else -1.0
     return max(
         results,
-        key=lambda item: (direction * item[1].score, item[1].coverage, -item[0]),
+        key=lambda item: (
+            direction * item[1].require_score(),
+            item[1].coverage,
+            -item[0],
+        ),
     )
 
 
@@ -510,6 +519,8 @@ def nearest_tokens(
     if limit < 1:
         raise ValueError("neighbor limit must be positive")
     query = _normalized_embeddings(lookup.embeddings[[row]])[0]
+    if not np.any(query):
+        return ()
     return _nearest_query(lookup, query, {row}, limit)
 
 
@@ -520,9 +531,10 @@ def _nearest_query(lookup, query, excluded, limit):
                 lookup.embeddings[offset : offset + EVALUATION_CHUNK_ROWS]
             )
             scores = block @ query
+            nonzero = np.any(block, axis=1)
             for local, score in enumerate(scores):
                 row = offset + local
-                if row not in excluded and np.isfinite(score):
+                if row not in excluded and np.isfinite(score) and nonzero[local]:
                     yield (-float(score), _token_at(lookup, row), row)
 
     ranked = nsmallest(limit, candidates())
@@ -539,7 +551,10 @@ def additive_composition(
     if not tokens or any(row is None for row in rows):
         return ()
     rows = [int(row) for row in rows]
-    query = _normalized_embeddings(lookup.embeddings[rows]).sum(axis=0)
+    inputs = _normalized_embeddings(lookup.embeddings[rows])
+    if not np.all(np.any(inputs, axis=1)):
+        return ()
+    query = inputs.sum(axis=0)
     norm = float(np.linalg.norm(query))
     if norm == 0.0:
         return ()
@@ -588,7 +603,7 @@ def _accuracy_result(
     metric_id: str, total: int, valid: int, correct: int
 ) -> EvaluationResult:
     return EvaluationResult(
-        metric_id, correct / valid if valid else 0.0, total, valid, total - valid
+        metric_id, correct / valid if valid else None, total, valid, total - valid
     )
 
 
@@ -598,9 +613,13 @@ def _combine_accuracy(
     selected = tuple(results)
     total = sum(result.total_count for result in selected)
     valid = sum(result.valid_count for result in selected)
-    correct = sum(round(result.score * result.valid_count) for result in selected)
+    correct = sum(
+        round(result.require_score() * result.valid_count)
+        for result in selected
+        if result.valid_count
+    )
     return EvaluationResult(
-        metric_id, correct / valid if valid else 0.0, total, valid, total - valid
+        metric_id, correct / valid if valid else None, total, valid, total - valid
     )
 
 
@@ -659,7 +678,7 @@ def _ranks(values: Sequence[float]) -> list[float]:
     return ranks
 
 
-def _pearson(left: Sequence[float], right: Sequence[float]) -> float:
+def _pearson(left: Sequence[float], right: Sequence[float]) -> float | None:
     left_values = np.asarray(left, dtype=np.float64)
     right_values = np.asarray(right, dtype=np.float64)
     left_centered = left_values - left_values.mean()
@@ -668,7 +687,7 @@ def _pearson(left: Sequence[float], right: Sequence[float]) -> float:
     return (
         float(np.dot(left_centered, right_centered) / denominator)
         if denominator
-        else 0.0
+        else None
     )
 
 

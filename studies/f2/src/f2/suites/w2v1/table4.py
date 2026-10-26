@@ -13,11 +13,11 @@ from pathlib import Path
 from typing import Any
 
 from f2.suites.w2v.artifacts import load_lookup_artifact
+from f2.suites.w2v.cache import LocalResults, unavailable_report
 from f2.suites.w2v.evaluation import evaluate_analogies, parse_analogy_questions
 from repro_core.context import RuntimePaths
-from repro_mlflow.artifact_cache import MlflowArtifactCache, artifact_download_progress
 
-from .analysis import CORPUS_SOURCES, ensure_questions_words, observed_training_seconds
+from .analysis import CORPUS_SOURCES, observed_training_seconds
 
 _CONDITION = re.compile(r"(wmt|lm1b|umbc)--(cbow|skipgram)-d300-w783m")
 _NNLM_CONDITION = re.compile(r"fineweb--nnlm-d(20|50|100)-w6000m")
@@ -65,7 +65,7 @@ class Table4EvaluationCache:
     def __init__(self, root: Path, *, questions_sha256: str) -> None:
         self.root = root
         self.signature = {
-            "schema_version": 1,
+            "schema_version": 2,
             "evaluation_protocol": _EVALUATION_PROTOCOL,
             "questions_sha256": questions_sha256,
         }
@@ -83,16 +83,13 @@ class Table4EvaluationCache:
             return None
         return result if result.mlflow_run_id == run_id else None
 
-    def store(
-        self, result: Table4RunResult, *, lookup_identity: dict[str, object]
-    ) -> None:
+    def store(self, result: Table4RunResult) -> None:
         path = self._path(result.mlflow_run_id)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(
             json.dumps(
                 {
                     "signature": self.signature,
-                    "lookup_identity": lookup_identity,
                     "result": asdict(result),
                 },
                 indent=2,
@@ -101,44 +98,6 @@ class Table4EvaluationCache:
             + "\n",
             encoding="utf-8",
         )
-
-    def seed_from_csv(self, csv_path: Path) -> int:
-        """Seed cache from an existing runs.csv if present."""
-        if not csv_path.is_file():
-            return 0
-        count = 0
-        try:
-            with csv_path.open(encoding="utf-8") as f:
-                reader = csv.DictReader(f)
-                for row in reader:
-                    run_id = row.get("mlflow_run_id")
-                    if not run_id:
-                        continue
-                    if self.load(run_id) is not None:
-                        continue
-                    result = Table4RunResult(
-                        architecture=str(row["architecture"]),
-                        corpus=str(row["corpus"]),
-                        seed=int(row["seed"]),
-                        mlflow_run_id=str(row["mlflow_run_id"]),
-                        semantic_accuracy_percent=float(
-                            row["semantic_accuracy_percent"]
-                        ),
-                        syntactic_accuracy_percent=float(
-                            row["syntactic_accuracy_percent"]
-                        ),
-                        total_accuracy_percent=float(row["total_accuracy_percent"]),
-                        included_questions=int(row["included_questions"]),
-                        total_questions=int(row["total_questions"]),
-                        observed_training_seconds=float(
-                            row["observed_training_seconds"]
-                        ),
-                    )
-                    self.store(result, lookup_identity={"source": "runs.csv"})
-                    count += 1
-        except Exception:
-            return count
-        return count
 
     def _path(self, run_id: str) -> Path:
         if re.fullmatch(r"[0-9a-zA-Z_-]+", run_id) is None:
@@ -155,10 +114,7 @@ def complete_conditions(runs: list[Any], corpus: str) -> dict[str, dict[int, Any
         if nnlm is not None and corpus == "fineweb":
             dimension = nnlm.group(1)
             architecture = f"nnlm-d{dimension}"
-            if (
-                tags.get("experiment_spec.id") != "w2v1-google-news-nnlm-6b"
-                or tags.get("result.durable_complete") != "true"
-            ):
+            if tags.get("experiment_spec.id") != "w2v1-google-news-nnlm-6b":
                 continue
             seed = int(tags.get("seed", "0"))
             slot = f"w2v1-fineweb-reconstruction-r1-nnlm-d{dimension}-w6000m-s{seed}"
@@ -181,18 +137,23 @@ def complete_conditions(runs: list[Any], corpus: str) -> dict[str, dict[int, Any
 
 
 def analyze_table4_sources(
-    tracking_uri: str,
+    cache_root: Path,
     questions_path: Path,
     *,
     corpus_source: str | None = None,
     paths: RuntimePaths | None = None,
 ) -> tuple[Path, ...]:
-    from mlflow import MlflowClient
 
     paths = paths or RuntimePaths.from_environment()
+    if not Path(questions_path).is_file():
+        output = unavailable_report(
+            paths.cache_root / "f2/w2v1/analysis/table4",
+            "cached evaluation questions missing",
+        )
+        return (output,)
     if corpus_source is not None and corpus_source not in TABLE4_CORPUS_SOURCES:
         raise ValueError(f"unsupported W2V1 corpus source: {corpus_source}")
-    questions_path = ensure_questions_words(questions_path)
+    questions_path = Path(questions_path)
     question_bytes = questions_path.read_bytes()
     questions = parse_analogy_questions(question_bytes.splitlines())
     if len(questions) != 19_544:
@@ -200,46 +161,36 @@ def analyze_table4_sources(
             f"canonical questions-words.txt must contain 19,544 questions; found {len(questions)}"
         )
     question_digest = hashlib.sha256(question_bytes).hexdigest()
-    client = MlflowClient(tracking_uri=tracking_uri)
-    experiment = client.get_experiment_by_name("f2.w2v1")
-    if experiment is None:
-        raise ValueError("MLflow experiment f2.w2v1 does not exist")
-    runs = client.search_runs(
-        [experiment.experiment_id],
-        filter_string="tags.`result.durable_complete` = 'true'",
-        order_by=["attributes.start_time DESC"],
-        max_results=10_000,
-    )
-    artifact_cache = MlflowArtifactCache(
-        client, tracking_uri, root=paths.cache_root / "mlflow_artifact"
-    )
+    artifact_cache = LocalResults(cache_root)
+    runs = artifact_cache.runs()
+
     evaluation_cache = Table4EvaluationCache(
         paths.cache_root / "f2/w2v1/table4", questions_sha256=question_digest
     )
     sources = TABLE4_CORPUS_SOURCES if corpus_source is None else (corpus_source,)
     outputs = []
-    with artifact_download_progress():
-        for corpus in sources:
-            output = paths.analysis_output("f2", "w2v1") / corpus / "table4"
-            output.mkdir(parents=True, exist_ok=True)
-            evaluation_cache.seed_from_csv(output / "runs.csv")
-            records = []
-            cache_hits = 0
-            cache_misses = 0
-            for architecture, condition_runs in sorted(
-                complete_conditions(runs, corpus).items()
-            ):
-                for seed, run in sorted(condition_runs.items()):
-                    cached = evaluation_cache.load(run.info.run_id)
-                    if (
-                        cached is not None
-                        and cached.seed == seed
-                        and cached.architecture == architecture
-                        and cached.corpus == corpus
-                    ):
-                        records.append(cached)
-                        cache_hits += 1
-                        continue
+    for corpus in sources:
+        output = (paths.cache_root / "f2/w2v1/analysis") / corpus / "table4"
+        output.mkdir(parents=True, exist_ok=True)
+        records = []
+        unavailable = []
+        cache_hits = 0
+        cache_misses = 0
+        for architecture, condition_runs in sorted(
+            complete_conditions(runs, corpus).items()
+        ):
+            for seed, run in sorted(condition_runs.items()):
+                cached = evaluation_cache.load(run.info.run_id)
+                if (
+                    cached is not None
+                    and cached.seed == seed
+                    and cached.architecture == architecture
+                    and cached.corpus == corpus
+                ):
+                    records.append(cached)
+                    cache_hits += 1
+                    continue
+                try:
                     cache_misses += 1
                     lookup = load_lookup_artifact(
                         artifact_cache.get(run.info.run_id, "lookup")
@@ -255,48 +206,55 @@ def analyze_table4_sources(
                         corpus,
                         seed,
                         run.info.run_id,
-                        100 * result.semantic.score,
-                        100 * result.syntactic.score,
-                        100 * result.overall.score,
+                        100 * result.semantic.require_score(),
+                        100 * result.syntactic.require_score(),
+                        100 * result.overall.require_score(),
                         result.overall.valid_count,
                         result.overall.total_count,
                         seconds,
                     )
-                    evaluation_cache.store(
-                        record, lookup_identity=getattr(lookup, "manifest", {})
-                    )
+                    evaluation_cache.store(record)
                     records.append(record)
-            print(
-                f"W2V1 {corpus} Table 4 analogy cache: {cache_hits} hit(s), {cache_misses} miss(es)",
-                file=sys.stderr,
+                except (FileNotFoundError, KeyError, ValueError) as exc:
+                    unavailable.append(
+                        {
+                            "run_id": run.info.run_id,
+                            "status": "no_data",
+                            "reason": str(exc),
+                        }
+                    )
+        (output / "unavailable.json").write_text(
+            json.dumps(unavailable, indent=2) + "\n"
+        )
+        print(
+            f"W2V1 {corpus} Table 4 analogy cache: {cache_hits} hit(s), {cache_misses} miss(es)",
+            file=sys.stderr,
+        )
+        with (output / "runs.csv").open("w", encoding="utf-8", newline="") as stream:
+            writer = csv.DictWriter(
+                stream, fieldnames=Table4RunResult.__dataclass_fields__
             )
-            with (output / "runs.csv").open(
-                "w", encoding="utf-8", newline=""
-            ) as stream:
-                writer = csv.DictWriter(
-                    stream, fieldnames=Table4RunResult.__dataclass_fields__
-                )
-                writer.writeheader()
-                writer.writerows(asdict(record) for record in records)
-            _write_summary(output / "summary.md", corpus, records, question_digest)
-            (output / "results.json").write_text(
-                json.dumps(
-                    {
-                        "protocol": {
-                            "questions_sha256": question_digest,
-                            "vocabulary_limit": None,
-                            "analogy": "b - a + c; cosine; exclude a, b, c",
-                        },
-                        "reference": _REFERENCE,
-                        "runs": [asdict(record) for record in records],
+            writer.writeheader()
+            writer.writerows(asdict(record) for record in records)
+        _write_summary(output / "summary.md", corpus, records, question_digest)
+        (output / "results.json").write_text(
+            json.dumps(
+                {
+                    "protocol": {
+                        "questions_sha256": question_digest,
+                        "vocabulary_limit": None,
+                        "analogy": "b - a + c; cosine; exclude a, b, c",
                     },
-                    indent=2,
-                    sort_keys=True,
-                )
-                + "\n",
-                encoding="utf-8",
+                    "reference": _REFERENCE,
+                    "runs": [asdict(record) for record in records],
+                },
+                indent=2,
+                sort_keys=True,
             )
-            outputs.append(output)
+            + "\n",
+            encoding="utf-8",
+        )
+        outputs.append(output)
     return tuple(outputs)
 
 

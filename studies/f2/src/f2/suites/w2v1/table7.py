@@ -3,28 +3,29 @@
 from __future__ import annotations
 
 import csv
-import glob
-import hashlib
 import json
 import re
 import statistics
-import subprocess
 import sys
-import urllib.request
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-from f2.common.paths import get_benchmark_data_dir, get_corpus_data_dir
 from f2.suites.w2v.artifacts import load_lookup_artifact
+from f2.suites.w2v.cache import LocalResults, unavailable_report
 from f2.suites.w2v.evaluation import (
     evaluate_msr_sentence_completion,
     parse_msr_sentence_completion_questions,
 )
 from repro_core.context import RuntimePaths
-from repro_mlflow.artifact_cache import MlflowArtifactCache, artifact_download_progress
 
 from .analysis import observed_training_seconds
+from .resources import (
+    HOLMES_CORPUS_SHA256,
+    HOLMES_RAW_BYTES,
+    MSR_ANSWERS_SHA256,
+    MSR_QUESTIONS_SHA256,
+)
 
 # Condition specification for Table 7: Skip-gram 640d on 50M words Holmes corpus
 # (model, dim, words_millions, epochs, orig_accuracy)
@@ -35,129 +36,6 @@ _SEEDS = {1, 7, 19}
 _T7_SLOT_PATTERN = re.compile(r"w2v1-table7-holmes-r1-skipgram-d640-w50m-s(\d+)")
 
 # Canonical benchmark mirror URLs and SHA-256 checksums
-MSR_QUESTIONS_URL = (
-    "https://raw.githubusercontent.com/XingxingZhang/td-treelstm/"
-    "5f11c4f4e22362a476b9900f87e65f238b891dcb/msr_scripts/Holmes.lm_format.questions.txt"
-)
-MSR_ANSWERS_URL = (
-    "https://raw.githubusercontent.com/XingxingZhang/td-treelstm/"
-    "5f11c4f4e22362a476b9900f87e65f238b891dcb/msr_scripts/Holmes.lm_format.answers.txt"
-)
-MSR_CSV_URL = (
-    "https://raw.githubusercontent.com/pochih/Sentence-Completion/"
-    "346ff7f4106a452dc92d6e1f35fe1f0da854c800/data/testing_data.csv"
-)
-
-MSR_QUESTIONS_SHA256 = (
-    "659b752b219e64b748f54333d0019a2878645ae430c8fb9d3254c2e561d220dc"
-)
-MSR_ANSWERS_SHA256 = "c9dec1e8c9168cb67260dad36ebd2041d12776c0f36cbfc295d9b8f08a699fad"
-MSR_CSV_SHA256 = "f3a76019be32c5714aec7fef9763f87d7587d23421e38156c8bb16f4e40bfe0e"
-
-HOLMES_REPO_URL = "https://github.com/pochih/Sentence-Completion.git"
-HOLMES_REPO_COMMIT = "346ff7f4106a452dc92d6e1f35fe1f0da854c800"
-HOLMES_CORPUS_SHA256 = (
-    "2d37eb27d9de873da4f6419740230e23cb9f75b91cc67b456d1e1a3fc34b680f"
-)
-HOLMES_RAW_BOOKS_COUNT = 522
-HOLMES_RAW_BYTES = 236110188
-
-
-def _download_verified(url: str, expected_sha256: str, target: Path) -> Path:
-    target.parent.mkdir(parents=True, exist_ok=True)
-    if target.is_file():
-        digest = hashlib.sha256(target.read_bytes()).hexdigest()
-        if digest == expected_sha256:
-            return target
-
-    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-    with urllib.request.urlopen(req) as resp:
-        data = resp.read()
-
-    digest = hashlib.sha256(data).hexdigest()
-    if digest != expected_sha256:
-        raise ValueError(
-            f"downloaded file from {url} checksum mismatch: {digest} != {expected_sha256}"
-        )
-    target.write_bytes(data)
-    return target
-
-
-def ensure_msr_benchmark_data(
-    benchmark_dir: Path | None = None,
-) -> tuple[Path, Path]:
-    """Ensure the canonical 1,040 questions and gold answers exist with verified checksums."""
-    paths = RuntimePaths.from_environment()
-    base_dir = (
-        Path(benchmark_dir)
-        if benchmark_dir
-        else get_benchmark_data_dir(paths) / "msr_sentence_completion"
-    )
-    base_dir.mkdir(parents=True, exist_ok=True)
-
-    q_path = base_dir / "Holmes.lm_format.questions.txt"
-    a_path = base_dir / "Holmes.lm_format.answers.txt"
-
-    _download_verified(MSR_QUESTIONS_URL, MSR_QUESTIONS_SHA256, q_path)
-    _download_verified(MSR_ANSWERS_URL, MSR_ANSWERS_SHA256, a_path)
-
-    return q_path, a_path
-
-
-def ensure_holmes_corpus(corpus_path: Path | None = None) -> Path:
-    """Ensure the verified 522-book Holmes training corpus exists at corpus_path."""
-    paths = RuntimePaths.from_environment()
-    target = (
-        Path(corpus_path) if corpus_path else get_corpus_data_dir(paths) / "holmes.txt"
-    )
-    target.parent.mkdir(parents=True, exist_ok=True)
-
-    if target.is_file():
-        h = hashlib.sha256()
-        with target.open("rb") as f:
-            while chunk := f.read(1024 * 1024):
-                h.update(chunk)
-        if h.hexdigest() == HOLMES_CORPUS_SHA256:
-            return target
-
-    # Check cache directory for repo clone
-    cache_dir = paths.cache_root / "f2" / "pochih_repo"
-    data_dir = cache_dir / "data" / "Holmes_Training_Data"
-    if not data_dir.is_dir():
-        subprocess.run(
-            [
-                "git",
-                "clone",
-                "--depth",
-                "1",
-                HOLMES_REPO_URL,
-                str(cache_dir),
-            ],
-            check=True,
-            capture_output=True,
-        )
-
-    book_files = sorted(glob.glob(str(data_dir / "*.TXT")))
-    if len(book_files) != HOLMES_RAW_BOOKS_COUNT:
-        raise ValueError(
-            f"expected {HOLMES_RAW_BOOKS_COUNT} Gutenberg book files; found {len(book_files)}"
-        )
-
-    h = hashlib.sha256()
-    with target.open("wb") as out:
-        for fpath in book_files:
-            with open(fpath, "rb") as inp:
-                chunk = inp.read()
-                out.write(chunk)
-                h.update(chunk)
-
-    digest = h.hexdigest()
-    if digest != HOLMES_CORPUS_SHA256:
-        raise ValueError(
-            f"concatenated Holmes corpus checksum mismatch: {digest} != {HOLMES_CORPUS_SHA256}"
-        )
-
-    return target
 
 
 @dataclass(frozen=True)
@@ -187,7 +65,7 @@ class Table7EvaluationCache:
     ) -> None:
         self.root = root
         self.signature = {
-            "schema_version": 1,
+            "schema_version": 2,
             "evaluation_protocol": _EVALUATION_PROTOCOL,
             "questions_sha256": questions_sha256,
             "answers_sha256": answers_sha256,
@@ -206,16 +84,13 @@ class Table7EvaluationCache:
             return None
         return result if result.mlflow_run_id == run_id else None
 
-    def store(
-        self, result: Table7RunResult, *, lookup_identity: dict[str, object]
-    ) -> None:
+    def store(self, result: Table7RunResult) -> None:
         path = self._path(result.mlflow_run_id)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(
             json.dumps(
                 {
                     "signature": self.signature,
-                    "lookup_identity": lookup_identity,
                     "result": asdict(result),
                 },
                 indent=2,
@@ -224,42 +99,6 @@ class Table7EvaluationCache:
             + "\n",
             encoding="utf-8",
         )
-
-    def seed_from_csv(self, csv_path: Path) -> int:
-        """Seed cache from an existing summary.csv if present."""
-        if not csv_path.is_file():
-            return 0
-        count = 0
-        try:
-            with csv_path.open(encoding="utf-8") as f:
-                reader = csv.DictReader(f)
-                for row in reader:
-                    run_id = row.get("mlflow_run_id")
-                    if not run_id:
-                        continue
-                    if self.load(run_id) is not None:
-                        continue
-                    result = Table7RunResult(
-                        architecture=str(row["architecture"]),
-                        dimension=int(row["dimension"]),
-                        training_words_millions=int(row["training_words_millions"]),
-                        epochs=int(row["epochs"]),
-                        corpus=str(row["corpus"]),
-                        seed=int(row["seed"]),
-                        mlflow_run_id=str(row["mlflow_run_id"]),
-                        overall_accuracy_percent=float(row["overall_accuracy_percent"]),
-                        dev_accuracy_percent=float(row["dev_accuracy_percent"]),
-                        test_accuracy_percent=float(row["test_accuracy_percent"]),
-                        total_questions=int(row["total_questions"]),
-                        observed_training_seconds=float(
-                            row["observed_training_seconds"]
-                        ),
-                    )
-                    self.store(result, lookup_identity={"source": "summary.csv"})
-                    count += 1
-        except Exception:
-            return count
-        return count
 
     def _path(self, run_id: str) -> Path:
         if re.fullmatch(r"[0-9a-zA-Z_-]+", run_id) is None:
@@ -281,41 +120,36 @@ def collect_table7_runs(runs: list[Any]) -> dict[int, Any]:
 
 
 def analyze_table7_sources(
-    tracking_uri: str,
+    cache_root: Path,
     questions_path: Path | None = None,
     *,
     paths: RuntimePaths | None = None,
 ) -> list[Path]:
     """Aggregate durable Table 7 runs, evaluate sentence completion, and write reports."""
     paths = paths or RuntimePaths.from_environment()
-    from mlflow import MlflowClient
 
-    client = MlflowClient(tracking_uri=tracking_uri)
-    experiment = client.get_experiment_by_name("f2.w2v1")
-    if experiment is None:
-        raise ValueError("MLflow experiment f2.w2v1 does not exist")
+    artifact_cache = LocalResults(cache_root)
+    runs = artifact_cache.runs()
 
-    runs = client.search_runs(
-        [experiment.experiment_id],
-        filter_string="tags.`result.durable_complete` = 'true'",
-        order_by=["attributes.start_time DESC"],
-        max_results=10_000,
+    benchmark = (
+        Path(questions_path) if questions_path else Path(cache_root) / "evaluation"
     )
-    artifact_cache = MlflowArtifactCache(
-        client, tracking_uri, root=paths.cache_root / "mlflow_artifact"
-    )
-    q_file, a_file = ensure_msr_benchmark_data(
-        questions_path.parent
-        if questions_path and questions_path.is_file()
-        else questions_path
-    )
+    base = benchmark.parent if benchmark.suffix else benchmark
+    q_file = base / "Holmes.lm_format.questions.txt"
+    a_file = base / "Holmes.lm_format.answers.txt"
 
+    if not q_file.is_file() or not a_file.is_file():
+        output = unavailable_report(
+            paths.cache_root / "f2/w2v1/analysis/table7",
+            "cached MSR questions or answers missing",
+        )
+        return [output / "summary.md", output / "unavailable.json"]
     questions = parse_msr_sentence_completion_questions(
         q_file.read_bytes().splitlines(),
         a_file.read_bytes().splitlines(),
     )
 
-    out_dir = paths.analysis_output("f2", "table7")
+    out_dir = paths.cache_root / "f2/w2v1/analysis/table7"
     out_dir.mkdir(parents=True, exist_ok=True)
     summary_md = out_dir / "summary.md"
     summary_csv = out_dir / "summary.csv"
@@ -325,20 +159,20 @@ def analyze_table7_sources(
         questions_sha256=MSR_QUESTIONS_SHA256,
         answers_sha256=MSR_ANSWERS_SHA256,
     )
-    evaluation_cache.seed_from_csv(summary_csv)
 
     grouped_runs = collect_table7_runs(runs)
 
     run_results: list[Table7RunResult] = []
+    unavailable = []
     cache_hits = 0
     cache_misses = 0
-    with artifact_download_progress():
-        for seed, run in sorted(grouped_runs.items()):
-            cached = evaluation_cache.load(run.info.run_id)
-            if cached is not None and cached.seed == seed:
-                run_results.append(cached)
-                cache_hits += 1
-                continue
+    for seed, run in sorted(grouped_runs.items()):
+        cached = evaluation_cache.load(run.info.run_id)
+        if cached is not None and cached.seed == seed:
+            run_results.append(cached)
+            cache_hits += 1
+            continue
+        try:
             cache_misses += 1
             lookup_dir = artifact_cache.get(run.info.run_id, "lookup")
             lookup = load_lookup_artifact(lookup_dir)
@@ -356,17 +190,22 @@ def analyze_table7_sources(
                 corpus="holmes",
                 seed=seed,
                 mlflow_run_id=run.info.run_id,
-                overall_accuracy_percent=round(evaluation.overall.score * 100.0, 2),
-                dev_accuracy_percent=round(evaluation.dev.score * 100.0, 2),
-                test_accuracy_percent=round(evaluation.test.score * 100.0, 2),
+                overall_accuracy_percent=round(
+                    evaluation.overall.require_score() * 100.0, 2
+                ),
+                dev_accuracy_percent=round(evaluation.dev.require_score() * 100.0, 2),
+                test_accuracy_percent=round(evaluation.test.require_score() * 100.0, 2),
                 total_questions=len(questions),
                 observed_training_seconds=seconds,
             )
-            evaluation_cache.store(
-                record, lookup_identity=getattr(lookup, "manifest", {})
-            )
+            evaluation_cache.store(record)
             run_results.append(record)
 
+        except (FileNotFoundError, KeyError, ValueError) as exc:
+            unavailable.append(
+                {"run_id": run.info.run_id, "status": "no_data", "reason": str(exc)}
+            )
+    (out_dir / "unavailable.json").write_text(json.dumps(unavailable, indent=2) + "\n")
     print(
         f"W2V1 Table 7 evaluation cache: {cache_hits} hit(s), {cache_misses} miss(es)",
         file=sys.stderr,
@@ -453,7 +292,6 @@ def _write_table7_csv(path: Path, results: list[Table7RunResult]) -> None:
 
 __all__ = [
     "HOLMES_CORPUS_SHA256",
-    "HOLMES_RAW_BOOKS_COUNT",
     "HOLMES_RAW_BYTES",
     "MSR_ANSWERS_SHA256",
     "MSR_QUESTIONS_SHA256",
@@ -461,6 +299,4 @@ __all__ = [
     "Table7RunResult",
     "analyze_table7_sources",
     "collect_table7_runs",
-    "ensure_holmes_corpus",
-    "ensure_msr_benchmark_data",
 ]

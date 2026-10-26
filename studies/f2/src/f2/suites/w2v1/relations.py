@@ -26,9 +26,9 @@ from f2.suites.w2v.evaluation import (
 )
 from repro_core.context import RuntimePaths
 
-from .analysis import QUESTIONS_WORDS_SHA256
 from .corpus_statistics import TOKEN_PATTERN
 from .diagnostic import MODELS, SEEDS, TABLE3_RUNS
+from .resources import QUESTIONS_WORDS_SHA256
 
 
 def corpus_lines(path):
@@ -196,18 +196,11 @@ def geometry_diagnostics(cache_root: Path, output: Path, paths: RuntimePaths):
             run_id = TABLE3_RUNS[model][seed]
             print(f"Geometry {model} seed {seed}", flush=True)
             lookup = load_lookup_artifact(cache_root / run_id / "lookup")
-            baseline = json.loads(
-                (paths.cache_root / "f2/w2v1/analogy" / f"{run_id}.json").read_text()
-            )
-            if lookup.manifest != baseline["lookup_identity"]:
-                raise ValueError(f"Lookup identity mismatch: {run_id}")
             if sample is None:
                 sample = lookup
             for field in ("counts", "token_bytes", "token_offsets"):
                 if not np.array_equal(getattr(sample, field), getattr(lookup, field)):
                     raise ValueError(f"Vocabulary differs: {run_id}")
-            if lookup.manifest["corpus_digest"] != sample.manifest["corpus_digest"]:
-                raise ValueError(f"Corpus differs: {run_id}")
             groups = category_inputs(lookup, questions)
             tokens = decode_tokens(lookup)
             # Diagnose raw v(b)-v(a) and the normalized operands used by the evaluator.

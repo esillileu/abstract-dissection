@@ -15,9 +15,9 @@ from f2.suites.w2v1.analysis import (
     Table2EvaluationCache,
     Table2RunResult,
     _complete_conditions,
-    ensure_questions_words,
     observed_training_seconds,
 )
+from f2.suites.w2v1.resources import ensure_questions_words
 from repro_core.cli import app
 from repro_core.context import ExperimentContext, RuntimePaths
 from repro_core.execution.runner import run_config
@@ -71,32 +71,12 @@ def test_table2_evaluation_cache_requires_matching_protocol_signature(tmp_path) 
     run_id = "a" * 32
     result = Table2RunResult(24, 50, 1, run_id, 12.5, 8.0, 15.0, 30.0, 10, 12)
     first = Table2EvaluationCache(tmp_path, questions_sha256="first")
-    first.store(result, lookup_identity={"vocabulary_digest": "digest"})
+    first.store(result)
 
     assert first.load(run_id) == result
     assert (
         Table2EvaluationCache(tmp_path, questions_sha256="second").load(run_id) is None
     )
-
-
-def test_table2_evaluation_cache_seed_from_csv(tmp_path) -> None:
-    csv_file = tmp_path / "table2-runs.csv"
-    run_id = "b" * 32
-    csv_file.write_text(
-        "training_words_millions,vector_dimension,seed,mlflow_run_id,"
-        "total_accuracy_percent,semantic_accuracy_percent,syntactic_accuracy_percent,"
-        "observed_training_seconds,included_questions,total_questions\n"
-        f"24,50,1,{run_id},12.5,8.0,15.0,30.0,10,12\n",
-        encoding="utf-8",
-    )
-    cache = Table2EvaluationCache(tmp_path / "cache", questions_sha256="first")
-    assert cache.load(run_id) is None
-    seeded = cache.seed_from_csv(csv_file)
-    assert seeded == 1
-    loaded = cache.load(run_id)
-    assert loaded is not None
-    assert loaded.mlflow_run_id == run_id
-    assert loaded.total_accuracy_percent == 12.5
 
 
 def test_table6_evaluation_cache_lifecycle_and_seeding(tmp_path) -> None:
@@ -119,29 +99,12 @@ def test_table6_evaluation_cache_lifecycle_and_seeding(tmp_path) -> None:
         paper_cpu_cores=140,
     )
     cache = Table6EvaluationCache(tmp_path / "cache", questions_sha256="qsha")
-    cache.store(result, lookup_identity={"digest": "d"})
+    cache.store(result)
     assert cache.load(run_id) == result
 
     # Signature mismatch
     other = Table6EvaluationCache(tmp_path / "cache", questions_sha256="different")
     assert other.load(run_id) is None
-
-    # CSV seeding
-    csv_file = tmp_path / "runs.csv"
-    run_id_2 = "d" * 32
-    csv_file.write_text(
-        "architecture,embedding_dimension,seed,mlflow_run_id,source_table,"
-        "semantic_accuracy_percent,syntactic_accuracy_percent,total_accuracy_percent,"
-        "included_questions,total_questions,observed_training_seconds,paper_training_days,paper_cpu_cores\n"
-        f"skipgram,1000,7,{run_id_2},6,60.0,70.0,65.0,18000,19544,2000.0,2.5,125\n",
-        encoding="utf-8",
-    )
-    fresh_cache = Table6EvaluationCache(tmp_path / "fresh", questions_sha256="qsha")
-    assert fresh_cache.seed_from_csv(csv_file) == 1
-    loaded_2 = fresh_cache.load(run_id_2)
-    assert loaded_2 is not None
-    assert loaded_2.architecture == "skipgram"
-    assert loaded_2.seed == 7
 
 
 def test_table3_table4_table5_table7_evaluation_caches(tmp_path) -> None:
@@ -172,7 +135,7 @@ def test_table3_table4_table5_table7_evaluation_caches(tmp_path) -> None:
     t3_cache = Table3EvaluationCache(
         tmp_path / "t3", questions_sha256="q", msr_sha256="m"
     )
-    t3_cache.store(t3_res, lookup_identity={})
+    t3_cache.store(t3_res)
     assert t3_cache.load(t3_id) == t3_res
     assert (
         Table3EvaluationCache(
@@ -187,7 +150,7 @@ def test_table3_table4_table5_table7_evaluation_caches(tmp_path) -> None:
         "skipgram", "lm1b", 7, t4_id, 45.0, 55.0, 50.0, 18000, 19544, 500.0
     )
     t4_cache = Table4EvaluationCache(tmp_path / "t4", questions_sha256="q")
-    t4_cache.store(t4_res, lookup_identity={})
+    t4_cache.store(t4_res)
     assert t4_cache.load(t4_id) == t4_res
 
     # Table 5
@@ -196,7 +159,7 @@ def test_table3_table4_table5_table7_evaluation_caches(tmp_path) -> None:
         "cbow", 300, 783, 3, "wmt", 19, t5_id, 15.0, 50.0, 32.0, 17000, 19544, 300.0
     )
     t5_cache = Table5EvaluationCache(tmp_path / "t5", questions_sha256="q")
-    t5_cache.store(t5_res, lookup_identity={})
+    t5_cache.store(t5_res)
     assert t5_cache.load(t5_id) == t5_res
 
     # Table 7
@@ -207,7 +170,7 @@ def test_table3_table4_table5_table7_evaluation_caches(tmp_path) -> None:
     t7_cache = Table7EvaluationCache(
         tmp_path / "t7", questions_sha256="q", answers_sha256="a"
     )
-    t7_cache.store(t7_res, lookup_identity={})
+    t7_cache.store(t7_res)
     assert t7_cache.load(t7_id) == t7_res
 
 
@@ -471,7 +434,7 @@ def test_w2v_tracked_run_publishes_one_complete_mlflow_run(
     run = runs[0]
     assert run.info.status == "FINISHED"
     assert run.data.tags["mlflow.runName"] == expected_slot
-    assert run.data.tags["result.durable_complete"] == "true"
+    assert "result.durable_complete" not in run.data.tags
     assert run.data.tags["suite.name"] == suite
     assert "f2.resource_manifest_digest" not in run.data.tags
     assert "f2.resource_version_id" not in run.data.tags

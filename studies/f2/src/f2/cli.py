@@ -265,7 +265,6 @@ def analyze(
     if suite == "w2v1":
         from repro_core.context import RuntimePaths
 
-        from .common.paths import get_benchmark_data_dir
         from .suites.w2v1.analysis import analyze_table2_sources
         from .suites.w2v1.table3 import analyze_table3_sources
         from .suites.w2v1.table4 import analyze_table4_sources
@@ -279,28 +278,29 @@ def analyze(
             raise ValueError("W2V1 analysis table must be 2, 3, 4, 5, 6, or 7")
         if msr_questions is not None and table != 3:
             raise ValueError("--msr-questions applies only to Table 3")
+        from .suites.w2v.cache import download_results
+
+        cache_root = download_results(resolve_tracking_uri(tracking_uri), "w2v1", paths)
         if table == 7:
             questions = (
                 questions
-                or get_benchmark_data_dir(paths)
-                / "msr_sentence_completion"
+                or cache_root
+                / "evaluation/msr_sentence_completion"
                 / "Holmes.lm_format.questions.txt"
             )
             analyzer = analyze_table7_sources
             outputs = analyzer(
-                resolve_tracking_uri(tracking_uri),
+                cache_root,
                 questions,
                 paths=paths,
             )
         else:
-            questions = (
-                questions or get_benchmark_data_dir(paths) / "questions-words.txt"
-            )
+            questions = questions or cache_root / "evaluation/questions-words.txt"
             if table == 2:
                 analyzer = analyze_table2_sources
             elif table == 3:
                 outputs = analyze_table3_sources(
-                    resolve_tracking_uri(tracking_uri),
+                    cache_root,
                     questions,
                     msr_questions_path=msr_questions,
                     corpus_source=corpus,
@@ -318,7 +318,7 @@ def analyze(
 
             if analyzer is not None:
                 outputs = analyzer(
-                    resolve_tracking_uri(tracking_uri),
+                    cache_root,
                     questions,
                     corpus_source=corpus,
                     paths=paths,
@@ -346,41 +346,41 @@ def analyze(
             published = []
             if table == 7:
                 published = publish_table7_analysis(
-                    client, exp_id, paths.analysis_output("f2", "table7")
+                    client, exp_id, paths.cache_root / "f2/w2v1/analysis/table7"
                 )
             elif table == 6:
                 published = publish_table6_analysis(
                     client,
                     exp_id,
-                    paths.analysis_output("f2", "w2v1"),
+                    paths.cache_root / "f2/w2v1/analysis",
                     corpora=corpora,
                 )
             elif table == 5:
                 published = publish_table5_analysis(
                     client,
                     exp_id,
-                    paths.analysis_output("f2", "w2v1"),
+                    paths.cache_root / "f2/w2v1/analysis",
                     corpora=corpora,
                 )
             elif table == 4:
                 published = publish_table4_analysis(
                     client,
                     exp_id,
-                    paths.analysis_output("f2", "w2v1"),
+                    paths.cache_root / "f2/w2v1/analysis",
                     corpora=corpora,
                 )
             elif table == 3:
                 published = publish_table3_analysis(
                     client,
                     exp_id,
-                    paths.analysis_output("f2", "w2v1"),
+                    paths.cache_root / "f2/w2v1/analysis",
                     corpora=corpora,
                 )
             elif table == 2:
                 published = publish_table2_analysis(
                     client,
                     exp_id,
-                    paths.analysis_output("f2", "w2v1"),
+                    paths.cache_root / "f2/w2v1/analysis",
                     corpora=corpora,
                 )
             typer.echo(
@@ -446,7 +446,7 @@ def check(
         r.data.tags.get("planned_run_slot_id")
         or r.data.tags.get("f2.planned_run_slot_id")
         for r in runs
-        if r.data.tags.get("result.durable_complete") == "true"
+        if r.info.status == "FINISHED"
     }
     completed_count = 0
     missing_count = 0
@@ -466,3 +466,91 @@ def check(
 
 
 __all__ = ["analyze", "app", "check", "evaluate", "list_suites", "plan", "run"]
+
+
+@app.command("phrase-preflight")
+@cli_errors
+def phrase_preflight(
+    config: Path,
+    atomic_run: Annotated[str, typer.Option("--atomic-run")],
+    source: Annotated[Path | None, typer.Option("--source")] = None,
+    prepare: Annotated[
+        bool,
+        typer.Option(
+            "--prepare",
+            help="Explicitly prepare phrases and measure vocabulary; never train.",
+        ),
+    ] = False,
+) -> None:
+    """Inspect Section 4.1 local inputs and resources without acquisition/training."""
+    from repro_core.context.paths import RuntimePaths
+
+    from .suites.w2v2.preflight import preflight, resolve_source
+    from .suites.w2v2.spec import parse_run_spec
+
+    paths = RuntimePaths.from_environment()
+    spec = parse_run_spec(config, atomic_run_id=atomic_run)
+    resolved = spec.to_executor_config()
+    candidate = resolve_source(resolved, paths, source)
+    typer.echo(
+        json.dumps(
+            preflight(
+                resolved,
+                candidate,
+                paths.staging_root / "f2/preparation",
+                staging_root=paths.staging_root,
+                prepare=prepare,
+            ),
+            indent=2,
+            sort_keys=True,
+        )
+    )
+
+
+@app.command("w2v2-report")
+@cli_errors
+def w2v2_report(
+    offline: Annotated[
+        bool,
+        typer.Option(
+            help="Analyze the existing local cache without contacting MLflow."
+        ),
+    ] = False,
+    tracking_uri: Annotated[
+        str | None, typer.Option(help="Read existing f2.w2v2 MLflow results.")
+    ] = None,
+    word_questions: Annotated[
+        Path | None,
+        typer.Option(help="Existing questions-words.txt; never downloaded."),
+    ] = None,
+    phrase_questions: Annotated[
+        Path | None,
+        typer.Option(help="Existing questions-phrases.txt; never downloaded."),
+    ] = None,
+) -> None:
+    """Compare all six paper tables and Section 4.1 without training or publishing."""
+    from repro_core.context import RuntimePaths
+
+    from .suites.w2v.cache import download_results, read_records
+    from .suites.w2v2.analysis import generate_report
+
+    paths = RuntimePaths.from_environment()
+    from .tracking import resolve_tracking_uri
+
+    records = (
+        read_records(paths.cache_root / "f2/w2v2/results")
+        if offline
+        else read_records(
+            download_results(resolve_tracking_uri(tracking_uri), "w2v2", paths)
+        )
+    )
+    output = generate_report(
+        records=records,
+        paths=paths,
+        word_questions=word_questions
+        or paths.cache_root / "f2/w2v2/results/evaluation/questions-words.txt",
+        phrase_questions=phrase_questions
+        or paths.cache_root / "f2/w2v2/results/evaluation/questions-phrases.txt",
+        result_source="offline; MLflow not queried" if offline else "MLflow f2.w2v2",
+    )
+    typer.echo(f"W2V2 report: {output / 'summary.md'}")

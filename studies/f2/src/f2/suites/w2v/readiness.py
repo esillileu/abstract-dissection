@@ -69,6 +69,14 @@ DISPOSITIONS = (
         "Our NNLM 20/50/100d uses existing FineWeb 6B surrogate and local PS/AdaGrad; Table 6 reuses 100d",
     ),
     *(
+        TargetDisposition(
+            f"w2v2-section4-phrase-{scale}b",
+            "reconstruction",
+            "1000d HS entire-sentence implementation ready; exact local corpus and conservative resource preflight required",
+        )
+        for scale in (6, 33)
+    ),
+    *(
         TargetDisposition(spec, "unsupported", reason)
         for spec, reason in (
             ("w2v1-table6-cbow-6b", "DistBelief execution environment is unavailable"),
@@ -80,7 +88,6 @@ DISPOSITIONS = (
                 "w2v1-msr-sentence-skipgram",
                 "evaluation files have no verified checksum",
             ),
-            ("w2v2-large-phrase-skipgram", "6B/33B source corpus is unavailable"),
         )
     ),
 )

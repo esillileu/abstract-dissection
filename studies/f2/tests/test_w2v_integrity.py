@@ -107,66 +107,21 @@ def test_matching_rerun_and_unidentified_results_are_preserved(tmp_path):
     from f2.suites.w2v.artifacts import load_checkpoint
 
     expected = load_checkpoint(first.checkpoint).input_embeddings().copy()
-    second = run_config(settings, context, executor_module="f2.suites.w2v2.executor")
+    with pytest.raises(ValueError, match="not empty"):
+        run_config(settings, context, executor_module="f2.suites.w2v2.executor")
     np.testing.assert_array_equal(
-        load_checkpoint(second.checkpoint).input_embeddings(), expected
+        load_checkpoint(first.checkpoint).input_embeddings(), expected
     )
     root = tmp_path / "unidentified"
     root.mkdir()
     (root / "valuable.txt").write_text("preserve")
-    with pytest.raises(ValueError, match="preserved"):
+    with pytest.raises(ValueError, match="not empty"):
         run_config(
             settings,
             ExperimentContext(paths=paths(tmp_path), metadata={"run_root": root}),
             executor_module="f2.suites.w2v2.executor",
         )
     assert (root / "valuable.txt").read_text() == "preserve"
-
-
-@pytest.mark.parametrize(
-    "mismatch",
-    [
-        "f2.config_digest",
-        "f2.source_corpus_sha256",
-        "seed",
-        "suite.name",
-        "implementation.variant",
-        None,
-    ],
-)
-def test_tracked_resume_requires_complete_identity(tmp_path, mismatch):
-    from f2.suites.w2v.tracked import _find_resumable_run
-
-    source = tmp_path / "source"
-    source.write_bytes(b"a b\n" * 6)
-    settings = config(source)
-    tags = {
-        "f2.config_digest": settings["identity"]["config_digest"],
-        "f2.source_corpus_sha256": settings["corpus"]["sha256"],
-        "seed": "1",
-        "suite.name": "w2v2",
-        "implementation.variant": settings["atomic_run_id"],
-    }
-    if mismatch:
-        tags[mismatch] = "different"
-    checkpoint = tmp_path / "staging/exp/f2/w2v2/tracked/old/checkpoints/latest.json"
-    checkpoint.parent.mkdir(parents=True)
-    checkpoint.write_text("{}")
-    restored = []
-    client = SimpleNamespace(
-        search_runs=lambda *a, **kw: [
-            SimpleNamespace(
-                data=SimpleNamespace(tags=tags),
-                info=SimpleNamespace(run_id="old", lifecycle_stage="deleted"),
-            )
-        ],
-        restore_run=restored.append,
-    )
-    actual = _find_resumable_run(
-        client, "experiment", settings, paths(tmp_path), "w2v2"
-    )
-    assert actual == ("old" if mismatch is None else None)
-    assert restored == (["old"] if mismatch is None else [])
 
 
 @pytest.mark.parametrize("separator", [b"\v", b"\f", b"\0", b"a\vb"])
@@ -418,7 +373,7 @@ def test_phrase_checkpoint_without_provable_run_identity_is_preserved(tmp_path):
     root = tmp_path / "old-run"
     create_checkpoint_manager(root / "checkpoints", session=session).save_latest()
     before = snapshot(root)
-    with pytest.raises(ValueError, match="missing phrase run identity"):
+    with pytest.raises(ValueError, match="not empty"):
         run_config(
             settings,
             ExperimentContext(paths=paths(tmp_path), metadata={"run_root": root}),
@@ -451,9 +406,10 @@ def test_long_phrases_train_restore_and_evaluate_without_aliases(tmp_path):
     assert lookup.row(left + b"_" + right) != lookup.row(left + b"_" + other)
     assert lookup.row(giant) is not None
     expected = load_checkpoint(first.checkpoint).input_embeddings().copy()
-    rerun = run_config(settings, context, executor_module="f2.suites.w2v2.executor")
+    with pytest.raises(ValueError, match="not empty"):
+        run_config(settings, context, executor_module="f2.suites.w2v2.executor")
     np.testing.assert_array_equal(
-        load_checkpoint(rerun.checkpoint).input_embeddings(), expected
+        load_checkpoint(first.checkpoint).input_embeddings(), expected
     )
     questions = tmp_path / "questions"
     questions.write_bytes(

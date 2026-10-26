@@ -149,3 +149,43 @@ def test_best_selection_and_report_are_deterministic() -> None:
     assert summary_record(first) == summary_record(second)
     assert summary_record(first)["paper_value"] == 0.75
     assert summary_record(first)["mean_coverage"] == (0.8 + 0.9 + 0.9) / 3
+
+
+def test_nearest_neighbors_exclude_zero_norm_queries_and_candidates():
+    from types import SimpleNamespace
+
+    import numpy as np
+
+    from f2.suites.w2v.evaluation import additive_composition, nearest_tokens
+
+    tokens = [b"query", b"zero", b"opposite"]
+    embeddings = np.array([[1.0, 0.0], [0.0, 0.0], [-1.0, 0.0]], dtype=np.float32)
+    lookup = SimpleNamespace(
+        embeddings=embeddings,
+        row=lambda token: tokens.index(token) if token in tokens else None,
+        token_bytes=np.frombuffer(b"".join(tokens), dtype=np.uint8),
+        token_offsets=np.array([0, 5, 9, 17], dtype=np.uint64),
+    )
+    assert nearest_tokens(lookup, b"zero") == ()
+    result = nearest_tokens(lookup, b"query", limit=3)
+    assert [n.token for n in result] == [b"opposite"]
+    assert result[0].score == -1.0
+    assert additive_composition(lookup, [b"query", b"opposite"]) == ()
+
+
+def test_undefined_evaluation_scores_remain_missing():
+    lookup = Lookup({b"a": (1.0, 0.0), b"b": (0.0, 1.0)})
+    empty = evaluate_analogies(lookup, ())
+    assert empty.overall.score is None
+    assert empty.overall.coverage is None
+    oov = evaluate_analogies(
+        lookup, parse_analogy_questions([b": family", b"a b missing a"])
+    )
+    assert oov.overall.score is None
+    assert oov.overall.coverage == 0.0
+    constant = evaluate_word_similarity(
+        lookup, [SimilarityPair(b"a", b"b", 1.0), SimilarityPair(b"b", b"a", 1.0)]
+    )
+    assert constant.score is None
+    with pytest.raises(ValueError, match="undefined evaluation"):
+        empty.overall.require_score()

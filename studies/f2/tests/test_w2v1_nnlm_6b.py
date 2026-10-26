@@ -124,7 +124,6 @@ def test_table6_reuses_exact_table4_100d_runs_and_rejects_wrong_identity():
         assert selected6["nnlm"][seed] is selected4["nnlm-d100"][seed]
     assert table6.complete_conditions(runs[:6]) == {}
     for tags in (
-        {"result.durable_complete": "false"},
         {"experiment_spec.id": "w2v1-table3-nnlm"},
         {"f2.planned_run_slot_id": "new-table6-nnlm-run"},
     ):
@@ -153,13 +152,10 @@ def test_table4_6_analysis_reference_runtime_and_shared_lookup(tmp_path, monkeyp
     monkeypatch.setattr(mlflow, "MlflowClient", lambda **kwargs: client)
     metrics = tmp_path / "observations.csv"
     metrics.write_text("epoch,elapsed_seconds\n1,2.0\n2,3.0\n")
-    cache = SimpleNamespace(get=lambda run_id, artifact: metrics)
+    cache = SimpleNamespace(get=lambda run_id, artifact: metrics, runs=lambda: runs)
     lookup = Lookup({b"a": (1, 0), b"b": (1, 1), b"c": (2, 0), b"d": (2, 1)})
     for module in (table4, table6):
-        monkeypatch.setattr(module, "ensure_questions_words", lambda path: path)
-        monkeypatch.setattr(
-            module, "MlflowArtifactCache", lambda *args, **kwargs: cache
-        )
+        monkeypatch.setattr(module, "LocalResults", lambda *args, **kwargs: cache)
         monkeypatch.setattr(module, "load_lookup_artifact", lambda path: lookup)
     paths = RuntimePaths(
         repo_root=tmp_path,
@@ -206,6 +202,7 @@ def test_table4_6_analysis_reference_runtime_and_shared_lookup(tmp_path, monkeyp
 @pytest.mark.parametrize("table", (4, 6))
 def test_cli_table4_6_accepts_fineweb(tmp_path, monkeypatch, table):
     module = table4 if table == 4 else table6
+    monkeypatch.setattr("f2.suites.w2v.cache.download_results", lambda *args: tmp_path)
     callback = Mock(return_value=(tmp_path / f"table{table}",))
     monkeypatch.setattr(module, f"analyze_table{table}_sources", callback)
     result = CliRunner().invoke(

@@ -357,8 +357,7 @@ def evaluate(corpus, data, questions, common, paths, cache):
             (paths.cache_root / "f2/w2v1/analogy" / f"{run_id}.json").read_text()
         )
         if (
-            lookup.manifest != baseline["lookup_identity"]
-            or baseline["signature"]["questions_sha256"] != QUESTION_SHA256
+            baseline["signature"]["questions_sha256"] != QUESTION_SHA256
             or baseline["signature"]["vocabulary_limit"] != 82000
         ):
             raise ValueError("Baseline identity mismatch")

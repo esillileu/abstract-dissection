@@ -13,11 +13,11 @@ from pathlib import Path
 from typing import Any
 
 from f2.suites.w2v.artifacts import load_lookup_artifact
+from f2.suites.w2v.cache import LocalResults, unavailable_report
 from f2.suites.w2v.evaluation import evaluate_analogies, parse_analogy_questions
 from repro_core.context import RuntimePaths
-from repro_mlflow.artifact_cache import MlflowArtifactCache, artifact_download_progress
 
-from .analysis import ensure_questions_words, observed_training_seconds
+from .analysis import observed_training_seconds
 from .table4 import (
     Table4EvaluationCache,
 )
@@ -44,7 +44,6 @@ def complete_conditions(runs: list[Any]) -> dict[str, dict[int, Any]]:
                 tags.get("implementation.variant") != f"fineweb--{condition}"
                 or tags.get("experiment_spec.id")
                 != f"w2v1-google-news-{architecture}-scale"
-                or tags.get("result.durable_complete") != "true"
             ):
                 continue
             seed = int(tags.get("seed", "0"))
@@ -88,7 +87,7 @@ class Table6EvaluationCache:
     def __init__(self, root: Path, *, questions_sha256: str) -> None:
         self.root = root
         self.signature = {
-            "schema_version": 1,
+            "schema_version": 2,
             "evaluation_protocol": _EVALUATION_PROTOCOL,
             "questions_sha256": questions_sha256,
         }
@@ -106,16 +105,13 @@ class Table6EvaluationCache:
             return None
         return result if result.mlflow_run_id == run_id else None
 
-    def store(
-        self, result: Table6RunResult, *, lookup_identity: dict[str, object]
-    ) -> None:
+    def store(self, result: Table6RunResult) -> None:
         path = self._path(result.mlflow_run_id)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(
             json.dumps(
                 {
                     "signature": self.signature,
-                    "lookup_identity": lookup_identity,
                     "result": asdict(result),
                 },
                 indent=2,
@@ -125,47 +121,6 @@ class Table6EvaluationCache:
             encoding="utf-8",
         )
 
-    def seed_from_csv(self, csv_path: Path) -> int:
-        """Seed cache from an existing runs.csv if present."""
-        if not csv_path.is_file():
-            return 0
-        count = 0
-        try:
-            with csv_path.open(encoding="utf-8") as f:
-                reader = csv.DictReader(f)
-                for row in reader:
-                    run_id = row.get("mlflow_run_id")
-                    if not run_id:
-                        continue
-                    if self.load(run_id) is not None:
-                        continue
-                    result = Table6RunResult(
-                        architecture=str(row["architecture"]),
-                        embedding_dimension=int(row["embedding_dimension"]),
-                        seed=int(row["seed"]),
-                        mlflow_run_id=str(row["mlflow_run_id"]),
-                        source_table=int(row["source_table"]),
-                        semantic_accuracy_percent=float(
-                            row["semantic_accuracy_percent"]
-                        ),
-                        syntactic_accuracy_percent=float(
-                            row["syntactic_accuracy_percent"]
-                        ),
-                        total_accuracy_percent=float(row["total_accuracy_percent"]),
-                        included_questions=int(row["included_questions"]),
-                        total_questions=int(row["total_questions"]),
-                        observed_training_seconds=float(
-                            row["observed_training_seconds"]
-                        ),
-                        paper_training_days=float(row["paper_training_days"]),
-                        paper_cpu_cores=int(row["paper_cpu_cores"]),
-                    )
-                    self.store(result, lookup_identity={"source": "runs.csv"})
-                    count += 1
-        except Exception:
-            return count
-        return count
-
     def _path(self, run_id: str) -> Path:
         if re.fullmatch(r"[0-9a-zA-Z_-]+", run_id) is None:
             raise ValueError(f"invalid MLflow run ID: {run_id}")
@@ -173,38 +128,33 @@ class Table6EvaluationCache:
 
 
 def analyze_table6_sources(
-    tracking_uri: str,
+    cache_root: Path,
     questions_path: Path,
     *,
     corpus_source: str | None = None,
     paths: RuntimePaths | None = None,
 ) -> tuple[Path, ...]:
-    from mlflow import MlflowClient
 
     if corpus_source not in (None, "fineweb"):
         raise ValueError(
             "Table 6 uses the existing FineWeb 6B surrogate; --corpus must be fineweb"
         )
     paths = paths or RuntimePaths.from_environment()
-    question_bytes = ensure_questions_words(questions_path).read_bytes()
+    if not Path(questions_path).is_file():
+        output = unavailable_report(
+            paths.cache_root / "f2/w2v1/analysis/table6",
+            "cached evaluation questions missing",
+        )
+        return (output,)
+    question_bytes = Path(questions_path).read_bytes()
     questions = parse_analogy_questions(question_bytes.splitlines())
     if len(questions) != 19_544:
         raise ValueError("canonical questions-words.txt must contain 19,544 questions")
     digest = hashlib.sha256(question_bytes).hexdigest()
-    client = MlflowClient(tracking_uri=tracking_uri)
-    experiment = client.get_experiment_by_name("f2.w2v1")
-    if experiment is None:
-        raise ValueError("MLflow experiment f2.w2v1 does not exist")
-    runs = client.search_runs(
-        [experiment.experiment_id],
-        filter_string="tags.`result.durable_complete` = 'true'",
-        order_by=["attributes.start_time DESC"],
-        max_results=10_000,
-    )
-    cache = MlflowArtifactCache(
-        client, tracking_uri, root=paths.cache_root / "mlflow_artifact"
-    )
-    output = paths.analysis_output("f2", "w2v1") / "fineweb" / "table6"
+    cache = LocalResults(cache_root)
+    runs = cache.runs()
+
+    output = (paths.cache_root / "f2/w2v1/analysis") / "fineweb" / "table6"
     output.mkdir(parents=True, exist_ok=True)
     evaluation_cache = Table6EvaluationCache(
         paths.cache_root / "f2/w2v1/table6", questions_sha256=digest
@@ -212,51 +162,49 @@ def analyze_table6_sources(
     table4_cache = Table4EvaluationCache(
         paths.cache_root / "f2/w2v1/table4", questions_sha256=digest
     )
-    evaluation_cache.seed_from_csv(output / "runs.csv")
     records = []
+    unavailable = []
     cache_hits = 0
     cache_misses = 0
-    with artifact_download_progress():
-        for architecture, seeds in sorted(complete_conditions(runs).items()):
-            dimension, _, _, _, days, cores = _REFERENCE[architecture]
-            for seed, run in sorted(seeds.items()):
-                cached = evaluation_cache.load(run.info.run_id)
+    for architecture, seeds in sorted(complete_conditions(runs).items()):
+        dimension, _, _, _, days, cores = _REFERENCE[architecture]
+        for seed, run in sorted(seeds.items()):
+            cached = evaluation_cache.load(run.info.run_id)
+            if (
+                cached is not None
+                and cached.seed == seed
+                and cached.architecture == architecture
+            ):
+                records.append(cached)
+                cache_hits += 1
+                continue
+            if architecture == "nnlm":
+                t4_cached = table4_cache.load(run.info.run_id)
                 if (
-                    cached is not None
-                    and cached.seed == seed
-                    and cached.architecture == architecture
+                    t4_cached is not None
+                    and t4_cached.seed == seed
+                    and t4_cached.architecture == "nnlm-d100"
                 ):
-                    records.append(cached)
+                    record = Table6RunResult(
+                        architecture,
+                        dimension,
+                        seed,
+                        run.info.run_id,
+                        4,
+                        t4_cached.semantic_accuracy_percent,
+                        t4_cached.syntactic_accuracy_percent,
+                        t4_cached.total_accuracy_percent,
+                        t4_cached.included_questions,
+                        t4_cached.total_questions,
+                        t4_cached.observed_training_seconds,
+                        days,
+                        cores,
+                    )
+                    evaluation_cache.store(record)
+                    records.append(record)
                     cache_hits += 1
                     continue
-                if architecture == "nnlm":
-                    t4_cached = table4_cache.load(run.info.run_id)
-                    if (
-                        t4_cached is not None
-                        and t4_cached.seed == seed
-                        and t4_cached.architecture == "nnlm-d100"
-                    ):
-                        record = Table6RunResult(
-                            architecture,
-                            dimension,
-                            seed,
-                            run.info.run_id,
-                            4,
-                            t4_cached.semantic_accuracy_percent,
-                            t4_cached.syntactic_accuracy_percent,
-                            t4_cached.total_accuracy_percent,
-                            t4_cached.included_questions,
-                            t4_cached.total_questions,
-                            t4_cached.observed_training_seconds,
-                            days,
-                            cores,
-                        )
-                        evaluation_cache.store(
-                            record, lookup_identity={"source": "table4-cache"}
-                        )
-                        records.append(record)
-                        cache_hits += 1
-                        continue
+            try:
                 cache_misses += 1
                 lookup = load_lookup_artifact(cache.get(run.info.run_id, "lookup"))
                 result = evaluate_analogies(
@@ -274,20 +222,23 @@ def analyze_table6_sources(
                     seed,
                     run.info.run_id,
                     4 if architecture == "nnlm" else 6,
-                    100 * result.semantic.score,
-                    100 * result.syntactic.score,
-                    100 * result.overall.score,
+                    100 * result.semantic.require_score(),
+                    100 * result.syntactic.require_score(),
+                    100 * result.overall.require_score(),
                     result.overall.valid_count,
                     result.overall.total_count,
                     seconds,
                     days,
                     cores,
                 )
-                evaluation_cache.store(
-                    record, lookup_identity=getattr(lookup, "manifest", {})
-                )
+                evaluation_cache.store(record)
                 records.append(record)
 
+            except (FileNotFoundError, KeyError, ValueError) as exc:
+                unavailable.append(
+                    {"run_id": run.info.run_id, "status": "no_data", "reason": str(exc)}
+                )
+    (output / "unavailable.json").write_text(json.dumps(unavailable, indent=2) + "\n")
     print(
         f"W2V1 Table 6 analogy cache: {cache_hits} hit(s), {cache_misses} miss(es)",
         file=sys.stderr,

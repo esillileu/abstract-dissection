@@ -16,7 +16,7 @@ from f2.definition import DEFINITION
 from f2.suites.w2v.artifacts import load_lookup_artifact
 from f2.suites.w2v.nnlm_artifacts import load_checkpoint
 from f2.suites.w2v.tracked import run_tracked_yaml
-from f2.suites.w2v1 import table3
+from f2.suites.w2v1 import resources, table3
 from f2.suites.w2v1.executor import create_session
 from repro_core.cli import app
 from repro_core.context import RuntimePaths
@@ -135,7 +135,7 @@ def test_tracked_nnlm_publishes_checkpoint_and_shared_lookup(tmp_path, monkeypat
     client = MlflowClient(tracking_uri=uri)
     run = client.get_run(receipt.run_id)
     assert run.info.status == "FINISHED"
-    assert run.data.tags["result.durable_complete"] == "true"
+    assert "result.durable_complete" not in run.data.tags
     uploaded = {x.path for x in client.list_artifacts(receipt.run_id)}
     assert {"checkpoints", "lookup", "result_manifest.json"} <= uploaded
     state = load_checkpoint(receipt.result.checkpoint)
@@ -173,7 +173,6 @@ def test_table3_selection_requires_all_canonical_durable_seeds():
     assert table3.complete_conditions(runs, "wmt") == {}
     assert table3.complete_conditions(runs[:-1], "lm1b").keys() == {"cbow", "skipgram"}
     for invalid in (
-        {"result.durable_complete": "false"},
         {"experiment_spec.id": "w2v1-google-news-nnlm-6b"},
         {"f2.planned_run_slot_id": "wrong"},
     ):
@@ -194,22 +193,25 @@ def test_table3_selection_requires_all_canonical_durable_seeds():
 def test_msr_mirror_validation_and_download_contract(tmp_path, monkeypatch):
     content = b": all\n" + b"a b c d\n" * 8000
     digest = hashlib.sha256(content).hexdigest()
-    monkeypatch.setattr(table3, "MSR_SYNTACTIC_SHA256", digest)
+    monkeypatch.setattr(resources, "MSR_SYNTACTIC_SHA256", digest)
     target = tmp_path / "MSR-syntax.txt"
     downloader = Mock()
     downloader.download.side_effect = lambda url, path, **kwargs: path.write_bytes(
         content
     )
-    monkeypatch.setattr(table3, "SerialDownloader", lambda: downloader)
-    assert table3.ensure_msr_syntactic(target) == target
+    monkeypatch.setattr(resources, "SerialDownloader", lambda: downloader)
+    assert resources.ensure_msr_syntactic(target) == target
     downloader.download.assert_called_once_with(
-        table3.MSR_SYNTACTIC_URL, target, expected_sha256=digest, expected_length=231634
+        resources.MSR_SYNTACTIC_URL,
+        target,
+        expected_sha256=digest,
+        expected_length=231634,
     )
     target.write_bytes(b"corrupt")
     with pytest.raises(ValueError, match="checksum"):
-        table3.ensure_msr_syntactic(target)
+        resources.ensure_msr_syntactic(target)
     with pytest.raises(ValueError, match="do not exist"):
-        table3.ensure_msr_syntactic(tmp_path / "missing.txt")
+        resources.ensure_msr_syntactic(tmp_path / "missing.txt")
 
 
 def test_table3_analyzer_uses_both_benchmarks_and_shared_evaluator(
@@ -224,8 +226,6 @@ def test_table3_analyzer_uses_both_benchmarks_and_shared_evaluator(
     )
     msr = tmp_path / "msr.txt"
     msr.write_bytes(b": all\n" + b"a b c d\n" * 8000)
-    monkeypatch.setattr(table3, "ensure_questions_words", lambda path: path)
-    monkeypatch.setattr(table3, "ensure_msr_syntactic", lambda path: path)
     runs = [
         run(arch, seed) for arch in ("cbow", "skipgram", "nnlm") for seed in (1, 7, 19)
     ]
@@ -239,8 +239,10 @@ def test_table3_analyzer_uses_both_benchmarks_and_shared_evaluator(
     metrics.write_text("epoch,elapsed_seconds\n1,2.0\n2,3.0\n")
     monkeypatch.setattr(
         table3,
-        "MlflowArtifactCache",
-        lambda *args, **kwargs: SimpleNamespace(get=lambda run_id, artifact: metrics),
+        "LocalResults",
+        lambda *args, **kwargs: SimpleNamespace(
+            get=lambda run_id, artifact: metrics, runs=lambda: runs
+        ),
     )
     lookup = Lookup({b"a": (1, 0), b"b": (1, 1), b"c": (2, 0), b"d": (2, 1)})
     monkeypatch.setattr(table3, "load_lookup_artifact", lambda path: lookup)
@@ -275,6 +277,7 @@ def test_table3_analyzer_uses_both_benchmarks_and_shared_evaluator(
 
 
 def test_cli_dispatches_table3_and_msr_path(tmp_path, monkeypatch):
+    monkeypatch.setattr("f2.suites.w2v.cache.download_results", lambda *args: tmp_path)
     callback = Mock(return_value=(tmp_path / "table3",))
     monkeypatch.setattr(table3, "analyze_table3_sources", callback)
     result = CliRunner().invoke(

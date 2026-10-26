@@ -402,8 +402,8 @@ def publish_all_w2v1_analysis(
     client = MlflowClient(tracking_uri=tracking_uri)
     experiment_id = ensure_analysis_experiment(client)
 
-    w2v1_analysis_dir = paths.analysis_output("f2", "w2v1")
-    t7_analysis_dir = paths.analysis_output("f2", "table7")
+    w2v1_analysis_dir = paths.cache_root / "f2/w2v1/analysis"
+    t7_analysis_dir = paths.cache_root / "f2/w2v1/analysis/table7"
 
     results: dict[str, list[str]] = {}
 
