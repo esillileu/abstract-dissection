@@ -170,3 +170,5 @@ roles, backups, upgrades, and availability remain external responsibilities.
 Small session/migration helpers do not justify another generic package. The actual
 feasibility estimator is in corpus/analysis.py; common/stats contains supporting
 research calculations. No Rust engine interface is predeclared by this refactor.
+
+F2 W2V1/W2V2 execution and analysis follow the [five-layer experiment lifecycle](f2-experiments.md). Catalog stores expected slots only; execution completion belongs to MLflow.

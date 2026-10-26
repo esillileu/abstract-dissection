@@ -194,3 +194,7 @@ Run records belong to MLflow, corpus bytes to object storage, and F2 metadata to
 PostgreSQL. Dataset paths and existing cache/staging locations are unchanged.
 See [infra handoff](../../infra/README.md) for the external operator interface.
 The repository does not deploy, administer, back up, or restore these services.
+
+## F2 Word2Vec lifecycle
+
+F2/W2V1 and W2V2 use MLflow `FINISHED` after synchronous final publication; the generic `result.durable_complete` convention above does not apply to these suites. Training preprocessing lives in staging. Their analyzers read cached MLflow inputs and write derived results under `.cache/f2/<suite>/analysis/`. Catalog migration 002 removes execution pointers and progress counts. See [F2 experiment lifecycle](../architecture/f2-experiments.md).
