@@ -94,6 +94,18 @@ class CheckpointManager:
 
     def save_final(self) -> CheckpointRef:
         """Save the terminal state as the only full resumable checkpoint."""
+        latest = self.current("latest")
+        if (
+            latest is not None
+            and latest.epoch == self._epoch_fn()
+            and latest.update == self._step_fn()
+        ):
+            ref = CheckpointRef(
+                "final", latest.path, latest.sha256, latest.epoch, latest.update
+            )
+            self._publish_pointer(ref)
+            self._refs["final"] = ref
+            return ref
         return self._save_role("final", keep=1, payload="full")
 
     def save_periodic_if_due(self) -> CheckpointRef | None:
@@ -127,7 +139,7 @@ class CheckpointManager:
                 CheckpointRef(
                     role="periodic",
                     path=path,
-                    sha256=_path_digest(path),
+                    sha256=checkpoint_digest(path),
                     epoch=int(manifest["epoch"]),
                     update=int(manifest["global_step"]),
                 )
@@ -146,13 +158,16 @@ class CheckpointManager:
         name = f"{role}-epoch-{int(epoch):04d}-update-{int(step):08d}-{suffix}"
         staging = generations / f".{name}.tmp"
         target = generations / name
+        ref: CheckpointRef | None = None
         try:
             self._save_fn(staging, payload)
+            sync_checkpoint(staging)
             staging.replace(target)
+            sync_directory(generations)
             ref = CheckpointRef(
                 role=role,
                 path=target,
-                sha256=_path_digest(target),
+                sha256=checkpoint_digest(target),
                 epoch=int(epoch),
                 update=int(step),
             )
@@ -161,6 +176,10 @@ class CheckpointManager:
             self._prune(role, keep=keep, preserve=target)
             return ref
         except BaseException:
+            # Preserve a fully written first generation even when remote publication fails.
+            # No previous generation is deleted; a subsequent run must retry publication.
+            if ref is not None and not (self.root / f"{role}.json").exists():
+                self._publish_pointer(ref)
             if staging.exists():
                 shutil.rmtree(staging)
             raise
@@ -183,7 +202,10 @@ class CheckpointManager:
             ),
             encoding="utf-8",
         )
+        with temporary.open("rb") as stream:
+            os.fsync(stream.fileno())
         os.replace(temporary, pointer)
+        sync_directory(self.root)
 
     def _generation_paths(self, role: str) -> list[Path]:
         generations = self.root / "generations"
@@ -196,11 +218,31 @@ class CheckpointManager:
 
     def _prune(self, role: str, *, keep: int, preserve: Path) -> None:
         paths = self._generation_paths(role)
-        retained = set(paths[-keep:]) if keep else set()
+        retained = set(paths[-keep:]) if keep > 1 else set()
         retained.add(preserve)
+        for role in ("latest", "best", "final"):
+            pointer = self.root / f"{role}.json"
+            if pointer.is_file():
+                retained.add(self.root / str(json.loads(pointer.read_text())["path"]))
         for path in paths:
             if path not in retained:
                 shutil.rmtree(path)
+
+
+def sync_directory(path: Path) -> None:
+    descriptor = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def sync_checkpoint(path: Path) -> None:
+    for item in path.rglob("*"):
+        if item.is_file():
+            with item.open("rb") as stream:
+                os.fsync(stream.fileno())
+    sync_directory(path)
 
 
 def resolve_checkpoint_path(path: str | Path) -> Path:
@@ -211,7 +253,7 @@ def resolve_checkpoint_path(path: str | Path) -> Path:
     return path
 
 
-def _path_digest(path: Path) -> str:
+def checkpoint_digest(path: Path) -> str:
     digest = hashlib.sha256()
     for item in sorted(value for value in path.rglob("*") if value.is_file()):
         digest.update(item.relative_to(path).as_posix().encode())
@@ -225,5 +267,8 @@ __all__ = [
     "CheckpointManager",
     "CheckpointRef",
     "CheckpointRetentionPolicy",
+    "checkpoint_digest",
     "resolve_checkpoint_path",
+    "sync_checkpoint",
+    "sync_directory",
 ]

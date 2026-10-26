@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import json
 import os
@@ -16,6 +17,7 @@ from typing import Any
 import numpy as np
 from repro_io.checksum import sha256_file
 from w2v import (
+    TrainingSession,
     TrainingState,
     Vocabulary,
     VocabularyConfig,
@@ -53,6 +55,31 @@ _LOOKUP_ARRAYS = (
 )
 
 
+def _vocabulary_policy(config_values: dict, full_tokens: bool) -> dict:
+    semantic = {
+        "min_count": int(config_values.get("min_count", 5)),
+        "max_lexical_words": int(config_values.get("max_lexical_words", 0)),
+        "hash_capacity": int(config_values.get("hash_capacity", 30_000_000)),
+        "semantics_version": 1,
+    }
+    if full_tokens:
+        semantic["full_tokens"] = True
+    return semantic
+
+
+def vocabulary_cache_path(
+    corpus_digest: str, config_values: dict, *, cache_root: Path, full_tokens: bool
+) -> Path:
+    semantic = _vocabulary_policy(config_values, full_tokens)
+    identity = _json_digest(
+        {
+            "corpus_digest": corpus_digest,
+            "vocabulary_config_digest": _json_digest(semantic),
+        }
+    )
+    return Path(cache_root) / "f2/w2v/vocabulary" / identity
+
+
 def resolve_or_build_vocabulary(
     corpus: Any,
     config_values: dict[str, Any],
@@ -62,14 +89,7 @@ def resolve_or_build_vocabulary(
 ) -> Any:
     """Load a verified shared vocabulary or build it once atomically."""
     corpus_digest = corpus_digest or corpus.digest()
-    semantic_config = {
-        "min_count": int(config_values.get("min_count", 5)),
-        "max_lexical_words": int(config_values.get("max_lexical_words", 0)),
-        "hash_capacity": int(config_values.get("hash_capacity", 30_000_000)),
-        "semantics_version": 1,
-    }
-    if corpus.full_tokens:
-        semantic_config["full_tokens"] = True
+    semantic_config = _vocabulary_policy(config_values, corpus.full_tokens)
     config_digest = _json_digest(semantic_config)
     identity = _json_digest(
         {"corpus_digest": corpus_digest, "vocabulary_config_digest": config_digest}
@@ -95,6 +115,7 @@ def resolve_or_build_vocabulary(
         vocabulary_config_digest=config_digest,
         identity_digest=identity,
     )
+    del vocabulary
     return _load_vocabulary_artifact(target, expected=expected)
 
 
@@ -125,7 +146,7 @@ def _write_vocabulary_artifact(
             "retained_token_count": state.retained_token_count,
         }
         _write_manifest(temporary, VOCABULARY_FORMAT, identity, _VOCABULARY_ARRAYS)
-        _load_vocabulary_artifact(temporary, expected=identity)
+        verify_artifact(temporary, expected=identity, format_name=VOCABULARY_FORMAT)
 
         _publish_vocabulary_artifact(temporary, target, expected=identity)
         temporary = None
@@ -144,7 +165,9 @@ def _publish_vocabulary_artifact(
             return
         except OSError:
             try:
-                _load_vocabulary_artifact(target, expected=expected)
+                verify_artifact(
+                    target, expected=expected, format_name=VOCABULARY_FORMAT
+                )
             except (FileNotFoundError, OSError, ValueError):
                 if attempt == 1:
                     raise
@@ -365,7 +388,10 @@ def _close_lookup_index(connection, directory):
 def load_lookup_artifact(
     path: Path, *, expected: dict[str, str] | None = None
 ) -> LookupEmbeddings:
-    manifest = verify_artifact(path, expected=expected, format_name=LOOKUP_FORMAT)
+    format_name = _read_json(path / "manifest.json").get("format")
+    if format_name not in {LOOKUP_FORMAT, CHECKPOINT_FORMAT}:
+        raise ValueError("unsupported lookup artifact format")
+    manifest = verify_artifact(path, expected=expected, format_name=format_name)
     arrays = {name: _load_array(path / name, mmap=True) for name in _LOOKUP_ARRAYS}
     embeddings = arrays["input_embeddings.npy"]
     offsets = arrays["token_offsets.npy"]
@@ -384,11 +410,161 @@ def load_lookup_artifact(
     return LookupEmbeddings(embeddings, token_bytes, offsets, counts, manifest)
 
 
+def training_config_digest(training: dict, seed: int) -> str:
+    """Fingerprint the serialized Rust engine contract without creating a trainer.
+
+    Matches trainer.rs::config_digest (including f32 bits and revision markers).
+    This read-only verifier must not compare the engine FNV descriptor to the
+    separate study SHA-256 config identity.
+    """
+    import struct
+
+    def float_bits(value):
+        return struct.unpack("<I", struct.pack("<f", value))[0]
+
+    objective = training["objective_kind"]
+    context = training.get("context_policy", "dynamic")
+    values = (
+        {"cbow": 0, "skip_gram": 1}[training["model_kind"]],
+        {"hierarchical_softmax": 0, "negative_sampling": 1, "nce": 2}[objective],
+        training["embedding_dimension"],
+        training["window_radius"],
+        {"dynamic": 0, "fixed": 1, "entire_sentence": 2}[context],
+        training["epochs"],
+        training["thread_count"],
+        training["learning_rate_update_interval"],
+        training["observation_interval"],
+        float_bits(training["initial_learning_rate"]),
+        float_bits(training["subsampling_threshold"]),
+        training["negative_sample_count"],
+        seed,
+        {"lcg": 0, "xorshift": 1}[training["rng_algorithm"]],
+        training["negative_table_size"],
+        training["sigmoid_table_size"],
+        float_bits(training["sigmoid_max"]),
+        {"skip": 0, "use_boundary_value": 1}[training["hs_out_of_range_policy"]],
+        {"cas": 0, "hogwild": 1}[training.get("update_strategy", "hogwild")],
+    )
+    payload = b"".join(struct.pack("<Q", value) for value in values)
+    if context == "entire_sentence":
+        payload += b"sentence-contiguous-shards-v2"
+    if objective == "nce":
+        payload += b"nce-objective-snapshot-v1"
+    digest = 0xCBF29CE484222325
+    for byte in payload:
+        digest = ((digest ^ byte) * 0x100000001B3) & 0xFFFFFFFFFFFFFFFF
+    return f"fnv1a64:{digest:016x}"
+
+
+MATRIX_CHUNK_ELEMENTS = 1 << 20
+
+
+def save_session_checkpoint(
+    session: TrainingSession,
+    path: Path,
+    *,
+    payload: str = "full",
+    history: Path | None = None,
+    vocabulary_artifact: Path | None = None,
+) -> None:
+    """Serialize at epoch boundaries with one bounded matrix chunk in RAM."""
+    if payload != "full":
+        raise ValueError("W2V checkpoints require full state")
+    path.mkdir(parents=True, exist_ok=False)
+    schema, config, vocabulary_digest, corpus = session.descriptor()
+    if vocabulary_artifact is None:
+        vocabulary = session.vocabulary_state()
+        vocabulary_identity = dict(
+            hash_capacity=vocabulary.hash_capacity,
+            retained_token_count=vocabulary.retained_token_count,
+        )
+        for name, value in zip(_VOCABULARY_ARRAYS, vocabulary.arrays(), strict=True):
+            np.save(path / name, value, allow_pickle=False)
+    else:
+        metadata = verify_artifact(
+            vocabulary_artifact,
+            format_name=VOCABULARY_FORMAT,
+            expected={"corpus_digest": corpus, "vocabulary_digest": vocabulary_digest},
+        )
+        vocabulary_identity = {
+            key: metadata[key] for key in ("hash_capacity", "retained_token_count")
+        }
+        for name in _VOCABULARY_ARRAYS:
+            _link_or_copy(vocabulary_artifact / name, path / name)
+    for output, name in (
+        (False, "input_embeddings.npy"),
+        (True, "output_embeddings.npy"),
+    ):
+        with (path / name).open("wb") as stream:
+            np.lib.format.write_array_header_2_0(
+                stream,
+                dict(
+                    descr=np.dtype(np.float32).str,
+                    fortran_order=False,
+                    shape=session.shape,
+                ),
+            )
+            elements = session.shape[0] * session.shape[1]
+            for start in range(0, elements, MATRIX_CHUNK_ELEMENTS):
+                count = min(MATRIX_CHUNK_ELEMENTS, elements - start)
+                chunk = session.embedding_chunk(output, start, count)
+                stream.write(memoryview(chunk).cast("B"))
+    trainer = dict(
+        schema_version=schema,
+        config_digest=config,
+        vocabulary_digest=vocabulary_digest,
+        corpus_digest=corpus,
+        completed_epochs=session.completed_epochs,
+        processed_tokens=session.processed_tokens,
+        vocabulary=vocabulary_identity,
+        workers=[_worker_record(worker) for worker in session.workers()],
+    )
+    _write_json(path / "trainer_state.json", trainer)
+    names = _CHECKPOINT_ARRAYS
+    if history is not None:
+        for name in ("observations.csv", "epoch_reports.json"):
+            source = history.parent / name
+            if source.is_file():
+                shutil.copyfile(source, path / name)
+                names = (*names, name)
+    _write_manifest(path, CHECKPOINT_FORMAT, trainer, names)
+
+
+def _link_or_copy(source: Path, target: Path) -> None:
+    try:
+        os.link(source, target)
+    except OSError as exc:
+        if exc.errno != errno.EXDEV:
+            raise
+        shutil.copyfile(source, target)
+
+
+def lookup_from_checkpoint(checkpoint: Path, target: Path) -> None:
+    """Reuse final checkpoint arrays through hard links on the same filesystem."""
+    manifest = verify_artifact(checkpoint, format_name=CHECKPOINT_FORMAT)
+    target.mkdir(parents=True, exist_ok=False)
+    for name in _LOOKUP_ARRAYS:
+        _link_or_copy(checkpoint / name, target / name)
+    identity = {
+        key: manifest[key]
+        for key in (
+            "schema_version",
+            "config_digest",
+            "vocabulary_digest",
+            "corpus_digest",
+        )
+    }
+    identity["completed_epochs"] = manifest["completed_epochs"]
+    identity["processed_tokens"] = manifest["processed_tokens"]
+    _write_manifest(target, LOOKUP_FORMAT, identity, _LOOKUP_ARRAYS)
+
+
 def create_checkpoint_manager(
     root: Path,
     *,
     session: Any,
     policy: CheckpointRetentionPolicy | None = None,
+    vocabulary_artifact: Path | None = None,
 ) -> CheckpointManager:
     """Bind an engine session to the generic generation/pointer manager."""
     resolved_policy = policy or CheckpointRetentionPolicy()
@@ -396,14 +572,30 @@ def create_checkpoint_manager(
         raise ValueError("W2V best checkpoints must retain full resumable state")
     return CheckpointManager(
         root=root,
-        config_digest=session.export_state().config_digest,
-        save_fn=lambda path, payload: save_checkpoint(
-            session.export_state(),
-            path,
-            payload=payload,
+        config_digest=session.descriptor()[1]
+        if isinstance(session, TrainingSession)
+        else session.export_state().config_digest,
+        save_fn=(
+            lambda path, payload: save_session_checkpoint(
+                session,
+                path,
+                payload=payload,
+                history=root.parent / "metrics/observations.csv",
+                vocabulary_artifact=vocabulary_artifact,
+            )
+        )
+        if isinstance(session, TrainingSession)
+        else (
+            lambda path, payload: save_checkpoint(
+                session.export_state(), path, payload=payload
+            )
         ),
         epoch_fn=lambda: session.completed_epochs,
-        step_fn=lambda: session.export_state().processed_tokens,
+        step_fn=lambda: (
+            session.processed_tokens
+            if isinstance(session, TrainingSession)
+            else session.export_state().processed_tokens
+        ),
         policy=resolved_policy,
     )
 
