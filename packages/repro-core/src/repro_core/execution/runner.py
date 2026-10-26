@@ -115,6 +115,15 @@ class Runner:
 def _remove_durable_staging(staging_root: Path) -> None:
     """Remove verified staging, tolerating an already-completed cleanup."""
     try:
+        ckpt_dir = staging_root / "checkpoints"
+        if ckpt_dir.is_dir():
+            for item in staging_root.iterdir():
+                if item.name != "checkpoints":
+                    if item.is_dir():
+                        shutil.rmtree(item)
+                    else:
+                        item.unlink()
+            return
         shutil.rmtree(staging_root)
     except FileNotFoundError:
         # Cleanup is intentionally idempotent. A previous run or another

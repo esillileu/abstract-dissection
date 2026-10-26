@@ -209,6 +209,7 @@ resolve_staging_dir() {
 declare -A P_START_TS P_ETIMES P_CMD P_SUITE P_MODEL P_OBJ P_TOT_EPOCHS
 declare -A P_CORPUS_FILE P_CORPUS_SIZE P_FDS P_NUM_SHARDS
 declare -A P_RUN_ID P_COMP_EPOCHS P_COMP_TOKENS P_LAST_EPOCH_MTIME P_CURR_EPOCH P_CURR_EPOCH_START P_EPOCH_START_EST P_SLOT
+declare -A P_RUN_START_TS
 declare -A P_USE_CACHE P_T_START P_POS_START P_T_END P_POS_END P_POS_LIST
 
 NOW_INT=$(date +%s)
@@ -300,9 +301,17 @@ for PID in "${MONITOR_PIDS[@]}"; do
   LAST_EPOCH_MTIME=0
   VARIANT_SLOT="unknown"
 
+  RUN_START_TS="$PROC_START_TS"
   MATCHED_DIR=$(resolve_staging_dir "$PROC_START_TS" "$CMD_ARGS")
   if [ -n "$MATCHED_DIR" ] && [ -d "$MATCHED_DIR" ]; then
     ACTIVE_RUN_ID=$(basename "$MATCHED_DIR")
+    STAGING_TS=$(stat -c %W "$MATCHED_DIR" 2>/dev/null || echo 0)
+    if ! [[ "$STAGING_TS" =~ ^[0-9]+$ ]] || [ "$STAGING_TS" -le 0 ]; then
+      STAGING_TS=$(stat -c %Y "$MATCHED_DIR" 2>/dev/null || echo 0)
+    fi
+    if [[ "$STAGING_TS" =~ ^[0-9]+$ ]] && [ "$STAGING_TS" -gt "$PROC_START_TS" ]; then
+      RUN_START_TS="$STAGING_TS"
+    fi
     LATEST_JSON="$MATCHED_DIR/checkpoints/latest.json"
     if [ -f "$LATEST_JSON" ]; then
       COMPLETED_EPOCHS=$(awk -F': ' '/"epoch"/ {gsub(/[^0-9]/,"",$2); print $2}' "$LATEST_JSON" 2>/dev/null || echo 0)
@@ -354,7 +363,7 @@ for PID in "${MONITOR_PIDS[@]}"; do
     CURRENT_EPOCH_START="$LAST_EPOCH_MTIME"
     EPOCH_START_IS_ESTIMATED=1
   else
-    CURRENT_EPOCH_START="$PROC_START_TS"
+    CURRENT_EPOCH_START="$RUN_START_TS"
     EPOCH_START_IS_ESTIMATED=0
   fi
 
@@ -367,6 +376,7 @@ for PID in "${MONITOR_PIDS[@]}"; do
   P_CURR_EPOCH_START[$PID]="$CURRENT_EPOCH_START"
   P_EPOCH_START_EST[$PID]="$EPOCH_START_IS_ESTIMATED"
   P_SLOT[$PID]="$VARIANT_SLOT"
+  P_RUN_START_TS[$PID]="$RUN_START_TS"
 
   # Measure initial position
   RES_1=$(collect_pos_for_pid "$PID" "$CORPUS_FILE" "$FDS")
@@ -483,6 +493,7 @@ for PID in "${MONITOR_PIDS[@]}"; do
         -v corpus_size="${P_CORPUS_SIZE[$PID]}" \
         -v proc_etimes="${P_ETIMES[$PID]}" \
         -v proc_start_ts="${P_START_TS[$PID]}" \
+        -v run_start_ts="${P_RUN_START_TS[$PID]}" \
         -v current_epoch_start="${P_CURR_EPOCH_START[$PID]}" \
         -v epoch_start_est="${P_EPOCH_START_EST[$PID]}" \
         -v current_epoch="${P_CURR_EPOCH[$PID]}" \
@@ -504,14 +515,64 @@ for PID in "${MONITOR_PIDS[@]}"; do
       training_sec = proc_etimes
       if (training_sec <= 0) training_sec = 1
 
-      total_elapsed_sec = now - proc_start_ts
-      if (total_elapsed_sec <= 0) total_elapsed_sec = 1
+      if (run_start_ts > 0 && run_start_ts > proc_start_ts) {
+        run_elapsed_sec = now - run_start_ts
+        if (run_elapsed_sec <= 0) run_elapsed_sec = 1
+      } else {
+        run_elapsed_sec = training_sec
+      }
 
+      total_elapsed_sec = run_elapsed_sec
       epoch_elapsed_sec = now - current_epoch_start
       if (epoch_elapsed_sec <= 0) epoch_elapsed_sec = 1
 
-      start_base = (num_shards - 1) / 2.0 * corpus_size
-      done_bytes = total_pos - start_base
+      # Partition-based done_bytes calculation
+      n_parts = (num_shards > 0) ? num_shards : 1
+      if (cmd_args ~ /table6/) {
+        n_parts = 14
+      } else if (model ~ /Feedforward NNLM/ || cmd_args ~ /nnlm/ || num_shards > 1) {
+        n_parts = 20
+      }
+      if (num_shards > n_parts) n_parts = num_shards
+
+      if (n_parts <= 1) {
+        done_bytes = total_pos
+      } else {
+        chunk_size = corpus_size / n_parts
+        split(pos_list, raw_pairs, " ")
+        n_fds = 0
+        for (k in raw_pairs) {
+          if (split(raw_pairs[k], kv, ":") == 2) {
+            fds_pos[n_fds++] = kv[2] + 0
+          }
+        }
+        done_bytes = 0
+        for (i = 0; i < n_parts; i++) {
+          start_b = int(i * chunk_size)
+          end_b = (i == n_parts - 1) ? corpus_size : int((i + 1) * chunk_size)
+          c_len = end_b - start_b
+
+          found = -1
+          for (j = 0; j < n_fds; j++) {
+            p = fds_pos[j]
+            if (p >= start_b && p <= end_b + 500000) {
+              if (found < 0 || p < found) {
+                found = p
+              }
+            }
+          }
+
+          if (found >= 0) {
+            c_done = found - start_b
+            if (c_done < 0) c_done = 0
+            if (c_done > c_len) c_done = c_len
+            done_bytes += c_done
+          } else {
+            # Worker reached end of partition and exited
+            done_bytes += c_len
+          }
+        }
+      }
       if (done_bytes < 0) done_bytes = 0
       if (done_bytes > corpus_size) done_bytes = corpus_size
 
@@ -579,8 +640,16 @@ for PID in "${MONITOR_PIDS[@]}"; do
       if (run_id != "unknown") {
         printf " Run ID (MLflow):     %s\n", run_id
       }
-      printf " PID:                 %d (Workers: %d parallel threads)\n", pid, num_shards
-      printf " Process Elapsed:     %.1f hours (%d seconds)\n", training_sec / 3600.0, training_sec
+      if (n_parts > num_shards) {
+        printf " PID:                 %d (%d active worker threads / %d partitions)\n", pid, num_shards, n_parts
+      } else {
+        printf " PID:                 %d (Workers: %d parallel threads)\n", pid, num_shards
+      }
+      if (run_start_ts > proc_start_ts + 60) {
+        printf " Run Elapsed:         %.1f hours (%d seconds) [Process Total: %.1fh]\n", run_elapsed_sec / 3600.0, run_elapsed_sec, training_sec / 3600.0
+      } else {
+        printf " Process Elapsed:     %.1f hours (%d seconds)\n", training_sec / 3600.0, training_sec
+      }
       printf " Corpus File:         %s\n", corpus_file
       printf " Corpus Size:         %.2f GB (%d bytes)\n", corpus_size / (1024^3), corpus_size
       printf "------------------------------------------------------------------------\n"
@@ -634,22 +703,32 @@ for PID in "${MONITOR_PIDS[@]}"; do
 
       if (show_detail == 1) {
         printf "------------------------------------------------------------------------\n"
-        printf " [Shard Details (%d Replicas - FD Position Observation)]\n", num_shards
-        printf " %-6s | %-5s | %-12s | %-12s | %-6s\n", "Shard", "FD", "Start Byte", "Current Pos", "Done %"
-        printf "-------+-------+--------------+--------------+--------\n"
-        n = split(pos_list, pairs, " ")
-        shard_len = corpus_size / num_shards
-        for (i = 1; i <= n; i++) {
-          split(pairs[i], kv, ":")
-          fd_num = kv[1]
-          cur_pos = kv[2]
-          shard_idx = i - 1
-          s_start = int(shard_idx * shard_len)
-          s_done = cur_pos - s_start
-          s_pct = (s_done / shard_len) * 100.0
-          if (s_pct < 0) s_pct = 0
-          if (s_pct > 100) s_pct = 100
-          printf " %5d | %5s | %12d | %12d | %5.1f%%\n", shard_idx, fd_num, s_start, cur_pos, s_pct
+        printf " [Partition Details (%d Partitions | %d Active Workers)]\n", n_parts, num_shards
+        printf " %-12s | %-12s | %-12s | %-12s | %-6s\n", "Partition", "Start Byte", "End Byte", "Current Pos", "Done %"
+        printf "--------------+--------------+--------------+--------------+--------\n"
+        chunk_size = corpus_size / n_parts
+        for (i = 0; i < n_parts; i++) {
+          start_b = int(i * chunk_size)
+          end_b = (i == n_parts - 1) ? corpus_size : int((i + 1) * chunk_size)
+          c_len = end_b - start_b
+          found = -1
+          for (j = 0; j < n_fds; j++) {
+            p = fds_pos[j]
+            if (p >= start_b && p <= end_b + 500000) {
+              if (found < 0 || p < found) {
+                found = p
+              }
+            }
+          }
+          if (found >= 0) {
+            c_done = found - start_b
+            if (c_done < 0) c_done = 0
+            if (c_done > c_len) c_done = c_len
+            p_pct = (c_done / c_len) * 100.0
+            printf " %2d (active)  | %12d | %12d | %12d | %5.1f%%\n", i, start_b, end_b, found, p_pct
+          } else {
+            printf " %2d (done)    | %12d | %12d | %12d | 100.0%%\n", i, start_b, end_b, end_b
+          }
         }
       }
       printf "========================================================================\n"

@@ -33,6 +33,7 @@ def evaluate_lookup_artifact(
     questions_path: Path,
     *,
     phrase_separator: bytes = b"_",
+    scoring: str = "cosine",
 ) -> dict[str, Any]:
     """Evaluate one immutable lookup artifact without a training session."""
     if suite not in {"w2v1-table2", "w2v1-table4", "w2v2", "w2v1-table7"}:
@@ -63,7 +64,9 @@ def evaluate_lookup_artifact(
         msr_questions = parse_msr_sentence_completion_questions(
             q_bytes.splitlines(), a_bytes.splitlines()
         )
-        completion = evaluate_msr_sentence_completion(lookup, msr_questions)
+        completion = evaluate_msr_sentence_completion(
+            lookup, msr_questions, scoring=scoring
+        )
         return {
             "suite": suite,
             "lookup_identity": {key: lookup.manifest[key] for key in _IDENTITY_KEYS},

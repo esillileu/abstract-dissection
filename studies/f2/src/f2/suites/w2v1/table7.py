@@ -174,6 +174,7 @@ class Table7RunResult:
     test_accuracy_percent: float
     total_questions: int
     observed_training_seconds: float
+    scoring: str = "cosine"
 
 
 _EVALUATION_PROTOCOL = "table7-v1"
@@ -183,12 +184,23 @@ class Table7EvaluationCache:
     """Signature-checked per-run cache for reconstructible Table 7 evaluation results."""
 
     def __init__(
-        self, root: Path, *, questions_sha256: str, answers_sha256: str
+        self,
+        root: Path,
+        *,
+        questions_sha256: str,
+        answers_sha256: str,
+        scoring: str = "cosine",
+        protocol: str | None = None,
     ) -> None:
         self.root = root
+        self.scoring = scoring
+        self.protocol = protocol or (
+            f"table7-{scoring}-v1" if scoring != "cosine" else _EVALUATION_PROTOCOL
+        )
         self.signature = {
             "schema_version": 1,
-            "evaluation_protocol": _EVALUATION_PROTOCOL,
+            "evaluation_protocol": self.protocol,
+            "scoring": self.scoring,
             "questions_sha256": questions_sha256,
             "answers_sha256": answers_sha256,
         }
@@ -201,7 +213,10 @@ class Table7EvaluationCache:
             payload = json.loads(path.read_text(encoding="utf-8"))
             if payload.get("signature") != self.signature:
                 return None
-            result = Table7RunResult(**payload["result"])
+            result_dict = payload["result"]
+            if "scoring" not in result_dict:
+                result_dict["scoring"] = self.scoring
+            result = Table7RunResult(**result_dict)
         except (KeyError, TypeError, ValueError, json.JSONDecodeError):
             return None
         return result if result.mlflow_run_id == run_id else None
@@ -237,6 +252,9 @@ class Table7EvaluationCache:
                     run_id = row.get("mlflow_run_id")
                     if not run_id:
                         continue
+                    row_scoring = str(row.get("scoring", "cosine"))
+                    if row_scoring != self.scoring:
+                        continue
                     if self.load(run_id) is not None:
                         continue
                     result = Table7RunResult(
@@ -254,6 +272,7 @@ class Table7EvaluationCache:
                         observed_training_seconds=float(
                             row["observed_training_seconds"]
                         ),
+                        scoring=row_scoring,
                     )
                     self.store(result, lookup_identity={"source": "summary.csv"})
                     count += 1
@@ -275,7 +294,7 @@ def collect_table7_runs(runs: list[Any]) -> dict[int, Any]:
         match = _T7_SLOT_PATTERN.fullmatch(slot)
         if match:
             seed = int(match.group(1))
-            if seed in _SEEDS:
+            if seed in _SEEDS and seed not in grouped:
                 grouped[seed] = run
     return grouped
 
@@ -284,6 +303,7 @@ def analyze_table7_sources(
     tracking_uri: str,
     questions_path: Path | None = None,
     *,
+    scoring: str = "cosine",
     paths: RuntimePaths | None = None,
 ) -> list[Path]:
     """Aggregate durable Table 7 runs, evaluate sentence completion, and write reports."""
@@ -315,15 +335,22 @@ def analyze_table7_sources(
         a_file.read_bytes().splitlines(),
     )
 
-    out_dir = paths.analysis_output("f2", "table7")
+    out_suite = "table7" if scoring == "cosine" else f"table7_{scoring}"
+    out_dir = paths.analysis_output("f2", out_suite)
     out_dir.mkdir(parents=True, exist_ok=True)
     summary_md = out_dir / "summary.md"
     summary_csv = out_dir / "summary.csv"
 
+    cache_dir = (
+        paths.cache_root / "f2/w2v1/table7"
+        if scoring == "cosine"
+        else paths.cache_root / f"f2/w2v1/table7_{scoring}"
+    )
     evaluation_cache = Table7EvaluationCache(
-        paths.cache_root / "f2/w2v1/table7",
+        cache_dir,
         questions_sha256=MSR_QUESTIONS_SHA256,
         answers_sha256=MSR_ANSWERS_SHA256,
+        scoring=scoring,
     )
     evaluation_cache.seed_from_csv(summary_csv)
 
@@ -340,9 +367,37 @@ def analyze_table7_sources(
                 cache_hits += 1
                 continue
             cache_misses += 1
-            lookup_dir = artifact_cache.get(run.info.run_id, "lookup")
-            lookup = load_lookup_artifact(lookup_dir)
-            evaluation = evaluate_msr_sentence_completion(lookup, questions)
+
+            if scoring in {"hs_log_prob", "hs_prob"}:
+                ckpt_dir = (
+                    paths.staging_root
+                    / "exp/f2/w2v1/tracked"
+                    / run.info.run_id
+                    / "checkpoints"
+                )
+                latest_json = ckpt_dir / "latest.json"
+                if not latest_json.is_file():
+                    raise FileNotFoundError(
+                        f"Full checkpoint for run {run.info.run_id} (seed {seed}) not found at {ckpt_dir}; "
+                        f"required for hierarchical softmax '{scoring}' evaluation."
+                    )
+                meta = json.loads(latest_json.read_text(encoding="utf-8"))
+                gen_path = ckpt_dir / meta["path"]
+                from f2.suites.w2v.artifacts import load_hs_evaluation_artifact
+
+                hs_artifact = load_hs_evaluation_artifact(gen_path)
+                evaluation = evaluate_msr_sentence_completion(
+                    hs_artifact, questions, scoring=scoring
+                )
+                lookup_id = hs_artifact.manifest
+            else:
+                lookup_dir = artifact_cache.get(run.info.run_id, "lookup")
+                lookup = load_lookup_artifact(lookup_dir)
+                evaluation = evaluate_msr_sentence_completion(
+                    lookup, questions, scoring=scoring
+                )
+                lookup_id = getattr(lookup, "manifest", {})
+
             metrics_file = artifact_cache.get(
                 run.info.run_id, "metrics/observations.csv"
             )
@@ -361,30 +416,31 @@ def analyze_table7_sources(
                 test_accuracy_percent=round(evaluation.test.score * 100.0, 2),
                 total_questions=len(questions),
                 observed_training_seconds=seconds,
+                scoring=scoring,
             )
-            evaluation_cache.store(
-                record, lookup_identity=getattr(lookup, "manifest", {})
-            )
+            evaluation_cache.store(record, lookup_identity=lookup_id)
             run_results.append(record)
 
     print(
-        f"W2V1 Table 7 evaluation cache: {cache_hits} hit(s), {cache_misses} miss(es)",
+        f"W2V1 Table 7 ({scoring}) evaluation cache: {cache_hits} hit(s), {cache_misses} miss(es)",
         file=sys.stderr,
     )
-    _write_table7_markdown(summary_md, run_results)
+    _write_table7_markdown(summary_md, run_results, scoring=scoring)
     _write_table7_csv(summary_csv, run_results)
 
     return [summary_md, summary_csv]
 
 
-def _write_table7_markdown(path: Path, results: list[Table7RunResult]) -> None:
+def _write_table7_markdown(
+    path: Path, results: list[Table7RunResult], *, scoring: str = "cosine"
+) -> None:
     lines = [
-        "# Table 7: Microsoft Research Sentence Completion Challenge Reproduction",
+        f"# Table 7: Microsoft Research Sentence Completion Challenge Reproduction ({scoring})",
         "",
-        "Evaluation of 640-dimensional Skip-gram on 1,040 questions from the MSR Sentence Completion Challenge.",
+        f"Evaluation of 640-dimensional Skip-gram on 1,040 questions from the MSR Sentence Completion Challenge using {scoring} scoring.",
         "",
-        "| Architecture | Dimension | Training Words | Epochs | Corpus | Paper Acc [%] | Repro Mean [%] | Repro Std [%] | Seeds | Questions |",
-        "| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |",
+        "| Architecture | Dimension | Training Words | Epochs | Corpus | Scoring | Paper Acc [%] | Repro Mean [%] | Repro Std [%] | Seeds | Questions |",
+        "| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |",
     ]
 
     if results:
@@ -393,7 +449,7 @@ def _write_table7_markdown(path: Path, results: list[Table7RunResult]) -> None:
         std_acc = statistics.stdev(overall_scores) if len(overall_scores) > 1 else 0.0
         seed_str = ",".join(str(r.seed) for r in results)
         lines.append(
-            f"| Skip-gram | 640 | 50M | 1 | Holmes | 48.0 | {mean_acc:.2f} | {std_acc:.2f} | {seed_str} | {results[0].total_questions} |"
+            f"| Skip-gram | 640 | 50M | 1 | Holmes | {scoring} | 48.0 | {mean_acc:.2f} | {std_acc:.2f} | {seed_str} | {results[0].total_questions} |"
         )
         lines.extend(
             [
@@ -410,7 +466,7 @@ def _write_table7_markdown(path: Path, results: list[Table7RunResult]) -> None:
             )
     else:
         lines.append(
-            "| Skip-gram | 640 | 50M | 1 | Holmes | 48.0 | Pending | Pending | - | 1,040 |"
+            f"| Skip-gram | 640 | 50M | 1 | Holmes | {scoring} | 48.0 | Pending | Pending | - | 1,040 |"
         )
 
     lines.extend(
@@ -421,7 +477,7 @@ def _write_table7_markdown(path: Path, results: list[Table7RunResult]) -> None:
             f"- Training Corpus: Project Gutenberg Holmes collection (522 books, {HOLMES_RAW_BYTES:,} bytes, concatenated SHA-256 `{HOLMES_CORPUS_SHA256}`).",
             f"- Evaluation Questions: 1,040 SAT-style sentence completion questions (SHA-256 `{MSR_QUESTIONS_SHA256}`).",
             f"- Evaluation Gold Answers: 1,040 gold completion sentences (SHA-256 `{MSR_ANSWERS_SHA256}`).",
-            "- Sentence Scoring: Candidate missing word at input, sum of predictions for all surrounding context words (cosine similarity on L2-normalized embeddings).",
+            f"- Sentence Scoring: Candidate missing word at input, {scoring}.",
             "",
         ]
     )
@@ -443,6 +499,7 @@ def _write_table7_csv(path: Path, results: list[Table7RunResult]) -> None:
         "test_accuracy_percent",
         "total_questions",
         "observed_training_seconds",
+        "scoring",
     ]
     with path.open("w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)

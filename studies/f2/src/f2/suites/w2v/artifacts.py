@@ -341,6 +341,85 @@ def load_lookup_artifact(
     return LookupEmbeddings(embeddings, token_bytes, offsets, counts, manifest)
 
 
+@dataclass
+class HSEvaluationArtifact:
+    """Memory-mapped full checkpoint arrays for hierarchical softmax evaluation."""
+
+    input_embeddings: np.ndarray
+    output_embeddings: np.ndarray
+    token_bytes: np.ndarray
+    token_offsets: np.ndarray
+    counts: np.ndarray
+    huffman_offsets: np.ndarray
+    huffman_paths: np.ndarray
+    huffman_bits: np.ndarray
+    manifest: dict[str, Any]
+
+    def __post_init__(self) -> None:
+        self.embeddings = self.input_embeddings
+        self._rows = {
+            bytes(
+                self.token_bytes[self.token_offsets[i] : self.token_offsets[i + 1]]
+            ): i
+            for i in range(self.counts.size)
+        }
+
+    def row(self, token: bytes) -> int | None:
+        return self._rows.get(token)
+
+    def vector(self, token: bytes) -> np.ndarray | None:
+        row = self.row(token)
+        return None if row is None else self.embeddings[row]
+
+
+def load_hs_evaluation_artifact(
+    path: Path, *, expected: dict[str, str] | None = None
+) -> HSEvaluationArtifact:
+    """Verify and load full checkpoint arrays for HS sentence completion evaluation."""
+    manifest = verify_artifact(path, expected=expected, format_name=CHECKPOINT_FORMAT)
+    arrays = {name: _load_array(path / name, mmap=True) for name in _CHECKPOINT_ARRAYS}
+    input_embeddings = arrays["input_embeddings.npy"]
+    output_embeddings = arrays["output_embeddings.npy"]
+    token_offsets = arrays["token_offsets.npy"]
+    counts = arrays["counts.npy"]
+    token_bytes = arrays["token_bytes.npy"]
+    huffman_offsets = arrays["huffman_offsets.npy"]
+    huffman_paths = arrays["huffman_paths.npy"]
+    huffman_bits = arrays["huffman_bits.npy"]
+
+    if (
+        input_embeddings.ndim != 2
+        or input_embeddings.dtype != np.float32
+        or output_embeddings.ndim != 2
+        or output_embeddings.dtype != np.float32
+        or input_embeddings.shape[1] != output_embeddings.shape[1]
+        or counts.ndim != 1
+        or token_offsets.shape != (counts.size + 1,)
+        or int(token_offsets[0]) != 0
+        or int(token_offsets[-1]) != token_bytes.size
+        or input_embeddings.shape[0] != counts.size
+        or huffman_offsets.shape != (counts.size + 1,)
+        or int(huffman_offsets[0]) != 0
+        or int(huffman_offsets[-1]) != huffman_paths.size
+        or huffman_paths.size != huffman_bits.size
+    ):
+        raise ValueError(
+            "invalid W2V full checkpoint array structure for HS evaluation"
+        )
+
+    return HSEvaluationArtifact(
+        input_embeddings=input_embeddings,
+        output_embeddings=output_embeddings,
+        token_bytes=token_bytes,
+        token_offsets=token_offsets,
+        counts=counts,
+        huffman_offsets=huffman_offsets,
+        huffman_paths=huffman_paths,
+        huffman_bits=huffman_bits,
+        manifest=manifest,
+    )
+
+
 def create_checkpoint_manager(
     root: Path,
     *,
@@ -469,9 +548,11 @@ __all__ = [
     "CHECKPOINT_FORMAT",
     "LOOKUP_FORMAT",
     "VOCABULARY_FORMAT",
+    "HSEvaluationArtifact",
     "LookupEmbeddings",
     "create_checkpoint_manager",
     "load_checkpoint",
+    "load_hs_evaluation_artifact",
     "load_lookup_artifact",
     "resolve_or_build_vocabulary",
     "save_checkpoint",

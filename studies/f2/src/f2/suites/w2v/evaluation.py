@@ -241,11 +241,25 @@ def evaluate_sentence_completion(
 
 
 @dataclass(frozen=True)
+class SentenceCompletionOOVStats:
+    total_questions: int
+    candidate_oov_questions: int
+    candidate_all_oov_questions: int
+    context_oov_questions: int
+    total_context_tokens: int
+    oov_context_tokens: int
+    context_oov_token_ratio: float
+    no_valid_context_questions: int
+    tie_or_invalid_score_questions: int
+
+
+@dataclass(frozen=True)
 class SentenceCompletionEvaluation:
     overall: EvaluationResult
     dev: EvaluationResult
     test: EvaluationResult
     predictions: tuple[bytes, ...]
+    oov_stats: SentenceCompletionOOVStats | None = None
 
 
 def parse_msr_sentence_completion_questions(
@@ -339,6 +353,9 @@ def evaluate_msr_sentence_completion(
     *,
     scoring: str = "cosine",
     output_embeddings: np.ndarray | None = None,
+    huffman_offsets: np.ndarray | None = None,
+    huffman_paths: np.ndarray | None = None,
+    huffman_bits: np.ndarray | None = None,
 ) -> SentenceCompletionEvaluation:
     """Evaluate 1,040 MSR Sentence Completion questions using Skip-gram prediction.
 
@@ -354,18 +371,87 @@ def evaluate_msr_sentence_completion(
       - 'dot': Unnormalized dot product sum_{w in context} v_c · v_w.
       - 'output_dot': Candidate input embedding dot product with context output embeddings
         sum_{w in context} v_c · v'_w.
+      - 'hs_log_prob' / 'hs_log_probability': Hierarchical softmax log-probability sum
+        sum_{w in context, w in V} log P(w | c).
+      - 'hs_prob' / 'hs_probability': Hierarchical softmax probability sum
+        sum_{w in context, w in V} P(w | c).
     """
-    if scoring not in {"cosine", "dot", "output_dot"}:
+    supported = {
+        "cosine",
+        "dot",
+        "output_dot",
+        "hs_log_prob",
+        "hs_log_probability",
+        "hs_prob",
+        "hs_probability",
+    }
+    if scoring not in supported:
         raise ValueError(f"unsupported sentence completion scoring mode: {scoring}")
 
-    if scoring == "output_dot":
+    is_hs = scoring in {
+        "hs_log_prob",
+        "hs_log_probability",
+        "hs_prob",
+        "hs_probability",
+    }
+
+    if is_hs:
+        outputs = (
+            output_embeddings
+            if output_embeddings is not None
+            else getattr(lookup, "output_embeddings", None)
+        )
+        offsets = (
+            huffman_offsets
+            if huffman_offsets is not None
+            else getattr(lookup, "huffman_offsets", None)
+        )
+        paths = (
+            huffman_paths
+            if huffman_paths is not None
+            else getattr(lookup, "huffman_paths", None)
+        )
+        bits = (
+            huffman_bits
+            if huffman_bits is not None
+            else getattr(lookup, "huffman_bits", None)
+        )
+        if outputs is None or offsets is None or paths is None or bits is None:
+            raise ValueError(
+                f"scoring '{scoring}' requires output_embeddings, huffman_offsets, huffman_paths, and huffman_bits"
+            )
+        outputs = np.asarray(outputs, dtype=np.float32)
+        offsets = np.asarray(offsets, dtype=np.uint64)
+        paths = np.asarray(paths, dtype=np.uint64)
+        bits = np.asarray(bits, dtype=np.uint8)
+        if outputs.ndim != 2 or outputs.shape[1] != lookup.embeddings.shape[1]:
+            raise ValueError(
+                "output_embeddings must be 2D and match input embedding dimension"
+            )
+        if not np.isfinite(outputs).all():
+            raise ValueError("output embeddings must be finite")
+        if offsets.ndim != 1 or offsets[0] != 0 or offsets[-1] != len(paths):
+            raise ValueError(
+                "huffman_offsets must be 1D with offsets[0] == 0 and offsets[-1] == len(paths)"
+            )
+        if paths.ndim != 1 or bits.ndim != 1 or len(paths) != len(bits):
+            raise ValueError(
+                "huffman_paths and huffman_bits must be 1D and have matching lengths"
+            )
+    elif scoring == "output_dot":
         if output_embeddings is None:
             raise ValueError("output_embeddings required for 'output_dot' scoring")
         outputs = np.asarray(output_embeddings, dtype=np.float32)
         if outputs.shape != lookup.embeddings.shape:
             raise ValueError("output_embeddings must match lookup embeddings shape")
+        offsets = None
+        paths = None
+        bits = None
     else:
         outputs = None
+        offsets = None
+        paths = None
+        bits = None
 
     if scoring == "cosine":
         norm = np.linalg.norm(lookup.embeddings, axis=1, keepdims=True)
@@ -397,33 +483,99 @@ def evaluate_msr_sentence_completion(
     dev_count = min(520, len(questions) // 2)
     test_count = len(questions) - dev_count
 
+    cand_oov_q = 0
+    cand_all_oov_q = 0
+    ctx_oov_q = 0
+    total_ctx_tokens = 0
+    oov_ctx_tokens = 0
+    no_valid_ctx_q = 0
+    tie_or_invalid_score_q = 0
+
     for idx, question in enumerate(questions):
-        if outputs is not None:
-            ctx_vectors = [
-                outputs[r]
-                for token in question.context
-                if (r := _resolve_row(token)) is not None
+        ctx_resolved = [_resolve_row(token) for token in question.context]
+        total_ctx_tokens += len(question.context)
+        q_oov_ctx = sum(1 for r in ctx_resolved if r is None)
+        oov_ctx_tokens += q_oov_ctx
+        if q_oov_ctx > 0:
+            ctx_oov_q += 1
+
+        cand_rows = [_resolve_row(cand) for cand in question.candidates]
+        if any(r is None for r in cand_rows):
+            cand_oov_q += 1
+        if all(r is None for r in cand_rows):
+            cand_all_oov_q += 1
+
+        valid_ctx_rows = [r for r in ctx_resolved if r is not None]
+        if not valid_ctx_rows:
+            no_valid_ctx_q += 1
+
+        if is_hs:
+            assert (
+                offsets is not None
+                and paths is not None
+                and bits is not None
+                and outputs is not None
+            )
+            cand_scores_arr = np.full(
+                len(question.candidates), -float("inf"), dtype=np.float64
+            )
+            valid_cands = [
+                (c_idx, r) for c_idx, r in enumerate(cand_rows) if r is not None
             ]
+            if not valid_ctx_rows:
+                for c_idx, _ in valid_cands:
+                    cand_scores_arr[c_idx] = 0.0
+            elif valid_cands:
+                cand_idx_list = [c_idx for c_idx, _ in valid_cands]
+                v_cand = input_vectors[
+                    [r for _, r in valid_cands]
+                ]  # (num_valid_cands, D)
+                accum = np.zeros(len(valid_cands), dtype=np.float64)
+                for w_row in valid_ctx_rows:
+                    w_start = int(offsets[w_row])
+                    w_end = int(offsets[w_row + 1])
+                    w_nodes = paths[w_start:w_end]
+                    w_bits = bits[w_start:w_end]
+                    signs = (1.0 - 2.0 * w_bits.astype(np.float32))[:, None]  # (L, 1)
+                    scores = outputs[w_nodes] @ v_cand.T  # (L, num_valid_cands)
+                    z = signs * scores
+                    log_p_w = np.sum(
+                        -np.logaddexp(0.0, -z), axis=0
+                    )  # (num_valid_cands,)
+                    if scoring in {"hs_log_prob", "hs_log_probability"}:
+                        accum += log_p_w
+                    else:
+                        accum += np.exp(log_p_w)
+                cand_scores_arr[cand_idx_list] = accum
+            candidate_scores = cand_scores_arr.tolist()
         else:
-            ctx_vectors = [
-                input_vectors[r]
-                for token in question.context
-                if (r := _resolve_row(token)) is not None
-            ]
-
-        context_sum = np.sum(ctx_vectors, axis=0) if ctx_vectors else None
-
-        candidate_scores: list[float] = []
-        for cand in question.candidates:
-            cand_row = _resolve_row(cand)
-            if cand_row is None:
-                candidate_scores.append(-float("inf"))
-            elif context_sum is None:
-                candidate_scores.append(0.0)
+            if outputs is not None:
+                ctx_vectors = [outputs[r] for r in valid_ctx_rows]
             else:
-                candidate_scores.append(
-                    float(np.dot(input_vectors[cand_row], context_sum))
-                )
+                ctx_vectors = [input_vectors[r] for r in valid_ctx_rows]
+            context_sum = np.sum(ctx_vectors, axis=0) if ctx_vectors else None
+            candidate_scores = []
+            for cand_row in cand_rows:
+                if cand_row is None:
+                    candidate_scores.append(-float("inf"))
+                elif context_sum is None:
+                    candidate_scores.append(0.0)
+                else:
+                    candidate_scores.append(
+                        float(np.dot(input_vectors[cand_row], context_sum))
+                    )
+
+        max_score = max(candidate_scores)
+        if not np.isfinite(max_score):
+            tie_or_invalid_score_q += 1
+        else:
+            tie_count = sum(
+                1
+                for s in candidate_scores
+                if np.isclose(s, max_score, rtol=1e-7, atol=1e-9)
+            )
+            if tie_count > 1:
+                tie_or_invalid_score_q += 1
 
         pred_idx = int(np.argmax(candidate_scores))
         predicted = question.candidates[pred_idx]
@@ -437,22 +589,41 @@ def evaluate_msr_sentence_completion(
             else:
                 correct_test += 1
 
+    oov_stats = SentenceCompletionOOVStats(
+        total_questions=len(questions),
+        candidate_oov_questions=cand_oov_q,
+        candidate_all_oov_questions=cand_all_oov_q,
+        context_oov_questions=ctx_oov_q,
+        total_context_tokens=total_ctx_tokens,
+        oov_context_tokens=oov_ctx_tokens,
+        context_oov_token_ratio=oov_ctx_tokens / total_ctx_tokens
+        if total_ctx_tokens
+        else 0.0,
+        no_valid_context_questions=no_valid_ctx_q,
+        tie_or_invalid_score_questions=tie_or_invalid_score_q,
+    )
+
+    metric_prefix = (
+        "msr_sentence_completion"
+        if scoring == "cosine"
+        else f"msr_sentence_completion_{scoring}"
+    )
     overall_res = EvaluationResult(
-        metric_id="msr_sentence_completion_accuracy",
+        metric_id=f"{metric_prefix}_accuracy",
         score=correct_total / len(questions) if questions else 0.0,
         total_count=len(questions),
         valid_count=len(questions),
         excluded_count=0,
     )
     dev_res = EvaluationResult(
-        metric_id="msr_sentence_completion_dev_accuracy",
+        metric_id=f"{metric_prefix}_dev_accuracy",
         score=correct_dev / dev_count if dev_count else 0.0,
         total_count=dev_count,
         valid_count=dev_count,
         excluded_count=0,
     )
     test_res = EvaluationResult(
-        metric_id="msr_sentence_completion_test_accuracy",
+        metric_id=f"{metric_prefix}_test_accuracy",
         score=correct_test / test_count if test_count else 0.0,
         total_count=test_count,
         valid_count=test_count,
@@ -463,6 +634,7 @@ def evaluate_msr_sentence_completion(
         dev=dev_res,
         test=test_res,
         predictions=tuple(predictions),
+        oov_stats=oov_stats,
     )
 
 
@@ -650,6 +822,7 @@ __all__ = [
     "EvaluationResult",
     "NearestNeighbor",
     "SentenceCompletionEvaluation",
+    "SentenceCompletionOOVStats",
     "SentenceCompletionQuestion",
     "SimilarityPair",
     "additive_composition",

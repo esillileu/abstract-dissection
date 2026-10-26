@@ -257,6 +257,13 @@ def analyze(
             help="Publish analysis results to canonical MLflow experiment f2.w2v1.analysis.",
         ),
     ] = False,
+    scoring: Annotated[
+        str,
+        typer.Option(
+            "--scoring",
+            help="Table 7 sentence completion scoring: cosine, hs_log_prob, or hs_prob.",
+        ),
+    ] = "cosine",
 ) -> None:
     """Render or summarize F2 experiment results."""
     if suite == "corpus":
@@ -290,6 +297,7 @@ def analyze(
             outputs = analyzer(
                 resolve_tracking_uri(tracking_uri),
                 questions,
+                scoring=scoring,
                 paths=paths,
             )
         else:
