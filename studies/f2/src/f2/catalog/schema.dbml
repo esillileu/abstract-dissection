@@ -250,7 +250,6 @@ Table planned_run_slots {
   expected boolean [not null, default: true]
 
   // Pointer only. MLflow remains the runtime source of truth.
-  reference_mlflow_run_id text
 
   created_at timestamp [not null]
 

@@ -61,10 +61,10 @@ class ViewsRepositoryMixin(BaseCatalogRepository):
             cols = [desc[0] for desc in cur.description]
             return [dict(zip(cols, row, strict=False)) for row in cur.fetchall()]
 
-    def get_canonical_plan_progress(
+    def get_canonical_plan_inventory(
         self, plan_key: str | None = None
     ) -> list[dict[str, Any]]:
-        query = "SELECT * FROM v_canonical_plan_progress"
+        query = "SELECT * FROM v_canonical_plan_inventory"
         params: list[Any] = []
         if plan_key:
             query += " WHERE plan_key = %s"

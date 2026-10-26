@@ -159,45 +159,19 @@ def test_planned_run_coverage_and_progress_view(repo: CatalogRepository):
     )
     assert exec_plan_id == f"{test_key}_r1"
 
-    # Query v_canonical_plan_progress initially: 6 expected, 0 executed, 6 missing
-    progress = repo.get_canonical_plan_progress(plan_key=test_key)
+    # Query expected slots; execution state belongs to MLflow.
+    progress = repo.get_canonical_plan_inventory(plan_key=test_key)
     assert len(progress) == 1
     p = progress[0]
     assert p["expected_slots"] == 6
-    assert p["executed_slots"] == 0
-    assert p["missing_slots"] == 6
-    assert p["completion_rate"] == 0.0
 
     # Query initial run matrix
     matrix = repo.get_canonical_run_matrix(plan_key=test_key)
     assert len(matrix) == 6
-    assert all(row["executed"] is False for row in matrix)
+    assert all(
+        "executed" not in row and "reference_mlflow_run_id" not in row for row in matrix
+    )
     assert all(row["target_ids"] == [target_id] for row in matrix)
-
-    # Simulate executing 4 slots by attaching fake reference_mlflow_run_id
-    # We execute all 3 CBOW seeds (42, 43, 44) and 1 SkipGram seed (42).
-    # Missing slots will be SkipGram seeds 43 and 44.
-    plan_exp_id = f"{exec_plan_id}_e01"
-    repo.link_mlflow_run(f"{plan_exp_id}__cbow__s42", "mlflow_run_cbow_42")
-    repo.link_mlflow_run(f"{plan_exp_id}__cbow__s43", "mlflow_run_cbow_43")
-    repo.link_mlflow_run(f"{plan_exp_id}__cbow__s44", "mlflow_run_cbow_44")
-    repo.link_mlflow_run(f"{plan_exp_id}__skipgram__s42", "mlflow_run_sg_42")
-
-    # Verify v_canonical_plan_progress: expected=6, executed=4, missing=2
-    progress_after = repo.get_canonical_plan_progress(plan_key=test_key)
-    assert len(progress_after) == 1
-    p2 = progress_after[0]
-    assert p2["expected_slots"] == 6
-    assert p2["executed_slots"] == 4
-    assert p2["missing_slots"] == 2
-    assert pytest.approx(p2["completion_rate"], 0.01) == 4 / 6
-
-    # Verify missing seeds via v_canonical_run_matrix
-    matrix_after = repo.get_canonical_run_matrix(plan_key=test_key)
-    missing_slots = [r for r in matrix_after if not r["executed"]]
-    assert len(missing_slots) == 2
-    missing_seeds = {(r["atomic_run_id"], r["seed"]) for r in missing_slots}
-    assert missing_seeds == {("skipgram", 43), ("skipgram", 44)}
 
 
 def test_historical_plan_isolation(repo: CatalogRepository):

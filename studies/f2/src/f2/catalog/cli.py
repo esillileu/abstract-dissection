@@ -55,21 +55,20 @@ def migrate_catalog_db() -> None:
 def show_status(
     plan_key: str = typer.Option("f2", "--plan-key", "-k", help="Plan key identifier"),
 ) -> None:
-    """Display canonical execution plan progress and resource inventory."""
+    """Display expected plan slots and resource inventory."""
     with get_connection() as conn:
         repo = CatalogRepository(conn)
-        progress = repo.get_canonical_plan_progress(plan_key=plan_key)
+        slots = repo.get_canonical_plan_inventory(plan_key=plan_key)
         inventory = repo.get_resource_inventory()
 
-    typer.echo(f"=== Canonical Plan Progress ({plan_key}) ===")
-    if not progress:
+    typer.echo(f"=== Canonical Plan Inventory ({plan_key}) ===")
+    if not slots:
         typer.echo(f"No canonical execution plan found for key '{plan_key}'.")
     else:
-        for p in progress:
+        for p in slots:
             typer.echo(
                 f"  - Exp [{p['experiment_spec_id']}] {p['experiment_name']}: "
-                f"{p['executed_slots']}/{p['expected_slots']} executed "
-                f"({p['completion_rate'] * 100:.1f}%), {p['missing_slots']} missing"
+                f"{p['expected_slots']} expected slots"
             )
 
     typer.echo("\n=== Resource Inventory ===")
@@ -87,7 +86,7 @@ def show_status(
 def show_matrix(
     plan_key: str = typer.Option("f2", "--plan-key", "-k", help="Plan key identifier"),
 ) -> None:
-    """Display canonical run matrix with MLflow execution pointers."""
+    """Display expected canonical run slots."""
     with get_connection() as conn:
         repo = CatalogRepository(conn)
         matrix = repo.get_canonical_run_matrix(plan_key=plan_key)
@@ -97,11 +96,7 @@ def show_matrix(
         typer.echo(f"No slots found for canonical plan '{plan_key}'.")
     else:
         for row in matrix:
-            status_str = "EXECUTED" if row["executed"] else "MISSING"
-            mlflow_ptr = row["reference_mlflow_run_id"] or "none"
-            typer.echo(
-                f"  - [{status_str}] {row['experiment_spec_id']} / {row['slot_key']} (mlflow_id={mlflow_ptr})"
-            )
+            typer.echo(f"  - {row['experiment_spec_id']} / {row['slot_key']}")
 
 
 @app.command("materialize")

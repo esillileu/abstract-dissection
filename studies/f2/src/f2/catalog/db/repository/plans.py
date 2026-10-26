@@ -160,7 +160,6 @@ class PlansRepositoryMixin(BaseCatalogRepository):
         seed: int | None = None,
         parameters: dict[str, Any] | None = None,
         expected: bool = True,
-        reference_mlflow_run_id: str | None = None,
         notes: str | None = None,
     ) -> None:
         with self.conn.cursor() as cur:
@@ -169,15 +168,14 @@ class PlansRepositoryMixin(BaseCatalogRepository):
                 INSERT INTO planned_run_slots (
                     planned_run_slot_id, plan_experiment_id, slot_key,
                     atomic_run_id, variant_key, seed, parameters,
-                    expected, reference_mlflow_run_id, notes
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s)
+                    expected, notes
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s)
                 ON CONFLICT (plan_experiment_id, slot_key) DO UPDATE SET
                     atomic_run_id = EXCLUDED.atomic_run_id,
                     variant_key = EXCLUDED.variant_key,
                     seed = EXCLUDED.seed,
                     parameters = EXCLUDED.parameters,
                     expected = EXCLUDED.expected,
-                    reference_mlflow_run_id = COALESCE(EXCLUDED.reference_mlflow_run_id, planned_run_slots.reference_mlflow_run_id),
                     notes = EXCLUDED.notes;
                 """,
                 (
@@ -189,22 +187,6 @@ class PlansRepositoryMixin(BaseCatalogRepository):
                     seed,
                     json.dumps(parameters or {}),
                     expected,
-                    reference_mlflow_run_id,
                     notes,
                 ),
-            )
-
-    def link_mlflow_run(
-        self,
-        planned_run_slot_id: str,
-        reference_mlflow_run_id: str | None,
-    ) -> None:
-        with self.conn.cursor() as cur:
-            cur.execute(
-                """
-                UPDATE planned_run_slots
-                SET reference_mlflow_run_id = %s
-                WHERE planned_run_slot_id = %s;
-                """,
-                (reference_mlflow_run_id, planned_run_slot_id),
             )

@@ -52,7 +52,7 @@ def get_connection(
             validate_connection(
                 conn,
                 schema="catalog",
-                latest_migration="001_initial_catalog_schema",
+                latest_migration="002_remove_execution_tracking",
             )
         yield conn
 
@@ -70,7 +70,7 @@ def transaction(
             validate_connection(
                 conn,
                 schema="catalog",
-                latest_migration="001_initial_catalog_schema",
+                latest_migration="002_remove_execution_tracking",
             )
         with conn.transaction():
             yield conn

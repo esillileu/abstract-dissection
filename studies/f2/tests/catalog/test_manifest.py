@@ -24,9 +24,9 @@ def test_w2v_catalog_manifest_is_self_consistent():
 
     assert {paper["paper_id"] for paper in payload["papers"]} == {"w2v1", "w2v2"}
     assert len(payload["targets"]) == 19
-    assert len(payload["experiment_specs"]) == 13
-    assert len(payload["execution_plans"]) == 13
-    assert len(payload["plan_experiments"]) == 26
+    assert len(payload["experiment_specs"]) == 14
+    assert len(payload["execution_plans"]) == 15
+    assert len(payload["plan_experiments"]) == 28
     assert len(payload["requirement_candidates"]) == 27
     assert len(payload["resource_bindings"]) == 61
     assert len(payload["planned_run_slots"]) == 396

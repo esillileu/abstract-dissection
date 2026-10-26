@@ -111,7 +111,6 @@ def _expand_planned_run_matrices(payload: dict[str, Any]) -> None:
                         "seed": seed,
                         "parameters": parameters,
                         "expected": True,
-                        "reference_mlflow_run_id": None,
                         "notes": str(matrix["notes"]),
                     }
                 )
