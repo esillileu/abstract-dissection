@@ -99,6 +99,7 @@ def run_tracked_yaml(
         paths=paths,
         metadata={
             "progress_reporter": progress_reporter,
+            "skip_checked": True,
         },
     )
 

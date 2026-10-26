@@ -417,10 +417,14 @@ def test_f_analysis_selects_latest_finished_run_across_seeds(test_env):
 
 
 # ==============================================================================
-# G. 캐시 (Cache): Download Cache and Analysis Computation Reuse
+# G. 분석 결과 재사용 및 Override (Analysis Result Reuse & Override)
 # ==============================================================================
-def test_g_cache_reuse_and_regeneration(test_env, monkeypatch: pytest.MonkeyPatch):
-    """First analysis downloads and caches; second reuses cache without re-computing; recomputed if cache deleted."""
+def test_g_analysis_result_reuse_and_override(
+    test_env, monkeypatch: pytest.MonkeyPatch
+):
+    """Result reuse skips MLflow query & computation; override recalculates and overwrites."""
+    import f2.suites.w2v2.analysis as analysis_mod
+    from f2.cli import run_w2v2_analysis
     from f2.suites.w2v.evaluation import AnalogyQuestion
 
     config = _make_config(test_env, slot_id="slot-g1")
@@ -436,7 +440,7 @@ def test_g_cache_reuse_and_regeneration(test_env, monkeypatch: pytest.MonkeyPatc
         AnalogyQuestion("family", b"man", b"woman", b"king", b"queen"),
     )
     monkeypatch.setattr(
-        analysis,
+        analysis_mod,
         "_dataset",
         lambda *args: (
             {"status": "complete", "questions_sha256": "dummy_sha256"},
@@ -444,56 +448,124 @@ def test_g_cache_reuse_and_regeneration(test_env, monkeypatch: pytest.MonkeyPatc
         ),
     )
 
-    # 1. First download & analysis
-    download_results(test_env["tracking_uri"], "w2v2", paths)
-    records = read_records(paths.analysis_cache("f2", "w2v2"))
-
-    output1 = analysis.generate_report(
-        records=records,
+    # 1. Initial analysis (result does not exist -> queries MLflow & computes)
+    out1 = run_w2v2_analysis(
         paths=paths,
+        tracking_uri=test_env["tracking_uri"],
         word_questions=test_env["word_questions"],
         phrase_questions=test_env["phrase_questions"],
+        override=False,
     )
-    summary1 = (output1 / "summary.json").read_text()
+    assert (out1 / "summary.json").is_file()
+    assert (out1 / "summary.md").is_file()
+    summary1_text = (out1 / "summary.json").read_text()
 
-    # Verify eval_*.json was ACTUALLY created in analysis cache
+    # Verify no unnecessary eval_*.json files exist
     eval_cache_files = list(paths.analysis_cache("f2", "w2v2").glob("eval_*.json"))
-    assert len(eval_cache_files) > 0, "eval_*.json cache files must be generated"
-
-    # 2. Second analysis reuses cache: evaluate_analogies must NOT be called!
-    mock_eval = MagicMock(
-        side_effect=RuntimeError("evaluate_analogies should not be called when cached!")
+    assert len(eval_cache_files) == 0, (
+        "eval_*.json calculation cache should not be created"
     )
-    monkeypatch.setattr(analysis, "evaluate_analogies", mock_eval)
 
-    records2 = read_records(paths.analysis_cache("f2", "w2v2"))
-    output2 = analysis.generate_report(
-        records=records2,
+    # 2. When result exists and override=False:
+    # Neither MLflow query nor generate_report computation must occur!
+    mock_download = MagicMock(
+        side_effect=RuntimeError(
+            "download_results should not be called when result exists!"
+        )
+    )
+    mock_generate = MagicMock(
+        side_effect=RuntimeError(
+            "generate_report should not be called when result exists!"
+        )
+    )
+    monkeypatch.setattr("f2.suites.w2v.cache.download_results", mock_download)
+    monkeypatch.setattr("f2.suites.w2v2.analysis.generate_report", mock_generate)
+
+    out2 = run_w2v2_analysis(
         paths=paths,
+        tracking_uri=test_env["tracking_uri"],
         word_questions=test_env["word_questions"],
         phrase_questions=test_env["phrase_questions"],
+        override=False,
     )
-    summary2 = (output2 / "summary.json").read_text()
-    assert summary1 == summary2
-    mock_eval.assert_not_called()
+    assert out2 == out1
+    mock_download.assert_not_called()
+    mock_generate.assert_not_called()
 
-    # 3. If analysis cache is deleted, it regenerates cleanly from MLflow artifacts
-    monkeypatch.setattr(analysis, "evaluate_analogies", evaluate_analogies)
-    for f in eval_cache_files:
-        f.unlink()
+    # 3. When override=True:
+    # Restores MLflow query and recomputes, overwriting the exact same file (no history subdirs)
+    monkeypatch.undo()
+    monkeypatch.setattr(
+        analysis_mod,
+        "_dataset",
+        lambda *args: (
+            {"status": "complete", "questions_sha256": "dummy_sha256"},
+            questions,
+        ),
+    )
 
-    output3 = analysis.generate_report(
-        records=records2,
+    out3 = run_w2v2_analysis(
         paths=paths,
+        tracking_uri=test_env["tracking_uri"],
         word_questions=test_env["word_questions"],
         phrase_questions=test_env["phrase_questions"],
+        override=True,
     )
-    summary3 = (output3 / "summary.json").read_text()
-    assert summary1 == summary3
+    assert out3 == out1
+    summary3_text = (out3 / "summary.json").read_text()
+    assert summary3_text == summary1_text
 
-    # Verify eval_*.json was recreated
-    new_eval_cache_files = list(paths.analysis_cache("f2", "w2v2").glob("eval_*.json"))
-    assert len(new_eval_cache_files) > 0
+
+def test_g2_distinct_training_conditions_not_mixed(test_env):
+    """Runs with different training conditions (e.g. negative samples) are not grouped together."""
+    paths: RuntimePaths = test_env["paths"]
+    executor = W2V2Executor()
+    context = ExperimentContext(paths=paths)
+
+    # Run 1: negative_sample_count = 5
+    c1 = _make_config(test_env, slot_id="slot-cond-1", objective="negative_sampling")
+    c1["training"]["negative_sample_count"] = 5
+    r1 = executor.execute(c1, context, tracking_uri=test_env["tracking_uri"])
+
+    # Run 2: negative_sample_count = 15
+    c2 = _make_config(test_env, slot_id="slot-cond-2", objective="negative_sampling")
+    c2["training"]["negative_sample_count"] = 15
+    r2 = executor.execute(c2, context, tracking_uri=test_env["tracking_uri"])
+
+    download_dir = download_results(test_env["tracking_uri"], "w2v2", paths)
+    records = read_records(download_dir)
+    run_ids = {r["run_id"] for r in records}
+
+    # Both must be present in downloaded records because conditions are distinct
+    assert r1.run_id in run_ids
+    assert r2.run_id in run_ids
+
+
+def test_g3_intermediate_checkpoints_local_only_and_final_published(test_env):
+    """Local storage retains intermediate checkpoints; MLflow only gets final model and results."""
+    config = _make_config(test_env, slot_id="slot-ckpt-check", epochs=3)
+    paths: RuntimePaths = test_env["paths"]
+    executor = W2V2Executor()
+    context = ExperimentContext(paths=paths)
+
+    receipt = executor.execute(config, context, tracking_uri=test_env["tracking_uri"])
+    run_root = receipt.staging_root
+
+    # 1. Local disk has local checkpoints
+    local_generations = list((run_root / "checkpoints/generations").iterdir())
+    assert len(local_generations) > 0, (
+        "Local storage must preserve checkpoint generations"
+    )
+
+    # 2. MLflow only receives final model (lookup) and results; intermediate checkpoints not uploaded
+    client: MlflowClient = test_env["client"]
+    top_artifacts = [a.path for a in client.list_artifacts(receipt.run_id)]
+    assert "lookup" in top_artifacts, "MLflow must contain final model (lookup)"
+    assert "result.json" in top_artifacts, "MLflow must contain final result.json"
+    ckpt_artifacts = client.list_artifacts(receipt.run_id, "checkpoints")
+    assert not any("epoch-" in a.path for a in ckpt_artifacts), (
+        "MLflow must NOT contain intermediate epoch checkpoints"
+    )
 
 
 # ==============================================================================

@@ -78,11 +78,19 @@ def publish_run_to_mlflow(
         config.get("phrase", False) or "phrase" in str(config.get("atomic_run_id", ""))
     )
     objective_kind = str(training.get("objective_kind", ""))
-    dimension = str(training.get("hidden_size", training.get("dim", "")))
-    window_size = str(training.get("window_size", ""))
+    dimension = str(
+        training.get("embedding_dimension")
+        or training.get("hidden_size")
+        or training.get("dim", "")
+    )
+    window_radius = str(
+        training.get("window_radius") or training.get("window_size", "")
+    )
     subsampling = str(training.get("subsampling_threshold", ""))
-    negative_samples = str(training.get("negative_samples", ""))
-    epochs = str(training.get("max_epochs", training.get("epochs", "")))
+    negative_sample_count = str(
+        training.get("negative_sample_count") or training.get("negative_samples", "")
+    )
+    epochs = str(training.get("epochs") or training.get("max_epochs", ""))
 
     tags = {
         **run_identity.tags(),
@@ -106,9 +114,9 @@ def publish_run_to_mlflow(
         "is_phrase": str(is_phrase),
         "training.objective": objective_kind,
         "training.dim": dimension,
-        "training.window": window_size,
+        "training.window": window_radius,
         "training.subsample": subsampling,
-        "training.negative_samples": negative_samples,
+        "training.negative_samples": negative_sample_count,
         "training.epochs": epochs,
     }
 
@@ -120,15 +128,18 @@ def publish_run_to_mlflow(
     )
     run_id = run.info.run_id
 
-    # Log params for structured query
+    # Log params using actual configuration keys and query aliases
     for p_key, p_val in {
         "model_kind": model_kind,
         "corpus_id": corpus_id,
         "objective_kind": objective_kind,
-        "dim": dimension,
-        "window_size": window_size,
+        "embedding_dimension": dimension,
+        "window_radius": window_radius,
         "subsampling_threshold": subsampling,
-        "negative_samples": negative_samples,
+        "negative_sample_count": negative_sample_count,
+        "dim": dimension,
+        "window_size": window_radius,
+        "negative_samples": negative_sample_count,
         "epochs": epochs,
         "seed": str(identity["seed"]),
     }.items():

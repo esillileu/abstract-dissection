@@ -101,8 +101,8 @@ class Word2VecExecutor:
         local_store.ensure_directories()
         client = MlflowClient(tracking_uri=tracking_uri)
 
-        # 1. Skip check: MLflow FINISHED run
-        if not override:
+        # 1. Skip check: MLflow FINISHED run (if not already verified before corpus materialization)
+        if not override and not context.metadata.get("skip_checked"):
             existing = find_matching_finished_run(
                 client, experiment_name, config_digest, seed
             )

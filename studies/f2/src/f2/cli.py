@@ -6,7 +6,7 @@ import json
 from collections.abc import Callable
 from functools import wraps
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 import typer
 
@@ -268,40 +268,23 @@ def analyze(
             "--msr-questions", help="Table 3 MSR syntactic word-analogy benchmark path."
         ),
     ] = None,
+    override: Annotated[
+        bool,
+        typer.Option(
+            "--override", help="Re-run analysis even if results already exist."
+        ),
+    ] = False,
 ) -> None:
     """Render or summarize F2 experiment results."""
     if suite == "corpus":
         typer.echo("For corpus pipeline analysis, use: repro f2 corpus analyze --help")
         return
     if suite == "w2v2":
-        from repro_core.context import RuntimePaths
-
-        from .suites.w2v.cache import download_results, read_records
-        from .suites.w2v2.analysis import generate_report
-        from .tracking import resolve_tracking_uri
-
-        paths = RuntimePaths.from_environment()
-        records = read_records(
-            download_results(resolve_tracking_uri(tracking_uri), "w2v2", paths)
-        )
-        cache_dir = paths.analysis_cache("f2", "w2v2")
-        benchmarks = paths.inputs("f2", "benchmarks")
-        output = generate_report(
-            records=records,
-            paths=paths,
-            word_questions=questions
-            or (
-                cache_dir / "evaluation/questions-words.txt"
-                if (cache_dir / "evaluation/questions-words.txt").is_file()
-                else benchmarks / "questions-words.txt"
-            ),
-            phrase_questions=phrase_questions
-            or (
-                cache_dir / "evaluation/questions-phrases.txt"
-                if (cache_dir / "evaluation/questions-phrases.txt").is_file()
-                else benchmarks / "questions-phrases.txt"
-            ),
-            result_source=f"MLflow f2.w2v2 ({resolve_tracking_uri(tracking_uri)})",
+        output = run_w2v2_analysis(
+            tracking_uri=tracking_uri,
+            word_questions=questions,
+            phrase_questions=phrase_questions,
+            override=override,
         )
         typer.echo(f"W2V2 report written: {output / 'summary.md'}")
         return
@@ -505,6 +488,68 @@ def phrase_preflight(
     )
 
 
+def run_w2v2_analysis(
+    *,
+    paths: Any | None = None,
+    tracking_uri: str | None = None,
+    word_questions: Path | None = None,
+    phrase_questions: Path | None = None,
+    override: bool = False,
+    offline: bool = False,
+) -> Path:
+    """Run W2V2 analysis or return existing result without MLflow access or recomputation."""
+    from repro_core.context import RuntimePaths
+
+    paths = paths or RuntimePaths.from_environment()
+    output = (
+        paths.analysis_output("f2", "w2v2")
+        if hasattr(paths, "analysis_output")
+        else paths.cache_root / "f2/w2v2/analysis"
+    )
+
+    # 1. Reuse existing result if already present and override not requested
+    if (
+        not override
+        and (output / "summary.json").is_file()
+        and (output / "summary.md").is_file()
+    ):
+        return output
+
+    # 2. Otherwise query MLflow (or local cache if offline) and generate report
+    from .suites.w2v.cache import download_results, read_records
+    from .suites.w2v2.analysis import generate_report
+    from .tracking import resolve_tracking_uri
+
+    cache_dir = paths.analysis_cache("f2", "w2v2")
+    if offline:
+        records = read_records(cache_dir)
+        result_source = "offline; MLflow not queried"
+    else:
+        resolved_uri = resolve_tracking_uri(tracking_uri)
+        records = read_records(download_results(resolved_uri, "w2v2", paths))
+        result_source = f"MLflow f2.w2v2 ({resolved_uri})"
+
+    benchmarks = paths.inputs("f2", "benchmarks")
+    w_questions = word_questions or (
+        cache_dir / "evaluation/questions-words.txt"
+        if (cache_dir / "evaluation/questions-words.txt").is_file()
+        else benchmarks / "questions-words.txt"
+    )
+    p_questions = phrase_questions or (
+        cache_dir / "evaluation/questions-phrases.txt"
+        if (cache_dir / "evaluation/questions-phrases.txt").is_file()
+        else benchmarks / "questions-phrases.txt"
+    )
+
+    return generate_report(
+        records=records,
+        paths=paths,
+        word_questions=w_questions,
+        phrase_questions=p_questions,
+        result_source=result_source,
+    )
+
+
 @app.command("w2v2-report")
 @cli_errors
 def w2v2_report(
@@ -525,40 +570,19 @@ def w2v2_report(
         Path | None,
         typer.Option(help="Existing questions-phrases.txt; never downloaded."),
     ] = None,
+    override: Annotated[
+        bool,
+        typer.Option(
+            "--override", help="Re-run analysis even if results already exist."
+        ),
+    ] = False,
 ) -> None:
     """Compare all six paper tables and Section 4.1 without training or publishing."""
-    from repro_core.context import RuntimePaths
-
-    from .suites.w2v.cache import download_results, read_records
-    from .suites.w2v2.analysis import generate_report
-
-    paths = RuntimePaths.from_environment()
-    from .tracking import resolve_tracking_uri
-
-    cache_dir = paths.analysis_cache("f2", "w2v2")
-    records = (
-        read_records(cache_dir)
-        if offline
-        else read_records(
-            download_results(resolve_tracking_uri(tracking_uri), "w2v2", paths)
-        )
-    )
-    benchmarks = paths.inputs("f2", "benchmarks")
-    output = generate_report(
-        records=records,
-        paths=paths,
-        word_questions=word_questions
-        or (
-            cache_dir / "evaluation/questions-words.txt"
-            if (cache_dir / "evaluation/questions-words.txt").is_file()
-            else benchmarks / "questions-words.txt"
-        ),
-        phrase_questions=phrase_questions
-        or (
-            cache_dir / "evaluation/questions-phrases.txt"
-            if (cache_dir / "evaluation/questions-phrases.txt").is_file()
-            else benchmarks / "questions-phrases.txt"
-        ),
-        result_source="offline; MLflow not queried" if offline else "MLflow f2.w2v2",
+    output = run_w2v2_analysis(
+        tracking_uri=tracking_uri,
+        word_questions=word_questions,
+        phrase_questions=phrase_questions,
+        override=override,
+        offline=offline,
     )
     typer.echo(f"W2V2 report: {output / 'summary.md'}")

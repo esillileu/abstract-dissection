@@ -47,7 +47,6 @@ def download_results(tracking_uri: str, suite: str, paths) -> Path:
 
     # Group runs by exact experimental training conditions and seed, selecting latest FINISHED run
     finished_groups: dict[tuple[Any, ...], list[Any]] = {}
-    other_runs: list[Any] = []
     for run in all_runs:
         if run.info.status == "FINISHED":
             tags = run.data.tags
@@ -66,13 +65,23 @@ def download_results(tracking_uri: str, suite: str, paths) -> Path:
             objective = params.get("objective_kind") or tags.get(
                 "training.objective", ""
             )
-            dim = params.get("dim") or tags.get("training.dim", "")
-            window = params.get("window_size") or tags.get("training.window", "")
+            dim = (
+                params.get("embedding_dimension")
+                or params.get("dim")
+                or tags.get("training.dim", "")
+            )
+            window = (
+                params.get("window_radius")
+                or params.get("window_size")
+                or tags.get("training.window", "")
+            )
             subsample = params.get("subsampling_threshold") or tags.get(
                 "training.subsample", ""
             )
-            neg = params.get("negative_samples") or tags.get(
-                "training.negative_samples", ""
+            neg = (
+                params.get("negative_sample_count")
+                or params.get("negative_samples")
+                or tags.get("training.negative_samples", "")
             )
             epochs = params.get("epochs") or tags.get("training.epochs", "")
             phrase_delta = tags.get("phrase.delta", "")
@@ -96,8 +105,6 @@ def download_results(tracking_uri: str, suite: str, paths) -> Path:
                 seed,
             )
             finished_groups.setdefault(key, []).append(run)
-        else:
-            other_runs.append(run)
 
     selected_finished: list[Any] = []
     for key in sorted(finished_groups):
@@ -145,17 +152,6 @@ def download_results(tracking_uri: str, suite: str, paths) -> Path:
         except Exception as exc:
             record["error"] = f"artifact retrieval failed: {type(exc).__name__}"
         records.append(record)
-
-    for run in other_runs:
-        records.append(
-            {
-                "run_id": run.info.run_id,
-                "tags": dict(run.data.tags),
-                "status": run.info.status,
-                "end_time": run.info.end_time,
-                "start_time": run.info.start_time,
-            }
-        )
 
     temporary = root / ".runs.json.tmp"
     temporary.write_text(json.dumps(records, indent=2, sort_keys=True) + "\n")
