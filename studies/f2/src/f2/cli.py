@@ -529,17 +529,36 @@ def run_w2v2_analysis(
         records = read_records(download_results(resolved_uri, "w2v2", paths))
         result_source = f"MLflow f2.w2v2 ({resolved_uri})"
 
+    # 3. Connect evaluation question paths (explicit > local benchmarks > run cache)
+    w_questions = word_questions
+    p_questions = phrase_questions
     benchmarks = paths.inputs("f2", "benchmarks")
-    w_questions = word_questions or (
-        cache_dir / "evaluation/questions-words.txt"
-        if (cache_dir / "evaluation/questions-words.txt").is_file()
-        else benchmarks / "questions-words.txt"
-    )
-    p_questions = phrase_questions or (
-        cache_dir / "evaluation/questions-phrases.txt"
-        if (cache_dir / "evaluation/questions-phrases.txt").is_file()
-        else benchmarks / "questions-phrases.txt"
-    )
+
+    if w_questions is None:
+        if (benchmarks / "questions-words.txt").is_file():
+            w_questions = benchmarks / "questions-words.txt"
+        else:
+            for r in records:
+                art_root = r.get("artifact_root")
+                if (
+                    art_root
+                    and (Path(art_root) / "evaluation/questions-words.txt").is_file()
+                ):
+                    w_questions = Path(art_root) / "evaluation/questions-words.txt"
+                    break
+
+    if p_questions is None:
+        if (benchmarks / "questions-phrases.txt").is_file():
+            p_questions = benchmarks / "questions-phrases.txt"
+        else:
+            for r in records:
+                art_root = r.get("artifact_root")
+                if (
+                    art_root
+                    and (Path(art_root) / "evaluation/questions-phrases.txt").is_file()
+                ):
+                    p_questions = Path(art_root) / "evaluation/questions-phrases.txt"
+                    break
 
     return generate_report(
         records=records,

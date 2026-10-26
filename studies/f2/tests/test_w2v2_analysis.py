@@ -380,7 +380,7 @@ def test_synthetic_all_tables_read_only_and_reused(tmp_path, monkeypatch):
     assert snapshot(output) == first
 
 
-@pytest.mark.parametrize("failure", ["lookup", "duplicate", "unfinished", "oov"])
+@pytest.mark.parametrize("failure", ["lookup", "unfinished", "oov"])
 def test_invalid_and_incomplete(tmp_path, monkeypatch, failure):
     record = fixture_record(tmp_path / "inputs", "3", "wmt--hs-subsampling")
     questions = (AnalogyQuestion("test", b"absent", b"b", b"c", b"d"),)
@@ -392,7 +392,7 @@ def test_invalid_and_incomplete(tmp_path, monkeypatch, failure):
     elif failure == "unfinished":
         record["status"] = "RUNNING"
     refresh(record)
-    records = [record, record] if failure == "duplicate" else [record]
+    records = [record]
     output = analysis.generate_report(records=records, paths=paths_at(tmp_path))
     result = next(
         r

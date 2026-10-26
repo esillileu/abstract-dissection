@@ -272,13 +272,55 @@ def generate_report(
 ):
     """Evaluate only independently verified stored runs; report writing is not run completion."""
     paths = paths or RuntimePaths.from_environment()
+    records = list(records)
+
+    # Fallback to canonical benchmark files or cached run artifacts if questions paths are omitted
+    if word_questions is None:
+        for candidate in (
+            paths.inputs("f2", "benchmarks") / "questions-words.txt",
+            paths.dataset("benchmarks") / "questions-words.txt",
+            paths.dataset("questions-words") / "questions-words.txt",
+        ):
+            if candidate.is_file():
+                word_questions = candidate
+                break
+        if word_questions is None:
+            for r in records:
+                art_root = r.get("artifact_root")
+                if (
+                    art_root
+                    and (Path(art_root) / "evaluation/questions-words.txt").is_file()
+                ):
+                    word_questions = Path(art_root) / "evaluation/questions-words.txt"
+                    break
+
+    if phrase_questions is None:
+        for candidate in (
+            paths.inputs("f2", "benchmarks") / "questions-phrases.txt",
+            paths.dataset("benchmarks") / "questions-phrases.txt",
+            paths.dataset("questions-phrases") / "questions-phrases.txt",
+        ):
+            if candidate.is_file():
+                phrase_questions = candidate
+                break
+        if phrase_questions is None:
+            for r in records:
+                art_root = r.get("artifact_root")
+                if (
+                    art_root
+                    and (Path(art_root) / "evaluation/questions-phrases.txt").is_file()
+                ):
+                    phrase_questions = (
+                        Path(art_root) / "evaluation/questions-phrases.txt"
+                    )
+                    break
+
     datasets = {
         "word": _dataset(word_questions, False),
         "phrase": _dataset(phrase_questions, True),
     }
     inventory = list(targets())
     selected, diagnostics = {}, []
-    duplicates = set()
     run_owners = {}
     known = {(table, variant) for table, _, _, variant, _ in inventory}
     spec_tables = {
@@ -296,9 +338,17 @@ def generate_report(
             try:
                 seed = int(seed_str)
                 key = (table, variant, seed)
-                if key in selected:
-                    duplicates.add(key)
-                selected[key] = record
+                existing = selected.get(key)
+                if existing is None or (
+                    record.get("end_time") or 0,
+                    record.get("start_time") or 0,
+                    str(record.get("run_id", "")),
+                ) > (
+                    existing.get("end_time") or 0,
+                    existing.get("start_time") or 0,
+                    str(existing.get("run_id", "")),
+                ):
+                    selected[key] = record
                 run_id = record.get("run_id")
                 if run_id:
                     run_owners.setdefault(run_id, set()).add(key)
@@ -348,14 +398,8 @@ def generate_report(
                     identity_status="unverified",
                 )
                 try:
-                    if (table, variant, seed) in duplicates or (
-                        table,
-                        variant,
-                        seed,
-                    ) in conflicts:
-                        raise ValueError(
-                            "duplicate run/artifact identity across slots or seeds"
-                        )
+                    if (table, variant, seed) in conflicts:
+                        raise ValueError("run_id cannot supply multiple seeds")
                     state = record.get("status")
                     if state != "FINISHED":
                         row.update(

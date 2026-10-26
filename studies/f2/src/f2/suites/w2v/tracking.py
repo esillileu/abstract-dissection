@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import csv
+import hashlib
+import json
 import re
 import time
 from pathlib import Path
@@ -12,7 +14,6 @@ from mlflow import MlflowClient
 from mlflow.entities import Metric, Run
 
 from f2.run_identity import RunIdentity
-from repro_mlflow.schema_v1 import write_result_manifest
 
 
 def find_matching_finished_run(
@@ -147,24 +148,67 @@ def publish_run_to_mlflow(
             client.log_param(run_id, p_key, p_val)
 
     try:
-        # Write local result manifest
-        write_result_manifest(
-            run_root,
-            exclude_dirs=("preparation",)
-            if include_checkpoints
-            else ("checkpoints", "preparation"),
+        # Identify designated final model path from result.json (if present)
+        result_file = run_root / "result.json"
+        final_lookup_rel: Path | None = None
+        if result_file.is_file():
+            try:
+                res_data = json.loads(result_file.read_text(encoding="utf-8"))
+                lookup_val = res_data.get("artifacts", {}).get("lookup")
+                if lookup_val:
+                    final_lookup_rel = Path(lookup_val)
+            except Exception:
+                pass
+
+        def should_upload(file_path: Path) -> bool:
+            rel = file_path.relative_to(run_root)
+            if "preparation" in rel.parts:
+                return False
+            # Always upload the designated final model
+            if final_lookup_rel is not None and (
+                rel == final_lookup_rel or final_lookup_rel in rel.parents
+            ):
+                return True
+            # Intermediate checkpoints (generations or latest-epoch-*) remain local only
+            if "generations" in rel.parts or any(
+                part.startswith("latest-epoch-")
+                or part.startswith("periodic-")
+                or part.startswith("best-")
+                or part.startswith("epoch-")
+                or part.startswith(".")
+                for part in rel.parts
+            ):
+                return False
+            if not include_checkpoints and "checkpoints" in rel.parts:
+                return False
+            return True
+
+        # Write local result manifest matching exactly what is uploaded
+        manifest_path = run_root / "result_manifest.json"
+        manifest_files = []
+        for path in sorted(item for item in run_root.rglob("*") if item.is_file()):
+            if path == manifest_path or not should_upload(path):
+                continue
+            digest = hashlib.sha256()
+            with path.open("rb") as stream:
+                for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                    digest.update(chunk)
+            manifest_files.append(
+                {
+                    "path": path.relative_to(run_root).as_posix(),
+                    "size": path.stat().st_size,
+                    "sha256": digest.hexdigest(),
+                }
+            )
+        manifest_payload = {"files": manifest_files, "checkpoints": []}
+        manifest_path.write_text(
+            json.dumps(manifest_payload, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
         )
 
-        # Upload artifacts
+        # Upload artifacts matching result manifest
         for path in sorted(item for item in run_root.rglob("*") if item.is_file()):
-            rel = path.relative_to(run_root)
-            if "preparation" in rel.parts:
-                continue
-            if "checkpoints" in rel.parts and any(
-                part.startswith(".") or part.startswith("epoch-") for part in rel.parts
-            ):
-                continue
-            if not include_checkpoints and "checkpoints" in rel.parts:
+            if not should_upload(path) and path != manifest_path:
                 continue
             parent = path.parent.relative_to(run_root)
             client.log_artifact(

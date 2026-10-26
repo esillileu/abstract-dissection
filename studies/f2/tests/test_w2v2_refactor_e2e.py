@@ -567,6 +567,69 @@ def test_g3_intermediate_checkpoints_local_only_and_final_published(test_env):
         "MLflow must NOT contain intermediate epoch checkpoints"
     )
 
+    # 3. result_manifest.json matches actual uploaded artifacts
+    manifest_data = json.loads((run_root / "result_manifest.json").read_text())
+    manifest_paths = {f["path"] for f in manifest_data["files"]}
+
+    def list_all_remote(path=""):
+        res = []
+        for a in client.list_artifacts(receipt.run_id, path if path else None):
+            if a.is_dir:
+                res.extend(list_all_remote(a.path))
+            else:
+                res.append(a.path)
+        return res
+
+    uploaded_files = set(list_all_remote())
+    assert manifest_paths <= uploaded_files, "All manifest files must be uploaded"
+    assert uploaded_files - manifest_paths == {"result_manifest.json"}, (
+        "Only result_manifest.json itself can be uploaded without being in manifest.files"
+    )
+
+
+def test_g5_analysis_uses_run_cache_without_local_benchmarks(test_env, monkeypatch):
+    """Analysis succeeds using MLflow run cache even when local benchmarks directory is absent."""
+    import shutil
+
+    import f2.suites.w2v2.analysis as analysis_mod
+    from f2.cli import run_w2v2_analysis
+    from f2.suites.w2v.evaluation import AnalogyQuestion
+
+    paths: RuntimePaths = test_env["paths"]
+    # Ensure local benchmarks directory is absent
+    benchmarks_dir = paths.inputs("f2", "benchmarks")
+    if benchmarks_dir.exists():
+        shutil.rmtree(benchmarks_dir)
+
+    config = _make_config(test_env, slot_id="slot-run-bench", epochs=1)
+    executor = W2V2Executor()
+    context = ExperimentContext(paths=paths)
+    receipt = executor.execute(config, context, tracking_uri=test_env["tracking_uri"])
+
+    # Simulate evaluation question files inside run's evaluation artifact
+    eval_dir = receipt.staging_root / "evaluation"
+    eval_dir.mkdir(parents=True, exist_ok=True)
+    (eval_dir / "questions-words.txt").write_bytes(b": gram1\na b c d\n")
+    client: MlflowClient = test_env["client"]
+    client.log_artifacts(receipt.run_id, str(receipt.staging_root))
+
+    # Mock _dataset so it treats the questions as valid
+    questions = (AnalogyQuestion("gram1", b"a", b"b", b"c", b"d"),)
+    monkeypatch.setattr(
+        analysis_mod,
+        "_dataset",
+        lambda *args: ({"status": "complete", "questions_sha256": "dummy"}, questions),
+    )
+
+    out = run_w2v2_analysis(
+        paths=paths,
+        tracking_uri=test_env["tracking_uri"],
+        word_questions=None,
+        phrase_questions=None,
+        override=True,
+    )
+    assert (out / "summary.json").is_file()
+
 
 # ==============================================================================
 # Additional Counter-Examples: Locator Completion Policy & Checkpoint Lookup
