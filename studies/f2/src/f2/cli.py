@@ -185,6 +185,13 @@ def run(
             help="Acknowledge the cost of canonical W2V training.",
         ),
     ] = False,
+    override: Annotated[
+        bool,
+        typer.Option(
+            "--override",
+            help="Re-run and publish a new MLflow run, preserving existing runs.",
+        ),
+    ] = False,
 ) -> None:
     """Execute F2 suite experiments."""
     from repro_core.cli.commands import run_command
@@ -201,7 +208,12 @@ def run(
     if suite in {"w2v1", "w2v2"}:
         from .suites.w2v.tracked import run_tracked_yaml
 
-        run_fn = run_tracked_yaml
+        if override:
+
+            def run_fn(*args, **kwargs):
+                return run_tracked_yaml(*args, override=True, **kwargs)
+        else:
+            run_fn = run_tracked_yaml
     run_command(
         suite_def,
         experiments=experiment or [],
@@ -226,13 +238,19 @@ def analyze(
     suite: Annotated[
         str,
         typer.Argument(
-            help="Target F2 suite (e.g. w2v_pretrain) or 'corpus'",
+            help="Target F2 suite (e.g. w2v1, w2v2) or 'corpus'",
         ),
     ] = "corpus",
     tracking_uri: Annotated[str | None, typer.Option("--tracking-uri")] = None,
     questions: Annotated[
         Path | None,
         typer.Option("--questions", help="Canonical questions-words.txt path."),
+    ] = None,
+    phrase_questions: Annotated[
+        Path | None,
+        typer.Option(
+            "--phrase-questions", help="Canonical questions-phrases.txt path."
+        ),
     ] = None,
     corpus: Annotated[
         str | None,
@@ -250,17 +268,42 @@ def analyze(
             "--msr-questions", help="Table 3 MSR syntactic word-analogy benchmark path."
         ),
     ] = None,
-    publish: Annotated[
-        bool,
-        typer.Option(
-            "--publish/--no-publish",
-            help="Publish analysis results to canonical MLflow experiment f2.w2v1.analysis.",
-        ),
-    ] = False,
 ) -> None:
     """Render or summarize F2 experiment results."""
     if suite == "corpus":
         typer.echo("For corpus pipeline analysis, use: repro f2 corpus analyze --help")
+        return
+    if suite == "w2v2":
+        from repro_core.context import RuntimePaths
+
+        from .suites.w2v.cache import download_results, read_records
+        from .suites.w2v2.analysis import generate_report
+        from .tracking import resolve_tracking_uri
+
+        paths = RuntimePaths.from_environment()
+        records = read_records(
+            download_results(resolve_tracking_uri(tracking_uri), "w2v2", paths)
+        )
+        cache_dir = paths.analysis_cache("f2", "w2v2")
+        benchmarks = paths.inputs("f2", "benchmarks")
+        output = generate_report(
+            records=records,
+            paths=paths,
+            word_questions=questions
+            or (
+                cache_dir / "evaluation/questions-words.txt"
+                if (cache_dir / "evaluation/questions-words.txt").is_file()
+                else benchmarks / "questions-words.txt"
+            ),
+            phrase_questions=phrase_questions
+            or (
+                cache_dir / "evaluation/questions-phrases.txt"
+                if (cache_dir / "evaluation/questions-phrases.txt").is_file()
+                else benchmarks / "questions-phrases.txt"
+            ),
+            result_source=f"MLflow f2.w2v2 ({resolve_tracking_uri(tracking_uri)})",
+        )
+        typer.echo(f"W2V2 report written: {output / 'summary.md'}")
         return
     if suite == "w2v1":
         from repro_core.context import RuntimePaths
@@ -325,67 +368,6 @@ def analyze(
                 )
                 for output in outputs:
                     typer.echo(f"W2V1 Table {table} analysis written: {output}")
-
-        if publish:
-            from mlflow import MlflowClient
-
-            from .suites.w2v1.publish_analysis import (
-                ANALYSIS_EXPERIMENT_NAME,
-                ensure_analysis_experiment,
-                publish_table2_analysis,
-                publish_table3_analysis,
-                publish_table4_analysis,
-                publish_table5_analysis,
-                publish_table6_analysis,
-                publish_table7_analysis,
-            )
-
-            client = MlflowClient(tracking_uri=resolve_tracking_uri(tracking_uri))
-            exp_id = ensure_analysis_experiment(client)
-            corpora = (corpus,) if corpus is not None else None
-            published = []
-            if table == 7:
-                published = publish_table7_analysis(
-                    client, exp_id, paths.cache_root / "f2/w2v1/analysis/table7"
-                )
-            elif table == 6:
-                published = publish_table6_analysis(
-                    client,
-                    exp_id,
-                    paths.cache_root / "f2/w2v1/analysis",
-                    corpora=corpora,
-                )
-            elif table == 5:
-                published = publish_table5_analysis(
-                    client,
-                    exp_id,
-                    paths.cache_root / "f2/w2v1/analysis",
-                    corpora=corpora,
-                )
-            elif table == 4:
-                published = publish_table4_analysis(
-                    client,
-                    exp_id,
-                    paths.cache_root / "f2/w2v1/analysis",
-                    corpora=corpora,
-                )
-            elif table == 3:
-                published = publish_table3_analysis(
-                    client,
-                    exp_id,
-                    paths.cache_root / "f2/w2v1/analysis",
-                    corpora=corpora,
-                )
-            elif table == 2:
-                published = publish_table2_analysis(
-                    client,
-                    exp_id,
-                    paths.cache_root / "f2/w2v1/analysis",
-                    corpora=corpora,
-                )
-            typer.echo(
-                f"Published {len(published)} analysis runs to MLflow experiment '{ANALYSIS_EXPERIMENT_NAME}'"
-            )
         return
     typer.echo(f"Analysis orchestration for F2 suite '{suite}' is initialized.")
 
@@ -537,20 +519,30 @@ def w2v2_report(
     paths = RuntimePaths.from_environment()
     from .tracking import resolve_tracking_uri
 
+    cache_dir = paths.analysis_cache("f2", "w2v2")
     records = (
-        read_records(paths.cache_root / "f2/w2v2/results")
+        read_records(cache_dir)
         if offline
         else read_records(
             download_results(resolve_tracking_uri(tracking_uri), "w2v2", paths)
         )
     )
+    benchmarks = paths.inputs("f2", "benchmarks")
     output = generate_report(
         records=records,
         paths=paths,
         word_questions=word_questions
-        or paths.cache_root / "f2/w2v2/results/evaluation/questions-words.txt",
+        or (
+            cache_dir / "evaluation/questions-words.txt"
+            if (cache_dir / "evaluation/questions-words.txt").is_file()
+            else benchmarks / "questions-words.txt"
+        ),
         phrase_questions=phrase_questions
-        or paths.cache_root / "f2/w2v2/results/evaluation/questions-phrases.txt",
+        or (
+            cache_dir / "evaluation/questions-phrases.txt"
+            if (cache_dir / "evaluation/questions-phrases.txt").is_file()
+            else benchmarks / "questions-phrases.txt"
+        ),
         result_source="offline; MLflow not queried" if offline else "MLflow f2.w2v2",
     )
     typer.echo(f"W2V2 report: {output / 'summary.md'}")

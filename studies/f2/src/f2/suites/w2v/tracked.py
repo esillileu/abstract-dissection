@@ -2,12 +2,7 @@
 
 from __future__ import annotations
 
-import csv
-import json
-import re
-import shutil
-import time
-from dataclasses import dataclass
+import importlib
 from pathlib import Path
 from typing import Any
 
@@ -16,18 +11,10 @@ from repro_io.s3 import S3ObjectStore
 from f2.corpus.db.repository import CorpusStateRepository
 from f2.corpus.db.session import get_connection as corpus_connection
 from f2.corpus.object_store import s3_config_from_environment
-from f2.run_identity import RunIdentity
 from f2.suites.w2v.corpus import CorpusBinding, CorpusMaterializer
+from f2.suites.w2v.executor import W2VRunReceipt, _mapping
+from f2.suites.w2v.tracking import publish_run_to_mlflow
 from repro_core.context import ExperimentContext, RuntimePaths
-from repro_core.execution.runner import run_config
-from repro_mlflow.schema_v1 import write_result_manifest
-
-
-@dataclass(frozen=True)
-class W2VRunReceipt:
-    result: object
-    run_id: str
-    staging_root: Path
 
 
 def run_tracked_yaml(
@@ -41,14 +28,12 @@ def run_tracked_yaml(
     spec_module: str | None = None,
     tracking_uri: str,
     progress_reporter: object | None = None,
+    override: bool = False,
     **_: object,
 ) -> W2VRunReceipt:
     """Execute and publish one complete paper-reproduction run."""
     if spec_module is None or executor_module is None:
         raise ValueError("tracked W2V execution requires spec and executor modules")
-    import importlib
-
-    from mlflow import MlflowClient
 
     parser = importlib.import_module(spec_module)
     spec = parser.parse_run_spec(path, atomic_run_id=atomic_run_id, overrides=overrides)
@@ -56,70 +41,43 @@ def run_tracked_yaml(
     config = spec.to_executor_config()
     if device not in {None, "cpu"}:
         raise ValueError("canonical W2V parity execution requires CPU")
+
     paths = RuntimePaths.from_environment()
-    suite = _suite(config)
     if progress_reporter is not None:
         progress_reporter.write("materializing verified corpus binding")
     _materialize_corpus(config, paths, progress_reporter=progress_reporter)
     if progress_reporter is not None:
         progress_reporter.write("verified corpus binding is ready")
 
-    client = MlflowClient(tracking_uri=tracking_uri)
-    experiment_name = str(_mapping(config, "tracking")["experiment"])
-    experiment = client.get_experiment_by_name(experiment_name)
-    experiment_id = (
-        client.create_experiment(experiment_name)
-        if experiment is None
-        else experiment.experiment_id
-    )
-    run_id = _create_run(client, experiment_id, config)
-    run_root = paths.staging_root / f"exp/f2/{suite}/tracked" / run_id
-    try:
-        result = run_config(
-            config,
-            ExperimentContext(
-                paths=paths,
-                metadata={
-                    "run_root": run_root,
-                    "progress_reporter": progress_reporter,
-                },
-            ),
-            executor_module=executor_module,
-        )
-        (result.root / "config.json").write_text(
-            json.dumps(config, indent=2, sort_keys=True, default=str) + "\n"
-        )
-        # Preserve already available benchmark inputs for cache-only evaluation.
-        # Missing benchmarks do not change the declared training schedule.
-        from f2.common.paths import get_benchmark_data_dir
+    exec_mod = importlib.import_module(executor_module)
+    kind = str(config.get("kind", "word2vec"))
+    resolver = getattr(exec_mod, "get_executor", None)
+    if callable(resolver):
+        executor = resolver(kind)
+    else:
+        executors = getattr(exec_mod, "EXECUTORS", {})
+        executor = executors[kind]
 
-        benchmarks = get_benchmark_data_dir(paths)
-        for name in (
-            "questions-words.txt",
-            "questions-phrases.txt",
-            "MSR-syntax.txt",
-            "msr_sentence_completion/Holmes.lm_format.questions.txt",
-            "msr_sentence_completion/Holmes.lm_format.answers.txt",
-        ):
-            source = benchmarks / name
-            if source.is_file():
-                target = result.root / "evaluation" / name
-                target.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copyfile(source, target)
-        _publish(
-            client,
-            run_id,
-            result.root,
-            include_checkpoints=bool(config.get("large_scale"))
-            or _mapping(config, "training").get("model_kind") == "feedforward_nnlm",
-        )
-        client.set_terminated(run_id, status="FINISHED")
-        return W2VRunReceipt(result, run_id, run_root)
-    except BaseException:
-        run = client.get_run(run_id)
-        if run.info.status == "RUNNING":
-            client.set_terminated(run_id, status="FAILED")
-        raise
+    is_override = (
+        override
+        or bool(config.get("override", False))
+        or bool(overrides.get("override", False) if overrides else False)
+    )
+
+    context = ExperimentContext(
+        paths=paths,
+        metadata={
+            "progress_reporter": progress_reporter,
+        },
+    )
+
+    return executor.execute(
+        config,
+        context,
+        tracking_uri=tracking_uri,
+        override=is_override,
+        progress_reporter=progress_reporter,
+    )
 
 
 def _materialize_corpus(
@@ -128,7 +86,7 @@ def _materialize_corpus(
     *,
     progress_reporter: object | None = None,
 ) -> None:
-    identity = _identity(config)
+    identity = _mapping(config, "identity")
     corpus = _mapping(config, "corpus")
     if config.get("large_scale"):
         from repro_io.checksum import sha256_file
@@ -226,51 +184,6 @@ def _materialize_corpus(
     }
 
 
-def _create_run(
-    client: Any,
-    experiment_id: str,
-    config: dict[str, object],
-) -> str:
-    identity = _identity(config)
-    suite = _suite(config)
-    run_identity = RunIdentity(
-        planned_run_slot_id=str(identity["planned_run_slot_id"]),
-        plan_revision=_plan_revision(str(identity["execution_plan_id"])),
-        config_digest=str(identity["config_digest"]),
-    )
-    tags = {
-        **run_identity.tags(),
-        "f2.source_corpus_sha256": str(_mapping(config, "corpus")["sha256"]),
-        "paper.id": "mikolov-2013-efficient-estimation"
-        if suite == "w2v1"
-        else "mikolov-2013-distributed-representations",
-        "suite.name": suite,
-        "experiment_spec.id": str(
-            identity.get(
-                "experiment_spec_id",
-                "w2v1-table2-cbow"
-                if suite == "w2v1"
-                else "w2v2-phrase-skipgram-1b-objectives",
-            )
-        ),
-        "implementation.variant": str(config["atomic_run_id"]),
-        "seed": str(identity["seed"]),
-    }
-    return client.create_run(
-        experiment_id,
-        start_time=int(time.time() * 1000),
-        tags=tags,
-        run_name=str(identity["planned_run_slot_id"]),
-    ).info.run_id
-
-
-def _plan_revision(execution_plan_id: str) -> int:
-    match = re.search(r"-r(\d+)$", execution_plan_id)
-    if match is None:
-        raise ValueError("execution_plan_id must end with an explicit revision")
-    return int(match.group(1))
-
-
 def _publish(
     client: Any,
     run_id: str,
@@ -278,83 +191,20 @@ def _publish(
     *,
     include_checkpoints: bool = False,
 ) -> None:
-    write_result_manifest(
+    # Forward to tracking helper if called directly
+    publish_run_to_mlflow(
+        client,
+        "f2.w2v",
+        {
+            "identity": {
+                "planned_run_slot_id": run_id,
+                "execution_plan_id": "r1",
+                "config_digest": "",
+            }
+        },
         root,
-        exclude_dirs=("preparation",)
-        if include_checkpoints
-        else ("checkpoints", "preparation"),
+        include_checkpoints=include_checkpoints,
     )
-    for path in sorted(item for item in root.rglob("*") if item.is_file()):
-        rel = path.relative_to(root)
-        if "preparation" in rel.parts:
-            continue
-        if "checkpoints" in rel.parts and any(
-            part.startswith(".") for part in rel.parts
-        ):
-            continue
-        if not include_checkpoints and "checkpoints" in rel.parts:
-            continue
-        parent = path.parent.relative_to(root)
-        client.log_artifact(
-            run_id,
-            str(path),
-            artifact_path=None if parent == Path(".") else parent.as_posix(),
-        )
-    metrics = root / "metrics/observations.csv"
-    if metrics.is_file():
-        from mlflow.entities import Metric
-
-        batch: list[Metric] = []
-        now_ms = int(time.time() * 1000)
-        with metrics.open(encoding="utf-8", newline="") as stream:
-            for row in csv.DictReader(stream):
-                step = int(row["processed_tokens"])
-                batch.extend(
-                    [
-                        Metric(
-                            "train/objective_loss",
-                            float(row["objective_loss"]),
-                            now_ms,
-                            step,
-                        ),
-                        Metric(
-                            "train/learning_rate",
-                            float(row["learning_rate"]),
-                            now_ms,
-                            step,
-                        ),
-                        Metric(
-                            "runtime/tokens_per_second",
-                            float(row["tokens_per_second"]),
-                            now_ms,
-                            step,
-                        ),
-                    ]
-                )
-                if len(batch) >= 750:
-                    client.log_batch(run_id, metrics=batch)
-                    batch = []
-            if batch:
-                client.log_batch(run_id, metrics=batch)
-
-
-def _mapping(config: dict[str, object], key: str) -> dict[str, Any]:
-    value = config.get(key)
-    if not isinstance(value, dict):
-        raise ValueError(f"{key} must be a mapping")
-    return value
-
-
-def _identity(config: dict[str, object]) -> dict[str, Any]:
-    return _mapping(config, "identity")
-
-
-def _suite(config: dict[str, object]) -> str:
-    experiment = str(_mapping(config, "tracking")["experiment"])
-    suite = experiment.rsplit(".", 1)[-1]
-    if suite not in {"w2v1", "w2v2"}:
-        raise ValueError(f"unsupported tracked W2V suite: {suite}")
-    return suite
 
 
 __all__ = ["W2VRunReceipt", "run_tracked_yaml"]

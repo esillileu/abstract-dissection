@@ -168,6 +168,7 @@ def test_insufficient_resources_count_and_checksum_block_before_preparation(
 def paths(tmp_path):
     return dataclasses.replace(
         RuntimePaths.from_environment(),
+        workspace_root=tmp_path / "workspace",
         cache_root=tmp_path / "cache",
         staging_root=tmp_path / "staging",
     )

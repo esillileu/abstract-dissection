@@ -389,11 +389,20 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _phrase_root(cache_root: Path) -> Path:
+    p = Path(cache_root)
+    if p.name == "phrases":
+        return p
+    if p.name == "prepared" or (p / "phrases").is_dir():
+        return p / "phrases"
+    return p / "f2/w2v/phrases"
+
+
 def load_cached_phrase_corpus(
     cache_root: Path, source_sha256: str, policy: PhrasePolicy
 ) -> PhraseCorpus:
     key = _digest({"source_sha256": source_sha256, "policy": policy.record()})
-    path = Path(cache_root) / "f2/w2v/phrases" / key / "phrases.txt"
+    path = _phrase_root(cache_root) / key / "phrases.txt"
     lineage = json.loads(path.with_suffix(".txt.json").read_text())
     if not isinstance(lineage, dict):
         raise ValueError("invalid phrase lineage")
@@ -429,7 +438,7 @@ def cached_phrase_corpus(
     source_sha = _sha256(source)
     if source_sha256 is not None and source_sha256 != source_sha:
         raise ValueError("phrase source checksum mismatch")
-    root = Path(cache_root) / "f2/w2v/phrases"
+    root = _phrase_root(cache_root)
     root.mkdir(parents=True, exist_ok=True)
     key = _digest({"source_sha256": source_sha, "policy": policy.record()})
     entry = root / key

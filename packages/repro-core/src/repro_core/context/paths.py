@@ -45,44 +45,133 @@ def find_repository_root(start_path: Path | None = None) -> Path:
 @dataclass(frozen=True)
 class RuntimePaths:
     repo_root: Path
-    data_root: Path
-    artifacts_root: Path
-    cache_root: Path
-    staging_root: Path
+    workspace_root: Path
     references_root: Path
     studies_root: Path
+
+    def __init__(
+        self,
+        repo_root: Path,
+        workspace_root: Path | None = None,
+        references_root: Path | None = None,
+        studies_root: Path | None = None,
+        *,
+        data_root: Path | None = None,
+        artifacts_root: Path | None = None,
+        cache_root: Path | None = None,
+        staging_root: Path | None = None,
+    ) -> None:
+        object.__setattr__(self, "repo_root", Path(repo_root).resolve())
+        if workspace_root is not None:
+            ws = Path(workspace_root)
+        elif staging_root is not None:
+            ws = (
+                Path(staging_root).parent / "workspace"
+                if Path(staging_root).name == "staging"
+                else Path(staging_root).parent
+            )
+        else:
+            ws = self.repo_root / "workspace"
+        object.__setattr__(self, "workspace_root", ws)
+        object.__setattr__(
+            self,
+            "references_root",
+            Path(references_root).resolve()
+            if references_root is not None
+            else self.repo_root / "references",
+        )
+        object.__setattr__(
+            self,
+            "studies_root",
+            Path(studies_root).resolve()
+            if studies_root is not None
+            else self.repo_root / "studies",
+        )
 
     @classmethod
     def from_environment(cls, repository_root: Path | None = None) -> RuntimePaths:
         root = (repository_root or find_repository_root()).resolve()
+        raw_ws = os.getenv("REPRO_WORKSPACE_ROOT")
+        if raw_ws:
+            ws_path = Path(raw_ws)
+            ws = (ws_path if ws_path.is_absolute() else root / ws_path).resolve()
+        else:
+            ws = root / "workspace"
         return cls(
             repo_root=root,
-            data_root=_resolve_root(
-                ["REPRO_DATA_ROOT", "EXP_DATA_ROOT"], root / "data", root
-            ),
-            artifacts_root=_resolve_root(
-                ["REPRO_ARTIFACTS_ROOT", "EXP_RESULTS_ROOT"], root / "artifacts", root
-            ),
-            cache_root=_resolve_root(
-                ["REPRO_CACHE_ROOT", "EXP_CACHE_ROOT"], root / ".cache", root
-            ),
-            staging_root=_resolve_root(
-                ["REPRO_STAGING_ROOT", "EXP_STAGING_ROOT"], root / ".staging", root
-            ),
-            references_root=_resolve_root(
-                ["REPRO_REFERENCES_ROOT"], root / "references", root
-            ),
+            workspace_root=ws,
+            references_root=root / "references",
             studies_root=root / "studies",
         )
 
     @property
+    def inputs_root(self) -> Path:
+        return self.workspace_root / "inputs"
+
+    @property
+    def runs_root(self) -> Path:
+        return self.workspace_root / "runs"
+
+    @property
+    def analysis_root(self) -> Path:
+        return self.workspace_root / "analysis"
+
+    @property
+    def analysis_cache_root(self) -> Path:
+        return self.analysis_root / "cache"
+
+    @property
+    def analysis_results_root(self) -> Path:
+        return self.analysis_root / "results"
+
+    @property
+    def mlflow_cache_root(self) -> Path:
+        return self.analysis_cache_root / "mlflow"
+
+    @property
+    def results_cache_root(self) -> Path:
+        return self.analysis_cache_root / "results"
+
+    @property
+    def data_root(self) -> Path:
+        """Alias for inputs_root for legacy callers."""
+        return self.inputs_root
+
+    @property
+    def staging_root(self) -> Path:
+        """Alias for runs_root for legacy callers."""
+        return self.runs_root
+
+    @property
+    def cache_root(self) -> Path:
+        """Alias for analysis_cache_root for legacy callers."""
+        return self.analysis_cache_root
+
+    @property
+    def artifacts_root(self) -> Path:
+        """Alias for analysis_results_root for legacy callers."""
+        return self.analysis_results_root
+
+    @property
     def results_root(self) -> Path:
-        """Alias for artifacts_root for compatibility with legacy tests."""
-        return self.artifacts_root
+        """Alias for analysis_results_root for legacy callers."""
+        return self.analysis_results_root
+
+    def inputs(self, domain: str, *parts: str) -> Path:
+        _validate_parts((domain, *parts))
+        target = self.inputs_root.joinpath(domain, *parts)
+        target.mkdir(parents=True, exist_ok=True)
+        return target
+
+    def runs(self, domain: str, suite: str, *parts: str) -> Path:
+        _validate_parts((domain, suite, *parts))
+        target = self.runs_root.joinpath(domain, suite, *parts)
+        target.mkdir(parents=True, exist_ok=True)
+        return target
 
     def dataset(self, name: str) -> Path:
         _validate_parts((name,))
-        target = self.data_root / name
+        target = self.inputs_root / name
         target.mkdir(parents=True, exist_ok=True)
         return target
 
@@ -93,30 +182,47 @@ class RuntimePaths:
     def resolve(self, owner: StateOwner, coordinate: StateCoordinate) -> Path:
         if owner is StateOwner.RESULTS:
             _validate_parts((coordinate.domain,))
-            return self.artifacts_root / "exp" / coordinate.domain
+            target = self.analysis_results_root / coordinate.domain
+            target.mkdir(parents=True, exist_ok=True)
+            return target
         root = {
-            StateOwner.STAGING: self.staging_root / "exp",
-            StateOwner.CACHE: self.cache_root / "exp",
+            StateOwner.STAGING: self.runs_root,
+            StateOwner.CACHE: self.analysis_cache_root,
         }[owner]
-        return root.joinpath(*coordinate.parts())
+        target = root.joinpath(*coordinate.parts())
+        target.parent.mkdir(parents=True, exist_ok=True)
+        return target
 
     def run_staging(
-        self, *, domain: str, suite: str, study: str, variant: str, run_key: str
+        self,
+        *,
+        domain: str,
+        suite: str,
+        study: str = "",
+        variant: str = "",
+        run_key: str = "",
     ) -> Path:
-        _validate_parts((domain, suite, study, variant, run_key))
-        return self.staging_root / "exp" / domain / suite / study / variant / run_key
+        key = run_key or (f"{study}_{variant}" if study or variant else "default")
+        _validate_parts((domain, suite, key))
+        target = self.runs_root / domain / suite / key
+        target.mkdir(parents=True, exist_ok=True)
+        return target
 
     def analysis_cache(self, domain: str, *parts: str) -> Path:
         _validate_parts((domain, *parts))
-        return self.cache_root.joinpath("exp", domain, *parts)
+        target = self.results_cache_root.joinpath(domain, *parts)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        return target
 
     def domain_results(self, domain: str) -> Path:
         _validate_parts((domain,))
-        return self.artifacts_root / "exp" / domain
+        target = self.analysis_results_root / domain
+        target.mkdir(parents=True, exist_ok=True)
+        return target
 
     def analysis_output(self, study: str, suite: str | None = None) -> Path:
         _validate_parts((study,))
-        target = self.artifacts_root / "analysis" / study
+        target = self.analysis_results_root / study
         if suite:
             _validate_parts((suite,))
             target = target / suite
@@ -127,34 +233,12 @@ class RuntimePaths:
         self, tracking_key: str, run_id: str, *parts: str
     ) -> Path:
         _validate_parts((tracking_key, run_id, *parts))
-        return self.cache_root.joinpath("mlflow_artifact", tracking_key, run_id, *parts)
+        target = self.mlflow_cache_root.joinpath(tracking_key, run_id, *parts)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        return target
 
 
 WorkspacePaths = RuntimePaths
-
-
-def _resolve_root(names: list[str], default: Path, repository_root: Path) -> Path:
-    raw = None
-    for name in names:
-        val = os.getenv(name)
-        if val:
-            raw = val
-            break
-    if raw is None:
-        value = default
-    else:
-        value = Path(raw)
-        value = value if value.is_absolute() else repository_root / value
-
-    resolved = value.resolve()
-    # Relative overrides must remain under the repository.
-    if (
-        raw is not None
-        and not Path(raw).is_absolute()
-        and not resolved.is_relative_to(repository_root)
-    ):
-        raise ValueError(f"{name} escapes repository root: {value}")
-    return resolved
 
 
 def _validate_parts(parts: tuple[str, ...]) -> None:

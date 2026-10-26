@@ -5,11 +5,13 @@ from __future__ import annotations
 import json
 import shutil
 from pathlib import Path
+from typing import Any
 
 from f2.suites.w2v.artifacts import _VOCABULARY_ARRAYS
 from f2.suites.w2v.executor import Word2VecExecutor, Word2VecResult, _mapping
 from f2.suites.w2v.phrases import PhraseCorpus, PhrasePolicy, cached_phrase_corpus
 from repro_core.context import ExperimentContext
+from repro_core.storage.local_store import LocalStore
 
 
 class W2V2Executor(Word2VecExecutor):
@@ -17,8 +19,15 @@ class W2V2Executor(Word2VecExecutor):
 
     suite_name = "w2v2"
 
-    def run(
-        self, config: dict[str, object], context: ExperimentContext
+    def _run_training(
+        self,
+        config: dict[str, object],
+        context: ExperimentContext,
+        *,
+        run_root: Path,
+        local_store: LocalStore,
+        resume_from: Path | None = None,
+        progress_reporter: Any | None = None,
     ) -> Word2VecResult:
         mode = config.get("corpus_mode", "phrase")
         if mode == "word":
@@ -26,9 +35,17 @@ class W2V2Executor(Word2VecExecutor):
                 raise ValueError("word-only W2V2 requires word2vec_c subsampling")
             if "phrase_detection" in config:
                 raise ValueError("word-only W2V2 cannot configure phrase_detection")
-            return super().run(config, context)
+            return super()._run_training(
+                config,
+                context,
+                run_root=run_root,
+                local_store=local_store,
+                resume_from=resume_from,
+                progress_reporter=progress_reporter,
+            )
         if mode != "phrase":
             raise ValueError(f"unsupported W2V2 corpus_mode: {mode}")
+
         resolved = dict(config)
         corpus = _mapping(config, "corpus")
         source = Path(str(corpus["path"]))
@@ -38,18 +55,20 @@ class W2V2Executor(Word2VecExecutor):
             source = resolve_source(config, context.paths)
         elif not source.is_absolute():
             source = context.paths.repo_root / source
+
         configured_digest = corpus.get("sha256")
-        # Cache preparation hashes actual source bytes and checks any declared identity.
         source_digest = None if configured_digest is None else str(configured_digest)
         readiness = None
+        prepared_dir = context.paths.inputs("f2", "prepared")
+
         if config.get("large_scale"):
             from .preflight import preflight
 
             readiness = preflight(
                 config,
                 source,
-                context.paths.staging_root / "f2/preparation",
-                staging_root=context.paths.staging_root,
+                prepared_dir,
+                staging_root=context.paths.runs_root,
                 prepare=True,
             )
             if not readiness["ready"]:
@@ -59,13 +78,15 @@ class W2V2Executor(Word2VecExecutor):
                 )
             statistics = readiness["statistics"]
             source_digest = statistics["sentence_sha256"]
+
         values = _mapping(config, "phrase_detection")
         policy = PhrasePolicy.from_config(values)
-        progress = context.metadata.get("progress_reporter")
+        progress = context.metadata.get("progress_reporter") or progress_reporter
+
         if readiness is None:
             phrase = cached_phrase_corpus(
                 source,
-                context.paths.staging_root / "f2/preparation",
+                prepared_dir,
                 policy,
                 progress=None if progress is None else progress.write,
                 source_sha256=source_digest,
@@ -82,11 +103,21 @@ class W2V2Executor(Word2VecExecutor):
                 lineage["token_count"],
                 lineage["joined_count"],
             )
+
         resolved["corpus"] = {"path": str(phrase.path), "sha256": phrase.corpus_sha256}
-        result = super().run(resolved, context)
+        result = super()._run_training(
+            resolved,
+            context,
+            run_root=run_root,
+            local_store=local_store,
+            resume_from=resume_from,
+            progress_reporter=progress_reporter,
+        )
+
         lineage_target = result.root / "phrase_lineage.json"
         shutil.copyfile(phrase.path.with_suffix(".txt.json"), lineage_target)
-        report = json.loads(result.report.read_text())
+        report = json.loads(result.report.read_text(encoding="utf-8"))
+
         if readiness is not None:
             from repro_io.checksum import sha256_file
 
@@ -120,8 +151,9 @@ class W2V2Executor(Word2VecExecutor):
                 json.dumps(lineage, indent=2, sort_keys=True) + "\n"
             )
             report["artifacts"]["large_scale_lineage"] = "large_scale_lineage.json"
+
         report["artifacts"]["phrase_lineage"] = "phrase_lineage.json"
-        result.report.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
+        local_store.write_result_report(report)
         return result
 
 

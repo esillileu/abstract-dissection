@@ -1,0 +1,197 @@
+"""MLflow publication and discovery contracts for F2 Word2Vec runs."""
+
+from __future__ import annotations
+
+import csv
+import re
+import time
+from pathlib import Path
+from typing import Any
+
+from mlflow import MlflowClient
+from mlflow.entities import Metric, Run
+
+from f2.run_identity import RunIdentity
+from repro_mlflow.schema_v1 import write_result_manifest
+
+
+def find_matching_finished_run(
+    client: MlflowClient,
+    experiment_name: str,
+    config_digest: str,
+    seed: int,
+) -> Run | None:
+    """Find a finished MLflow run matching identical semantic experiment conditions."""
+    experiment = client.get_experiment_by_name(experiment_name)
+    if experiment is None:
+        return None
+
+    runs = client.search_runs(
+        [experiment.experiment_id],
+        filter_string="attributes.status = 'FINISHED'",
+        max_results=10000,
+    )
+    for run in runs:
+        tags = run.data.tags
+        digest = tags.get("config_digest") or tags.get("f2.config_digest")
+        run_seed = tags.get("seed")
+        if digest == config_digest and run_seed == str(seed):
+            return run
+    return None
+
+
+def publish_run_to_mlflow(
+    client: MlflowClient,
+    experiment_name: str,
+    config: dict[str, Any],
+    run_root: Path,
+    *,
+    include_checkpoints: bool = False,
+) -> str:
+    """Publish completed local run artifacts and metrics to MLflow.
+
+    Marks the run FINISHED only after upload completes successfully.
+    If an upload error occurs, the run is terminated as FAILED and the error is raised.
+    Local files are always preserved.
+    """
+    experiment = client.get_experiment_by_name(experiment_name)
+    experiment_id = (
+        client.create_experiment(experiment_name)
+        if experiment is None
+        else experiment.experiment_id
+    )
+
+    identity = config["identity"]
+    suite = _suite(config)
+    run_identity = RunIdentity(
+        planned_run_slot_id=str(identity["planned_run_slot_id"]),
+        plan_revision=_plan_revision(str(identity["execution_plan_id"])),
+        config_digest=str(identity["config_digest"]),
+    )
+    tags = {
+        **run_identity.tags(),
+        "f2.source_corpus_sha256": str(config.get("corpus", {}).get("sha256", "")),
+        "paper.id": "mikolov-2013-efficient-estimation"
+        if suite == "w2v1"
+        else "mikolov-2013-distributed-representations",
+        "suite.name": suite,
+        "experiment_spec.id": str(
+            identity.get(
+                "experiment_spec_id",
+                "w2v1-table2-cbow"
+                if suite == "w2v1"
+                else "w2v2-phrase-skipgram-1b-objectives",
+            )
+        ),
+        "implementation.variant": str(config.get("atomic_run_id", "")),
+        "seed": str(identity["seed"]),
+    }
+
+    run = client.create_run(
+        experiment_id,
+        start_time=int(time.time() * 1000),
+        tags=tags,
+        run_name=str(identity["planned_run_slot_id"]),
+    )
+    run_id = run.info.run_id
+
+    try:
+        # Write local result manifest
+        write_result_manifest(
+            run_root,
+            exclude_dirs=("preparation",)
+            if include_checkpoints
+            else ("checkpoints", "preparation"),
+        )
+
+        # Upload artifacts
+        for path in sorted(item for item in run_root.rglob("*") if item.is_file()):
+            rel = path.relative_to(run_root)
+            if "preparation" in rel.parts:
+                continue
+            if "checkpoints" in rel.parts and any(
+                part.startswith(".") for part in rel.parts
+            ):
+                continue
+            if not include_checkpoints and "checkpoints" in rel.parts:
+                continue
+            parent = path.parent.relative_to(run_root)
+            client.log_artifact(
+                run_id,
+                str(path),
+                artifact_path=None if parent == Path(".") else parent.as_posix(),
+            )
+
+        # Upload observations as metrics
+        metrics_file = run_root / "metrics/observations.csv"
+        if metrics_file.is_file():
+            batch: list[Metric] = []
+            now_ms = int(time.time() * 1000)
+            with metrics_file.open(encoding="utf-8", newline="") as stream:
+                for row in csv.DictReader(stream):
+                    step = int(row.get("processed_tokens", 0))
+                    if "objective_loss" in row:
+                        batch.append(
+                            Metric(
+                                "train/objective_loss",
+                                float(row["objective_loss"]),
+                                now_ms,
+                                step,
+                            )
+                        )
+                    if "learning_rate" in row:
+                        batch.append(
+                            Metric(
+                                "train/learning_rate",
+                                float(row["learning_rate"]),
+                                now_ms,
+                                step,
+                            )
+                        )
+                    if "tokens_per_second" in row:
+                        batch.append(
+                            Metric(
+                                "runtime/tokens_per_second",
+                                float(row["tokens_per_second"]),
+                                now_ms,
+                                step,
+                            )
+                        )
+                    if len(batch) >= 750:
+                        client.log_batch(run_id, metrics=batch)
+                        batch = []
+                if batch:
+                    client.log_batch(run_id, metrics=batch)
+
+        # Mark as FINISHED only after complete upload
+        client.set_terminated(run_id, status="FINISHED")
+        return run_id
+    except BaseException:
+        try:
+            client.set_terminated(run_id, status="FAILED")
+        except Exception:
+            pass
+        raise
+
+
+def _suite(config: dict[str, Any]) -> str:
+    tracking = config.get("tracking")
+    if isinstance(tracking, dict) and "experiment" in tracking:
+        experiment = str(tracking["experiment"])
+        suite = experiment.rsplit(".", 1)[-1]
+        if suite in {"w2v1", "w2v2"}:
+            return suite
+    return "w2v2"
+
+
+def _plan_revision(execution_plan_id: str) -> int:
+    match = re.search(r"-r(\d+)$", execution_plan_id)
+    if match is None:
+        return 1
+    return int(match.group(1))
+
+
+__all__ = [
+    "find_matching_finished_run",
+    "publish_run_to_mlflow",
+]

@@ -16,6 +16,7 @@ dist/
 /artifacts/
 /.cache/
 /.staging/
+/workspace/
 
 # Binary data & caches
 *.pkl

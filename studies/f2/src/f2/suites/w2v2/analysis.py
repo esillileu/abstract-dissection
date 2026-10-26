@@ -599,7 +599,11 @@ def generate_report(
             "reason": "reference-only; external models are not retrained",
         },
     }
-    output = paths.cache_root / "f2/w2v2/analysis"
+    output = (
+        paths.analysis_output("f2", "w2v2")
+        if hasattr(paths, "analysis_output")
+        else paths.cache_root / "f2/w2v2/analysis"
+    )
     output.mkdir(parents=True, exist_ok=True)
     table_exports = []
     for number in ("1", "2", "3", "4", "5", "6", "section4.1"):

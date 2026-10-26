@@ -389,12 +389,6 @@ def test_table3_all_conditions_and_seeds_share_phrase_cache(tmp_path):
             assert load_checkpoint(result.checkpoint).completed_epochs == 1
     assert len(phrase_hashes) == 1
     assert (
-        len(
-            list(
-                (paths.staging_root / "f2/preparation/f2/w2v/phrases").glob(
-                    "*/phrases.txt"
-                )
-            )
-        )
+        len(list((paths.inputs("f2", "prepared") / "phrases").glob("*/phrases.txt")))
         == 1
     )

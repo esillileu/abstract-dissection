@@ -454,7 +454,7 @@ def test_cli_offline(tmp_path, monkeypatch):
     monkeypatch.setattr(RuntimePaths, "from_environment", lambda: paths_at(tmp_path))
     result = CliRunner().invoke(app, ["w2v2-report", "--offline"])
     assert result.exit_code == 0, result.output
-    assert (tmp_path / "cache/f2/w2v2/analysis/summary.json").is_file()
+    assert (paths_at(tmp_path).analysis_output("f2", "w2v2") / "summary.json").is_file()
 
 
 @pytest.fixture

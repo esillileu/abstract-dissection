@@ -50,7 +50,8 @@ def test_finished_results_survive_staging_and_cache_deletion(
         run_ids.append(run_id)
     run_id = run_ids[0]
     paths = paths_at(tmp_path)
-    shutil.rmtree(paths.staging_root)
+    if paths.staging_root.exists():
+        shutil.rmtree(paths.staging_root)
     questions = (
         AnalogyQuestion("family", b"a", b"b", b"c", b"d"),
         AnalogyQuestion("gram1", b"b", b"a", b"d", b"c"),

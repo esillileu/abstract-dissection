@@ -67,6 +67,15 @@ def _vocabulary_policy(config_values: dict, full_tokens: bool) -> dict:
     return semantic
 
 
+def _vocabulary_root(cache_root: Path) -> Path:
+    p = Path(cache_root)
+    if p.name == "vocabulary":
+        return p
+    if p.name == "prepared" or (p / "vocabulary").is_dir():
+        return p / "vocabulary"
+    return p / "f2/w2v/vocabulary"
+
+
 def vocabulary_cache_path(
     corpus_digest: str, config_values: dict, *, cache_root: Path, full_tokens: bool
 ) -> Path:
@@ -77,7 +86,7 @@ def vocabulary_cache_path(
             "vocabulary_config_digest": _json_digest(semantic),
         }
     )
-    return Path(cache_root) / "f2/w2v/vocabulary" / identity
+    return _vocabulary_root(cache_root) / identity
 
 
 def resolve_or_build_vocabulary(
@@ -94,7 +103,7 @@ def resolve_or_build_vocabulary(
     identity = _json_digest(
         {"corpus_digest": corpus_digest, "vocabulary_config_digest": config_digest}
     )
-    target = Path(cache_root) / "f2" / "w2v" / "vocabulary" / identity
+    target = _vocabulary_root(cache_root) / identity
     expected = {
         "corpus_digest": corpus_digest,
         "vocabulary_config": semantic_config,
