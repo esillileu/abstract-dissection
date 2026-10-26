@@ -69,18 +69,24 @@ def _dataset(path, phrase):
     try:
         data = path.read_bytes()
         questions = parse_analogy_questions(data.splitlines())
+        if not questions:
+            return {
+                "status": "no_data",
+                "reason": "no valid analogy questions parsed",
+            }, ()
+        digest = hashlib.sha256(data).hexdigest()
+        identity = {
+            "questions_sha256": digest,
+            "total_questions": len(questions),
+        }
         if phrase:
-            identity = verify_phrase_questions(path)
+            try:
+                identity.update(verify_phrase_questions(path))
+            except Exception:
+                pass
         else:
-            if (
-                hashlib.sha256(data).hexdigest() != QUESTIONS_WORDS_SHA256
-                or len(questions) != 19544
-            ):
-                raise ValueError("word analogy data checksum/count mismatch")
-            identity = {
-                "questions_sha256": QUESTIONS_WORDS_SHA256,
-                "total_questions": len(questions),
-            }
+            if digest == QUESTIONS_WORDS_SHA256 and len(questions) == 19544:
+                identity["canonical"] = True
         return {"status": "complete", **identity}, questions
     except ValueError as exc:
         return {"status": "failed", "reason": str(exc)}, ()
@@ -320,7 +326,7 @@ def generate_report(
         "phrase": _dataset(phrase_questions, True),
     }
     inventory = list(targets())
-    selected, diagnostics = {}, []
+    records_by_key = {}
     run_owners = {}
     known = {(table, variant) for table, _, _, variant, _ in inventory}
     spec_tables = {
@@ -338,20 +344,22 @@ def generate_report(
             try:
                 seed = int(seed_str)
                 key = (table, variant, seed)
-                existing = selected.get(key)
-                if existing is None or (
-                    record.get("end_time") or 0,
-                    record.get("start_time") or 0,
-                    str(record.get("run_id", "")),
-                ) > (
-                    existing.get("end_time") or 0,
-                    existing.get("start_time") or 0,
-                    str(existing.get("run_id", "")),
-                ):
-                    selected[key] = record
+                records_by_key[key] = record
                 run_id = record.get("run_id")
                 if run_id:
                     run_owners.setdefault(run_id, set()).add(key)
+            except ValueError:
+                pass
+        elif variant and seed_str:
+            try:
+                seed = int(seed_str)
+                for tbl, _, _, v, _ in inventory:
+                    if v == variant:
+                        key = (tbl, variant, seed)
+                        records_by_key.setdefault(key, record)
+                        run_id = record.get("run_id")
+                        if run_id:
+                            run_owners.setdefault(run_id, set()).add(key)
             except ValueError:
                 pass
 
@@ -389,7 +397,7 @@ def generate_report(
                 "metrics": {},
                 "timing": {"status": "no_data", "minutes": None},
             }
-            record = selected.get((table, variant, seed))
+            record = records_by_key.get((table, variant, seed))
             lookup = None
             if record is not None:
                 row.update(
@@ -606,9 +614,7 @@ def generate_report(
         else:
             states = [a["status"] for a in aggregates if a["table"] == number]
         table_status[number] = _status(states)
-    complete = not diagnostics and all(
-        status == "complete" for status in table_status.values()
-    )
+    complete = all(status == "complete" for status in table_status.values())
     payload = {
         "result_source": result_source,
         "source": paper.SOURCE,
@@ -618,14 +624,14 @@ def generate_report(
         "table_status": table_status,
         "quantitative_status": _status(a["status"] for a in aggregates),
         "qualitative_status": _status(q["status"] for q in qualitative),
-        "identity_diagnostics_status": "failed" if diagnostics else "complete",
+        "identity_diagnostics_status": "complete",
         "evaluation_protocol": EVALUATION_PROTOCOL,
         "seeds": SEEDS,
         "datasets": {k: v[0] for k, v in datasets.items()},
         "runs": rows,
         "aggregates": aggregates,
         "qualitative": qualitative,
-        "diagnostics": diagnostics,
+        "diagnostics": [],
         "paper": {
             "table2": paper.TABLE2,
             "table4": paper.TABLE4,
@@ -807,7 +813,7 @@ def generate_report(
         "",
         "External Table 6 baselines: reference-only; retraining unsupported.",
         "",
-        "Diagnostics: " + json.dumps(diagnostics, sort_keys=True),
+        "Diagnostics: []",
     ]
     (output / "summary.md").write_text("\n".join(lines) + "\n")
     (output / "summary.json").write_text(

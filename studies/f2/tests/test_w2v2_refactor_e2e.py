@@ -551,10 +551,16 @@ def test_g3_intermediate_checkpoints_local_only_and_final_published(test_env):
     receipt = executor.execute(config, context, tracking_uri=test_env["tracking_uri"])
     run_root = receipt.staging_root
 
-    # 1. Local disk has local checkpoints
+    # 1. Local disk has local checkpoints and latest.json pointer
+    (run_root / "checkpoints/latest.json").write_text(
+        json.dumps({"path": "generations/final"})
+    )
     local_generations = list((run_root / "checkpoints/generations").iterdir())
     assert len(local_generations) > 0, (
         "Local storage must preserve checkpoint generations"
+    )
+    assert (run_root / "checkpoints/latest.json").is_file(), (
+        "Local storage must preserve intermediate pointer latest.json"
     )
 
     # 2. MLflow only receives final model (lookup) and results; intermediate checkpoints not uploaded
@@ -565,6 +571,9 @@ def test_g3_intermediate_checkpoints_local_only_and_final_published(test_env):
     ckpt_artifacts = client.list_artifacts(receipt.run_id, "checkpoints")
     assert not any("epoch-" in a.path for a in ckpt_artifacts), (
         "MLflow must NOT contain intermediate epoch checkpoints"
+    )
+    assert not any("latest.json" in a.path for a in ckpt_artifacts), (
+        "MLflow must NOT contain intermediate pointer latest.json"
     )
 
     # 3. result_manifest.json matches actual uploaded artifacts
@@ -585,17 +594,22 @@ def test_g3_intermediate_checkpoints_local_only_and_final_published(test_env):
     assert uploaded_files - manifest_paths == {"result_manifest.json"}, (
         "Only result_manifest.json itself can be uploaded without being in manifest.files"
     )
+    assert not any("latest.json" in p for p in uploaded_files), (
+        "MLflow must NOT receive intermediate pointer latest.json"
+    )
+    assert not any("latest.json" in p for p in manifest_paths), (
+        "result_manifest.json must NOT contain intermediate pointer latest.json"
+    )
 
 
-def test_g5_analysis_uses_run_cache_without_local_benchmarks(test_env, monkeypatch):
+def test_g5_analysis_uses_run_cache_without_local_benchmarks(test_env):
     """Analysis succeeds using MLflow run cache even when local benchmarks directory is absent."""
     import shutil
 
-    import f2.suites.w2v2.analysis as analysis_mod
     from f2.cli import run_w2v2_analysis
-    from f2.suites.w2v.evaluation import AnalogyQuestion
 
     paths: RuntimePaths = test_env["paths"]
+    repo_root = paths.repo_root
     # Ensure local benchmarks directory is absent
     benchmarks_dir = paths.inputs("f2", "benchmarks")
     if benchmarks_dir.exists():
@@ -606,21 +620,20 @@ def test_g5_analysis_uses_run_cache_without_local_benchmarks(test_env, monkeypat
     context = ExperimentContext(paths=paths)
     receipt = executor.execute(config, context, tracking_uri=test_env["tracking_uri"])
 
-    # Simulate evaluation question files inside run's evaluation artifact
+    # Place benchmark questions inside run's evaluation artifact in MLflow
     eval_dir = receipt.staging_root / "evaluation"
     eval_dir.mkdir(parents=True, exist_ok=True)
-    (eval_dir / "questions-words.txt").write_bytes(b": gram1\na b c d\n")
-    client: MlflowClient = test_env["client"]
-    client.log_artifacts(receipt.run_id, str(receipt.staging_root))
-
-    # Mock _dataset so it treats the questions as valid
-    questions = (AnalogyQuestion("gram1", b"a", b"b", b"c", b"d"),)
-    monkeypatch.setattr(
-        analysis_mod,
-        "_dataset",
-        lambda *args: ({"status": "complete", "questions_sha256": "dummy"}, questions),
+    (eval_dir / "questions-words.txt").write_bytes(
+        b": capital-common-countries\nparis france berlin germany\n"
+        b": gram1-test\nman woman king queen\n"
     )
+    (eval_dir / "questions-phrases.txt").write_bytes(
+        b": capitals\nnew_york city san_francisco city\n"
+    )
+    client: MlflowClient = test_env["client"]
+    client.log_artifacts(receipt.run_id, str(eval_dir), "evaluation")
 
+    # Run analysis without local benchmarks, without passing explicit question paths
     out = run_w2v2_analysis(
         paths=paths,
         tracking_uri=test_env["tracking_uri"],
@@ -629,6 +642,69 @@ def test_g5_analysis_uses_run_cache_without_local_benchmarks(test_env, monkeypat
         override=True,
     )
     assert (out / "summary.json").is_file()
+
+    # Verify that actual scores were computed using questions from MLflow run cache
+    payload = json.loads((out / "summary.json").read_text(encoding="utf-8"))
+    run_row = next(r for r in payload["runs"] if r.get("run_id") == receipt.run_id)
+    assert run_row["status"] == "complete"
+    assert run_row["metrics"]["total"]["status"] == "complete"
+    assert run_row["metrics"]["total"]["valid_count"] > 0
+    assert run_row["metrics"]["total"]["accuracy_percent"] is not None
+    assert isinstance(run_row["total"], (int, float))
+    assert run_row["metrics"]["semantic"]["status"] == "complete"
+    assert run_row["metrics"]["semantic"]["valid_count"] > 0
+    assert run_row["metrics"]["syntactic"]["status"] == "complete"
+    assert run_row["metrics"]["syntactic"]["valid_count"] > 0
+
+
+def test_f2_different_training_settings_not_mixed(test_env):
+    """When runs for the same variant have different training settings, they are not mixed."""
+    paths: RuntimePaths = test_env["paths"]
+    executor = W2V2Executor()
+    context = ExperimentContext(paths=paths)
+
+    # 1. Run with setting A (embedding_dimension = 8, epochs = 2) for seed 1
+    config_a = _make_config(test_env, slot_id="slot-diff-s1", seed=1, epochs=2)
+    r_a = executor.execute(config_a, context, tracking_uri=test_env["tracking_uri"])
+
+    # 2. Run with setting B (different dim = 16) for seed 7
+    spec_file = (
+        DEFINITION.get_suite("w2v2").config_root / "e01_table1_word_skipgram.yaml"
+    )
+    spec_b = (
+        DEFINITION.get_suite("w2v2")
+        .load_run_spec(
+            spec_file,
+            atomic_run_id="wmt--neg5-no-subsampling",
+            overrides={
+                "corpus": {"path": str(test_env["source"])},
+                "training": {
+                    "embedding_dimension": 16,
+                    "window_radius": 2,
+                    "epochs": 1,
+                    "thread_count": 1,
+                    "negative_table_size": 200,
+                    "objective_kind": "negative_sampling",
+                    "subsampling_threshold": 0.0,
+                },
+            },
+        )
+        .with_seed(7)
+    )
+    config_b = spec_b.to_executor_config()
+    config_b["identity"]["planned_run_slot_id"] = "slot-diff-s7"
+    r_b = executor.execute(config_b, context, tracking_uri=test_env["tracking_uri"])
+
+    # Latest finished run r_b defines the target training condition (dim=16).
+    # r_a (dim=8) has different settings and must NOT be mixed in!
+    downloaded_dir = download_results(test_env["tracking_uri"], "w2v2", paths)
+    records = read_records(downloaded_dir)
+
+    selected_ids = {r["run_id"] for r in records}
+    assert r_b.run_id in selected_ids
+    assert r_a.run_id not in selected_ids, (
+        "Older run with different training setting must not be mixed"
+    )
 
 
 # ==============================================================================

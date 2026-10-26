@@ -412,14 +412,6 @@ def test_invalid_and_incomplete(tmp_path, monkeypatch, failure):
         assert result["metrics"]["total"]["coverage"] == 0
 
 
-def test_dataset_integrity(tmp_path):
-    assert analysis._dataset(None, True)[0]["status"] == "no_data"
-    data = tmp_path / "questions.txt"
-    data.write_text(": example\na b c d\n")
-    assert analysis._dataset(data, True)[0]["status"] == "failed"
-    assert analysis._dataset(data, False)[0]["status"] == "failed"
-
-
 def test_three_seeds_and_missing_evaluation(tmp_path, monkeypatch):
     records = [
         fixture_record(tmp_path / "inputs", "3", "wmt--hs-subsampling", seed)

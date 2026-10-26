@@ -164,18 +164,24 @@ def publish_run_to_mlflow(
             rel = file_path.relative_to(run_root)
             if "preparation" in rel.parts:
                 return False
+            # Intermediate pointers (latest.json, best.json, etc.) and hidden/tmp files remain local only
+            if (
+                file_path.name in {"latest.json", "best.json"}
+                or file_path.name.startswith(".")
+                or file_path.name.endswith(".tmp")
+            ):
+                return False
             # Always upload the designated final model
             if final_lookup_rel is not None and (
                 rel == final_lookup_rel or final_lookup_rel in rel.parents
             ):
                 return True
-            # Intermediate checkpoints (generations or latest-epoch-*) remain local only
+            # Intermediate checkpoints (generations or periodic/epoch checkpoints) remain local only
             if "generations" in rel.parts or any(
                 part.startswith("latest-epoch-")
                 or part.startswith("periodic-")
                 or part.startswith("best-")
                 or part.startswith("epoch-")
-                or part.startswith(".")
                 for part in rel.parts
             ):
                 return False

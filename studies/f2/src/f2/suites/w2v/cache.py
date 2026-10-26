@@ -45,80 +45,79 @@ def download_results(tracking_uri: str, suite: str, paths) -> Path:
         if not token:
             break
 
-    # Group runs by exact experimental training conditions and seed, selecting latest FINISHED run
-    finished_groups: dict[tuple[Any, ...], list[Any]] = {}
+    def _run_training_settings(r: Any) -> tuple[Any, ...]:
+        t = r.data.tags
+        p = r.data.params
+        variant = t.get("implementation.variant", "")
+        return (
+            t.get("config_digest") or t.get("f2.config_digest", ""),
+            p.get("model_kind") or t.get("training.model_kind", ""),
+            p.get("corpus_id")
+            or t.get("corpus.id")
+            or t.get("f2.source_corpus_sha256", ""),
+            t.get("is_phrase") or str("phrase" in variant),
+            p.get("objective_kind") or t.get("training.objective", ""),
+            p.get("embedding_dimension") or p.get("dim") or t.get("training.dim", ""),
+            p.get("window_radius")
+            or p.get("window_size")
+            or t.get("training.window", ""),
+            p.get("subsampling_threshold") or t.get("training.subsample", ""),
+            p.get("negative_sample_count")
+            or p.get("negative_samples")
+            or t.get("training.negative_samples", ""),
+            p.get("epochs") or t.get("training.epochs", ""),
+            t.get("phrase.delta", ""),
+            t.get("phrase.threshold", ""),
+        )
+
+    # 1. Group finished runs by target experimental condition (spec_id and variant)
+    runs_by_target: dict[tuple[str, str], list[Any]] = {}
     for run in all_runs:
         if run.info.status == "FINISHED":
             tags = run.data.tags
-            params = run.data.params
             spec_id = tags.get("experiment_spec.id", "")
             variant = tags.get("implementation.variant", "")
-            seed = tags.get("seed") or params.get("seed", "")
-            digest = tags.get("config_digest") or tags.get("f2.config_digest", "")
-            model = params.get("model_kind") or tags.get("training.model_kind", "")
-            corpus = (
-                params.get("corpus_id")
-                or tags.get("corpus.id")
-                or tags.get("f2.source_corpus_sha256", "")
-            )
-            is_phrase = tags.get("is_phrase") or str("phrase" in variant)
-            objective = params.get("objective_kind") or tags.get(
-                "training.objective", ""
-            )
-            dim = (
-                params.get("embedding_dimension")
-                or params.get("dim")
-                or tags.get("training.dim", "")
-            )
-            window = (
-                params.get("window_radius")
-                or params.get("window_size")
-                or tags.get("training.window", "")
-            )
-            subsample = params.get("subsampling_threshold") or tags.get(
-                "training.subsample", ""
-            )
-            neg = (
-                params.get("negative_sample_count")
-                or params.get("negative_samples")
-                or tags.get("training.negative_samples", "")
-            )
-            epochs = params.get("epochs") or tags.get("training.epochs", "")
-            phrase_delta = tags.get("phrase.delta", "")
-            phrase_thresh = tags.get("phrase.threshold", "")
+            target_key = (spec_id, variant)
+            runs_by_target.setdefault(target_key, []).append(run)
 
-            key = (
-                spec_id,
-                variant,
-                digest,
-                model,
-                corpus,
-                is_phrase,
-                objective,
-                dim,
-                window,
-                subsample,
-                neg,
-                epochs,
-                phrase_delta,
-                phrase_thresh,
-                seed,
-            )
-            finished_groups.setdefault(key, []).append(run)
-
+    # 2. For each target, determine actual latest training settings and select latest finished run per seed
     selected_finished: list[Any] = []
-    for key in sorted(finished_groups):
-        candidates = finished_groups[key]
-        # Best by end_time desc, then start_time desc, then run_id desc
-        best = max(
-            candidates,
+    for target_key in sorted(runs_by_target):
+        target_runs = runs_by_target[target_key]
+        if not target_runs:
+            continue
+        # Latest finished run for this experimental target defines actual training conditions
+        latest_target_run = max(
+            target_runs,
             key=lambda r: (
                 r.info.end_time or 0,
                 r.info.start_time or 0,
                 r.info.run_id,
             ),
         )
-        selected_finished.append(best)
+        target_settings = _run_training_settings(latest_target_run)
+
+        # Do not mix different training settings even for same variant and seed
+        matching_runs = [
+            r for r in target_runs if _run_training_settings(r) == target_settings
+        ]
+
+        # Group by seed and pick the latest finished run
+        seeds_map: dict[str, list[Any]] = {}
+        for r in matching_runs:
+            seed = r.data.tags.get("seed") or r.data.params.get("seed", "")
+            seeds_map.setdefault(seed, []).append(r)
+
+        for seed in sorted(seeds_map):
+            best = max(
+                seeds_map[seed],
+                key=lambda r: (
+                    r.info.end_time or 0,
+                    r.info.start_time or 0,
+                    r.info.run_id,
+                ),
+            )
+            selected_finished.append(best)
 
     records: list[dict[str, Any]] = []
     for run in selected_finished:

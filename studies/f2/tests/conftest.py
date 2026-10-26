@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import gzip
-import os
 from pathlib import Path
-from urllib.parse import urlsplit
 
 import pytest
 
@@ -57,109 +55,3 @@ def sample_cluster_idx_text() -> str:
         "com,reuters)/ 20120101000000\tcdx-00001.gz\t200000\t200000\t4\n"
         "com,yahoo)/ 20120101000000\tcdx-00002.gz\t0\t200000\t5\n"
     )
-
-
-@pytest.fixture(scope="session")
-def f2_test_database_url():
-    """Only an explicit test URL or a disposable PostgreSQL 18 instance."""
-    import shutil
-    import subprocess
-    import time
-    import uuid
-
-    import psycopg
-
-    from f2.catalog.db.migrations.runner import run_catalog_migrations
-    from f2.corpus.db.migrations.runner import run_migrations
-
-    url = os.environ.get("F2_TEST_DATABASE_URL")
-    container = None
-    engine = None
-    try:
-        if not url:
-            engine = shutil.which("podman") or shutil.which("docker")
-            if engine is None:
-                pytest.fail(
-                    "F2 DB verification requires F2_TEST_DATABASE_URL or Podman/Docker"
-                )
-            container = "f2-test-" + uuid.uuid4().hex
-            result = subprocess.run(
-                [
-                    engine,
-                    "run",
-                    "--detach",
-                    "--rm",
-                    "--name",
-                    container,
-                    "-e",
-                    "POSTGRES_PASSWORD=f2-test-only",
-                    "-e",
-                    "POSTGRES_DB=f2_test",
-                    "-p",
-                    "127.0.0.1::5432",
-                    "docker.io/library/postgres:18",
-                ],
-                capture_output=True,
-                text=True,
-                timeout=180,
-            )
-            if result.returncode:
-                pytest.fail("Cannot start disposable F2 PostgreSQL: " + result.stderr)
-            port = (
-                subprocess.check_output(
-                    [engine, "port", container, "5432/tcp"], text=True
-                )
-                .strip()
-                .rsplit(":", 1)[1]
-            )
-            url = f"postgresql://postgres:f2-test-only@127.0.0.1:{port}/f2_test"
-        # This check deliberately happens before migrations or fixture writes.
-        # Never consult dotenv here: a developer's production .env must not
-        # silently become a test database configuration.
-        parsed = urlsplit(url)
-        database_name = (parsed.path or "").lstrip("/")
-        if database_name == "f2" or not database_name.lower().endswith(
-            ("test", "_test", "-test")
-        ):
-            pytest.fail("F2_TEST_DATABASE_URL must identify a dedicated test database")
-        for key in ("F2_DATABASE_URL",):
-            if os.environ.get(key) == url:
-                pytest.fail("F2_TEST_DATABASE_URL must not equal an F2 operational URL")
-        deadline = time.monotonic() + 40
-        while True:
-            try:
-                with psycopg.connect(url, connect_timeout=2) as conn:
-                    run_catalog_migrations(conn)
-                    run_migrations(conn)
-                break
-            except psycopg.OperationalError:
-                if time.monotonic() >= deadline:
-                    pytest.fail("Dedicated F2 test database did not become ready")
-                time.sleep(0.25)
-        yield url
-    finally:
-        if container and engine:
-            subprocess.run(
-                [engine, "rm", "--force", container], capture_output=True, timeout=30
-            )
-
-
-@pytest.fixture
-def f2_test_database(f2_test_database_url, monkeypatch):
-    # CLI opens its own connections. Patch the resolvers as well as the environment
-    # so no test can fall through to a developer dotenv file.
-    from f2.catalog.db.session import CatalogDatabaseConfig
-    from f2.corpus.db.session import DatabaseConfig
-
-    monkeypatch.setenv("F2_DATABASE_URL", f2_test_database_url)
-    monkeypatch.setattr(
-        CatalogDatabaseConfig,
-        "from_environment",
-        classmethod(lambda cls: cls(f2_test_database_url)),
-    )
-    monkeypatch.setattr(
-        DatabaseConfig,
-        "from_environment",
-        classmethod(lambda cls: cls(f2_test_database_url)),
-    )
-    return f2_test_database_url
