@@ -1,7 +1,7 @@
 use crate::config::{MAX_TOKEN_LENGTH, Status};
 use std::{
     fs::File,
-    io::{BufReader, Read, Seek, SeekFrom},
+    io::{BufRead, BufReader, Read, Seek, SeekFrom},
     path::{Path, PathBuf},
 };
 
@@ -40,6 +40,60 @@ impl Corpus {
         Ok(tokenizer)
     }
 
+    /// Contiguous byte shards aligned forward to LF; adjacent workers share a boundary.
+    pub fn sentence_shard(&self, worker: usize, workers: usize) -> Result<(usize, usize), Status> {
+        let align = |offset: usize| -> Result<usize, Status> {
+            if offset == 0 || offset >= self.byte_size {
+                return Ok(offset.min(self.byte_size));
+            }
+            let mut file = File::open(&self.path).map_err(|_| Status::IoError)?;
+            file.seek(SeekFrom::Start((offset - 1) as u64))
+                .map_err(|_| Status::IoError)?;
+            let mut byte = [0u8];
+            file.read_exact(&mut byte).map_err(|_| Status::IoError)?;
+            if byte[0] == b'\n' {
+                return Ok(offset);
+            }
+            let mut reader = BufReader::new(file);
+            let mut position = offset;
+            loop {
+                let buffer = reader.fill_buf().map_err(|_| Status::IoError)?;
+                if buffer.is_empty() {
+                    return Ok(position);
+                }
+                let count = buffer
+                    .iter()
+                    .position(|&b| b == b'\n')
+                    .map(|p| p + 1)
+                    .unwrap_or(buffer.len());
+                let ended = buffer[count - 1] == b'\n';
+                position += count;
+                reader.consume(count);
+                if ended {
+                    return Ok(position);
+                }
+            }
+        };
+        Ok((
+            align(self.byte_size / workers * worker)?,
+            if worker + 1 == workers {
+                self.byte_size
+            } else {
+                align(self.byte_size / workers * (worker + 1))?
+            },
+        ))
+    }
+
+    pub fn sentence_tokenizer(
+        &self,
+        start: usize,
+        end: usize,
+    ) -> Result<Tokenizer<BufReader<File>>, Status> {
+        let mut tokenizer = self.tokenizer(start)?;
+        tokenizer.remaining_bytes = Some(end - start);
+        Ok(tokenizer)
+    }
+
     pub fn digest(&self) -> Result<String, Status> {
         let mut file = File::open(&self.path).map_err(|_| Status::IoError)?;
         let mut hash = crate::identity::StableDigest::new();
@@ -65,14 +119,18 @@ pub struct TokenRead {
 pub struct Tokenizer<R: Read> {
     reader: R,
     pending_newline: bool,
+    pub(crate) token_byte_limit: usize,
     full_tokens: bool,
+    remaining_bytes: Option<usize>,
 }
 impl<R: Read> Tokenizer<R> {
     pub fn new(reader: R) -> Self {
         Self {
             reader,
             pending_newline: false,
+            token_byte_limit: 0,
             full_tokens: false,
+            remaining_bytes: None,
         }
     }
 
@@ -85,7 +143,12 @@ impl<R: Read> Tokenizer<R> {
                 let character = if self.pending_newline {
                     self.pending_newline = false;
                     Some(b'\n')
+                } else if self.remaining_bytes == Some(0) {
+                    None
                 } else {
+                    if let Some(remaining) = &mut self.remaining_bytes {
+                        *remaining -= 1;
+                    }
                     let mut byte = [0u8; 1];
                     match self.reader.read(&mut byte) {
                         Ok(0) => None,
@@ -112,6 +175,9 @@ impl<R: Read> Tokenizer<R> {
                     b' ' | b'\t' if length != 0 => break,
                     b' ' | b'\t' => continue,
                     _ if self.full_tokens || length < MAX_TOKEN_LENGTH - 1 => {
+                        if self.token_byte_limit > 0 && length >= self.token_byte_limit {
+                            return Err(Status::InvalidArgument);
+                        }
                         token.try_reserve(1).map_err(|_| Status::OutOfMemory)?;
                         token.push(character);
                         length += 1;

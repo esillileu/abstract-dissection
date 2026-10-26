@@ -45,6 +45,9 @@ pub fn train_with_backend<B: ParameterBackend>(
     for (&output_index, &bit) in entry.huffman_path.iter().zip(&entry.huffman_bits) {
         backend.load_output_row(output_index, scratch.output_snapshot);
         let score = simd::dot(hidden, scratch.output_snapshot);
+        if !score.is_finite() {
+            return Err(Status::InvalidState);
+        }
         if trainer.config.hs_out_of_range_policy == HsOutOfRangePolicy::Skip
             && (score <= -trainer.sigmoid_table.max || score >= trainer.sigmoid_table.max)
         {
@@ -77,6 +80,21 @@ pub fn train_with_backend<B: ParameterBackend>(
             learning_rate,
             scratch.hidden_gradient,
         );
+        if scratch
+            .hidden_gradient
+            .iter()
+            .any(|value| !value.is_finite())
+        {
+            return Err(Status::InvalidState);
+        }
+        backend.load_output_row(output_index, scratch.output_snapshot);
+        if scratch
+            .output_snapshot
+            .iter()
+            .any(|value| !value.is_finite())
+        {
+            return Err(Status::InvalidState);
+        }
     }
     Ok(loss)
 }

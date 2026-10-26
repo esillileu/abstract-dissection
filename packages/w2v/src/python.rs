@@ -351,6 +351,75 @@ impl PyVocabulary {
             .into_pyarray(py)
     }
 
+    fn sentence_lengths(
+        &self,
+        corpus: &PyCorpus,
+    ) -> PyResult<std::collections::HashMap<usize, u64>> {
+        let mut tokenizer = corpus.inner.tokenizer(0).map_err(status_error)?;
+        let mut histogram = std::collections::HashMap::new();
+        let mut length = 0usize;
+        let mut raw_length = 0usize;
+        loop {
+            let read = tokenizer.read_token().map_err(status_error)?;
+            if read.at_eof {
+                if raw_length > 0 {
+                    *histogram.entry(length).or_insert(0) += 1;
+                }
+                break;
+            }
+            if read.token == b"</s>" {
+                if raw_length > 0 {
+                    *histogram.entry(length).or_insert(0) += 1;
+                }
+                length = 0;
+                raw_length = 0;
+            } else {
+                raw_length += 1;
+                if self.inner.find(&read.token).is_some() {
+                    length += 1;
+                }
+            }
+        }
+        Ok(histogram)
+    }
+
+    fn statistics(&self) -> std::collections::HashMap<String, u64> {
+        let v = &self.inner;
+        let token_bytes: usize = v.entries.iter().map(|e| e.token.len()).sum();
+        let path_nodes: usize = v.entries.iter().map(|e| e.huffman_path.len()).sum();
+        let memory = v.hash_slots.capacity() * size_of::<Option<usize>>()
+            + v.entries.capacity() * size_of::<VocabularyEntry>()
+            + v.entries
+                .iter()
+                .map(|e| {
+                    e.token.capacity()
+                        + e.huffman_path.capacity() * size_of::<usize>()
+                        + e.huffman_bits.capacity()
+                })
+                .sum::<usize>();
+        [
+            ("words", v.entries.len()),
+            ("token_bytes", token_bytes),
+            ("huffman_nodes", path_nodes),
+            (
+                "max_huffman_depth",
+                v.entries
+                    .iter()
+                    .map(|e| e.huffman_path.len())
+                    .max()
+                    .unwrap_or(0),
+            ),
+            ("memory_bytes", memory),
+            (
+                "hash_memory_bytes",
+                v.hash_slots.capacity() * size_of::<Option<usize>>(),
+            ),
+        ]
+        .into_iter()
+        .map(|(k, v)| (k.to_string(), v as u64))
+        .collect()
+    }
+
     fn export_state(&self) -> PyVocabularyState {
         PyVocabularyState {
             inner: self.inner.export_state(),
@@ -489,6 +558,7 @@ impl PyTrainingConfig {
             context_policy: match context_policy {
                 "dynamic" => crate::ContextPolicy::Dynamic,
                 "fixed" => crate::ContextPolicy::Fixed,
+                "entire_sentence" => crate::ContextPolicy::EntireSentence,
                 _ => return Err(PyValueError::new_err("unknown context policy")),
             },
             epochs,
@@ -1009,6 +1079,100 @@ impl PyTrainingSession {
             callback.call1(py, (callback_report,))?;
         }
         Ok(report)
+    }
+
+    #[getter]
+    fn processed_tokens(&self) -> u64 {
+        self.inner.processed_tokens()
+    }
+
+    fn descriptor(&self) -> PyResult<(u32, String, String, String)> {
+        let d = self.inner.descriptor().map_err(status_error)?;
+        Ok((
+            d.schema_version,
+            d.config_digest,
+            d.vocabulary_digest,
+            d.corpus_digest,
+        ))
+    }
+    #[getter]
+    fn shape(&self) -> (usize, usize) {
+        (self.vocab_size, self.embedding_dimension)
+    }
+    fn vocabulary_state(&self) -> PyVocabularyState {
+        PyVocabularyState {
+            inner: self.inner.vocabulary_state(),
+        }
+    }
+    fn workers(&self) -> Vec<PyWorkerState> {
+        self.inner
+            .worker_states()
+            .into_iter()
+            .map(|inner| PyWorkerState { inner })
+            .collect()
+    }
+    fn embedding_chunk<'py>(
+        &self,
+        py: Python<'py>,
+        output: bool,
+        start: usize,
+        count: usize,
+    ) -> PyResult<Bound<'py, PyArray1<f32>>> {
+        let kind = if output {
+            EmbeddingKind::Output
+        } else {
+            EmbeddingKind::Input
+        };
+        Ok(self
+            .inner
+            .embedding_chunk(kind, start, count)
+            .map_err(status_error)?
+            .into_pyarray(py))
+    }
+    fn restore_chunk(
+        &self,
+        output: bool,
+        start: usize,
+        values: PyReadonlyArray1<'_, f32>,
+    ) -> PyResult<()> {
+        let kind = if output {
+            EmbeddingKind::Output
+        } else {
+            EmbeddingKind::Input
+        };
+        let status = self
+            .inner
+            .restore_chunk(kind, start, contiguous_slice(&values)?);
+        if status != Status::Ok {
+            return Err(status_error(status));
+        }
+        Ok(())
+    }
+    #[allow(clippy::too_many_arguments)]
+    fn restore_progress(
+        &mut self,
+        schema: u32,
+        config: String,
+        vocabulary: String,
+        corpus: String,
+        completed: usize,
+        processed: u64,
+        workers: Vec<PyRef<'_, PyWorkerState>>,
+    ) -> PyResult<()> {
+        let descriptor = crate::StateDescriptor {
+            schema_version: schema,
+            config_digest: config,
+            vocabulary_digest: vocabulary,
+            corpus_digest: corpus,
+        };
+        let states: Vec<_> = workers.iter().map(|w| w.inner.clone()).collect();
+        let status = self
+            .inner
+            .restore_progress(&descriptor, completed, processed, &states);
+        if status != Status::Ok {
+            return Err(status_error(status));
+        }
+        Ok(())
     }
 
     fn export_state(&self) -> PyResult<PyTrainingState> {

@@ -1,9 +1,9 @@
 use super::{
     ModelStep, ObjectiveLoss, ObjectiveScratch, backend::ParameterBackend,
-    backend::SharedModelBackend, context_position, context_radius_with_policy,
-    hierarchical_softmax, nce, negative_sampling,
+    backend::SharedModelBackend, context_radius_with_policy, hierarchical_softmax, nce,
+    negative_sampling,
 };
-use crate::config::{ObjectiveKind, Status};
+use crate::config::{ContextPolicy, ObjectiveKind, Status};
 
 #[inline]
 pub fn train(step: &mut ModelStep<'_, '_>) -> Result<ObjectiveLoss, Status> {
@@ -17,17 +17,25 @@ pub fn train_with_backend<B: ParameterBackend>(
     step: &mut ModelStep<'_, '_>,
     backend: &mut B,
 ) -> Result<ObjectiveLoss, Status> {
-    let radius = context_radius_with_policy(
-        step.window_rng,
-        step.trainer.config.window_radius,
-        step.trainer.config.context_policy,
-    );
+    let radius = if step.trainer.config.context_policy == ContextPolicy::EntireSentence {
+        step.sentence.len()
+    } else {
+        context_radius_with_policy(
+            step.window_rng,
+            step.trainer.config.window_radius,
+            step.trainer.config.context_policy,
+        )
+    };
     let center_token = step.target_token;
     let mut loss = ObjectiveLoss::default();
-    for offset in 0..=radius * 2 {
-        if let Some(position) =
-            context_position(step.sentence.len(), step.sentence_position, radius, offset)
-        {
+    let start = step.sentence_position.saturating_sub(radius);
+    let end = step
+        .sentence_position
+        .saturating_add(radius)
+        .saturating_add(1)
+        .min(step.sentence.len());
+    for position in start..end {
+        if position != step.sentence_position {
             let context_token = step.sentence[position];
             backend.load_input_row(center_token, step.hidden);
             step.hidden_gradient.fill(0.0);

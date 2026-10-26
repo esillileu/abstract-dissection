@@ -43,7 +43,9 @@ pub struct DownpourTrainingSession {
 
 impl DownpourTrainingSession {
     pub fn create(trainer: Arc<Trainer>, downpour_config: DownpourConfig) -> Result<Self, Status> {
-        if downpour_config.validate() != Status::Ok {
+        if trainer.config.context_policy == crate::config::ContextPolicy::EntireSentence
+            || downpour_config.validate() != Status::Ok
+        {
             return Err(Status::InvalidArgument);
         }
         trainer.processed_tokens.store(0, Ordering::Relaxed);
