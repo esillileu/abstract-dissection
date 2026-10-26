@@ -204,7 +204,7 @@ def test_concurrent_materialization_uses_private_work_and_verified_results(tmp_p
     for i in range(3):
         assert results[i] == results[i + 3]
         assert len(results[i].path.read_bytes().split()) == budgets[i]
-    assert not list((_paths(tmp_path).cache_root / "exp/f2/w2v/corpus/work").iterdir())
+    assert not list((materializer._corpus_root() / "work").iterdir())
 
 
 def test_shards_without_final_newline_cannot_join_documents(tmp_path):
@@ -244,7 +244,7 @@ def test_swapped_manifest_does_not_supply_another_budget_corpus(tmp_path):
     materializer = CorpusMaterializer(FixtureStore(objects), paths=_paths(tmp_path))
     small = materializer.materialize(materializer_binding, lexical_token_budget=3)
     large = materializer.materialize(materializer_binding, lexical_token_budget=10)
-    manifests = _paths(tmp_path).cache_root / "exp/f2/w2v/corpus/manifests"
+    manifests = materializer._corpus_root() / "manifests"
     small_manifest = (
         manifests / f"{_binding_manifest_key(materializer_binding, 3)}.json"
     )

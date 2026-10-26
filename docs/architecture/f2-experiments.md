@@ -35,11 +35,13 @@ After:
 
 ```mermaid
 flowchart LR
-  E[Executor] --> S[Local Staging]
-  S -->|Executor publishes| M[MLflow]
-  M -->|CLI download phase| C[Local Cache]
+  Engine[Engine: Computation] --> Executor[Executor: Execution & Publish]
+  Executor --> LocalStore["LocalStore (workspace/runs/)"]
+  Executor -->|Publish| M[MLflow: Source of Truth]
+  M -->|Download cache| C["MLflow Cache (workspace/analysis/cache/mlflow/)"]
   C --> A[Analyzer]
-  A -->|Derived results| C
+  A <-->|Eval Cache| ResCache["Results Cache (workspace/analysis/cache/results/)"]
+  A -->|Reports| Out["Analysis Output (workspace/analysis/results/)"]
 ```
 
 `FINISHED` is the sole execution-completion signal. Synchronous artifact logging
@@ -51,9 +53,9 @@ required for reading a completed run.
 
 ## Files and analysis
 
-Staging contains training preprocessing, vocabulary files, checkpoints and
-intermediate observations. A nonempty explicitly selected run directory is
-preserved and rejected; its contents are never used to discover or resume a run.
+`workspace/runs/` contains training preprocessing, vocabulary files, checkpoints and
+intermediate observations. When `override=True` is specified, existing run directories
+are preserved intact, and the new run is stored in an indexed subdirectory (e.g. `run_01/`).
 Atomic checkpoint writes, bounded matrix serialization, finite-value checks and
 local retention remain. Native engine checkpoint serialization/restoration APIs
 remain library mechanisms, not an automatic experiment recovery workflow.
@@ -64,7 +66,7 @@ benchmarks are copied to `evaluation/` before publication; execution does not
 download benchmarks or change the training schedule to produce them.
 
 `download_results()` refreshes a disposable MLflow metadata snapshot and downloads
-analysis inputs. The cache uses existing MLflow run IDs; it has no independent
+analysis inputs into `workspace/analysis/cache/mlflow/`. The cache uses existing MLflow run IDs; it has no independent
 execution identity or completion decision. Missing optional hardware or provenance
 metadata does not invalidate usable accuracy measurements. The analyzer does not
 require the original corpus, execution identity files, a separate vocabulary
@@ -73,8 +75,9 @@ snapshot or an additional full checkpoint when a standalone lookup exists.
 W2V1 analysis entry points take a cache directory rather than a tracking URI.
 W2V2 receives records from the same cached snapshot. The CLI owns the download
 phase. `w2v2-report --offline` reads the existing local snapshot without MLflow.
-W2V1 results live in `.cache/f2/w2v1/analysis/`; W2V2 results in
-`.cache/f2/w2v2/analysis/`. Explicit benchmark arguments refer to cached benchmark
+W2V1 results live in `workspace/analysis/results/f2/w2v1/`; W2V2 results in
+`workspace/analysis/results/f2/w2v2/`. Derived calculation caches live in
+`workspace/analysis/cache/results/f2/<suite>/`. Explicit benchmark arguments refer to cached benchmark
 files. Absent benchmarks or required artifacts produce unavailable analysis, with
 no source-data download, staging lookup or repair attempt.
 

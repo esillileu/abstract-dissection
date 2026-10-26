@@ -41,11 +41,20 @@ All AI agents working in this repository MUST adhere to the following 6 golden r
 * **Inside `deepscratch`:** Rely on 3-tier fallback (`data_dir` arg $\rightarrow$ `DEEPSCRATCH_DATA_DIR` env $\rightarrow$ `./data/<name>`).
 * **Inside `studies/`:** Always inject paths via translation adapters using `RuntimePaths.from_environment().dataset("<name>")`.
 
-### 4) Storage Lifecycle & Cache Discipline
-* **`.staging/`:** Ephemeral in-memory/scratch buffer during runs. Can be wiped at any time.
-* **`.cache/`:** Reconstructible caches (MLflow download cache, analysis cache).
-* **`artifacts/analysis/`:** Only human-readable deliverables (paper plots `.png`/`.pdf`, `summary.md`, `summary.csv`). Structured as `artifacts/analysis/<study>/` or `artifacts/analysis/<study>/<suite>/` via `RuntimePaths.from_environment().analysis_output(study, suite)` (e.g. `artifacts/analysis/f2/corpus/`).
-* **MLflow:** Single source of truth for all production run checkpoints, manifests, and metrics.
+### 4) Storage Lifecycle & Cache Discipline (Unified Workspace)
+* **Single Root:** All local runtime output and data are managed under `REPRO_WORKSPACE_ROOT` (`workspace/`):
+  * `workspace/inputs/`: Local input corpora, benchmarks, and reusable prepared/preprocessed data (`workspace/inputs/f2/prepared/corpus/`).
+  * `workspace/runs/`: Per-run local results, checkpoints, and intermediate files. Fully preserved on override (stored in subdirectories `run_01/`, etc., never automatically wiped).
+  * `workspace/analysis/cache/mlflow/`: Downloaded MLflow artifacts isolated per run ID (`root / <server_key> / <run_id> /`).
+  * `workspace/analysis/cache/results/`: Signature-checked intermediate statistical analysis and evaluation cache (`eval_*.json`). Reconstructible from MLflow artifacts.
+  * `workspace/analysis/results/`: Final human-readable deliverables (paper plots `.png`/`.pdf`, `summary.md`, `summary.csv`, JSON tables).
+* **MLflow:** Single source of truth for published production run checkpoints, manifests, and metrics. Execution completion is judged exclusively by MLflow native `FINISHED` status (no redundant `durable_complete`, `trial.status`, or external completion registries).
+* **5-Layer Architecture:**
+  * **Engine:** Pure computation (no storage paths, no MLflow access, no execution policy).
+  * **Executor:** Interprets configuration, checks MLflow/LocalStore for completed runs, decides skip/resume/run, delegates persistence, and publishes to MLflow.
+  * **RunLocator:** Path-based locator (`PathRunLocator`) verifying physical artifact existence and `complete=true`.
+  * **LocalStore:** File/checkpoint persistence without business logic; preserves all runs.
+  * **Analyzer:** Reads MLflow download cache, checks/updates results cache, produces evaluation reports. Never accesses training staging or raw corpora.
 
 ### 5) Immutable References
 * **Rule:** Never modify files inside [`references/`](file:///home/esillileu/abstract-dissection/references).

@@ -68,9 +68,8 @@ def test_finished_results_survive_staging_and_cache_deletion(
         if suite == "w2v1":
             from f2.suites.w2v1.analysis import analyze_table2
 
-            output = analyze_table2(
-                root, root / "evaluation/questions-words.txt", paths=paths
-            )
+            questions_path = local.get(run_id, "evaluation/questions-words.txt")
+            output = analyze_table2(root, questions_path, paths=paths)
             report = json.loads((output / "table2-results.json").read_text())
             assert len(report["runs"]) == 3
         else:

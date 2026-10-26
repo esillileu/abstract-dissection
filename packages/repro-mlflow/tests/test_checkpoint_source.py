@@ -89,7 +89,7 @@ def test_matching_seed_selected_checkpoint_is_downloaded(
 
     assert resolved == (
         tmp_path
-        / ".cache/mlflow_artifact"
+        / "workspace/analysis/cache/mlflow"
         / tracking_uri_key("sqlite:///test.db")
         / "source-run/checkpoints/generations/best-epoch-0001"
     )

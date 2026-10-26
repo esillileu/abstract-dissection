@@ -89,6 +89,14 @@ class Word2VecExecutor:
             if root_override
             else context.paths.runs("f2", self.suite_name, slot_id)
         )
+        if override and run_root.exists() and any(run_root.iterdir()):
+            idx = 1
+            while (run_root / f"run_{idx:02d}").exists() and any(
+                (run_root / f"run_{idx:02d}").iterdir()
+            ):
+                idx += 1
+            run_root = run_root / f"run_{idx:02d}"
+
         local_store = LocalStore(run_root)
         local_store.ensure_directories()
         client = MlflowClient(tracking_uri=tracking_uri)
@@ -137,14 +145,6 @@ class Word2VecExecutor:
                 progress_reporter.write(
                     f"Resuming {self.suite_name} slot={slot_id} from epoch {location.epoch} checkpoint"
                 )
-
-        if override and run_root.exists():
-            for item in run_root.iterdir():
-                if item.is_dir():
-                    shutil.rmtree(item)
-                else:
-                    item.unlink()
-            local_store.ensure_directories()
 
         # 5. Run training
         self.prepare_benchmarks(run_root, context.paths)
@@ -271,7 +271,14 @@ class Word2VecExecutor:
         if resume_from is None:
             manager.save_latest()
 
-        writer = DenseObservationWriter(run_root / "metrics" / "observations.csv")
+        metrics_path = run_root / "metrics" / "observations.csv"
+        metrics_path.parent.mkdir(parents=True, exist_ok=True)
+        if not metrics_path.is_file():
+            metrics_path.write_text(
+                "epoch,processed_tokens,learning_rate,objective_loss_sum,objective_loss_count,objective_loss,elapsed_seconds,tokens_per_second\n",
+                encoding="utf-8",
+            )
+        writer = DenseObservationWriter(metrics_path)
         total_epochs = int(_mapping(config, "training")["epochs"])
 
         existing_reports = []

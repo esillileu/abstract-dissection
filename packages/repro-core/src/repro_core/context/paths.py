@@ -95,6 +95,10 @@ class RuntimePaths:
         if raw_ws:
             ws_path = Path(raw_ws)
             ws = (ws_path if ws_path.is_absolute() else root / ws_path).resolve()
+            if not ws_path.is_absolute() and not ws.is_relative_to(root):
+                raise ValueError(
+                    f"REPRO_WORKSPACE_ROOT escapes repository root: {raw_ws}"
+                )
         else:
             ws = root / "workspace"
         return cls(
@@ -171,7 +175,17 @@ class RuntimePaths:
 
     def dataset(self, name: str) -> Path:
         _validate_parts((name,))
+        repro_data = os.getenv("REPRO_DATA_ROOT")
+        if repro_data:
+            candidate = Path(repro_data) / name
+            if candidate.exists():
+                return candidate
         target = self.inputs_root / name
+        if target.exists() and any(target.iterdir()):
+            return target
+        legacy_data = self.repo_root / "data" / name
+        if legacy_data.exists() and any(legacy_data.iterdir()):
+            return legacy_data
         target.mkdir(parents=True, exist_ok=True)
         return target
 
@@ -202,8 +216,15 @@ class RuntimePaths:
         variant: str = "",
         run_key: str = "",
     ) -> Path:
+        parts_to_validate = [domain, suite]
+        if study:
+            parts_to_validate.append(study)
+        if variant:
+            parts_to_validate.append(variant)
+        if run_key:
+            parts_to_validate.append(run_key)
+        _validate_parts(tuple(parts_to_validate))
         key = run_key or (f"{study}_{variant}" if study or variant else "default")
-        _validate_parts((domain, suite, key))
         target = self.runs_root / domain / suite / key
         target.mkdir(parents=True, exist_ok=True)
         return target

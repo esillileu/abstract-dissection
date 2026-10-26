@@ -43,6 +43,43 @@ def run_tracked_yaml(
         raise ValueError("canonical W2V parity execution requires CPU")
 
     paths = RuntimePaths.from_environment()
+    is_override = (
+        override
+        or bool(config.get("override", False))
+        or bool(overrides.get("override", False) if overrides else False)
+    )
+
+    # Skip early before expensive corpus materialization or large hash calculation
+    if not is_override:
+        identity = _mapping(config, "identity")
+        config_digest = str(identity["config_digest"])
+        seed_val = int(identity["seed"])
+        suite_name = "w2v2" if "w2v2" in str(executor_module) else "w2v1"
+        experiment_name = str(
+            _mapping(config, "tracking").get("experiment", f"f2.{suite_name}")
+        )
+        from mlflow import MlflowClient
+
+        from f2.suites.w2v.tracking import find_matching_finished_run
+
+        client = MlflowClient(tracking_uri=tracking_uri)
+        existing = find_matching_finished_run(
+            client, experiment_name, config_digest, seed_val
+        )
+        if existing is not None:
+            if progress_reporter is not None:
+                progress_reporter.write(
+                    f"Skipping {suite_name}: finished run {existing.info.run_id} exists"
+                )
+            slot_id = str(identity.get("planned_run_slot_id", ""))
+            run_root = paths.runs("f2", suite_name, slot_id)
+            return W2VRunReceipt(
+                result=None,
+                run_id=existing.info.run_id,
+                staging_root=run_root,
+                skipped=True,
+            )
+
     if progress_reporter is not None:
         progress_reporter.write("materializing verified corpus binding")
     _materialize_corpus(config, paths, progress_reporter=progress_reporter)
@@ -57,12 +94,6 @@ def run_tracked_yaml(
     else:
         executors = getattr(exec_mod, "EXECUTORS", {})
         executor = executors[kind]
-
-    is_override = (
-        override
-        or bool(config.get("override", False))
-        or bool(overrides.get("override", False) if overrides else False)
-    )
 
     context = ExperimentContext(
         paths=paths,

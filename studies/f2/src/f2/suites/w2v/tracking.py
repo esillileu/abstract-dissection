@@ -68,6 +68,22 @@ def publish_run_to_mlflow(
         plan_revision=_plan_revision(str(identity["execution_plan_id"])),
         config_digest=str(identity["config_digest"]),
     )
+    training = (
+        config.get("training", {}) if isinstance(config.get("training"), dict) else {}
+    )
+    corpus = config.get("corpus", {}) if isinstance(config.get("corpus"), dict) else {}
+    model_kind = str(training.get("model_kind", ""))
+    corpus_id = str(corpus.get("id", corpus.get("name", "")))
+    is_phrase = bool(
+        config.get("phrase", False) or "phrase" in str(config.get("atomic_run_id", ""))
+    )
+    objective_kind = str(training.get("objective_kind", ""))
+    dimension = str(training.get("hidden_size", training.get("dim", "")))
+    window_size = str(training.get("window_size", ""))
+    subsampling = str(training.get("subsampling_threshold", ""))
+    negative_samples = str(training.get("negative_samples", ""))
+    epochs = str(training.get("max_epochs", training.get("epochs", "")))
+
     tags = {
         **run_identity.tags(),
         "f2.source_corpus_sha256": str(config.get("corpus", {}).get("sha256", "")),
@@ -85,6 +101,15 @@ def publish_run_to_mlflow(
         ),
         "implementation.variant": str(config.get("atomic_run_id", "")),
         "seed": str(identity["seed"]),
+        "training.model_kind": model_kind,
+        "corpus.id": corpus_id,
+        "is_phrase": str(is_phrase),
+        "training.objective": objective_kind,
+        "training.dim": dimension,
+        "training.window": window_size,
+        "training.subsample": subsampling,
+        "training.negative_samples": negative_samples,
+        "training.epochs": epochs,
     }
 
     run = client.create_run(
@@ -94,6 +119,21 @@ def publish_run_to_mlflow(
         run_name=str(identity["planned_run_slot_id"]),
     )
     run_id = run.info.run_id
+
+    # Log params for structured query
+    for p_key, p_val in {
+        "model_kind": model_kind,
+        "corpus_id": corpus_id,
+        "objective_kind": objective_kind,
+        "dim": dimension,
+        "window_size": window_size,
+        "subsampling_threshold": subsampling,
+        "negative_samples": negative_samples,
+        "epochs": epochs,
+        "seed": str(identity["seed"]),
+    }.items():
+        if p_val:
+            client.log_param(run_id, p_key, p_val)
 
     try:
         # Write local result manifest
@@ -110,7 +150,7 @@ def publish_run_to_mlflow(
             if "preparation" in rel.parts:
                 continue
             if "checkpoints" in rel.parts and any(
-                part.startswith(".") for part in rel.parts
+                part.startswith(".") or part.startswith("epoch-") for part in rel.parts
             ):
                 continue
             if not include_checkpoints and "checkpoints" in rel.parts:

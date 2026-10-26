@@ -203,7 +203,7 @@ def test_b_skip_policy_when_finished_run_exists(test_env):
 # C. Override
 # ==============================================================================
 def test_c_override_creates_new_run_preserving_existing(test_env):
-    """When override=True, creates a new MLflow run and preserves existing run."""
+    """When override=True, creates a new MLflow run, preserves existing run in MLflow AND local storage."""
     config = _make_config(test_env, slot_id="slot-c1")
     paths: RuntimePaths = test_env["paths"]
     executor = W2V2Executor()
@@ -214,6 +214,10 @@ def test_c_override_creates_new_run_preserving_existing(test_env):
         config, context, tracking_uri=test_env["tracking_uri"], override=False
     )
     assert not receipt1.skipped
+    root1 = receipt1.staging_root
+    assert (root1 / "result.json").is_file()
+    assert (root1 / "lookup").is_dir()
+    result1_bytes = (root1 / "result.json").read_bytes()
 
     # Override run
     receipt2 = executor.execute(
@@ -221,6 +225,17 @@ def test_c_override_creates_new_run_preserving_existing(test_env):
     )
     assert not receipt2.skipped
     assert receipt2.run_id != receipt1.run_id
+
+    # Verify previous local run files are preserved without any deletion!
+    assert (root1 / "result.json").is_file()
+    assert (root1 / "result.json").read_bytes() == result1_bytes
+    assert (root1 / "lookup").is_dir()
+
+    # Verify new run is stored in a distinct directory
+    root2 = receipt2.staging_root
+    assert root2 != root1
+    assert (root2 / "result.json").is_file()
+    assert (root2 / "lookup").is_dir()
 
     # Verify both runs are preserved in MLflow
     client: MlflowClient = test_env["client"]
@@ -343,22 +358,44 @@ def test_e_publish_failure_preserves_local_results_and_can_republish_without_tra
 # F. 분석 (Analysis): Latest FINISHED Run Selection
 # ==============================================================================
 def test_f_analysis_selects_latest_finished_run_across_seeds(test_env):
-    """Analyzer selects the latest FINISHED run per condition and aggregates across seeds."""
+    """Analyzer selects the latest FINISHED run per condition, ignores FAILED/older runs, and aggregates seeds."""
     paths: RuntimePaths = test_env["paths"]
     executor = W2V2Executor()
     context = ExperimentContext(paths=paths)
+    client: MlflowClient = test_env["client"]
 
-    # Create completed runs for seed 1 and seed 7
+    # 1. Create older completed run for seed 1
     config_s1 = _make_config(test_env, slot_id="slot-f-s1", seed=1)
-    config_s7 = _make_config(test_env, slot_id="slot-f-s7", seed=7)
+    r_s1_old = executor.execute(
+        config_s1, context, tracking_uri=test_env["tracking_uri"]
+    )
+    assert not r_s1_old.skipped
 
-    r_s1 = executor.execute(config_s1, context, tracking_uri=test_env["tracking_uri"])
+    # 2. Create newer completed run for seed 1 via override (same condition)
+    r_s1_new = executor.execute(
+        config_s1, context, tracking_uri=test_env["tracking_uri"], override=True
+    )
+    assert not r_s1_new.skipped
+    assert r_s1_new.run_id != r_s1_old.run_id
+
+    # 3. Simulate a FAILED run with later start_time in MLflow for the same condition
+    exp = client.get_experiment_by_name("f2.w2v2")
+    failed_tags = dict(client.get_run(r_s1_new.run_id).data.tags)
+    failed_tags.pop("mlflow.runName", None)
+    failed_run = client.create_run(
+        exp.experiment_id,
+        tags=failed_tags,
+        run_name="failed-trial",
+    )
+    client.set_terminated(failed_run.info.run_id, status="FAILED")
+
+    # 4. Create completed run for seed 7
+    config_s7 = _make_config(test_env, slot_id="slot-f-s7", seed=7)
     r_s7 = executor.execute(config_s7, context, tracking_uri=test_env["tracking_uri"])
 
     # Download results and run analysis
     downloaded_dir = download_results(test_env["tracking_uri"], "w2v2", paths)
     records = read_records(downloaded_dir)
-    assert len(records) >= 2
 
     output = analysis.generate_report(
         records=records,
@@ -369,20 +406,43 @@ def test_f_analysis_selects_latest_finished_run_across_seeds(test_env):
     assert (output / "summary.md").is_file()
     payload = json.loads((output / "summary.json").read_text(encoding="utf-8"))
     runs_in_report = {r["run_id"] for r in payload["runs"] if r.get("run_id")}
-    assert r_s1.run_id in runs_in_report
+
+    # Verify latest FINISHED run was chosen for seed 1 (NOT the older one, NOT the failed one)
+    assert r_s1_new.run_id in runs_in_report
+    assert r_s1_old.run_id not in runs_in_report
+    assert failed_run.info.run_id not in runs_in_report
+
+    # Verify seed 7 is present
     assert r_s7.run_id in runs_in_report
 
 
 # ==============================================================================
 # G. 캐시 (Cache): Download Cache and Analysis Computation Reuse
 # ==============================================================================
-def test_g_cache_reuse_and_regeneration(test_env):
-    """First analysis downloads and caches; second reuses cache; recomputed if cache deleted."""
+def test_g_cache_reuse_and_regeneration(test_env, monkeypatch: pytest.MonkeyPatch):
+    """First analysis downloads and caches; second reuses cache without re-computing; recomputed if cache deleted."""
+    from f2.suites.w2v.evaluation import AnalogyQuestion
+
     config = _make_config(test_env, slot_id="slot-g1")
     paths: RuntimePaths = test_env["paths"]
     executor = W2V2Executor()
     context = ExperimentContext(paths=paths)
     executor.execute(config, context, tracking_uri=test_env["tracking_uri"])
+
+    questions = (
+        AnalogyQuestion(
+            "capital-common-countries", b"paris", b"france", b"berlin", b"germany"
+        ),
+        AnalogyQuestion("family", b"man", b"woman", b"king", b"queen"),
+    )
+    monkeypatch.setattr(
+        analysis,
+        "_dataset",
+        lambda *args: (
+            {"status": "complete", "questions_sha256": "dummy_sha256"},
+            questions,
+        ),
+    )
 
     # 1. First download & analysis
     download_results(test_env["tracking_uri"], "w2v2", paths)
@@ -396,7 +456,16 @@ def test_g_cache_reuse_and_regeneration(test_env):
     )
     summary1 = (output1 / "summary.json").read_text()
 
-    # 2. Second analysis reuses cache without re-downloading
+    # Verify eval_*.json was ACTUALLY created in analysis cache
+    eval_cache_files = list(paths.analysis_cache("f2", "w2v2").glob("eval_*.json"))
+    assert len(eval_cache_files) > 0, "eval_*.json cache files must be generated"
+
+    # 2. Second analysis reuses cache: evaluate_analogies must NOT be called!
+    mock_eval = MagicMock(
+        side_effect=RuntimeError("evaluate_analogies should not be called when cached!")
+    )
+    monkeypatch.setattr(analysis, "evaluate_analogies", mock_eval)
+
     records2 = read_records(paths.analysis_cache("f2", "w2v2"))
     output2 = analysis.generate_report(
         records=records2,
@@ -406,9 +475,10 @@ def test_g_cache_reuse_and_regeneration(test_env):
     )
     summary2 = (output2 / "summary.json").read_text()
     assert summary1 == summary2
+    mock_eval.assert_not_called()
 
     # 3. If analysis cache is deleted, it regenerates cleanly from MLflow artifacts
-    eval_cache_files = list(paths.analysis_cache("f2", "w2v2").glob("eval_*.json"))
+    monkeypatch.setattr(analysis, "evaluate_analogies", evaluate_analogies)
     for f in eval_cache_files:
         f.unlink()
 
@@ -420,6 +490,71 @@ def test_g_cache_reuse_and_regeneration(test_env):
     )
     summary3 = (output3 / "summary.json").read_text()
     assert summary1 == summary3
+
+    # Verify eval_*.json was recreated
+    new_eval_cache_files = list(paths.analysis_cache("f2", "w2v2").glob("eval_*.json"))
+    assert len(new_eval_cache_files) > 0
+
+
+# ==============================================================================
+# Additional Counter-Examples: Locator Completion Policy & Checkpoint Lookup
+# ==============================================================================
+def test_locator_rejects_incomplete_and_missing_artifacts(tmp_path: Path):
+    """PathRunLocator requires complete=true and all artifact files on disk."""
+    locator = PathRunLocator()
+
+    # 1. Non-existent root
+    assert locator.locate(tmp_path / "nonexistent").not_found
+
+    # 2. complete=false is not final
+    run_dir = tmp_path / "run_incomplete"
+    run_dir.mkdir()
+    (run_dir / "result.json").write_text(
+        json.dumps({"complete": False, "artifacts": {"lookup": "lookup"}})
+    )
+    (run_dir / "lookup").mkdir()
+    assert not locator.locate(run_dir).is_final
+
+    # 3. complete=true but missing artifacts is not final
+    run_dir2 = tmp_path / "run_missing_art"
+    run_dir2.mkdir()
+    (run_dir2 / "result.json").write_text(
+        json.dumps({"complete": True, "artifacts": {"lookup": "lookup_missing"}})
+    )
+    assert not locator.locate(run_dir2).is_final
+
+    # 4. complete=true and all artifacts present is final
+    run_dir3 = tmp_path / "run_valid"
+    run_dir3.mkdir()
+    (run_dir3 / "lookup").mkdir()
+    (run_dir3 / "result.json").write_text(
+        json.dumps({"complete": True, "artifacts": {"lookup": "lookup"}})
+    )
+    assert locator.locate(run_dir3).is_final
+
+
+def test_final_checkpoint_and_standalone_lookup_both_analyzable(test_env):
+    """load_lookup_artifact can read both standalone lookup and full checkpoint format."""
+    config = _make_config(test_env, slot_id="slot-lookup-test")
+    paths: RuntimePaths = test_env["paths"]
+    executor = W2V2Executor()
+    context = ExperimentContext(paths=paths)
+
+    receipt = executor.execute(config, context, tracking_uri=test_env["tracking_uri"])
+    run_root = receipt.staging_root
+
+    # 1. Standalone lookup directory
+    lookup_from_dir = load_lookup_artifact(run_root / "lookup")
+    assert lookup_from_dir.embeddings.shape[0] > 0
+
+    # 2. Checkpoint directory format (load from final checkpoint referenced in result.json)
+    res_data = json.loads((run_root / "result.json").read_text())
+    checkpoint_path = run_root / res_data["artifacts"]["checkpoint"]
+    lookup_from_ckpt = load_lookup_artifact(checkpoint_path)
+    assert lookup_from_ckpt.embeddings.shape[0] > 0
+    np.testing.assert_array_equal(
+        lookup_from_dir.embeddings, lookup_from_ckpt.embeddings
+    )
 
 
 # ==============================================================================

@@ -101,6 +101,14 @@ class CorpusMaterializer:
         self.paths = paths or RuntimePaths.from_environment()
         self.download_attempts = download_attempts
 
+    def _corpus_root(self) -> Path:
+        if hasattr(self.paths, "inputs"):
+            root = self.paths.inputs("f2", "prepared", "corpus")
+        else:
+            root = self.paths.inputs_root / "f2" / "prepared" / "corpus"
+        root.mkdir(parents=True, exist_ok=True)
+        return root
+
     def materialize(
         self,
         binding: CorpusBinding,
@@ -108,8 +116,7 @@ class CorpusMaterializer:
         lexical_token_budget: int,
         progress: Callable[[int, int, int], None] | None = None,
     ) -> MaterializedCorpus:
-        root = self.paths.cache_root / "exp/f2/w2v/corpus"
-        root.mkdir(parents=True, exist_ok=True)
+        root = self._corpus_root()
         key = _binding_manifest_key(binding, lexical_token_budget)
         with (root / f"{key}.lock").open("a+b") as lock:
             fcntl.flock(lock, fcntl.LOCK_EX)
@@ -122,8 +129,7 @@ class CorpusMaterializer:
             raise ValueError("lexical_token_budget must be positive")
         self._validate_binding(binding)
 
-        root = self.paths.cache_root / "exp" / "f2" / "w2v" / "corpus"
-        root.mkdir(parents=True, exist_ok=True)
+        root = self._corpus_root()
         manifest_root = root / "manifests"
         manifest_root.mkdir(parents=True, exist_ok=True)
         manifest_key = _binding_manifest_key(binding, lexical_token_budget)

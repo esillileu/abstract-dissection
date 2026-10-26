@@ -72,7 +72,7 @@ class MlflowArtifactCache:
         self.tracking_uri = tracking_uri
         self.server_key = tracking_uri_key(tracking_uri)
         paths = WorkspacePaths.from_environment(Path.cwd())
-        self.root = (root or paths.cache_root / "mlflow_artifact").resolve()
+        self.root = (root or paths.mlflow_cache_root).resolve()
 
     def path(self, run_id: str, artifact_path: str) -> Path:
         parts = tuple(

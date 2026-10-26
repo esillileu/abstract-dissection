@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import shutil
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -31,9 +30,6 @@ def download_results(tracking_uri: str, suite: str, paths) -> Path:
     )
     root.mkdir(parents=True, exist_ok=True)
     experiment = client.get_experiment_by_name(f"f2.{suite}")
-    evaluation = root / "evaluation"
-    if evaluation.exists():
-        shutil.rmtree(evaluation)
 
     all_runs: list[Any] = []
     token = None
@@ -49,16 +45,56 @@ def download_results(tracking_uri: str, suite: str, paths) -> Path:
         if not token:
             break
 
-    # Group runs by condition and select the latest FINISHED run for each
-    finished_groups: dict[tuple[str, str, str], list[Any]] = {}
+    # Group runs by exact experimental training conditions and seed, selecting latest FINISHED run
+    finished_groups: dict[tuple[Any, ...], list[Any]] = {}
     other_runs: list[Any] = []
     for run in all_runs:
         if run.info.status == "FINISHED":
             tags = run.data.tags
+            params = run.data.params
             spec_id = tags.get("experiment_spec.id", "")
             variant = tags.get("implementation.variant", "")
-            seed = tags.get("seed", "")
-            key = (spec_id, variant, seed)
+            seed = tags.get("seed") or params.get("seed", "")
+            digest = tags.get("config_digest") or tags.get("f2.config_digest", "")
+            model = params.get("model_kind") or tags.get("training.model_kind", "")
+            corpus = (
+                params.get("corpus_id")
+                or tags.get("corpus.id")
+                or tags.get("f2.source_corpus_sha256", "")
+            )
+            is_phrase = tags.get("is_phrase") or str("phrase" in variant)
+            objective = params.get("objective_kind") or tags.get(
+                "training.objective", ""
+            )
+            dim = params.get("dim") or tags.get("training.dim", "")
+            window = params.get("window_size") or tags.get("training.window", "")
+            subsample = params.get("subsampling_threshold") or tags.get(
+                "training.subsample", ""
+            )
+            neg = params.get("negative_samples") or tags.get(
+                "training.negative_samples", ""
+            )
+            epochs = params.get("epochs") or tags.get("training.epochs", "")
+            phrase_delta = tags.get("phrase.delta", "")
+            phrase_thresh = tags.get("phrase.threshold", "")
+
+            key = (
+                spec_id,
+                variant,
+                digest,
+                model,
+                corpus,
+                is_phrase,
+                objective,
+                dim,
+                window,
+                subsample,
+                neg,
+                epochs,
+                phrase_delta,
+                phrase_thresh,
+                seed,
+            )
             finished_groups.setdefault(key, []).append(run)
         else:
             other_runs.append(run)
@@ -92,8 +128,7 @@ def download_results(tracking_uri: str, suite: str, paths) -> Path:
             result = json.loads(result_path.read_text())
             cache.get(run.info.run_id, result["artifacts"]["lookup"])
             try:
-                benchmark = cache.get(run.info.run_id, "evaluation")
-                shutil.copytree(benchmark, evaluation, dirs_exist_ok=True)
+                cache.get(run.info.run_id, "evaluation")
             except Exception:
                 pass
             for name in (

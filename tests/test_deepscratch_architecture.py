@@ -34,19 +34,17 @@ def test_deepscratch_is_the_canonical_domain_plugin() -> None:
 
 
 def test_workspace_paths_are_owned_and_typed(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setenv("EXP_STAGING_ROOT", str(tmp_path / "staging"))
-    monkeypatch.setenv("EXP_CACHE_ROOT", str(tmp_path / "cache"))
-    monkeypatch.setenv("EXP_RESULTS_ROOT", str(tmp_path / "results"))
+    monkeypatch.setenv("REPRO_WORKSPACE_ROOT", str(tmp_path / "workspace"))
     paths = WorkspacePaths.from_environment(tmp_path / "repository")
     coordinate = StateCoordinate("deepscratch", "ds2", "e02", "implemented", "profile")
     assert paths.resolve(StateOwner.CACHE, coordinate) == (
-        tmp_path / "cache/exp/deepscratch/ds2/e02/implemented/profile"
+        tmp_path / "workspace/analysis/cache/deepscratch/ds2/e02/implemented/profile"
     )
     assert paths.resolve(StateOwner.RESULTS, coordinate) == (
-        tmp_path / "results/exp/deepscratch"
+        tmp_path / "workspace/analysis/results/deepscratch"
     )
     assert paths.resolve(StateOwner.STAGING, coordinate) == (
-        tmp_path / "staging/exp/deepscratch/ds2/e02/implemented/profile"
+        tmp_path / "workspace/runs/deepscratch/ds2/e02/implemented/profile"
     )
 
 
@@ -54,16 +52,11 @@ def test_workspace_path_defaults_match_storage_lifecycle(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    for name in (
-        "EXP_STAGING_ROOT",
-        "EXP_CACHE_ROOT",
-        "EXP_RESULTS_ROOT",
-    ):
-        monkeypatch.delenv(name, raising=False)
+    monkeypatch.delenv("REPRO_WORKSPACE_ROOT", raising=False)
     paths = WorkspacePaths.from_environment(tmp_path)
-    assert paths.staging_root == tmp_path / ".staging"
-    assert paths.results_root == tmp_path / "artifacts"
-    assert paths.cache_root == tmp_path / ".cache"
+    assert paths.runs_root == tmp_path / "workspace/runs"
+    assert paths.analysis_results_root == tmp_path / "workspace/analysis/results"
+    assert paths.analysis_cache_root == tmp_path / "workspace/analysis/cache"
 
 
 def test_workspace_paths_reject_coordinate_and_relative_root_escape(
@@ -78,7 +71,7 @@ def test_workspace_paths_reject_coordinate_and_relative_root_escape(
             variant="implemented",
             run_key="run",
         )
-    monkeypatch.setenv("EXP_CACHE_ROOT", "../outside")
+    monkeypatch.setenv("REPRO_WORKSPACE_ROOT", "../outside")
     with pytest.raises(ValueError, match="escapes repository root"):
         WorkspacePaths.from_environment(tmp_path)
 

@@ -338,7 +338,23 @@ def analyze(
                 paths=paths,
             )
         else:
-            questions = questions or cache_root / "evaluation/questions-words.txt"
+            benchmarks = paths.inputs("f2", "benchmarks")
+            questions = (
+                questions
+                or (
+                    benchmarks / "questions-words.txt"
+                    if (benchmarks / "questions-words.txt").is_file()
+                    else None
+                )
+                or next(
+                    (
+                        p
+                        for p in cache_root.glob("*/evaluation/questions-words.txt")
+                        if p.is_file()
+                    ),
+                    cache_root / "evaluation/questions-words.txt",
+                )
+            )
             if table == 2:
                 analyzer = analyze_table2_sources
             elif table == 3:

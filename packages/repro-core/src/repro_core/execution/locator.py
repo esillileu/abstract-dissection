@@ -56,13 +56,21 @@ class PathRunLocator:
         if result_json.is_file():
             try:
                 data = json.loads(result_json.read_text(encoding="utf-8"))
-                if data.get("complete") is True or "artifacts" in data:
-                    return RunLocation(
-                        status="final_found",
-                        root=root,
-                        final_result_path=result_json,
-                        metadata=data,
-                    )
+                if data.get("complete") is True:
+                    artifacts = data.get("artifacts")
+                    if isinstance(artifacts, dict) and artifacts:
+                        all_exist = all(
+                            (root / str(p)).exists()
+                            for p in artifacts.values()
+                            if isinstance(p, (str, Path))
+                        )
+                        if all_exist:
+                            return RunLocation(
+                                status="final_found",
+                                root=root,
+                                final_result_path=result_json,
+                                metadata=data,
+                            )
             except (json.JSONDecodeError, OSError):
                 pass
 

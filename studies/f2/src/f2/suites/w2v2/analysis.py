@@ -316,6 +316,13 @@ def generate_report(
         for record in group:
             owners.setdefault(record["run_id"], set()).add(key)
     conflicts = {key for group in owners.values() if len(group) > 1 for key in group}
+    analysis_cache_dir = (
+        paths.analysis_cache("f2", "w2v2")
+        if hasattr(paths, "analysis_cache")
+        else paths.cache_root / "f2/w2v2/results"
+    )
+    analysis_cache_dir.mkdir(parents=True, exist_ok=True)
+
     rows, qualitative = [], []
     for table, corpus, condition, variant, raw in inventory:
         from .spec import parse_run_spec
@@ -351,14 +358,49 @@ def generate_report(
             group = selected.get((table, variant, seed), [])
             lookup = None
             if group:
-                record = group[0]
+                target_digest = str(config.get("identity", {}).get("config_digest", ""))
+                # Always prefer FINISHED runs over FAILED / RUNNING
+                finished_in_group = [r for r in group if r.get("status") == "FINISHED"]
+                candidates = finished_in_group if finished_in_group else group
+
+                # If target_digest is present, prefer matching digest
+                if target_digest:
+                    digest_matched = [
+                        r
+                        for r in candidates
+                        if (
+                            r.get("tags", {}).get("config_digest")
+                            or r.get("tags", {}).get("f2.config_digest")
+                        )
+                        == target_digest
+                    ]
+                    if digest_matched:
+                        candidates = digest_matched
+
+                record = max(
+                    candidates,
+                    key=lambda r: (
+                        r.get("end_time") or 0,
+                        r.get("start_time") or 0,
+                        str(r.get("run_id", "")),
+                    ),
+                )
                 row.update(
                     run_id=record["run_id"],
                     mlflow_status=record["status"],
                     identity_status="unverified",
                 )
                 try:
-                    if len(group) != 1 or (table, variant, seed) in conflicts:
+                    finished_runs = [r for r in group if r.get("status") == "FINISHED"]
+                    if (
+                        (len(group) > 1 and len(finished_runs) > 1)
+                        or (
+                            len(group) > 1
+                            and len({r.get("run_id") for r in group}) == 1
+                        )
+                        or (len(group) > 1 and not finished_runs)
+                        or (table, variant, seed) in conflicts
+                    ):
                         raise ValueError(
                             "duplicate run/artifact identity across slots or seeds"
                         )
@@ -387,33 +429,79 @@ def generate_report(
                         )
                         row["timing"] = _timing(root, file_inventory, result)
                         row["training_minutes"] = row["timing"]["minutes"]
-                        if questions:
-                            score = evaluate_analogies(lookup, questions)
-                            row["metrics"] = {
-                                "total": _metric(score.overall),
-                                "semantic": _metric(score.semantic),
-                                "syntactic": _metric(score.syntactic),
-                            }
-                            required = (
-                                ("total", "semantic", "syntactic")
-                                if table == "1"
-                                else ("total",)
-                            )
-                            if any(
-                                row["metrics"][m]["status"] != "complete"
-                                for m in required
-                            ):
+
+                        # Check per-run evaluation computation cache
+                        eval_cache_file = (
+                            analysis_cache_dir / f"eval_{record['run_id']}_{table}.json"
+                        )
+                        q_hash = dataset.get("questions_sha256", "")
+                        loaded_from_cache = False
+                        if questions and eval_cache_file.is_file():
+                            try:
+                                cached_eval = json.loads(
+                                    eval_cache_file.read_text(encoding="utf-8")
+                                )
+                                if cached_eval.get(
+                                    "questions_sha256"
+                                ) == q_hash and cached_eval.get("metrics"):
+                                    row["metrics"] = cached_eval.get("metrics", {})
+                                    if "status" in cached_eval:
+                                        row["status"] = cached_eval["status"]
+                                    if "reason" in cached_eval:
+                                        row["reason"] = cached_eval["reason"]
+                                    for metric in row["metrics"]:
+                                        row[metric] = row["metrics"][metric].get(
+                                            "accuracy_percent"
+                                        )
+                                    loaded_from_cache = True
+                            except Exception:
+                                eval_cache_file.unlink(missing_ok=True)
+
+                        if not loaded_from_cache:
+                            if questions:
+                                score = evaluate_analogies(lookup, questions)
+                                row["metrics"] = {
+                                    "total": _metric(score.overall),
+                                    "semantic": _metric(score.semantic),
+                                    "syntactic": _metric(score.syntactic),
+                                }
+                                required = (
+                                    ("total", "semantic", "syntactic")
+                                    if table == "1"
+                                    else ("total",)
+                                )
+                                if any(
+                                    row["metrics"][m]["status"] != "complete"
+                                    for m in required
+                                ):
+                                    row.update(
+                                        status="incomplete",
+                                        reason="evaluation category has no valid questions",
+                                    )
+                                for metric in row["metrics"]:
+                                    row[metric] = row["metrics"][metric][
+                                        "accuracy_percent"
+                                    ]
+                                eval_cache_file.write_text(
+                                    json.dumps(
+                                        {
+                                            "run_id": record["run_id"],
+                                            "table": table,
+                                            "questions_sha256": q_hash,
+                                            "metrics": row["metrics"],
+                                            "status": row["status"],
+                                            "reason": row["reason"],
+                                        },
+                                        indent=2,
+                                    )
+                                    + "\n",
+                                    encoding="utf-8",
+                                )
+                            else:
                                 row.update(
                                     status="incomplete",
-                                    reason="evaluation category has no valid questions",
+                                    reason=f"evaluation data: {dataset['status']}",
                                 )
-                            for metric in row["metrics"]:
-                                row[metric] = row["metrics"][metric]["accuracy_percent"]
-                        else:
-                            row.update(
-                                status="incomplete",
-                                reason=f"evaluation data: {dataset['status']}",
-                            )
                 except EvidenceMissing as exc:
                     lookup = None
                     row.update(
