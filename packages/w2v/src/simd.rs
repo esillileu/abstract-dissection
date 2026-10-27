@@ -52,75 +52,6 @@ pub fn divide_in_place(values: &mut [Real], divisor: Real) {
 }
 
 #[inline]
-pub fn load_shared_row(destination: &mut [Real], source: &[AtomicU32]) {
-    assert_eq!(destination.len(), source.len());
-    if destination.len() >= 16 && is_available() {
-        unsafe { load_shared_row_avx2(destination, source) }
-    } else {
-        for (dst, src) in destination.iter_mut().zip(source) {
-            *dst = atomic_float::load(src);
-        }
-    }
-}
-
-#[inline]
-#[allow(dead_code)]
-pub fn store_shared_row(destination: &[AtomicU32], source: &[Real]) {
-    assert_eq!(destination.len(), source.len());
-    if destination.len() >= 16 && is_available() {
-        unsafe { store_shared_row_avx2(destination, source) }
-    } else {
-        for (dst, src) in destination.iter().zip(source) {
-            atomic_float::store(dst, *src);
-        }
-    }
-}
-
-#[inline]
-pub fn add_shared_row(destination: &[AtomicU32], delta: &[Real]) {
-    assert_eq!(destination.len(), delta.len());
-    if destination.len() >= 16 && is_available() {
-        unsafe { add_shared_row_avx2(destination, delta) }
-    } else {
-        for (dst, d) in destination.iter().zip(delta) {
-            atomic_float::add_hogwild(dst, *d);
-        }
-    }
-}
-
-#[inline]
-pub fn apply_output_gradient_hogwild(
-    output_row: &[AtomicU32],
-    output_snapshot: &[Real],
-    hidden: &[Real],
-    hidden_gradient: &mut [Real],
-    gradient_scale: Real,
-) {
-    assert_eq!(output_row.len(), output_snapshot.len());
-    assert_eq!(output_snapshot.len(), hidden.len());
-    assert_eq!(hidden.len(), hidden_gradient.len());
-    if output_row.len() >= 16 && is_available() {
-        unsafe {
-            apply_output_gradient_hogwild_avx2(
-                output_row,
-                output_snapshot,
-                hidden,
-                hidden_gradient,
-                gradient_scale,
-            )
-        }
-    } else {
-        apply_output_gradient_hogwild_scalar(
-            output_row,
-            output_snapshot,
-            hidden,
-            hidden_gradient,
-            gradient_scale,
-        );
-    }
-}
-
-#[inline]
 fn is_available() -> bool {
     static AVAILABLE: OnceLock<bool> = OnceLock::new();
     *AVAILABLE.get_or_init(|| {
@@ -156,20 +87,6 @@ fn dot_scalar(left: &[Real], right: &[Real]) -> Real {
 fn scaled_accumulate_scalar(destination: &mut [Real], source: &[Real], scale: Real) {
     for (destination, source) in destination.iter_mut().zip(source) {
         *destination += source * scale;
-    }
-}
-
-#[inline(always)]
-fn apply_output_gradient_hogwild_scalar(
-    output_row: &[AtomicU32],
-    output_snapshot: &[Real],
-    hidden: &[Real],
-    hidden_gradient: &mut [Real],
-    gradient_scale: Real,
-) {
-    for i in 0..output_row.len() {
-        hidden_gradient[i] += output_snapshot[i] * gradient_scale;
-        atomic_float::store(&output_row[i], output_snapshot[i] + hidden[i] * gradient_scale);
     }
 }
 
@@ -290,136 +207,6 @@ unsafe fn divide_avx2(values: &mut [Real], divisor: Real) {
     divide_scalar(values, divisor);
 }
 
-#[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-unsafe fn load_shared_row_avx2(destination: &mut [Real], source: &[AtomicU32]) {
-    use std::arch::x86_64::{_mm256_loadu_ps, _mm256_storeu_ps};
-
-    let mut index = 0;
-    while index + 8 <= destination.len() {
-        unsafe {
-            let v = _mm256_loadu_ps(source.as_ptr().add(index) as *const f32);
-            _mm256_storeu_ps(destination.as_mut_ptr().add(index), v);
-        }
-        index += 8;
-    }
-    for (dst, src) in destination[index..].iter_mut().zip(&source[index..]) {
-        *dst = atomic_float::load(src);
-    }
-}
-
-#[cfg(not(target_arch = "x86_64"))]
-unsafe fn load_shared_row_avx2(destination: &mut [Real], source: &[AtomicU32]) {
-    for (dst, src) in destination.iter_mut().zip(source) {
-        *dst = atomic_float::load(src);
-    }
-}
-
-#[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-unsafe fn store_shared_row_avx2(destination: &[AtomicU32], source: &[Real]) {
-    use std::arch::x86_64::{_mm256_loadu_ps, _mm256_storeu_ps};
-
-    let mut index = 0;
-    while index + 8 <= destination.len() {
-        unsafe {
-            let v = _mm256_loadu_ps(source.as_ptr().add(index));
-            _mm256_storeu_ps(destination.as_ptr().add(index) as *mut f32, v);
-        }
-        index += 8;
-    }
-    for (dst, src) in destination[index..].iter().zip(&source[index..]) {
-        atomic_float::store(dst, *src);
-    }
-}
-
-#[cfg(not(target_arch = "x86_64"))]
-unsafe fn store_shared_row_avx2(destination: &[AtomicU32], source: &[Real]) {
-    for (dst, src) in destination.iter().zip(source) {
-        atomic_float::store(dst, *src);
-    }
-}
-
-#[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-unsafe fn add_shared_row_avx2(destination: &[AtomicU32], delta: &[Real]) {
-    use std::arch::x86_64::{_mm256_add_ps, _mm256_loadu_ps, _mm256_storeu_ps};
-
-    let mut index = 0;
-    while index + 8 <= destination.len() {
-        unsafe {
-            let cur = _mm256_loadu_ps(destination.as_ptr().add(index) as *const f32);
-            let d = _mm256_loadu_ps(delta.as_ptr().add(index));
-            let sum = _mm256_add_ps(cur, d);
-            _mm256_storeu_ps(destination.as_ptr().add(index) as *mut f32, sum);
-        }
-        index += 8;
-    }
-    for (dst, d) in destination[index..].iter().zip(&delta[index..]) {
-        atomic_float::add_hogwild(dst, *d);
-    }
-}
-
-#[cfg(not(target_arch = "x86_64"))]
-unsafe fn add_shared_row_avx2(destination: &[AtomicU32], delta: &[Real]) {
-    for (dst, d) in destination.iter().zip(delta) {
-        atomic_float::add_hogwild(dst, *d);
-    }
-}
-
-#[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2", enable = "fma")]
-unsafe fn apply_output_gradient_hogwild_avx2(
-    output_row: &[AtomicU32],
-    output_snapshot: &[Real],
-    hidden: &[Real],
-    hidden_gradient: &mut [Real],
-    gradient_scale: Real,
-) {
-    use std::arch::x86_64::{_mm256_fmadd_ps, _mm256_loadu_ps, _mm256_set1_ps, _mm256_storeu_ps};
-
-    let scale_vector = _mm256_set1_ps(gradient_scale);
-    let mut index = 0;
-    while index + 8 <= output_row.len() {
-        unsafe {
-            let snap = _mm256_loadu_ps(output_snapshot.as_ptr().add(index));
-            let hid = _mm256_loadu_ps(hidden.as_ptr().add(index));
-            let hg = _mm256_loadu_ps(hidden_gradient.as_ptr().add(index));
-
-            let new_hg = _mm256_fmadd_ps(snap, scale_vector, hg);
-            let new_out = _mm256_fmadd_ps(hid, scale_vector, snap);
-
-            _mm256_storeu_ps(hidden_gradient.as_mut_ptr().add(index), new_hg);
-            _mm256_storeu_ps(output_row.as_ptr().add(index) as *mut f32, new_out);
-        }
-        index += 8;
-    }
-    apply_output_gradient_hogwild_scalar(
-        &output_row[index..],
-        &output_snapshot[index..],
-        &hidden[index..],
-        &mut hidden_gradient[index..],
-        gradient_scale,
-    );
-}
-
-#[cfg(not(target_arch = "x86_64"))]
-unsafe fn apply_output_gradient_hogwild_avx2(
-    output_row: &[AtomicU32],
-    output_snapshot: &[Real],
-    hidden: &[Real],
-    hidden_gradient: &mut [Real],
-    gradient_scale: Real,
-) {
-    apply_output_gradient_hogwild_scalar(
-        output_row,
-        output_snapshot,
-        hidden,
-        hidden_gradient,
-        gradient_scale,
-    );
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -442,31 +229,5 @@ mod tests {
         }
         scaled_accumulate(&mut destination, &right, 0.25);
         assert_eq!(destination, expected);
-
-        let output_row: Vec<AtomicU32> = (0..35)
-            .map(|i| AtomicU32::new((i as Real * 0.1).to_bits()))
-            .collect();
-        let output_snapshot: Vec<Real> = (0..35).map(|i| i as Real * 0.1).collect();
-        let hidden: Vec<Real> = (0..35).map(|i| i as Real * -0.05 + 0.5).collect();
-        let mut hidden_gradient: Vec<Real> = (0..35).map(|i| i as Real * 0.02).collect();
-        let scale = 0.05;
-
-        let mut expected_hg = hidden_gradient.clone();
-        scaled_accumulate(&mut expected_hg, &output_snapshot, scale);
-        let mut expected_out = output_snapshot.clone();
-        scaled_accumulate(&mut expected_out, &hidden, scale);
-
-        apply_output_gradient_hogwild(
-            &output_row,
-            &output_snapshot,
-            &hidden,
-            &mut hidden_gradient,
-            scale,
-        );
-
-        assert_eq!(hidden_gradient, expected_hg);
-        for (shared, exp) in output_row.iter().zip(&expected_out) {
-            assert_eq!(atomic_float::load(shared), *exp);
-        }
     }
 }

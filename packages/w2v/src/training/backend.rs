@@ -49,7 +49,9 @@ impl<'a> ParameterBackend for SharedModelBackend<'a> {
         let dim = self.model.embedding_dimension;
         let start = token * dim;
         let row = &self.model.input_embeddings[start..start + dim];
-        simd::load_shared_row(destination, row);
+        for (dst, src) in destination.iter_mut().zip(row) {
+            *dst = atomic_float::load(src);
+        }
     }
 
     #[inline(always)]
@@ -67,7 +69,9 @@ impl<'a> ParameterBackend for SharedModelBackend<'a> {
         let dim = self.model.embedding_dimension;
         let start = token * dim;
         let row = &self.model.output_embeddings[start..start + dim];
-        simd::load_shared_row(destination, row);
+        for (dst, src) in destination.iter_mut().zip(row) {
+            *dst = atomic_float::load(src);
+        }
     }
 
     #[inline(always)]
@@ -81,12 +85,12 @@ impl<'a> ParameterBackend for SharedModelBackend<'a> {
         hidden_gradient: &mut [Real],
     ) {
         let gradient_scale = raw_error * learning_rate;
+        simd::scaled_accumulate(hidden_gradient, output_snapshot, gradient_scale);
         let dim = self.model.embedding_dimension;
         let start = token * dim;
         let output_row = &self.model.output_embeddings[start..start + dim];
         match self.update_strategy {
             UpdateStrategy::AtomicCas => {
-                simd::scaled_accumulate(hidden_gradient, output_snapshot, gradient_scale);
                 for (snapshot, value) in output_snapshot.iter_mut().zip(hidden) {
                     *snapshot = gradient_scale * value;
                 }
@@ -95,13 +99,10 @@ impl<'a> ParameterBackend for SharedModelBackend<'a> {
                 }
             }
             UpdateStrategy::Hogwild => {
-                simd::apply_output_gradient_hogwild(
-                    output_row,
-                    output_snapshot,
-                    hidden,
-                    hidden_gradient,
-                    gradient_scale,
-                );
+                simd::scaled_accumulate(output_snapshot, hidden, gradient_scale);
+                for (shared, value) in output_row.iter().zip(output_snapshot.iter()) {
+                    atomic_float::store(shared, *value);
+                }
             }
         }
     }
@@ -116,15 +117,8 @@ impl<'a> ParameterBackend for SharedModelBackend<'a> {
         let dim = self.model.embedding_dimension;
         let start = token * dim;
         let input_row = &self.model.input_embeddings[start..start + dim];
-        match self.update_strategy {
-            UpdateStrategy::AtomicCas => {
-                for (coordinate, value) in input_row.iter().enumerate() {
-                    shared_add(value, hidden_gradient[coordinate], self.update_strategy);
-                }
-            }
-            UpdateStrategy::Hogwild => {
-                simd::add_shared_row(input_row, hidden_gradient);
-            }
+        for (coordinate, value) in input_row.iter().enumerate() {
+            shared_add(value, hidden_gradient[coordinate], self.update_strategy);
         }
     }
 }
