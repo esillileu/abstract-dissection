@@ -6,12 +6,6 @@ import importlib
 from pathlib import Path
 from typing import Any
 
-from repro_io.s3 import S3ObjectStore
-
-from f2.corpus.db.repository import CorpusStateRepository
-from f2.corpus.db.session import get_connection as corpus_connection
-from f2.corpus.object_store import s3_config_from_environment
-from f2.suites.w2v.corpus import CorpusBinding, CorpusMaterializer
 from f2.suites.w2v.executor import W2VRunReceipt, _mapping
 from f2.suites.w2v.tracking import publish_run_to_mlflow
 from repro_core.context import ExperimentContext, RuntimePaths
@@ -137,8 +131,25 @@ def _materialize_corpus(
     except (KeyError, TypeError, ValueError) as exc:
         raise ValueError("canonical W2V1 corpus requires lexical_token_budget") from exc
     from f2.common.paths import get_corpus_data_dir
+    from f2.suites.w2v.corpus import slice_corpus_file
 
     corpus_dir = get_corpus_data_dir(paths)
+
+    def _resolve_budgeted_corpus(source_file: Path, base_name: str) -> tuple[Path, str]:
+        if "holmes" in str(source_file) or lexical_token_budget <= 0:
+            from repro_io.checksum import sha256_file
+
+            digest = corpus.get("sha256") or sha256_file(source_file)
+            return source_file, str(digest)
+
+        budget_file = corpus_dir / f"{base_name}-tokens-{lexical_token_budget}.txt"
+        if progress_reporter is not None and not budget_file.is_file():
+            progress_reporter.write(
+                f"materializing {base_name} corpus sliced to {lexical_token_budget:,} tokens"
+            )
+        _, digest = slice_corpus_file(source_file, budget_file, lexical_token_budget)
+        return budget_file, digest
+
     if "path" in corpus:
         raw_path = Path(str(corpus["path"]))
         if raw_path.is_absolute():
@@ -157,13 +168,10 @@ def _materialize_corpus(
             raise FileNotFoundError(
                 f"configured corpus path does not exist: {corpus_path}"
             )
-        if "sha256" not in corpus:
-            from repro_io.checksum import sha256_file
-
-            corpus["sha256"] = sha256_file(corpus_path)
+        resolved_path, digest = _resolve_budgeted_corpus(corpus_path, corpus_path.stem)
         config["corpus"] = {
-            "path": str(corpus_path),
-            "sha256": corpus["sha256"],
+            "path": str(resolved_path),
+            "sha256": digest,
             "lexical_tokens": lexical_token_budget,
         }
         return
@@ -181,39 +189,18 @@ def _materialize_corpus(
 
     for candidate in candidate_paths:
         if candidate.is_file():
-            from repro_io.checksum import sha256_file
-
-            digest = corpus.get("sha256") or sha256_file(candidate)
+            resolved_path, digest = _resolve_budgeted_corpus(candidate, corpus_id)
             config["corpus"] = {
-                "path": str(candidate),
-                "sha256": str(digest),
+                "path": str(resolved_path),
+                "sha256": digest,
                 "lexical_tokens": lexical_token_budget,
             }
             return
 
-    slot_id = str(identity["planned_run_slot_id"])
-    with corpus_connection(validate_contract=True) as connection:
-        rows = CorpusStateRepository(connection).list_verified_training_shards(slot_id)
-    binding = CorpusBinding.from_rows(rows)
-
-    def report(shard: int, total: int, tokens: int) -> None:
-        if progress_reporter is not None:
-            progress_reporter.write(
-                f"corpus shard={shard}/{total} lexical_tokens={tokens}/{lexical_token_budget}"
-            )
-
-    materialized = CorpusMaterializer(
-        S3ObjectStore(s3_config_from_environment()), paths=paths
-    ).materialize(
-        binding,
-        lexical_token_budget=lexical_token_budget,
-        progress=report,
+    raise FileNotFoundError(
+        f"Corpus file not found for {corpus_id}. Checked: {candidate_paths}. "
+        f"Please ensure corpus is placed under {corpus_dir} or specified via corpus.path in YAML."
     )
-    config["corpus"] = {
-        "path": str(materialized.path),
-        "sha256": materialized.corpus_sha256,
-        "lexical_tokens": materialized.lexical_tokens,
-    }
 
 
 def _publish(

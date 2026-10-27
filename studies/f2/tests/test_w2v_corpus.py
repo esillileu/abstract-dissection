@@ -254,3 +254,21 @@ def test_swapped_manifest_does_not_supply_another_budget_corpus(tmp_path):
     large_manifest.write_bytes(small_manifest.read_bytes())
     recovered = materializer.materialize(materializer_binding, lexical_token_budget=10)
     assert recovered == large and recovered != small
+
+
+def test_slice_corpus_file(tmp_path: Path):
+    from f2.suites.w2v.corpus import slice_corpus_file
+
+    source = tmp_path / "raw.txt"
+    source.write_bytes(b"word1 word2 word3\nword4 word5 word6\nword7 word8\n")
+
+    target = tmp_path / "sliced-4.txt"
+    tokens, sha256 = slice_corpus_file(source, target, 4)
+    assert tokens == 4
+    assert target.is_file()
+    assert target.read_bytes() == b"word1 word2 word3\nword4\n"
+
+    # Verify cache hit
+    tokens_cached, sha256_cached = slice_corpus_file(source, target, 4)
+    assert tokens_cached == 4
+    assert sha256_cached == sha256

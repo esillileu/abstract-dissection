@@ -398,9 +398,71 @@ def _decompressed_chunks(path: Path):
         process.wait()
 
 
+def slice_corpus_file(
+    source_path: Path,
+    target_path: Path,
+    budget: int,
+    *,
+    scratch_dir: Path | None = None,
+) -> tuple[int, str]:
+    """Slice exact `budget` tokens from source_path to target_path using _copy_corpus_prefix."""
+    meta_path = target_path.with_suffix(".json")
+    if target_path.is_file() and meta_path.is_file():
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            if (
+                meta.get("lexical_token_budget") == budget
+                and meta.get("lexical_tokens") == budget
+                and target_path.stat().st_size == meta.get("byte_size")
+            ):
+                return int(meta["lexical_tokens"]), str(meta["corpus_sha256"])
+        except Exception:
+            pass
+
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    scratch = scratch_dir or target_path.parent
+    scratch.mkdir(parents=True, exist_ok=True)
+    temp_target = target_path.with_suffix(f".tmp-{os.getpid()}")
+    try:
+
+        def file_chunks():
+            with source_path.open("rb") as f:
+                while True:
+                    chunk = f.read(CORPUS_CHUNK_BYTES)
+                    if not chunk:
+                        break
+                    yield chunk
+
+        with temp_target.open("wb") as dest:
+            tokens, _ = _copy_corpus_prefix(
+                file_chunks(), dest, budget, scratch=scratch
+            )
+            dest.flush()
+            os.fsync(dest.fileno())
+
+        sha256 = sha256_file(temp_target)
+        temp_target.replace(target_path)
+        meta = {
+            "source": str(source_path),
+            "lexical_token_budget": budget,
+            "lexical_tokens": tokens,
+            "corpus_sha256": sha256,
+            "byte_size": target_path.stat().st_size,
+        }
+        meta_temp = meta_path.with_suffix(f".tmp-{os.getpid()}")
+        meta_temp.write_text(
+            json.dumps(meta, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        meta_temp.replace(meta_path)
+        return tokens, sha256
+    finally:
+        temp_target.unlink(missing_ok=True)
+
+
 __all__ = [
     "CorpusBinding",
     "CorpusMaterializer",
     "CorpusShard",
     "MaterializedCorpus",
+    "slice_corpus_file",
 ]
