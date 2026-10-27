@@ -81,12 +81,12 @@ impl<'a> ParameterBackend for SharedModelBackend<'a> {
         hidden_gradient: &mut [Real],
     ) {
         let gradient_scale = raw_error * learning_rate;
-        simd::scaled_accumulate(hidden_gradient, output_snapshot, gradient_scale);
         let dim = self.model.embedding_dimension;
         let start = token * dim;
         let output_row = &self.model.output_embeddings[start..start + dim];
         match self.update_strategy {
             UpdateStrategy::AtomicCas => {
+                simd::scaled_accumulate(hidden_gradient, output_snapshot, gradient_scale);
                 for (snapshot, value) in output_snapshot.iter_mut().zip(hidden) {
                     *snapshot = gradient_scale * value;
                 }
@@ -95,8 +95,13 @@ impl<'a> ParameterBackend for SharedModelBackend<'a> {
                 }
             }
             UpdateStrategy::Hogwild => {
-                simd::scaled_accumulate(output_snapshot, hidden, gradient_scale);
-                simd::store_shared_row(output_row, output_snapshot);
+                simd::apply_output_gradient_hogwild(
+                    output_row,
+                    output_snapshot,
+                    hidden,
+                    hidden_gradient,
+                    gradient_scale,
+                );
             }
         }
     }
