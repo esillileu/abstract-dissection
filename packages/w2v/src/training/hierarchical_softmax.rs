@@ -72,6 +72,10 @@ pub fn train_with_backend<B: ParameterBackend>(
             loss.count += 1;
         }
         let raw_error = 1.0 - target - prediction;
+        let gradient_scale = raw_error * learning_rate;
+        if !gradient_scale.is_finite() {
+            return Err(Status::InvalidState);
+        }
         backend.apply_output_gradient(
             output_index,
             hidden,
@@ -80,21 +84,13 @@ pub fn train_with_backend<B: ParameterBackend>(
             learning_rate,
             scratch.hidden_gradient,
         );
-        if scratch
-            .hidden_gradient
-            .iter()
-            .any(|value| !value.is_finite())
-        {
-            return Err(Status::InvalidState);
-        }
-        backend.load_output_row(output_index, scratch.output_snapshot);
-        if scratch
-            .output_snapshot
-            .iter()
-            .any(|value| !value.is_finite())
-        {
-            return Err(Status::InvalidState);
-        }
+    }
+    if scratch
+        .hidden_gradient
+        .iter()
+        .any(|value| !value.is_finite())
+    {
+        return Err(Status::InvalidState);
     }
     Ok(loss)
 }
