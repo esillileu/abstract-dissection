@@ -12,7 +12,7 @@ This document specifies the exact lifecycle, storage tiers, and path resolution 
 | `F1_MLFLOW_DATABASE_URL` | F1 MLflow PostgreSQL backend credentials | Infrastructure operators only; application code must not read it |
 | `F2_MLFLOW_TRACKING_URI` | Externally operated F2 MLflow HTTP(S) endpoint | F2 tracked workflows |
 | `F2_MLFLOW_DATABASE_URL` | F2 MLflow PostgreSQL backend credentials | Infrastructure operators only; application code must not read it |
-| `F2_DATABASE_URL` | Externally operated PostgreSQL instance; F2 owns only its `catalog` and `corpus` schemas | F2 catalog CLI & F2 corpus CLI |
+| `F2_DATABASE_URL` | Externally operated PostgreSQL instance; F2 owns only its `corpus` schema | F2 corpus CLI |
 | `F2_CC_DATABASE_URL` | Dedicated `f2_cc` PostgreSQL database for Common Crawl operational state and releases | F2-CC CLI |
 
 A tracking URI is an HTTP(S) application endpoint used by an MLflow client. A
@@ -136,9 +136,8 @@ uploaded to an externally operated MLflow endpoint selected by the study contrac
 * Upload verification (`_verify_uploaded_manifest`) ensures that runs are only marked `result.durable_complete = true` when all artifacts are durable in MLflow.
 
 **2) PostgreSQL Databases:**
-* **`F2_DATABASE_URL`:** Externally operated PostgreSQL database; F2 owns the definitions and migrations of its `catalog` and `corpus` schemas only.
+* **`F2_DATABASE_URL`:** Externally operated PostgreSQL database; F2 owns the definitions and migrations of its `corpus` schema only.
   * **Schema `corpus`:** Transaction-safe operational state storage for Common Crawl candidate sampling, feature extraction diagnostics, gold human audit labels, generic acquisition runs, immutable artifact metadata, multi-hop processing DAG lineage, and validation evidence.
-  * **Schema `catalog`:** Reproduction catalog database tracking papers, targets, experiment specifications, resource lineage/substitutions, execution plan revisions, and planned run slots.
 * **`F2_CC_DATABASE_URL`:** Physically separate `f2_cc` database owned by the
   `f2-cc` study. It stores URL-level candidates, range acquisition, extraction,
   audits, analysis profiles, stage lineage, and published release manifests.
@@ -195,12 +194,12 @@ Explicit connection_url bypasses environment resolution. Without it, an existing
 non-empty F2_DATABASE_URL wins immediately. Otherwise load_dotenv(override=True)
 is attempted using its existing discovery behavior and F2_DATABASE_URL is read.
 No subsystem or legacy database aliases are consulted. Missing configuration raises
-DatabaseConfigError or CatalogDatabaseConfigError; there are no built-in localhost
+DatabaseConfigError; there are no built-in localhost
 credentials. An unavailable dotenv loader does not suppress the final error.
 
 F2_TEST_DATABASE_URL is read only by test fixtures, never from dotenv. Without it,
 tests create and clean up a temporary PostgreSQL 18 Podman/Docker container. They
-bootstrap catalog before corpus and fail if no test DB can be started; DB tests do
+bootstrap corpus and fail if no test DB can be started; DB tests do
 not skip or fall back to application settings. A supplied test URL must identify a
 dedicated test database; test data and migrations are written there.
 
@@ -217,4 +216,4 @@ The repository does not deploy, administer, back up, or restore these services.
 
 ## F2 Word2Vec lifecycle
 
-F2/W2V1 and W2V2 use MLflow `FINISHED` as the sole authority for run completion; the generic `result.durable_complete` convention does not apply. Training runs write local results and checkpoints to `workspace/runs/f2/<suite>/`, fully preserving past runs on override. Materialized corpora reside in `workspace/inputs/f2/prepared/corpus/`. Analyzers read cached MLflow inputs from `workspace/analysis/cache/mlflow/`, store computation caches in `workspace/analysis/cache/results/`, and write final deliverables to `workspace/analysis/results/f2/<suite>/`. Catalog migration 002 removes execution pointers and progress counts. See [F2 experiment lifecycle](../architecture/f2-experiments.md).
+F2/W2V1 and W2V2 use MLflow `FINISHED` as the sole authority for run completion; the generic `result.durable_complete` convention does not apply. Training runs write local results and checkpoints to `workspace/runs/f2/<suite>/`, fully preserving past runs on override. Materialized corpora reside in `workspace/inputs/f2/prepared/corpus/`. Analyzers read cached MLflow inputs from `workspace/analysis/cache/mlflow/`, store computation caches in `workspace/analysis/cache/results/`, and write final deliverables to `workspace/analysis/results/f2/<suite>/`. The legacy catalog database has been removed; experiment planning and execution are driven directly by YAML suites and static manifests. See [F2 experiment lifecycle](../architecture/f2-experiments.md).

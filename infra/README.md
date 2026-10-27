@@ -39,13 +39,12 @@ mlflow_f1, mlflow_f2 and f2.
 Use SCRAM passwords generated outside Git. Revoke PUBLIC database CONNECT and
 schema CREATE; grant each application CONNECT only to its own database and
 USAGE/CREATE on its owned schema. MLflow roles own their backend tables and run
-MLflow migrations. F2 supplies and maintains only its catalog/corpus schema
+MLflow migrations. F2 supplies and maintains only its corpus schema
 definitions and migration ledgers; it does not administer the database instance.
 The external operator provisions roles/databases; it does not define F2 domain tables.
-Bootstrap the unified F2 database with catalog migrations before corpus migrations:
+Bootstrap the unified F2 database with corpus migrations:
 
 ```bash
-uv run repro f2 catalog migrate
 uv run repro f2 corpus migrate
 ```
 

@@ -57,11 +57,9 @@ studies/
         ├── corpus/                    # Completed-source preparation and validation
         │   ├── cli.py                 # `repro f2 corpus sources ...`
         │   └── db/                    # F2-owned release metadata schema
-        ├── catalog/                   # Reproduction catalog, resource tracking & execution plans
-        │   ├── schema.dbml            # DBML architectural schema specification
-        │   ├── materializer.py        # Planned run slot materializer from repro-core Planner
-        │   ├── cli.py                 # `repro f2 catalog ...`
-        │   └── db/                    # Catalog PostgreSQL repository & migrations
+        ├── catalog/                   # Static reproduction catalog manifest and offline validator
+        │   ├── manifest.py            # Manifest reader and digest utilities
+        │   └── cli.py                 # `repro f2 catalog validate`
         └── suites/                    # Downstream experimental volumes (w2v_pretrain, vocab, bench)
 ```
 
@@ -164,11 +162,12 @@ it into synthetic attempts.
 F2 keeps extraction options, text filters/counters, sampling, auditing, estimation,
 normalization, record-preserving sharding and manifests because these determine
 research inputs and measurements. `corpus/storage.py` owns DOC serialization and
-provenance export. Catalog DBML, repositories and both migration trees remain in F2.
+provenance export. Corpus DBML, repository and migration tree remain in F2 (the
+legacy catalog DB has been removed; experiment planning and execution are 100% YAML-driven).
 F2 owns only these research-domain schemas and migrations; the PostgreSQL instance,
 roles, backups, upgrades, and availability remain external responsibilities.
 Small session/migration helpers do not justify another generic package. The actual
 feasibility estimator is in corpus/analysis.py; common/stats contains supporting
 research calculations. No Rust engine interface is predeclared by this refactor.
 
-F2 W2V1/W2V2 execution and analysis follow the [five-layer experiment lifecycle](f2-experiments.md). Catalog stores expected slots only; execution completion belongs to MLflow.
+F2 W2V1/W2V2 execution and analysis follow the [five-layer experiment lifecycle](f2-experiments.md). Execution is YAML-driven; execution completion belongs exclusively to MLflow.

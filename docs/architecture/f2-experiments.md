@@ -16,7 +16,7 @@ systems; neither records execution completion.
 | W2V1 `analysis.py`, `table3.py`–`table7.py` | Query MLflow; download artifacts/benchmarks; backfill caches from reports; calculate | Read cached run metadata, lookup, observations and benchmarks; calculate into cache |
 | `w2v2/analysis.py` | Query MLflow; revalidate corpus/config/checkpoint/lineage identities; calculate | Read cached artifacts; calculate; report unavailable inputs |
 | `w2v1/resources.py` | Resource acquisition was embedded in analysis modules | Explicit corpus/benchmark preparation outside analysis |
-| Catalog repository and views | Store MLflow run pointers and infer execution/completion rates | Describe expected research slots and resources only |
+| Catalog repository and views | Store MLflow run pointers and infer execution/completion rates | Fully retired; experiment planning is driven by YAML suites and static manifests |
 
 Before:
 
@@ -93,13 +93,11 @@ No existing MLflow runs are modified or migrated. Local staging and caches can b
 deleted. CSV-to-cache backfill is removed: a human-readable report cannot restore
 an experimental input or establish execution completion.
 
-Catalog migration `002_remove_execution_tracking.sql` removes the redundant
-`reference_mlflow_run_id` column and execution-progress views. Historical SQL
-migration bytes remain unchanged. The migration is separate from execution and
-is not applied to an external database by this refactor. It does not change
-MLflow. Catalog configuration/resources and corpus production metadata remain in
-PostgreSQL, and source corpora remain in dataset/object storage. These are research
-inputs and planning data, not additional stores of W2V experiment state.
+The legacy catalog database has been removed. Experiment specifications, variants,
+and planned slots are declared purely in YAML suites and static manifests
+(`studies/f2/catalog/w2v.json`), while corpus production metadata and lineage
+remain in the PostgreSQL `corpus` schema. Execution completion is tracked
+exclusively via MLflow `FINISHED` status.
 
 ## Verification
 

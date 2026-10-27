@@ -20,7 +20,7 @@ D: research selection/representation; E: estimation; F: metadata/lineage; G: stu
 | common/analysis | G | F2 common | Paper targets and reporting |
 | common/adapters/checkpoint, paths | G | F2 common | Small composition helpers |
 | sources, lifecycle, CLI | D/F/G | F2 corpus | Release, validation and orchestration policies |
-| catalog DBML, both SQL/repositories | F | F2 | Research domain schema and lineage |
+| corpus DBML, SQL/repository (catalog DB retired) | F | F2 | Research domain schema and lineage |
 | DB session/migration runners | F/mechanism | F2 | Small helpers; no new DB package |
 | materializer, definitions, suites | G | F2 | Run/resource policies |
 | core results/mlflow_store | tracking | repro-mlflow | MLflow result interpretation |

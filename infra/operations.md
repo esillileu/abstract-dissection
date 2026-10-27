@@ -24,7 +24,7 @@ deployment did not establish an existing scheduled backup or tested recovery SLA
    verify anonymous access fails. Download each sentinel and compare SHA-256.
 5. The external operator starts F1/F2 MLflow with dedicated backend URLs, pgpass secrets and artifact
    destinations. Check /mlflow-f1/health on port 5001 and /mlflow-f2/health on 5002.
-   Bootstrap F2 catalog then corpus through the study CLI. Record migration ledgers.
+   Bootstrap F2 corpus through the study CLI. Record migration ledgers.
 6. The external operator runs one sentinel MLflow run per service, logs metrics and an artifact, downloads
    the artifact and compare SHA-256. Keep the sentinel runs as deployment evidence.
    Check Tailnet/tunnel paths from a worker as well as local endpoints. Record the
@@ -73,7 +73,7 @@ to reconcile a partially failed storage transition.
    from the same cutoff before starting master→volume→filer→S3. Alternatively rebuild
    object storage from the logical backup with identical bucket/key mappings.
    Inject restored/rotated credentials and start MLflow against these restored services.
-6. Verify catalog/corpus migration ledgers without editing SQL, FK integrity and
+6. Verify corpus migration ledgers without editing SQL, FK integrity and
    lineage references, immutable validation profiles, canonical resource versions,
    artifact counts and sizes. Download referenced corpus and MLflow artifacts and
    compare their recorded SHA-256 hashes. Check missing/orphan objects explicitly;

@@ -22,7 +22,7 @@ separately in [`catalog/NON_CORPUS_RESOURCES.md`](catalog/NON_CORPUS_RESOURCES.m
   * **Corpus Preparation (`f2/corpus/`)**: Acquisition and normalization of
     completed source releases, with lifecycle, lineage, and validation metadata
     in the `corpus` schema.
-  * **Reproduction Catalog (`f2/catalog/`)**: PostgreSQL catalog tracking paper targets, experiment specs, resource identity SSOT (`catalog.resources`), resource lineage/substitutions, execution plan revisions, and planned run slots (`schema: catalog`, `schema.dbml`, `CatalogPlanMaterializer`, `CatalogRepository`).
+  * **Reproduction Catalog (`f2/catalog/`)**: Static catalog manifest (`catalog/w2v.json`) and offline validators tracking paper targets, experiment specs, resource lineage, and canonical run slots. Experiment planning and execution are 100% YAML-driven.
   * **Experimental Suites (`f2/suites/`)**: Modular volumes for downstream Word2Vec pretraining, vocabulary scaling, and embedding evaluation benchmarks.
 
 ---
@@ -82,17 +82,8 @@ uv run repro f2 corpus sources validate --source umbc
 
 ### B. Reproduction Catalog Commands
 ```bash
-# Apply pending reproduction catalog DB migrations
-uv run repro f2 catalog migrate
-
-# Inspect canonical execution plan progress and resource inventory
-uv run repro f2 catalog status
-
-# Validate the W2V1/W2V2 research catalog without committing database changes
-uv run repro f2 catalog load-manifest studies/f2/catalog/w2v.json
-
-# Inspect expected run slots with MLflow execution pointers
-uv run repro f2 catalog matrix
+# Validate the W2V1/W2V2 research catalog manifest offline
+uv run repro f2 catalog validate
 ```
 
 ### C. FineWeb 2013 News Surrogate Corpus Commands (`repro f2 corpus fineweb`)
@@ -114,7 +105,7 @@ uv run repro f2 corpus fineweb build \
   --peak-mbps 40.0 \
   --offpeak-mbps 100.0
 
-# Sync completed shards to SeaweedFS S3 and register into PostgreSQL catalog DB
+# Sync completed shards to SeaweedFS S3 and register into PostgreSQL corpus database
 uv run repro f2 corpus fineweb register --max-shards 600
 ```
 
