@@ -320,7 +320,11 @@ for PID in "${MONITOR_PIDS[@]}"; do
       SLOT_LINE=$(echo "$PANE_LOG" | grep -E "preparing .* slot=" | tail -n 1 || true)
       if [ -n "$SLOT_LINE" ]; then
         VARIANT_SLOT=$(echo "$SLOT_LINE" | sed -E 's/.*slot=([^ ]+).*/\1/' || echo "unknown")
+        PREP_TOTAL=$(echo "$SLOT_LINE" | sed -E 's/.*epochs=([0-9]+).*/\1/' || echo "")
         PREP_COMPLETED=$(echo "$SLOT_LINE" | sed -E 's/.*completed=([0-9]+).*/\1/' || echo 0)
+        if [[ "$PREP_TOTAL" =~ ^[0-9]+$ ]] && [ "$PREP_TOTAL" -gt 0 ]; then
+          TOTAL_EPOCHS="$PREP_TOTAL"
+        fi
         if [[ "$PREP_COMPLETED" =~ ^[0-9]+$ ]]; then
           COMPLETED_EPOCHS="$PREP_COMPLETED"
         fi
