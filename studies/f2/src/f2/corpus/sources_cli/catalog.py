@@ -29,10 +29,7 @@ def sources_preflight() -> None:
 
 def sources_catalog() -> None:
     """Register all frozen source releases and immutable validation profiles."""
-    from f2.catalog.db.migrations.runner import run_catalog_migrations
-
     with get_connection() as conn:
-        run_catalog_migrations(conn)
         run_migrations(conn)
         catalog_sources(conn)
         install_validation_profiles(CorpusStateRepository(conn))

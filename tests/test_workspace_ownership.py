@@ -106,6 +106,7 @@ def test_retired_import_modules_are_absent():
         "packages/repro-core/src/repro_core/analysis/model_parameters.py",
         "studies/f2/src/f2/common/network",
         "studies/f2/src/f2/common/storage",
+        "studies/f2/src/f2/catalog/db",
         "studies/f2/src/f2/corpus/cdx.py",
         "studies/f2/src/f2/corpus/fetcher.py",
     ):

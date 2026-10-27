@@ -2,11 +2,10 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from unittest.mock import MagicMock, call
 
 import pytest
 
-from f2.catalog.manifest import digest_manifest, load_manifest, read_manifest
+from f2.catalog.manifest import digest_manifest, read_manifest
 
 F2_ROOT = Path(__file__).resolve().parents[2]
 
@@ -120,55 +119,3 @@ def test_manifest_rejects_unknown_references(tmp_path):
 
     with pytest.raises(ValueError, match="unknown paper_id 'missing'"):
         read_manifest(path)
-
-
-def test_resource_version_is_loaded_before_canonical_pointer_is_set():
-    repo = MagicMock()
-    payload = {
-        "schema_version": 1,
-        "resources": [
-            {
-                "resource_id": "corpus",
-                "kind": "dataset",
-                "name": "Corpus",
-                "access_status": "private",
-                "acquisition_status": "verified",
-                "readiness_status": "ready",
-                "canonical_version_id": "corpus-v1",
-            }
-        ],
-        "resource_versions": [
-            {
-                "resource_version_id": "corpus-v1",
-                "resource_id": "corpus",
-                "uri": "s3://bucket/release.json",
-                "checksum_algo": "sha256",
-                "checksum": "a" * 64,
-                "is_verified": True,
-            }
-        ],
-    }
-
-    counts = load_manifest(repo, payload)
-
-    assert repo.method_calls[:3] == [
-        call.upsert_resource(
-            resource_id="corpus",
-            kind="dataset",
-            name="Corpus",
-            access_status="private",
-            acquisition_status="verified",
-            readiness_status="ready",
-            canonical_version_id=None,
-        ),
-        call.upsert_resource_version(
-            resource_version_id="corpus-v1",
-            resource_id="corpus",
-            uri="s3://bucket/release.json",
-            checksum_algo="sha256",
-            checksum="a" * 64,
-            is_verified=True,
-        ),
-        call.set_resource_canonical_version("corpus", "corpus-v1"),
-    ]
-    assert counts["resources"] == counts["resource_versions"] == 1

@@ -238,16 +238,12 @@ def fineweb_register(
         True,
         help="Upload shards to SeaweedFS S3 if not already present",
     ),
-    register_plan: bool = typer.Option(
-        True,
-        help="Register W2V1 FineWeb execution plan and run slots in catalog",
-    ),
     max_workers: int = typer.Option(
         8,
         help="Concurrent upload worker threads",
     ),
 ) -> None:
-    """Register materialized FineWeb shards into SeaweedFS S3 and PostgreSQL catalog."""
+    """Register materialized FineWeb shards into SeaweedFS S3 and PostgreSQL corpus database."""
     from repro_io.s3 import S3ObjectStore
 
     from f2.corpus.db.session import get_connection
@@ -256,7 +252,6 @@ def fineweb_register(
     from .register import (
         load_and_validate_checkpoint,
         register_corpus_in_db,
-        register_execution_plan,
         upload_shards_to_s3,
     )
 
@@ -281,7 +276,7 @@ def fineweb_register(
             f"S3 sync complete: {uploaded} newly uploaded shards (out of {len(shards)})"
         )
 
-    typer.echo("Registering corpus in PostgreSQL catalog...")
+    typer.echo("Registering corpus in PostgreSQL corpus database...")
     with get_connection() as conn:
         stats = register_corpus_in_db(
             shards,
@@ -294,15 +289,6 @@ def fineweb_register(
         typer.echo(
             f"DB registration complete: {stats['shards']} shards, {stats['total_words']:,} words registered."
         )
-
-        if register_plan:
-            typer.echo("Registering W2V1 execution plan and run slots...")
-            plan_info = register_execution_plan(
-                conn, resource_version_id=resource_version_id
-            )
-            typer.echo(
-                f"Plan registered: {plan_info['execution_plan_id']} ({plan_info['planned_slots_count']} slots)"
-            )
 
     typer.echo("\n--- FineWeb Registration Summary ---")
     typer.echo(f"Resource ID         : {resource_id}")

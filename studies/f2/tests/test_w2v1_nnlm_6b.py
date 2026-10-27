@@ -3,15 +3,12 @@
 from __future__ import annotations
 
 import csv
-from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import MagicMock, Mock
+from unittest.mock import Mock
 
 import pytest
 from typer.testing import CliRunner
 
-from f2.catalog.manifest import read_manifest
-from f2.corpus.fineweb import register
 from f2.definition import DEFINITION
 from f2.suites.w2v.artifacts import load_lookup_artifact
 from f2.suites.w2v.nnlm_artifacts import load_checkpoint
@@ -23,30 +20,13 @@ from repro_core.execution.planning import Planner
 from repro_core.execution.runner import run_config
 
 
-def test_nnlm_6b_planner_and_fineweb_materialization_use_existing_spec(
-    tmp_path, monkeypatch
-):
+def test_nnlm_6b_planner_and_fineweb_materialization_use_existing_spec():
     definition = DEFINITION.get_suite("w2v1")
     plans = Planner(definition).build(
         RunSelection(experiment_ids=("03",)), RunOptions()
     )
     nnlm_plans = [p for p in plans if "--nnlm-" in p.atomic_run_id]
     assert len(nnlm_plans) == 9
-    repository = Mock()
-    monkeypatch.setattr(register, "CatalogRepository", lambda conn: repository)
-    counts = register.register_execution_plan(MagicMock())
-    assert counts["planned_slots_count"] == 93
-    assert counts["experiments_count"] == 6
-    slots = {
-        call.kwargs["planned_run_slot_id"]: call.kwargs
-        for call in repository.upsert_planned_run_slot.call_args_list
-    }
-    manifest = read_manifest(Path("studies/f2/catalog/w2v.json"))
-    requirement_ids = {x["requirement_id"] for x in manifest["requirements"]}
-    assert all(
-        call.kwargs["requirement_id"] in requirement_ids
-        for call in repository.bind_plan_requirement.call_args_list
-    )
     for plan in nnlm_plans:
         config = (
             definition.load_run_spec(
@@ -57,26 +37,11 @@ def test_nnlm_6b_planner_and_fineweb_materialization_use_existing_spec(
         )
         identity = config["identity"]
         assert identity["experiment_spec_id"] == "w2v1-google-news-nnlm-6b"
-        slot = slots[identity["planned_run_slot_id"]]
-        assert slot["seed"] == plan.seed
-        assert (
-            slot["plan_experiment_id"]
-            == "w2v1-fineweb-reconstruction-r1-w2v1-google-news-nnlm-6b"
-        )
-        assert slot["parameters"]["training"] == config["training"]
-        assert slot["parameters"]["distribution"] == config["distribution"]
         assert config["training"]["hidden_dimension"] == 640
         assert config["training"]["history_length"] == 8
         assert config["corpus"]["lexical_token_budget"] == 6_000_000_000
         assert config["vocabulary"]["max_lexical_words"] == 1_000_000
-    bindings = [
-        c.kwargs
-        for c in repository.bind_plan_requirement.call_args_list
-        if "nnlm" in c.kwargs["plan_experiment_id"]
-    ]
-    assert bindings[0]["resource_version_id"] == "f2-fineweb-2013-news-normalized-v1"
-    assert bindings[0]["binding_type"] == "substitute"
-    assert len(bindings) == 2
+
     table6_plans = Planner(definition).build(
         RunSelection(experiment_ids=("05",)), RunOptions()
     )

@@ -1,4 +1,4 @@
-"""Transactional loader for the user-authored F2 research catalog manifest."""
+"""Loader and validator for the user-authored F2 research catalog manifest."""
 
 from __future__ import annotations
 
@@ -6,8 +6,6 @@ import hashlib
 import json
 from pathlib import Path
 from typing import Any
-
-from .db.repository import CatalogRepository
 
 SECTIONS = (
     "papers",
@@ -245,39 +243,4 @@ def digest_manifest(payload: dict[str, Any]) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
-def load_manifest(repo: CatalogRepository, payload: dict[str, Any]) -> dict[str, int]:
-    """Validate references through DB constraints and upsert everything atomically."""
-    calls = {
-        "papers": repo.upsert_paper,
-        "targets": repo.upsert_target,
-        "experiment_specs": repo.upsert_experiment_spec,
-        "target_experiments": repo.link_target_experiment,
-        "requirements": repo.upsert_requirement,
-        "requirement_candidates": repo.upsert_requirement_candidate,
-        "execution_plans": repo.upsert_execution_plan,
-        "plan_experiments": repo.upsert_plan_experiment,
-        "resource_bindings": repo.bind_plan_requirement,
-        "planned_run_slots": repo.upsert_planned_run_slot,
-    }
-    counts: dict[str, int] = {}
-    for section in SECTIONS:
-        rows = payload.get(section, [])
-        if section == "resources":
-            for row in rows:
-                repo.upsert_resource(**(row | {"canonical_version_id": None}))
-        elif section == "resource_versions":
-            for row in rows:
-                repo.upsert_resource_version(**row)
-            for resource in payload.get("resources", []):
-                if canonical_version_id := resource.get("canonical_version_id"):
-                    repo.set_resource_canonical_version(
-                        resource["resource_id"], canonical_version_id
-                    )
-        else:
-            for row in rows:
-                calls[section](**row)
-        counts[section] = len(rows)
-    return counts
-
-
-__all__ = ["digest_manifest", "load_manifest", "read_manifest"]
+__all__ = ["digest_manifest", "read_manifest"]

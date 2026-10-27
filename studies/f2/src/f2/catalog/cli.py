@@ -1,4 +1,4 @@
-"""Typer CLI interface for F2 reproduction catalog DB and plan management."""
+"""Typer CLI interface for F2 research catalog manifest inspection."""
 
 from __future__ import annotations
 
@@ -7,138 +7,34 @@ from pathlib import Path
 
 import typer
 
-from f2.corpus.db.contract import validate_connection
-
-from .db.migrations.runner import run_catalog_migrations
-from .db.repository import CatalogRepository
-from .db.session import get_connection
-from .manifest import digest_manifest, load_manifest, read_manifest
+from .manifest import digest_manifest, read_manifest
 
 app = typer.Typer(
     name="catalog",
-    help="Manage F2 reproduction catalog, resource inventory, and canonical execution plans.",
+    help="Inspect and validate F2 research catalog manifest.",
     no_args_is_help=True,
 )
 
 
-@app.command("load-manifest")
-def load_catalog_manifest(
+@app.command("validate")
+def validate_catalog_manifest(
     manifest: Path = typer.Argument(..., exists=True, dir_okay=False),
-    apply: bool = typer.Option(False, "--apply", help="Commit the validated manifest"),
 ) -> None:
-    """Validate a complete catalog manifest and optionally register it atomically."""
+    """Validate a research catalog manifest file without database access."""
     payload = read_manifest(manifest)
     digest = digest_manifest(payload)
-    with get_connection(validate_contract=True) as conn:
-        with conn.transaction(force_rollback=not apply):
-            counts = load_manifest(CatalogRepository(conn), payload)
     typer.echo(
-        json.dumps({"apply": apply, "sha256": digest, "counts": counts}, sort_keys=True)
-    )
-
-
-@app.command("migrate")
-def migrate_catalog_db() -> None:
-    """Apply pending PostgreSQL migrations for the F2 reproduction catalog database."""
-    with get_connection() as conn:
-        validate_connection(conn, schema="catalog", required_schemas=())
-        applied = run_catalog_migrations(conn)
-        if applied:
-            typer.echo(
-                f"Successfully applied {len(applied)} catalog migrations: {', '.join(applied)}"
-            )
-        else:
-            typer.echo("Catalog database schema is up to date (0 pending migrations).")
-
-
-@app.command("status")
-def show_status(
-    plan_key: str = typer.Option("f2", "--plan-key", "-k", help="Plan key identifier"),
-) -> None:
-    """Display expected plan slots and resource inventory."""
-    with get_connection() as conn:
-        repo = CatalogRepository(conn)
-        slots = repo.get_canonical_plan_inventory(plan_key=plan_key)
-        inventory = repo.get_resource_inventory()
-
-    typer.echo(f"=== Canonical Plan Inventory ({plan_key}) ===")
-    if not slots:
-        typer.echo(f"No canonical execution plan found for key '{plan_key}'.")
-    else:
-        for p in slots:
-            typer.echo(
-                f"  - Exp [{p['experiment_spec_id']}] {p['experiment_name']}: "
-                f"{p['expected_slots']} expected slots"
-            )
-
-    typer.echo("\n=== Resource Inventory ===")
-    if not inventory:
-        typer.echo("No resources registered in catalog.")
-    else:
-        for r in inventory:
-            typer.echo(
-                f"  - [{r['kind']}] {r['name']} ({r['resource_id']}): "
-                f"access={r['access_status']}, acquisition={r['acquisition_status']}, readiness={r['readiness_status']}"
-            )
-
-
-@app.command("matrix")
-def show_matrix(
-    plan_key: str = typer.Option("f2", "--plan-key", "-k", help="Plan key identifier"),
-) -> None:
-    """Display expected canonical run slots."""
-    with get_connection() as conn:
-        repo = CatalogRepository(conn)
-        matrix = repo.get_canonical_run_matrix(plan_key=plan_key)
-
-    typer.echo(f"=== Canonical Run Matrix ({plan_key}) ===")
-    if not matrix:
-        typer.echo(f"No slots found for canonical plan '{plan_key}'.")
-    else:
-        for row in matrix:
-            typer.echo(f"  - {row['experiment_spec_id']} / {row['slot_key']}")
-
-
-@app.command("materialize")
-def materialize_plan(
-    suite: str = typer.Argument(
-        ...,
-        help="Registered F2 suite name to materialize (e.g. w2v_pretrain)",
-    ),
-    revision: int = typer.Option(
-        1, "--revision", "-r", help="Execution plan revision number"
-    ),
-    notes: str | None = typer.Option(
-        None, "--notes", help="Optional notes for this plan revision"
-    ),
-    canonical: bool = typer.Option(
-        True, "--canonical/--non-canonical", help="Mark this plan revision as canonical"
-    ),
-) -> None:
-    """Materialize an F2 suite's declared ExecutionDefinition into Catalog DB planned run slots."""
-    from ..definition import DEFINITION
-    from .materializer import CatalogPlanMaterializer
-
-    try:
-        suite_def = DEFINITION.get_suite(suite)
-    except ValueError as exc:
-        typer.echo(f"Error: {exc}", err=True)
-        raise typer.Exit(code=1) from exc
-
-    with get_connection() as conn:
-        repo = CatalogRepository(conn)
-        materializer = CatalogPlanMaterializer(repo)
-        plan_id = materializer.materialize_from_definition(
-            domain=suite_def,
-            plan_key=suite,
-            revision=revision,
-            is_canonical=canonical,
-            notes=notes,
+        json.dumps(
+            {
+                "valid": True,
+                "sha256": digest,
+                "sections": {
+                    k: len(v) for k, v in payload.items() if isinstance(v, list)
+                },
+            },
+            indent=2,
+            sort_keys=True,
         )
-        conn.commit()
-
-    typer.echo(
-        f"Successfully materialized execution plan '{plan_id}' for suite '{suite}'."
     )
 
 
