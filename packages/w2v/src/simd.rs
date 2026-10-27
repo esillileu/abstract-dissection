@@ -52,6 +52,42 @@ pub fn divide_in_place(values: &mut [Real], divisor: Real) {
 }
 
 #[inline]
+pub fn load_shared_row(destination: &mut [Real], source: &[AtomicU32]) {
+    assert_eq!(destination.len(), source.len());
+    if destination.len() >= 16 && is_available() {
+        unsafe { load_shared_row_avx2(destination, source) }
+    } else {
+        for (dst, src) in destination.iter_mut().zip(source) {
+            *dst = atomic_float::load(src);
+        }
+    }
+}
+
+#[inline]
+pub fn store_shared_row(destination: &[AtomicU32], source: &[Real]) {
+    assert_eq!(destination.len(), source.len());
+    if destination.len() >= 16 && is_available() {
+        unsafe { store_shared_row_avx2(destination, source) }
+    } else {
+        for (dst, src) in destination.iter().zip(source) {
+            atomic_float::store(dst, *src);
+        }
+    }
+}
+
+#[inline]
+pub fn add_shared_row(destination: &[AtomicU32], delta: &[Real]) {
+    assert_eq!(destination.len(), delta.len());
+    if destination.len() >= 16 && is_available() {
+        unsafe { add_shared_row_avx2(destination, delta) }
+    } else {
+        for (dst, d) in destination.iter().zip(delta) {
+            atomic_float::add_hogwild(dst, *d);
+        }
+    }
+}
+
+#[inline]
 fn is_available() -> bool {
     static AVAILABLE: OnceLock<bool> = OnceLock::new();
     *AVAILABLE.get_or_init(|| {
@@ -205,6 +241,83 @@ unsafe fn divide_avx2(values: &mut [Real], divisor: Real) {
 #[cfg(not(target_arch = "x86_64"))]
 unsafe fn divide_avx2(values: &mut [Real], divisor: Real) {
     divide_scalar(values, divisor);
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+unsafe fn load_shared_row_avx2(destination: &mut [Real], source: &[AtomicU32]) {
+    use std::arch::x86_64::{_mm256_loadu_ps, _mm256_storeu_ps};
+
+    let mut index = 0;
+    while index + 8 <= destination.len() {
+        unsafe {
+            let v = _mm256_loadu_ps(source.as_ptr().add(index) as *const f32);
+            _mm256_storeu_ps(destination.as_mut_ptr().add(index), v);
+        }
+        index += 8;
+    }
+    for (dst, src) in destination[index..].iter_mut().zip(&source[index..]) {
+        *dst = atomic_float::load(src);
+    }
+}
+
+#[cfg(not(target_arch = "x86_64"))]
+unsafe fn load_shared_row_avx2(destination: &mut [Real], source: &[AtomicU32]) {
+    for (dst, src) in destination.iter_mut().zip(source) {
+        *dst = atomic_float::load(src);
+    }
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+unsafe fn store_shared_row_avx2(destination: &[AtomicU32], source: &[Real]) {
+    use std::arch::x86_64::{_mm256_loadu_ps, _mm256_storeu_ps};
+
+    let mut index = 0;
+    while index + 8 <= destination.len() {
+        unsafe {
+            let v = _mm256_loadu_ps(source.as_ptr().add(index));
+            _mm256_storeu_ps(destination.as_ptr().add(index) as *mut f32, v);
+        }
+        index += 8;
+    }
+    for (dst, src) in destination[index..].iter().zip(&source[index..]) {
+        atomic_float::store(dst, *src);
+    }
+}
+
+#[cfg(not(target_arch = "x86_64"))]
+unsafe fn store_shared_row_avx2(destination: &[AtomicU32], source: &[Real]) {
+    for (dst, src) in destination.iter().zip(source) {
+        atomic_float::store(dst, *src);
+    }
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+unsafe fn add_shared_row_avx2(destination: &[AtomicU32], delta: &[Real]) {
+    use std::arch::x86_64::{_mm256_add_ps, _mm256_loadu_ps, _mm256_storeu_ps};
+
+    let mut index = 0;
+    while index + 8 <= destination.len() {
+        unsafe {
+            let cur = _mm256_loadu_ps(destination.as_ptr().add(index) as *const f32);
+            let d = _mm256_loadu_ps(delta.as_ptr().add(index));
+            let sum = _mm256_add_ps(cur, d);
+            _mm256_storeu_ps(destination.as_ptr().add(index) as *mut f32, sum);
+        }
+        index += 8;
+    }
+    for (dst, d) in destination[index..].iter().zip(&delta[index..]) {
+        atomic_float::add_hogwild(dst, *d);
+    }
+}
+
+#[cfg(not(target_arch = "x86_64"))]
+unsafe fn add_shared_row_avx2(destination: &[AtomicU32], delta: &[Real]) {
+    for (dst, d) in destination.iter().zip(delta) {
+        atomic_float::add_hogwild(dst, *d);
+    }
 }
 
 #[cfg(test)]

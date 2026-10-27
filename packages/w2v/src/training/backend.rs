@@ -49,9 +49,7 @@ impl<'a> ParameterBackend for SharedModelBackend<'a> {
         let dim = self.model.embedding_dimension;
         let start = token * dim;
         let row = &self.model.input_embeddings[start..start + dim];
-        for (dst, src) in destination.iter_mut().zip(row) {
-            *dst = atomic_float::load(src);
-        }
+        simd::load_shared_row(destination, row);
     }
 
     #[inline(always)]
@@ -69,9 +67,7 @@ impl<'a> ParameterBackend for SharedModelBackend<'a> {
         let dim = self.model.embedding_dimension;
         let start = token * dim;
         let row = &self.model.output_embeddings[start..start + dim];
-        for (dst, src) in destination.iter_mut().zip(row) {
-            *dst = atomic_float::load(src);
-        }
+        simd::load_shared_row(destination, row);
     }
 
     #[inline(always)]
@@ -100,9 +96,7 @@ impl<'a> ParameterBackend for SharedModelBackend<'a> {
             }
             UpdateStrategy::Hogwild => {
                 simd::scaled_accumulate(output_snapshot, hidden, gradient_scale);
-                for (shared, value) in output_row.iter().zip(output_snapshot.iter()) {
-                    atomic_float::store(shared, *value);
-                }
+                simd::store_shared_row(output_row, output_snapshot);
             }
         }
     }
@@ -117,8 +111,15 @@ impl<'a> ParameterBackend for SharedModelBackend<'a> {
         let dim = self.model.embedding_dimension;
         let start = token * dim;
         let input_row = &self.model.input_embeddings[start..start + dim];
-        for (coordinate, value) in input_row.iter().enumerate() {
-            shared_add(value, hidden_gradient[coordinate], self.update_strategy);
+        match self.update_strategy {
+            UpdateStrategy::AtomicCas => {
+                for (coordinate, value) in input_row.iter().enumerate() {
+                    shared_add(value, hidden_gradient[coordinate], self.update_strategy);
+                }
+            }
+            UpdateStrategy::Hogwild => {
+                simd::add_shared_row(input_row, hidden_gradient);
+            }
         }
     }
 }
