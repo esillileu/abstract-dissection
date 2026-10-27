@@ -45,24 +45,29 @@ conditions:
   hs-subsampling: &hs-subsampling {training: {objective_kind: hierarchical_softmax, negative_sample_count: 0}}
 
 variants:
-  wmt--neg5-no-subsampling: {<<: [*wmt, *neg5-no-subsampling], corpus: {lexical_token_budget: 1000000000}}
-  wmt--neg15-no-subsampling: {<<: [*wmt, *neg15-no-subsampling], corpus: {lexical_token_budget: 1000000000}}
-  wmt--hs-no-subsampling: {<<: [*wmt, *hs-no-subsampling], corpus: {lexical_token_budget: 1000000000}}
-  wmt--neg5-subsampling: {<<: [*wmt, *neg5-subsampling], corpus: {lexical_token_budget: 1000000000}}
-  wmt--neg15-subsampling: {<<: [*wmt, *neg15-subsampling], corpus: {lexical_token_budget: 1000000000}}
-  wmt--hs-subsampling: {<<: [*wmt, *hs-subsampling], corpus: {lexical_token_budget: 1000000000}}
-  lm1b--neg5-no-subsampling: {<<: [*lm1b, *neg5-no-subsampling], corpus: {lexical_token_budget: 791844834}}
-  lm1b--neg15-no-subsampling: {<<: [*lm1b, *neg15-no-subsampling], corpus: {lexical_token_budget: 791844834}}
-  lm1b--hs-no-subsampling: {<<: [*lm1b, *hs-no-subsampling], corpus: {lexical_token_budget: 791844834}}
+  # LM1B
   lm1b--neg5-subsampling: {<<: [*lm1b, *neg5-subsampling], corpus: {lexical_token_budget: 791844834}}
-  lm1b--neg15-subsampling: {<<: [*lm1b, *neg15-subsampling], corpus: {lexical_token_budget: 791844834}}
   lm1b--hs-subsampling: {<<: [*lm1b, *hs-subsampling], corpus: {lexical_token_budget: 791844834}}
-  umbc--neg5-no-subsampling: {<<: [*umbc, *neg5-no-subsampling], corpus: {lexical_token_budget: 1000000000}}
-  umbc--neg15-no-subsampling: {<<: [*umbc, *neg15-no-subsampling], corpus: {lexical_token_budget: 1000000000}}
-  umbc--hs-no-subsampling: {<<: [*umbc, *hs-no-subsampling], corpus: {lexical_token_budget: 1000000000}}
-  umbc--neg5-subsampling: {<<: [*umbc, *neg5-subsampling], corpus: {lexical_token_budget: 1000000000}}
-  umbc--neg15-subsampling: {<<: [*umbc, *neg15-subsampling], corpus: {lexical_token_budget: 1000000000}}
-  umbc--hs-subsampling: {<<: [*umbc, *hs-subsampling], corpus: {lexical_token_budget: 1000000000}}
-  wmt--nce5-no-subsampling: {<<: [*wmt, *nce5-no-subsampling], corpus: {lexical_token_budget: 1000000000}}
+  lm1b--neg15-subsampling: {<<: [*lm1b, *neg15-subsampling], corpus: {lexical_token_budget: 791844834}}
+  lm1b--neg5-no-subsampling: {<<: [*lm1b, *neg5-no-subsampling], corpus: {lexical_token_budget: 791844834}}
   lm1b--nce5-no-subsampling: {<<: [*lm1b, *nce5-no-subsampling], corpus: {lexical_token_budget: 791844834}}
+  lm1b--hs-no-subsampling: {<<: [*lm1b, *hs-no-subsampling], corpus: {lexical_token_budget: 791844834}}
+  lm1b--neg15-no-subsampling: {<<: [*lm1b, *neg15-no-subsampling], corpus: {lexical_token_budget: 791844834}}
+
+  # WMT11
+  wmt--neg5-subsampling: {<<: [*wmt, *neg5-subsampling], corpus: {lexical_token_budget: 1000000000}}
+  wmt--hs-subsampling: {<<: [*wmt, *hs-subsampling], corpus: {lexical_token_budget: 1000000000}}
+  wmt--neg15-subsampling: {<<: [*wmt, *neg15-subsampling], corpus: {lexical_token_budget: 1000000000}}
+  wmt--neg5-no-subsampling: {<<: [*wmt, *neg5-no-subsampling], corpus: {lexical_token_budget: 1000000000}}
+  wmt--nce5-no-subsampling: {<<: [*wmt, *nce5-no-subsampling], corpus: {lexical_token_budget: 1000000000}}
+  wmt--hs-no-subsampling: {<<: [*wmt, *hs-no-subsampling], corpus: {lexical_token_budget: 1000000000}}
+  wmt--neg15-no-subsampling: {<<: [*wmt, *neg15-no-subsampling], corpus: {lexical_token_budget: 1000000000}}
+
+  # UMBC
+  umbc--neg5-subsampling: {<<: [*umbc, *neg5-subsampling], corpus: {lexical_token_budget: 1000000000}}
+  umbc--hs-subsampling: {<<: [*umbc, *hs-subsampling], corpus: {lexical_token_budget: 1000000000}}
+  umbc--neg15-subsampling: {<<: [*umbc, *neg15-subsampling], corpus: {lexical_token_budget: 1000000000}}
+  umbc--neg5-no-subsampling: {<<: [*umbc, *neg5-no-subsampling], corpus: {lexical_token_budget: 1000000000}}
   umbc--nce5-no-subsampling: {<<: [*umbc, *nce5-no-subsampling], corpus: {lexical_token_budget: 1000000000}}
+  umbc--hs-no-subsampling: {<<: [*umbc, *hs-no-subsampling], corpus: {lexical_token_budget: 1000000000}}
+  umbc--neg15-no-subsampling: {<<: [*umbc, *neg15-no-subsampling], corpus: {lexical_token_budget: 1000000000}}
