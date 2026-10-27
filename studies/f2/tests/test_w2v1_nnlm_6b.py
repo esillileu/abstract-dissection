@@ -102,7 +102,7 @@ def test_table4_6_analysis_reference_runtime_and_shared_lookup(tmp_path, monkeyp
 
     words = tmp_path / "words.txt"
     words.write_bytes(
-        b": family\n" + b"a b c d\n" * 8869 + b": gram1\n" + b"a b c d\n" * 10675
+        b": family\n" + b"a b c d\n" * 5 + b": gram1\n" + b"a b c d\n" * 5
     )
     runs = [
         run("nnlm", seed, dimension)
@@ -256,21 +256,26 @@ def test_existing_table4_config_digests_are_unchanged():
 
 
 def test_final_w2v1_table_training_matrix_has_no_duplicate_nnlm_100d_run():
+    from collections import defaultdict
+
     definition = DEFINITION.get_suite("w2v1")
-    for experiment, count, architectures in (
-        ("01", 216, {"cbow"}),
-        ("02", 27, {"cbow", "skip_gram", "feedforward_nnlm"}),
-        ("03", 27, {"cbow", "skip_gram", "feedforward_nnlm"}),
-        ("04", 18, {"cbow", "skip_gram"}),
-        ("05", 6, {"cbow", "skip_gram"}),
-        ("06", 3, {"skip_gram"}),
-    ):
-        plans = Planner(definition).build(
-            RunSelection(experiment_ids=(experiment,)), RunOptions()
-        )
-        assert len(plans) == count
-        # Model kind belongs to the atomic condition, independent of seed.
-        conditions = {(p.path, p.atomic_run_id) for p in plans}
+    plans = Planner(definition).build(RunSelection(all_experiments=True), RunOptions())
+    by_exp = defaultdict(list)
+    for p in plans:
+        by_exp[p.experiment_id].append(p)
+
+    expected = {
+        "e01": (216, {"cbow"}),
+        "e02": (27, {"cbow", "skip_gram", "feedforward_nnlm"}),
+        "e03": (27, {"cbow", "skip_gram", "feedforward_nnlm"}),
+        "e04": (18, {"cbow", "skip_gram"}),
+        "e05": (6, {"cbow", "skip_gram"}),
+        "e06": (3, {"skip_gram"}),
+    }
+    for experiment, (count, architectures) in expected.items():
+        exp_plans = by_exp[experiment]
+        assert len(exp_plans) == count
+        conditions = {(p.path, p.atomic_run_id) for p in exp_plans}
         actual = {
             definition.load_run_spec(
                 path, atomic_run_id=atomic_run_id, overrides={}

@@ -30,7 +30,7 @@ def test_finished_results_survive_staging_and_cache_deletion(
     benchmarks = artifact_root / "evaluation"
     benchmarks.mkdir()
     (benchmarks / "questions-words.txt").write_bytes(
-        b": family\n" + b"a b c d\n" * 8869 + b": gram1\n" + b"a b c d\n" * 10675
+        b": family\n" + b"a b c d\n" * 5 + b": gram1\n" + b"a b c d\n" * 5
     )
     run_ids = []
     for seed in (1, 7, 19) if suite == "w2v1" else (1,):

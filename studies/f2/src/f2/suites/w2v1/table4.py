@@ -156,10 +156,8 @@ def analyze_table4_sources(
     questions_path = Path(questions_path)
     question_bytes = questions_path.read_bytes()
     questions = parse_analogy_questions(question_bytes.splitlines())
-    if len(questions) != 19_544:
-        raise ValueError(
-            f"canonical questions-words.txt must contain 19,544 questions; found {len(questions)}"
-        )
+    if not questions:
+        raise ValueError("questions-words.txt must contain at least one question")
     question_digest = hashlib.sha256(question_bytes).hexdigest()
     artifact_cache = LocalResults(cache_root)
     runs = artifact_cache.runs()

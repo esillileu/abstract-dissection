@@ -272,3 +272,11 @@ def test_slice_corpus_file(tmp_path: Path):
     tokens_cached, sha256_cached = slice_corpus_file(source, target, 4)
     assert tokens_cached == 4
     assert sha256_cached == sha256
+
+    # Verify cache hit when budget exceeds available tokens in source
+    target_over = tmp_path / "sliced-over.txt"
+    tokens_over, sha256_over = slice_corpus_file(source, target_over, 50)
+    assert tokens_over == 8
+    tokens_over_cached, sha256_over_cached = slice_corpus_file(source, target_over, 50)
+    assert tokens_over_cached == 8
+    assert sha256_over_cached == sha256_over

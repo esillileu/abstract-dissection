@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import functools
 import hashlib
 import json
 import math
@@ -45,8 +46,9 @@ def summarize(values):
     }
 
 
-def targets():
-    """Use the current canonical variant inventory, including reduced corpus budgets."""
+@functools.lru_cache(maxsize=1)
+def _cached_targets():
+    items = []
     for path in sorted((Path(__file__).parent / "config").glob("e*.yaml")):
         raw = yaml.safe_load(path.read_text())
         raw["_path"] = path
@@ -59,7 +61,13 @@ def targets():
         )
         for variant in sorted(raw["variants"]):
             corpus, condition = variant.split("--", 1)
-            yield table, corpus, condition, variant, raw
+            items.append((table, corpus, condition, variant, raw))
+    return tuple(items)
+
+
+def targets():
+    """Use the current canonical variant inventory, including reduced corpus budgets."""
+    yield from _cached_targets()
 
 
 def _dataset(path, phrase):

@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
+import functools
 from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import yaml
+
+
+@functools.lru_cache(maxsize=256)
+def _read_yaml_cached(path_str: str, mtime_ns: int) -> dict[str, object]:
+    return yaml.safe_load(Path(path_str).read_text(encoding="utf-8"))
 
 
 @dataclass(frozen=True)
@@ -25,7 +31,9 @@ def load_variant(
     atomic_run_id: str | None,
     overrides: dict[str, object] | None,
 ) -> dict[str, object]:
-    value = yaml.safe_load(path.read_text(encoding="utf-8"))
+    path = Path(path)
+    cached = _read_yaml_cached(str(path.resolve()), path.stat().st_mtime_ns)
+    value = deepcopy(cached)
     if not isinstance(value, dict):
         raise ValueError(f"invalid YAML object: {path}")
     variants = value.pop("variants", None)

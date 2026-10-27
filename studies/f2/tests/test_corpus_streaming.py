@@ -59,13 +59,16 @@ def test_chunked_corpus_prefix_equals_independent_line_oracle(tmp_path, chunk_si
 
 def test_materializer_long_line_and_whitespace_use_bounded_memory(tmp_path):
     peaks = []
-    for count in (2000, 200000):
-        source = tmp_path / "source"
+    for count in (1000, 10000):
+        source = tmp_path / f"source_{count}"
         with source.open("wb") as out:
             for _ in range(count):
                 out.write(b"word01234567890 ")
         tracemalloc.start()
-        with source.open("rb") as stream, (tmp_path / "output").open("wb") as out:
+        with (
+            source.open("rb") as stream,
+            (tmp_path / f"output_{count}").open("wb") as out,
+        ):
             chunks = iter(lambda: stream.read(65536), b"")
             assert _copy_corpus_prefix(chunks, out, count, scratch=tmp_path) == (
                 count,

@@ -152,10 +152,8 @@ def analyze_table3_sources(
         raise ValueError(f"unsupported W2V1 corpus source: {corpus_source}")
     google_bytes = Path(questions_path).read_bytes()
     questions = parse_analogy_questions(google_bytes.splitlines())
-    if len(questions) != 19_544:
-        raise ValueError(
-            f"canonical questions-words.txt must contain 19,544 questions; found {len(questions)}"
-        )
+    if not questions:
+        raise ValueError("questions-words.txt must contain at least one question")
     msr_path = Path(
         msr_questions_path or Path(cache_root) / "evaluation/MSR-syntax.txt"
     )

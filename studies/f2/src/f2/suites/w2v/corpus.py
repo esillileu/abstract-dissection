@@ -410,12 +410,14 @@ def slice_corpus_file(
     if target_path.is_file() and meta_path.is_file():
         try:
             meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            cached_tokens = meta.get("lexical_tokens")
             if (
                 meta.get("lexical_token_budget") == budget
-                and meta.get("lexical_tokens") == budget
+                and isinstance(cached_tokens, int)
+                and 0 < cached_tokens <= budget
                 and target_path.stat().st_size == meta.get("byte_size")
             ):
-                return int(meta["lexical_tokens"]), str(meta["corpus_sha256"])
+                return cached_tokens, str(meta["corpus_sha256"])
         except Exception:
             pass
 

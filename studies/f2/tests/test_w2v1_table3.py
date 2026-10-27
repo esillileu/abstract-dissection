@@ -222,10 +222,10 @@ def test_table3_analyzer_uses_both_benchmarks_and_shared_evaluator(
 
     words = tmp_path / "questions.txt"
     words.write_bytes(
-        b": family\n" + b"a b c d\n" * 8869 + b": gram1\n" + b"a b c d\n" * 10675
+        b": family\n" + b"a b c d\n" * 5 + b": gram1\n" + b"a b c d\n" * 5
     )
     msr = tmp_path / "msr.txt"
-    msr.write_bytes(b": all\n" + b"a b c d\n" * 8000)
+    msr.write_bytes(b": all\n" + b"a b c d\n" * 5)
     runs = [
         run(arch, seed) for arch in ("cbow", "skipgram", "nnlm") for seed in (1, 7, 19)
     ]
@@ -268,10 +268,10 @@ def test_table3_analyzer_uses_both_benchmarks_and_shared_evaluator(
     assert {row["architecture"] for row in rows} == {"cbow", "skipgram", "nnlm"}
     assert all(float(row["msr_accuracy_percent"]) == 100.0 for row in rows)
     assert all(
-        int(row["semantic_total"]) == 8869 and int(row["syntactic_total"]) == 10675
+        int(row["semantic_total"]) == 5 and int(row["syntactic_total"]) == 5
         for row in rows
     )
-    assert all(int(row["msr_included"]) == 8000 for row in rows)
+    assert all(int(row["msr_included"]) == 5 for row in rows)
     assert all(float(row["observed_training_seconds"]) == 5 for row in rows)
     assert "23 / 53 / 47" in (outputs[0] / "summary.md").read_text()
 

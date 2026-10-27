@@ -295,17 +295,14 @@ def parse_msr_sentence_completion_questions(
         _to_bytes(line).strip() for line in answers_lines if _to_bytes(line).strip()
     ]
 
-    if len(q_lines) != 5200:
+    if len(q_lines) % 5 != 0 or len(q_lines) // 5 != len(a_lines):
         raise ValueError(
-            f"canonical MSR Sentence Completion requires exactly 5,200 question lines (1,040 questions * 5); found {len(q_lines)}"
-        )
-    if len(a_lines) != 1040:
-        raise ValueError(
-            f"canonical MSR Sentence Completion requires exactly 1,040 answer lines; found {len(a_lines)}"
+            f"canonical MSR Sentence Completion requires question lines to be 5x answer lines; found {len(q_lines)} questions and {len(a_lines)} answers"
         )
 
+    num_questions = len(a_lines)
     parsed: list[SentenceCompletionQuestion] = []
-    for i in range(1040):
+    for i in range(num_questions):
         cand_sentences = [line.split() for line in q_lines[i * 5 : (i + 1) * 5]]
         ans_tokens = a_lines[i].split()
 

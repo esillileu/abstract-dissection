@@ -55,3 +55,11 @@ def sample_cluster_idx_text() -> str:
         "com,reuters)/ 20120101000000\tcdx-00001.gz\t200000\t200000\t4\n"
         "com,yahoo)/ 20120101000000\tcdx-00002.gz\t0\t200000\t5\n"
     )
+
+
+@pytest.fixture
+def in_memory_repository():
+    """Provides a fresh InMemoryCorpusRepository for fast offline state tests."""
+    from f2.corpus.db.repository import InMemoryCorpusRepository
+
+    return InMemoryCorpusRepository()

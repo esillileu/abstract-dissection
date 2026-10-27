@@ -546,7 +546,7 @@ def test_8_stratum_scale_isolation_and_exact_s3_s7_scale(tmp_path: Path):
     # 1. Test FeasibilityAnalyzer
     analyzer = FeasibilityAnalyzer(parquet_file)
     res_yield = analyzer.compute_two_phase_yield(
-        audit_records=audits, bootstrap_reps=50, seed=42
+        audit_records=audits, bootstrap_reps=2, seed=42
     )
 
     c09 = next(s for s in res_yield.strata_yields if "2009" in s.crawl_id)

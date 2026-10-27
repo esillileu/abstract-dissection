@@ -43,7 +43,32 @@ def refresh(record):
     write_result_manifest(root)
 
 
+def _prepare_arrays(cache_root, dim, tokens, encoded):
+    target_dir = cache_root / f"arrays_{dim}"
+    if not target_dir.exists():
+        target_dir.mkdir(parents=True, exist_ok=True)
+        vectors = (
+            np.random.default_rng(12).normal(size=(len(tokens), dim)).astype(np.float32)
+        )
+        arrays = {
+            "input_embeddings.npy": vectors,
+            "output_embeddings.npy": np.zeros_like(vectors),
+            "counts.npy": np.full(len(tokens), 6, dtype=np.uint64),
+            "token_bytes.npy": np.frombuffer(b"".join(encoded), dtype=np.uint8),
+            "token_offsets.npy": np.array(
+                [0, *np.cumsum([len(t) for t in encoded])], dtype=np.uint64
+            ),
+            "huffman_offsets.npy": np.zeros(len(tokens) + 1, dtype=np.uint64),
+            "huffman_paths.npy": np.zeros(0, dtype=np.uint64),
+            "huffman_bits.npy": np.zeros(0, dtype=np.uint8),
+        }
+        for name, value in arrays.items():
+            np.save(target_dir / name, value, allow_pickle=False)
+    return target_dir
+
+
 def fixture_record(root, table, variant, seed=1):
+    import os
     import shutil
 
     from f2.suites.w2v.artifacts import (
@@ -80,25 +105,13 @@ def fixture_record(root, table, variant, seed=1):
         }
     )
     encoded = [t.encode() for t in tokens]
-    vectors = (
-        np.random.default_rng(12)
-        .normal(size=(len(tokens), config["training"]["embedding_dimension"]))
-        .astype(np.float32)
-    )
-    arrays = {
-        "input_embeddings.npy": vectors,
-        "output_embeddings.npy": np.zeros_like(vectors),
-        "counts.npy": np.full(len(tokens), 6, dtype=np.uint64),
-        "token_bytes.npy": np.frombuffer(b"".join(encoded), dtype=np.uint8),
-        "token_offsets.npy": np.array(
-            [0, *np.cumsum([len(t) for t in encoded])], dtype=np.uint64
-        ),
-        "huffman_offsets.npy": np.zeros(len(tokens) + 1, dtype=np.uint64),
-        "huffman_paths.npy": np.zeros(0, dtype=np.uint64),
-        "huffman_bits.npy": np.zeros(0, dtype=np.uint8),
-    }
-    for name, value in arrays.items():
-        np.save(checkpoint / name, value, allow_pickle=False)
+    dim = config["training"]["embedding_dimension"]
+    source_dir = _prepare_arrays(root / "_array_cache", dim, tokens, encoded)
+    for name in _CHECKPOINT_ARRAYS:
+        try:
+            os.link(source_dir / name, checkpoint / name)
+        except OSError:
+            shutil.copyfile(source_dir / name, checkpoint / name)
     source, transformed, vocab = "a" * 64, "b" * 64, "fnv1a64:0123456789abcdef"
     if table == "1":
         transformed = source
@@ -122,12 +135,22 @@ def fixture_record(root, table, variant, seed=1):
     if not large:
         lookup.mkdir()
         for name in _LOOKUP_ARRAYS:
-            shutil.copyfile(checkpoint / name, lookup / name)
+            try:
+                import os
+
+                os.link(checkpoint / name, lookup / name)
+            except OSError:
+                shutil.copyfile(checkpoint / name, lookup / name)
         _write_manifest(lookup, LOOKUP_FORMAT, state, _LOOKUP_ARRAYS)
     vocabulary = directory / "vocabulary"
     vocabulary.mkdir()
     for name in _VOCABULARY_ARRAYS:
-        shutil.copyfile(checkpoint / name, vocabulary / name)
+        try:
+            import os
+
+            os.link(checkpoint / name, vocabulary / name)
+        except OSError:
+            shutil.copyfile(checkpoint / name, vocabulary / name)
     _write_manifest(
         vocabulary,
         VOCABULARY_FORMAT,

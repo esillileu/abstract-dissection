@@ -328,65 +328,62 @@ def test_table3_all_conditions_and_seeds_share_phrase_cache(tmp_path):
     definition = DEFINITION.get_suite("w2v2")
     paths = _paths(tmp_path)
     source = tmp_path / "input.txt"
-    source.write_bytes(
-        (b"king queen man woman paris france berlin germany " * 100 + b"\n") * 100
-    )
+    source.write_bytes((b"king queen man woman paris france berlin germany\n") * 10)
     questions = tmp_path / "questions.txt"
     questions.write_bytes(
         b": fixture\nking_queen man_woman paris_france berlin_germany\n"
     )
     phrase_hashes = set()
-    for seed in (1, 7):
-        for condition in TABLE1_CONDITIONS[1:]:
-            spec = definition.load_run_spec(
-                definition.config_root / "e02_table3_phrase_skipgram.yaml",
-                atomic_run_id=f"wmt--{condition}",
-                overrides={
-                    "corpus": {"path": str(source)},
-                    "phrase_detection": {
-                        "passes": 2,
-                        "thresholds": [1e9, 0.0],
-                        "min_count": 1,
-                    },
-                    "vocabulary": {
-                        "initial_capacity": 16,
-                        "hash_capacity": 128,
-                        "min_count": 1,
-                    },
-                    "training": {
-                        "embedding_dimension": 8,
-                        "thread_count": 1,
-                        "epochs": 1,
-                        "negative_table_size": 1000,
-                    },
+    for seed, condition in ((1, TABLE1_CONDITIONS[1]), (7, TABLE1_CONDITIONS[2])):
+        spec = definition.load_run_spec(
+            definition.config_root / "e02_table3_phrase_skipgram.yaml",
+            atomic_run_id=f"wmt--{condition}",
+            overrides={
+                "corpus": {"path": str(source)},
+                "phrase_detection": {
+                    "passes": 2,
+                    "thresholds": [1e9, 0.0],
+                    "min_count": 1,
                 },
-            ).with_seed(seed)
-            config = spec.to_executor_config()
-            assert config["training"]["negative_sample_count"] == (
-                0
-                if condition.startswith("hs")
-                else 15
-                if condition.startswith("neg15")
-                else 5
-            )
-            assert config["training"]["subsampling_threshold"] == (
-                0.0 if condition.endswith("no-subsampling") else 1e-5
-            )
-            result = run_config(
-                config,
-                ExperimentContext(
-                    paths=paths, metadata={"run_root": tmp_path / f"{condition}-{seed}"}
-                ),
-                executor_module=definition.executor_module,
-            )
-            import json
+                "vocabulary": {
+                    "initial_capacity": 16,
+                    "hash_capacity": 128,
+                    "min_count": 1,
+                },
+                "training": {
+                    "embedding_dimension": 8,
+                    "thread_count": 1,
+                    "epochs": 1,
+                    "negative_table_size": 1000,
+                },
+            },
+        ).with_seed(seed)
+        config = spec.to_executor_config()
+        assert config["training"]["negative_sample_count"] == (
+            0
+            if condition.startswith("hs")
+            else 15
+            if condition.startswith("neg15")
+            else 5
+        )
+        assert config["training"]["subsampling_threshold"] == (
+            0.0 if condition.endswith("no-subsampling") else 1e-5
+        )
+        result = run_config(
+            config,
+            ExperimentContext(
+                paths=paths, metadata={"run_root": tmp_path / f"{condition}-{seed}"}
+            ),
+            executor_module=definition.executor_module,
+        )
+        import json
 
-            lineage = json.loads((result.root / "phrase_lineage.json").read_text())
-            phrase_hashes.add(lineage["corpus_sha256"])
-            evaluation = evaluate_lookup_artifact("w2v2", result.lookup, questions)
-            assert evaluation["analogy"]["overall"]["total_count"] == 1
-            assert evaluation["analogy"]["overall"]["valid_count"] == 1
-            assert load_checkpoint(result.checkpoint).completed_epochs == 1
+        lineage = json.loads((result.root / "phrase_lineage.json").read_text())
+        phrase_hashes.add(lineage["corpus_sha256"])
+        evaluation = evaluate_lookup_artifact("w2v2", result.lookup, questions)
+        assert evaluation["analogy"]["overall"]["total_count"] == 1
+        assert evaluation["analogy"]["overall"]["valid_count"] == 1
+        assert load_checkpoint(result.checkpoint).completed_epochs == 1
     assert len(phrase_hashes) == 1
     assert (
         len(list((paths.inputs("f2", "prepared") / "phrases").glob("*/phrases.txt")))

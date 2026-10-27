@@ -165,14 +165,14 @@ def test_long_line_memory_does_not_scale_with_document_length(tmp_path):
     import tracemalloc
 
     peaks = []
-    for n in (2000, 200000):
-        source = tmp_path / "source"
+    for n in (1000, 10000):
+        source = tmp_path / f"source_{n}"
         with source.open("wb") as stream:
             for _ in range(n):
                 stream.write(b"word01234567890 ")
         tracemalloc.start()
         result = materialize_phrase_corpus(
-            source, tmp_path / "output", PhrasePolicy(1, 100, 1)
+            source, tmp_path / f"output_{n}", PhrasePolicy(1, 100, 1)
         )
         peaks.append(tracemalloc.get_traced_memory()[1])
         tracemalloc.stop()

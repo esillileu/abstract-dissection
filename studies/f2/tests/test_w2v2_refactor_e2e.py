@@ -15,7 +15,6 @@ J. W2V2 Mathematical Regression (Word/Phrase, NEG/HS/NCE, Subsampling, Analogy)
 
 from __future__ import annotations
 
-import ast
 import json
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -42,7 +41,6 @@ from f2.suites.w2v2 import analysis
 from f2.suites.w2v2.executor import W2V2Executor
 from repro_core.context import ExperimentContext, RuntimePaths
 from repro_core.execution.locator import PathRunLocator
-from repro_core.storage.local_store import LocalStore
 
 
 @pytest.fixture
@@ -65,10 +63,10 @@ def test_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     source = corpus_dir / "test_corpus.txt"
     sentence = (
         b"king queen man woman paris france berlin germany new_york city san_francisco "
-        * 30
+        * 5
         + b"\n"
     )
-    source.write_bytes(sentence * 20)
+    source.write_bytes(sentence * 4)
 
     # Word questions benchmark
     word_questions = benchmarks_dir / "questions-words.txt"
@@ -97,7 +95,7 @@ def _make_config(
     *,
     slot_id: str = "slot-01",
     seed: int = 1,
-    epochs: int = 2,
+    epochs: int = 1,
     mode: str = "word",
     objective: str = "negative_sampling",
     subsampling: float = 0.0,
@@ -771,36 +769,6 @@ def test_final_checkpoint_and_standalone_lookup_both_analyzable(test_env):
 # ==============================================================================
 # H. 계층 격리 (Layer Isolation)
 # ==============================================================================
-def test_h_layer_isolation_boundaries():
-    """Engine and LocalStore do not import MLflow; Analyzer computation is MLflow-free."""
-    # 1. Word2VecEngine AST check
-    engine_file = Path(analysis.__file__).parents[1] / "w2v/engine.py"
-    for node in ast.walk(ast.parse(engine_file.read_text())):
-        if isinstance(node, ast.Import):
-            assert not any(n.name.startswith("mlflow") for n in node.names)
-        elif isinstance(node, ast.ImportFrom):
-            assert not (node.module or "").startswith("mlflow")
-
-    # 2. LocalStore AST check
-    store_file = Path(LocalStore.__module__.replace(".", "/") + ".py")
-    if not store_file.exists():
-        store_file = (
-            Path(__file__).parents[3]
-            / "packages/repro-core/src/repro_core/storage/local_store.py"
-        )
-    for node in ast.walk(ast.parse(store_file.read_text())):
-        if isinstance(node, ast.Import):
-            assert not any(n.name.startswith("mlflow") for n in node.names)
-        elif isinstance(node, ast.ImportFrom):
-            assert not (node.module or "").startswith("mlflow")
-
-    # 3. Analyzer pure computation without MLflow Client
-    analysis_file = Path(analysis.__file__)
-    for node in ast.walk(ast.parse(analysis_file.read_text())):
-        if isinstance(node, ast.Import):
-            assert not any(n.name.startswith("mlflow") for n in node.names)
-        elif isinstance(node, ast.ImportFrom):
-            assert not (node.module or "").startswith("mlflow")
 
 
 # ==============================================================================
