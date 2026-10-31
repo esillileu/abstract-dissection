@@ -56,16 +56,22 @@ def run_tracked_yaml(
 
         from f2.suites.w2v.tracking import find_matching_finished_run
 
+        slot_id = str(identity.get("planned_run_slot_id", ""))
+        variant_id = str(config.get("atomic_run_id", ""))
         client = MlflowClient(tracking_uri=tracking_uri)
         existing = find_matching_finished_run(
-            client, experiment_name, config_digest, seed_val
+            client,
+            experiment_name,
+            config_digest,
+            seed_val,
+            planned_run_slot_id=slot_id or None,
+            atomic_run_id=variant_id or None,
         )
         if existing is not None:
             if progress_reporter is not None:
                 progress_reporter.write(
                     f"Skipping {suite_name}: finished run {existing.info.run_id} exists"
                 )
-            slot_id = str(identity.get("planned_run_slot_id", ""))
             run_root = paths.runs("f2", suite_name, slot_id)
             return W2VRunReceipt(
                 result=None,

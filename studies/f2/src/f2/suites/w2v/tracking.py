@@ -21,6 +21,9 @@ def find_matching_finished_run(
     experiment_name: str,
     config_digest: str,
     seed: int,
+    *,
+    planned_run_slot_id: str | None = None,
+    atomic_run_id: str | None = None,
 ) -> Run | None:
     """Find a finished MLflow run matching identical semantic experiment conditions."""
     experiment = client.get_experiment_by_name(experiment_name)
@@ -36,8 +39,19 @@ def find_matching_finished_run(
         tags = run.data.tags
         digest = tags.get("config_digest") or tags.get("f2.config_digest")
         run_seed = tags.get("seed")
-        if digest == config_digest and run_seed == str(seed):
-            return run
+        if digest != config_digest or run_seed != str(seed):
+            continue
+        if planned_run_slot_id:
+            run_slot = tags.get("planned_run_slot_id") or tags.get(
+                "f2.planned_run_slot_id"
+            )
+            if run_slot and run_slot != planned_run_slot_id:
+                continue
+        if atomic_run_id:
+            run_variant = tags.get("implementation.variant")
+            if run_variant and run_variant != atomic_run_id:
+                continue
+        return run
     return None
 
 

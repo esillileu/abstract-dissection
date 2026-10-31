@@ -104,7 +104,12 @@ class Word2VecExecutor:
         # 1. Skip check: MLflow FINISHED run (if not already verified before corpus materialization)
         if not override and not context.metadata.get("skip_checked"):
             existing = find_matching_finished_run(
-                client, experiment_name, config_digest, seed
+                client,
+                experiment_name,
+                config_digest,
+                seed,
+                planned_run_slot_id=slot_id or None,
+                atomic_run_id=str(config.get("atomic_run_id", "")) or None,
             )
             if existing is not None:
                 if progress_reporter is not None:
