@@ -233,6 +233,7 @@ def run(
     )
 
 
+@app.command("analyze")
 @cli_errors
 def analyze(
     suite: Annotated[
@@ -260,8 +261,9 @@ def analyze(
         ),
     ] = None,
     table: Annotated[
-        int, typer.Option("--table", help="W2V1 table number: 2, 3, 4, 5, 6, or 7.")
-    ] = 2,
+        int | None,
+        typer.Option("--table", help="Table number to analyze (W2V1: 2-7; W2V2: 1-6)."),
+    ] = None,
     msr_questions: Annotated[
         Path | None,
         typer.Option(
@@ -285,6 +287,8 @@ def analyze(
             word_questions=questions,
             phrase_questions=phrase_questions,
             override=override,
+            table=table,
+            corpus=corpus,
         )
         typer.echo(f"W2V2 report written: {output / 'summary.md'}")
         return
@@ -300,6 +304,8 @@ def analyze(
         from .tracking import resolve_tracking_uri
 
         paths = RuntimePaths.from_environment()
+        if table is None:
+            table = 2
         if table not in (2, 3, 4, 5, 6, 7):
             raise ValueError("W2V1 analysis table must be 2, 3, 4, 5, 6, or 7")
         if msr_questions is not None and table != 3:
@@ -496,6 +502,8 @@ def run_w2v2_analysis(
     phrase_questions: Path | None = None,
     override: bool = False,
     offline: bool = False,
+    table: int | str | None = None,
+    corpus: str | None = None,
 ) -> Path:
     """Run W2V2 analysis or return existing result without MLflow access or recomputation."""
     from repro_core.context import RuntimePaths
@@ -506,14 +514,26 @@ def run_w2v2_analysis(
         if hasattr(paths, "analysis_output")
         else paths.cache_root / "f2/w2v2/analysis"
     )
+    target_table = str(table).lower() if table is not None else None
+    if target_table in {"section4", "4.1"}:
+        target_table = "section4.1"
+    target_corpus = str(corpus).lower() if corpus is not None else None
+    check_output = output
+    if target_corpus is not None:
+        check_output = check_output / target_corpus
+    if target_table is not None:
+        table_dir = (
+            f"table{target_table}" if target_table != "section4.1" else "section4_1"
+        )
+        check_output = check_output / table_dir
 
     # 1. Reuse existing result if already present and override not requested
     if (
         not override
-        and (output / "summary.json").is_file()
-        and (output / "summary.md").is_file()
+        and (check_output / "summary.json").is_file()
+        and (check_output / "summary.md").is_file()
     ):
-        return output
+        return check_output
 
     # 2. Otherwise query MLflow (or local cache if offline) and generate report
     from .suites.w2v.cache import download_results, read_records
@@ -526,7 +546,9 @@ def run_w2v2_analysis(
         result_source = "offline; MLflow not queried"
     else:
         resolved_uri = resolve_tracking_uri(tracking_uri)
-        records = read_records(download_results(resolved_uri, "w2v2", paths))
+        records = read_records(
+            download_results(resolved_uri, "w2v2", paths, table=table)
+        )
         result_source = f"MLflow f2.w2v2 ({resolved_uri})"
 
     # 3. Connect evaluation question paths (explicit > local benchmarks > run cache)
@@ -566,6 +588,9 @@ def run_w2v2_analysis(
         word_questions=w_questions,
         phrase_questions=p_questions,
         result_source=result_source,
+        table_filter=table,
+        corpus_filter=corpus,
+        use_evaluation_cache=True,
     )
 
 
@@ -589,6 +614,16 @@ def w2v2_report(
         Path | None,
         typer.Option(help="Existing questions-phrases.txt; never downloaded."),
     ] = None,
+    table: Annotated[
+        int | None,
+        typer.Option("--table", help="Filter downloaded runs by W2V2 table number."),
+    ] = None,
+    corpus: Annotated[
+        str | None,
+        typer.Option(
+            "--corpus", help="Filter W2V2 corpus source: lm1b, wmt, umbc, fineweb."
+        ),
+    ] = None,
     override: Annotated[
         bool,
         typer.Option(
@@ -603,5 +638,7 @@ def w2v2_report(
         phrase_questions=phrase_questions,
         override=override,
         offline=offline,
+        table=table,
+        corpus=corpus,
     )
     typer.echo(f"W2V2 report: {output / 'summary.md'}")
