@@ -169,21 +169,37 @@ def _analogy_predictions(
     batch_size: int,
 ) -> Iterable[tuple[int, bool]]:
     """Scan candidates in fixed blocks, keeping original vocabulary tie order."""
+    if not question_rows:
+        return
+    batches: list[
+        tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]
+    ] = []
     for start in range(0, len(question_rows), batch_size):
         rows = np.asarray(question_rows[start : start + batch_size], dtype=np.int64)
-        selected = _normalized_embeddings(
-            embeddings[rows[:, :3].ravel()], dtype=np.float32
+        flat = rows[:, :3].ravel()
+        selected_chunks = [
+            _normalized_embeddings(
+                embeddings[flat[i : i + EVALUATION_CHUNK_ROWS]], dtype=np.float32
+            )
+            for i in range(0, len(flat), EVALUATION_CHUNK_ROWS)
+        ]
+        selected = np.concatenate(selected_chunks, axis=0).reshape(
+            len(rows), 3, embeddings.shape[1]
         )
-        selected = selected.reshape(len(rows), 3, embeddings.shape[1])
-        queries = selected[:, 1] - selected[:, 0] + selected[:, 2]
+        queries_t = np.ascontiguousarray(
+            (selected[:, 1] - selected[:, 0] + selected[:, 2]).T
+        )
         best = np.full(len(rows), -np.inf, dtype=np.float32)
         predictions = np.zeros(len(rows), dtype=np.int64)
         columns = np.arange(len(rows))
-        for offset in range(0, len(embeddings), EVALUATION_CHUNK_ROWS):
-            block = _normalized_embeddings(
-                embeddings[offset : offset + EVALUATION_CHUNK_ROWS], dtype=np.float32
-            )
-            scores = block @ queries.T
+        batches.append((rows, queries_t, best, predictions, columns))
+
+    for offset in range(0, len(embeddings), EVALUATION_CHUNK_ROWS):
+        block = _normalized_embeddings(
+            embeddings[offset : offset + EVALUATION_CHUNK_ROWS], dtype=np.float32
+        )
+        for rows, queries_t, best, predictions, columns in batches:
+            scores = block @ queries_t
             for column in range(3):
                 excluded = rows[:, column] - offset
                 inside = (excluded >= 0) & (excluded < len(block))
@@ -193,6 +209,8 @@ def _analogy_predictions(
             better = values > best
             predictions[better] = offset + local[better]
             best[better] = values[better]
+
+    for _, _, best, predictions, _ in batches:
         yield from (
             (int(row), bool(score > 0.0))
             for row, score in zip(predictions, best, strict=True)
