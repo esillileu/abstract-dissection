@@ -589,7 +589,9 @@ def generate_report(
                 "reason": "missing run/artifacts",
                 "checkpoint_reused": False,
                 "metrics": {},
-                "timing": {"status": "no_data", "minutes": None},
+                "timing": {"status": "no_data", "minutes": None, "seconds": None},
+                "training_minutes": None,
+                "training_seconds": None,
             }
             record = records_by_key.get((table, variant, seed))
             lookup = None
@@ -654,6 +656,12 @@ def generate_report(
                         )
                         row["timing"] = _timing(root, file_inventory, result, record)
                         row["training_minutes"] = row["timing"]["minutes"]
+                        row["training_seconds"] = row["timing"].get("seconds")
+                        if (
+                            row["training_seconds"] is None
+                            and row["training_minutes"] is not None
+                        ):
+                            row["training_seconds"] = row["training_minutes"] * 60.0
 
                         if questions:
                             if cached_eval is not None and "metrics" in cached_eval:
@@ -803,32 +811,34 @@ def generate_report(
             if (r["table"], r["corpus"], r["condition"]) == (table, corpus, condition)
         ]
         for metric in (
-            ("total", "semantic", "syntactic", "training_minutes")
+            ("total", "semantic", "syntactic", "training_minutes", "training_seconds")
             if table == "1"
-            else ("total",)
+            else ("total", "training_minutes", "training_seconds")
         ):
 
             def available(row, metric=metric):
-                if row["identity_status"] != "complete":
-                    return False
-                return (
-                    row["timing"]["status"] == "complete"
-                    if metric == "training_minutes"
-                    else row["metrics"].get(metric, {}).get("status") == "complete"
-                )
+                return row.get(metric) is not None
 
             valid = [r for r in group if available(r)]
-            reference = (
+            t1_refs = (
                 dict(
                     zip(
                         ("training_minutes", "syntactic", "semantic", "total"),
                         paper.TABLE1[condition],
                         strict=True,
                     )
-                )[metric]
+                )
                 if table == "1"
-                else group[0]["paper_reference"]
+                else {}
             )
+            if metric == "training_seconds":
+                reference = (
+                    t1_refs.get("training_minutes", 0) * 60.0 if table == "1" else None
+                )
+            elif table == "1":
+                reference = t1_refs.get(metric)
+            else:
+                reference = group[0]["paper_reference"] if metric == "total" else None
             summary = summarize([r[metric] for r in valid])
             hardware = (
                 [r["timing"]["hardware"] for r in valid if r["timing"].get("hardware")]
@@ -865,9 +875,11 @@ def generate_report(
                     if metric == "training_minutes"
                     else None,
                     **summary,
-                    "difference_from_paper": summary["mean"] - reference
-                    if summary["mean"] is not None
-                    else None,
+                    "difference_from_paper": (
+                        summary["mean"] - reference
+                        if summary["mean"] is not None and reference is not None
+                        else None
+                    ),
                 }
             )
     all_table_numbers = ("1", "2", "3", "4", "5", "6", "section4.1")
@@ -973,131 +985,34 @@ def generate_report(
                 }
                 for r in data
             )
-    title_suffix = ""
-    if target_table is not None:
-        title_suffix += (
-            f" — Table {target_table}"
-            if target_table != "section4.1"
-            else " — Section 4.1"
-        )
-    if target_corpus is not None:
-        title_suffix += f" ({target_corpus.upper()})"
+
+    def _metric_str(runs, key):
+        values = [r[key] for r in runs if r.get(key) is not None]
+        if not values:
+            return "—"
+        mean = statistics.mean(values)
+        sd = statistics.stdev(values) if len(values) > 1 else 0.0
+        return f"{mean:.2f} ± {sd:.2f}"
+
     lines = [
-        f"# W2V2 paper reproduction{title_suffix}",
-        "",
-        f"Source: {paper.SOURCE}",
-        "",
-        f"Result inventory: {result_source}. Missing entries describe supplied evidence, not proof that training never occurred.",
-        "",
-        f"Status: {payload['status']}. All current corpus variants are substitutes, not original Google news.",
-        "",
-        f"Report generated: {payload['report_generated']}; experiment complete: {payload['experiment_complete']}",
-        "",
-        f"Table status: {json.dumps(table_status, sort_keys=True)}",
-        "",
-        "Evaluation protocol: " + json.dumps(EVALUATION_PROTOCOL, sort_keys=True),
+        "| Corpus | Condition | total | semantic | syntactic | training_times(s) |",
+        "|---|---|---:|---:|---:|---:|",
     ]
-    for table in active_tables:
-        lines += [
-            "",
-            f"## Table {table}" if table != "section4.1" else "## Section 4.1",
-            "",
-        ]
-        data = (
-            [a for a in aggregates if a["table"] == table]
-            if table in {"1", "3", "section4.1"}
-            else [q for q in qualitative if q["table"] == table]
-        )
-        if table == "2":
-            lines += [
-                f"Evaluation validation: {json.dumps(payload['datasets']['phrase'], sort_keys=True)}",
-                "",
-                "| Category | A | B | C | D |",
-                "|---|---|---|---|---|",
-            ]
-            lines += ["| " + " | ".join(r) + " |" for r in paper.TABLE2]
-        elif table in {"1", "3", "section4.1"}:
-            lines += [
-                "| Corpus | Condition | Metric | Paper | Mean ± SD | n | Δ vs Paper | Status | Missing seeds |",
-                "|---|---|---|---:|---:|---:|---:|---|---|",
-            ]
-            for a in data:
-                mean_sd = _fmt_mean_sd(a["mean"], a["standard_deviation"], digits=2)
-                diff_str = (
-                    f"{a['difference_from_paper']:+.2f}"
-                    if a["difference_from_paper"] is not None
-                    else "—"
-                )
-                lines.append(
-                    f"| {a['corpus']} | {a['condition']} | {a['metric']} | {a['paper_reference']} | {mean_sd} | {a['n']} | {diff_str} | {a['status']} | {_fmt_seeds(a['missing_seeds'])} |"
-                )
-        else:
-            if table == "6":
-                lines += ["Reference columns: " + ", ".join(paper.TABLE6_QUERIES), ""]
-            lines += [
-                "Paper reference (never a reproduced observation):",
-                "",
-                "```json",
-                json.dumps(payload["paper"][f"table{table}"], indent=2),
-                "```",
-                "",
-                "| Corpus | Model | Seed | Run ID | Query | Neighbors | Status |",
-                "|---|---|---:|---|---|---|---|",
-            ]
-            for q in data:
-                nbrs = (
-                    ", ".join(
-                        f"{n['token']} ({n['cosine']:.3f})" for n in q["neighbors"]
-                    )
-                    if q["neighbors"]
-                    else "—"
-                )
-                lines.append(
-                    f"| {q['corpus']} | {q['condition']} | {q['seed']} | `{q['run_id'][:8] if q['run_id'] else '—'}` | {q['query']} | {nbrs} | {q['status']} |"
-                )
-            if not data:
-                lines += ["| — | — | — | — | — | — | no_data: missing checkpoint |"]
-    lines += [
-        "",
-        "## Per-run evaluation summary",
-        "",
-        "| Table | Corpus | Condition | Seed | Run ID | Total (%) | Semantic (%) | Syntactic (%) | Training (min) | Valid / Total | Coverage | Status |",
-        "|---|---|---|---:|---|---:|---:|---:|---:|---|---:|---|",
-    ]
-    for r in rows:
-        if not r.get("run_id"):
+    seen_conditions = set()
+    for _, corpus, condition, _, _ in inventory:
+        cond_key = (corpus, condition)
+        if cond_key in seen_conditions:
             continue
-        tot_m = r["metrics"].get("total", {})
-        val_tot = (
-            f"{tot_m.get('valid_count', 0)}/{tot_m.get('total_count', 0)}"
-            if tot_m
-            else "—"
-        )
-        cov_str = (
-            f"{100.0 * tot_m['coverage']:.1f}%"
-            if tot_m.get("coverage") is not None
-            else "—"
-        )
-        lines.append(
-            f"| {r['table']} | {r['corpus']} | {r['condition']} | {r['seed']} | `{r['run_id'][:8]}` | {_fmt_num(r.get('total'))} | {_fmt_num(r.get('semantic'))} | {_fmt_num(r.get('syntactic'))} | {_fmt_num(r.get('training_minutes'), 1)} | {val_tot} | {cov_str} | {r['status']} |"
-        )
-    missing_rows = [r for r in rows if r["status"] != "complete"]
-    if missing_rows:
-        lines += [
-            "",
-            "## Missing or incomplete conditions",
-            "",
-            "| Table | Corpus | Condition | Seed | Status | Reason |",
-            "|---|---|---|---:|---|---|",
+        seen_conditions.add(cond_key)
+        cond_runs = [
+            r for r in rows if r["corpus"] == corpus and r["condition"] == condition
         ]
-        lines += [
-            f"| {r['table']} | {r['corpus']} | {r['condition']} | {r['seed']} | {r['status']} | {r['reason']} |"
-            for r in missing_rows
-        ]
-    lines += [
-        "",
-        "External Table 6 baselines: reference-only; retraining unsupported.",
-    ]
+        tot = _metric_str(cond_runs, "total")
+        sem = _metric_str(cond_runs, "semantic")
+        syn = _metric_str(cond_runs, "syntactic")
+        sec = _metric_str(cond_runs, "training_seconds")
+        lines.append(f"| {corpus} | {condition} | {tot} | {sem} | {syn} | {sec} |")
+
     (output / "summary.md").write_text("\n".join(lines) + "\n")
     (output / "summary.json").write_text(
         json.dumps(payload, indent=2, sort_keys=True, allow_nan=False) + "\n"
