@@ -8,7 +8,14 @@ from types import SimpleNamespace
 from typing import Any
 
 
-def download_results(tracking_uri: str, suite: str, paths) -> Path:
+def download_results(
+    tracking_uri: str,
+    suite: str,
+    paths,
+    *,
+    table: int | str | None = None,
+    need_evaluation_benchmarks: bool | None = None,
+) -> Path:
     """Refresh run metadata and download analysis inputs before invoking an analyzer.
 
     Selects the latest FINISHED run for each experimental condition.
@@ -70,19 +77,38 @@ def download_results(tracking_uri: str, suite: str, paths) -> Path:
             t.get("phrase.threshold", ""),
         )
 
-    # 1. Group finished runs by target experimental condition (spec_id and variant)
-    runs_by_target: dict[tuple[str, str], list[Any]] = {}
+    def _run_condition(r: Any) -> tuple[Any, ...]:
+        t = r.data.tags
+        p = r.data.params
+        variant = t.get("implementation.variant", "")
+        corpus = (
+            p.get("corpus_id")
+            or t.get("corpus.id")
+            or t.get("f2.source_corpus_sha256", "")
+        )
+        is_phrase = str(t.get("is_phrase") or ("phrase" in variant))
+        obj = str(p.get("objective_kind") or t.get("training.objective", ""))
+        neg = str(
+            p.get("negative_sample_count")
+            or p.get("negative_samples")
+            or t.get("training.negative_samples", "")
+        )
+        sub = str(p.get("subsampling_threshold") or t.get("training.subsample", ""))
+        return (corpus, is_phrase, obj, neg, sub)
+
+    # 1. Group finished runs by target experimental condition
+    runs_by_target: dict[tuple[Any, ...], list[Any]] = {}
     for run in all_runs:
         if run.info.status == "FINISHED":
             tags = run.data.tags
             spec_id = tags.get("experiment_spec.id", "")
             variant = tags.get("implementation.variant", "")
-            target_key = (spec_id, variant)
+            target_key = (spec_id, variant, _run_condition(run))
             runs_by_target.setdefault(target_key, []).append(run)
 
     # 2. For each target, determine actual latest training settings and select latest finished run per seed
     selected_finished: list[Any] = []
-    for target_key in sorted(runs_by_target):
+    for target_key in sorted(runs_by_target, key=str):
         target_runs = runs_by_target[target_key]
         if not target_runs:
             continue
@@ -119,11 +145,36 @@ def download_results(tracking_uri: str, suite: str, paths) -> Path:
             )
             selected_finished.append(best)
 
+    _w2v2_spec_tables = {
+        "w2v2-word-skipgram-1b-objectives": {"1"},
+        "w2v2-phrase-skipgram-1b-objectives": {"3", "4"},
+        "w2v2-section4-phrase-6b": {"section4.1"},
+        "w2v2-section4-phrase-33b": {"section4.1", "5", "6"},
+    }
+    target_table = str(table).lower() if table is not None else None
+    benchmarks = paths.inputs("f2", "benchmarks") if hasattr(paths, "inputs") else None
+    if need_evaluation_benchmarks is None:
+        if suite == "w2v2" and benchmarks is not None:
+            has_word = (benchmarks / "questions-words.txt").is_file()
+            has_phrase = (benchmarks / "questions-phrases.txt").is_file()
+            if target_table == "1":
+                need_evaluation_benchmarks = not has_word
+            else:
+                need_evaluation_benchmarks = not (has_word and has_phrase)
+        else:
+            need_evaluation_benchmarks = True
+
     records: list[dict[str, Any]] = []
     for run in selected_finished:
+        tags = dict(run.data.tags)
+        if target_table is not None and suite == "w2v2":
+            spec_id = tags.get("experiment_spec.id", "")
+            allowed = _w2v2_spec_tables.get(spec_id)
+            if allowed is not None and target_table not in allowed:
+                continue
         record = {
             "run_id": run.info.run_id,
-            "tags": dict(run.data.tags),
+            "tags": tags,
             "status": run.info.status,
             "end_time": run.info.end_time,
             "start_time": run.info.start_time,
@@ -133,10 +184,21 @@ def download_results(tracking_uri: str, suite: str, paths) -> Path:
             record["artifact_root"] = str(result_path.parent)
             result = json.loads(result_path.read_text())
             cache.get(run.info.run_id, result["artifacts"]["lookup"])
+            remote_paths: set[str] | None = None
             try:
-                cache.get(run.info.run_id, "evaluation")
+                manifest_path = cache.get(run.info.run_id, "result_manifest.json")
+                manifest = json.loads(manifest_path.read_text())
+                remote_paths = {f["path"] for f in manifest.get("files", [])}
+                for p in list(remote_paths):
+                    if "/" in p:
+                        remote_paths.add(p.split("/", 1)[0])
             except Exception:
                 pass
+            if need_evaluation_benchmarks:
+                try:
+                    cache.get(run.info.run_id, "evaluation")
+                except Exception:
+                    pass
             for name in (
                 "metrics/observations.csv",
                 "environment/system.json",
@@ -144,6 +206,8 @@ def download_results(tracking_uri: str, suite: str, paths) -> Path:
                 "phrase_lineage.json",
                 "large_scale_lineage.json",
             ):
+                if remote_paths is not None and name not in remote_paths:
+                    continue
                 try:
                     cache.get(run.info.run_id, name)
                 except Exception:

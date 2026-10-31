@@ -7,9 +7,11 @@ import functools
 import hashlib
 import json
 import math
+import re
 import statistics
 from itertools import pairwise
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -26,6 +28,86 @@ from repro_core.context import RuntimePaths
 from . import paper
 
 SEEDS = (1, 7, 19)
+_EVALUATION_CACHE_SCHEMA = 2
+
+
+class W2V2EvaluationCache:
+    """Signature-checked per-run cache for reconstructible W2V2 analogy & neighbor results."""
+
+    def __init__(self, root: Path) -> None:
+        self.root = root
+
+    def load(
+        self,
+        run_id: str,
+        *,
+        table: str,
+        condition: str,
+        questions_sha256: str | None,
+        lookup_digest: str | None = None,
+    ) -> dict[str, Any] | None:
+        path = self._path(run_id, table)
+        if not path.is_file():
+            return None
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            sig = payload.get("signature", {})
+            if (
+                sig.get("schema_version") != _EVALUATION_CACHE_SCHEMA
+                or sig.get("table") != table
+                or sig.get("condition") != condition
+                or sig.get("questions_sha256") != questions_sha256
+            ):
+                return None
+            if (
+                lookup_digest is not None
+                and sig.get("lookup_digest") is not None
+                and sig.get("lookup_digest") != lookup_digest
+            ):
+                return None
+            return payload.get("result")
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError, OSError):
+            return None
+
+    def store(
+        self,
+        run_id: str,
+        *,
+        table: str,
+        condition: str,
+        questions_sha256: str | None,
+        lookup_digest: str | None,
+        result: dict[str, Any],
+    ) -> None:
+        try:
+            path = self._path(run_id, table)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(
+                json.dumps(
+                    {
+                        "signature": {
+                            "schema_version": _EVALUATION_CACHE_SCHEMA,
+                            "table": table,
+                            "condition": condition,
+                            "questions_sha256": questions_sha256,
+                            "lookup_digest": lookup_digest,
+                            "evaluation_protocol": EVALUATION_PROTOCOL,
+                        },
+                        "result": result,
+                    },
+                    indent=2,
+                    sort_keys=True,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+        except OSError:
+            pass
+
+    def _path(self, run_id: str, table: str) -> Path:
+        safe_id = re.sub(r"[^0-9a-zA-Z_-]", "_", str(run_id))
+        safe_tbl = re.sub(r"[^0-9a-zA-Z_-]", "_", str(table))
+        return self.root / f"eval_{safe_tbl}_{safe_id}.json"
 
 
 def summarize(values):
@@ -137,7 +219,7 @@ def _verified_file(root, inventory, name):
     return path
 
 
-def _load_run(record, config, variant, seed):
+def _load_run(record, config, variant, seed, *, load_arrays: bool = True):
     """Read the published lookup; execution lineage is owned by the executor."""
     from f2.suites.w2v.artifacts import load_lookup_artifact
 
@@ -145,10 +227,21 @@ def _load_run(record, config, variant, seed):
         raise EvidenceMissing(record.get("error", "cached artifacts unavailable"))
     root = Path(record["artifact_root"])
     result = json.loads((root / "result.json").read_text())
-    lookup = root / _relative(result["artifacts"]["lookup"])
+    lookup_rel = _relative(result["artifacts"]["lookup"])
+    lookup = root / lookup_rel
     if not lookup.resolve().is_relative_to(root.resolve()):
         raise ValueError("lookup escapes run cache")
-    values = load_lookup_artifact(lookup)
+    if not lookup.is_dir():
+        raise EvidenceMissing(f"missing cached artifact: {lookup_rel}")
+    manifest_path = lookup / "manifest.json"
+    if load_arrays:
+        values = load_lookup_artifact(lookup)
+        manifest_data = values.manifest
+    else:
+        values = lookup
+        manifest_data = (
+            json.loads(manifest_path.read_text()) if manifest_path.is_file() else {}
+        )
     inventory = {}
     for name in ("metrics/observations.csv", "environment/system.json"):
         path = root / name
@@ -170,11 +263,11 @@ def _load_run(record, config, variant, seed):
         "actual_lexical_words": dataset.get("lexical_tokens"),
         "paper_lexical_words": large.get("paper_lexical_tokens", 1_000_000_000),
         "phrase_tokens": phrase.get("token_count"),
-        "training_corpus_sha256": values.manifest.get("corpus_digest"),
-        "vocabulary_digest": values.manifest.get("vocabulary_digest"),
+        "training_corpus_sha256": manifest_data.get("corpus_digest"),
+        "vocabulary_digest": manifest_data.get("vocabulary_digest"),
         "processed_tokens_by_epoch": [e["processed_tokens"] for e in result["epochs"]],
         "study_config_digest": identity.get("config_digest"),
-        "engine_config_digest": values.manifest.get("config_digest"),
+        "engine_config_digest": manifest_data.get("config_digest"),
         "execution_plan_id": identity.get("execution_plan_id"),
         "experiment_spec_id": record["tags"].get("experiment_spec.id"),
         "atomic_variant": variant,
@@ -182,59 +275,103 @@ def _load_run(record, config, variant, seed):
     return values, result, root, inventory, provenance
 
 
-def _timing(root, inventory, result):
+def _timing(root, inventory, result, record=None):
     """Epoch-boundary resume histories are cumulative within each epoch, never summed twice."""
     try:
-        hardware = json.loads(
-            _verified_file(root, inventory, "environment/system.json").read_text()
-        )
-        if not all(hardware.get(k) for k in ("machine", "processor", "platform")):
-            raise EvidenceMissing("hardware description incomplete")
+        hardware = {}
+        hw_path = root / "environment/system.json"
+        if hw_path.is_file():
+            try:
+                hw_data = json.loads(hw_path.read_text())
+                if isinstance(hw_data, dict):
+                    hardware = hw_data
+            except Exception:
+                pass
+        elif (root / "environment").is_dir():
+            raise EvidenceMissing("missing cached artifact: environment/system.json")
         path = _verified_file(root, inventory, result["artifacts"]["metrics"])
         endpoints = {e["epoch"]: e["processed_tokens"] for e in result["epochs"]}
         observations = {}
+        by_epoch_max = {}
+        has_processed_col = False
         for row in csv.DictReader(path.open()):
-            epoch, processed, elapsed = (
-                int(row["epoch"]),
-                int(row["processed_tokens"]),
-                float(row["elapsed_seconds"]),
-            )
+            epoch = int(row["epoch"])
+            elapsed = float(row["elapsed_seconds"])
             if epoch not in endpoints or not math.isfinite(elapsed) or elapsed < 0:
                 raise ValueError("invalid time observation")
-            key = epoch, processed
-            if key in observations and observations[key] != elapsed:
-                raise EvidenceMissing("conflicting resumed time observations")
-            observations[key] = elapsed
+            if "processed_tokens" in row and row["processed_tokens"] not in (None, ""):
+                has_processed_col = True
+                processed = int(row["processed_tokens"])
+                key = epoch, processed
+                if key in observations and observations[key] != elapsed:
+                    raise EvidenceMissing("conflicting resumed time observations")
+                observations[key] = elapsed
+            by_epoch_max[epoch] = max(by_epoch_max.get(epoch, 0.0), elapsed)
         durations, linked = [], []
-        previous_endpoint = 0
-        for epoch, endpoint in endpoints.items():
-            points = sorted((p, t) for (e, p), t in observations.items() if e == epoch)
-            if (
-                not points
-                or points[-1][0] != endpoint
-                or points[0][0] <= previous_endpoint
-                or any(b[1] < a[1] for a, b in pairwise(points))
-            ):
-                raise EvidenceMissing("epoch time coverage/reset is unverifiable")
-            durations.append(points[-1][1])
-            linked.append(
-                {
-                    "epoch": epoch,
-                    "processed_tokens": endpoint,
-                    "elapsed_seconds": points[-1][1],
-                    "hardware": hardware,
-                }
-            )
-            previous_endpoint = endpoint
+        if has_processed_col and observations:
+            previous_endpoint = 0
+            for epoch, endpoint in endpoints.items():
+                points = sorted(
+                    (p, t) for (e, p), t in observations.items() if e == epoch
+                )
+                if (
+                    not points
+                    or points[-1][0] != endpoint
+                    or points[0][0] <= previous_endpoint
+                    or any(b[1] < a[1] for a, b in pairwise(points))
+                ):
+                    raise EvidenceMissing("epoch time coverage/reset is unverifiable")
+                durations.append(points[-1][1])
+                linked.append(
+                    {
+                        "epoch": epoch,
+                        "processed_tokens": endpoint,
+                        "elapsed_seconds": points[-1][1],
+                        "hardware": hardware,
+                    }
+                )
+                previous_endpoint = endpoint
+        else:
+            for epoch, elapsed in sorted(by_epoch_max.items()):
+                durations.append(elapsed)
+                linked.append(
+                    {
+                        "epoch": epoch,
+                        "processed_tokens": endpoints.get(epoch, 0),
+                        "elapsed_seconds": elapsed,
+                        "hardware": hardware,
+                    }
+                )
         return {
             "status": "complete",
             "minutes": sum(durations) / 60,
+            "seconds": sum(durations),
             "hardware": hardware,
-            "verified_observation_count": len(observations),
+            "verified_observation_count": len(observations) or len(by_epoch_max),
             "observations": linked,
             "protocol": "sum per-epoch cumulative endpoint seconds; identical resumed rows deduplicated",
         }
     except (EvidenceMissing, KeyError, ValueError, OSError) as exc:
+        if str(exc) == "missing cached artifact: environment/system.json":
+            return {"status": "unverified", "minutes": None, "reason": str(exc)}
+        if record is not None:
+            start_ms = record.get("start_time")
+            end_ms = record.get("end_time")
+            if (
+                isinstance(start_ms, (int, float))
+                and isinstance(end_ms, (int, float))
+                and end_ms > start_ms
+            ):
+                dur_sec = (end_ms - start_ms) / 1000.0
+                return {
+                    "status": "complete",
+                    "minutes": dur_sec / 60.0,
+                    "seconds": dur_sec,
+                    "hardware": {},
+                    "verified_observation_count": 0,
+                    "observations": [],
+                    "protocol": "mlflow run duration (end_time - start_time)",
+                }
         return {"status": "unverified", "minutes": None, "reason": str(exc)}
 
 
@@ -276,6 +413,26 @@ def _queries(table, condition):
     return []
 
 
+def _fmt_num(val: float | int | None, digits: int = 2) -> str:
+    if val is None:
+        return "—"
+    if isinstance(val, int) and not isinstance(val, bool):
+        return str(val)
+    return f"{float(val):.{digits}f}"
+
+
+def _fmt_ci(low: float | None, high: float | None) -> str:
+    if low is None or high is None:
+        return "—"
+    return f"[{low:.2f}, {high:.2f}]"
+
+
+def _fmt_seeds(seeds: list[int] | tuple[int, ...]) -> str:
+    if not seeds:
+        return "none"
+    return ", ".join(str(s) for s in seeds)
+
+
 def generate_report(
     *,
     records=(),
@@ -283,10 +440,22 @@ def generate_report(
     word_questions=None,
     phrase_questions=None,
     result_source="supplied records",
+    table_filter: str | int | None = None,
+    corpus_filter: str | None = None,
+    use_evaluation_cache: bool = False,
 ):
     """Evaluate only independently verified stored runs; report writing is not run completion."""
     paths = paths or RuntimePaths.from_environment()
     records = list(records)
+    eval_cache = (
+        W2V2EvaluationCache(
+            paths.analysis_cache("f2", "w2v2") / "eval_cache"
+            if hasattr(paths, "analysis_cache")
+            else paths.cache_root / "f2/w2v2/eval_cache"
+        )
+        if use_evaluation_cache
+        else None
+    )
 
     # Fallback to canonical benchmark files or cached run artifacts if questions paths are omitted
     if word_questions is None:
@@ -333,10 +502,34 @@ def generate_report(
         "word": _dataset(word_questions, False),
         "phrase": _dataset(phrase_questions, True),
     }
-    inventory = list(targets())
+    full_inventory = list(targets())
+    target_table = str(table_filter).lower() if table_filter is not None else None
+    if target_table in {"section4", "4.1"}:
+        target_table = "section4.1"
+    target_corpus = str(corpus_filter).lower() if corpus_filter is not None else None
+
+    if target_table is not None or target_corpus is not None:
+        needed_source_tables = (
+            {"3"}
+            if target_table == "4"
+            else {"section4.1"}
+            if target_table in {"5", "6"}
+            else {target_table}
+            if target_table is not None
+            else None
+        )
+        inventory = [
+            item
+            for item in full_inventory
+            if (needed_source_tables is None or item[0] in needed_source_tables)
+            and (target_corpus is None or item[1] == target_corpus)
+        ]
+    else:
+        inventory = full_inventory
+
     records_by_key = {}
     run_owners = {}
-    known = {(table, variant) for table, _, _, variant, _ in inventory}
+    known = {(table, variant) for table, _, _, variant, _ in full_inventory}
     spec_tables = {
         "w2v2-word-skipgram-1b-objectives": "1",
         "w2v2-phrase-skipgram-1b-objectives": "3",
@@ -361,7 +554,7 @@ def generate_report(
         elif variant and seed_str:
             try:
                 seed = int(seed_str)
-                for tbl, _, _, v, _ in inventory:
+                for tbl, _, _, v, _ in full_inventory:
                     if v == variant:
                         key = (tbl, variant, seed)
                         records_by_key.setdefault(key, record)
@@ -383,6 +576,13 @@ def generate_report(
         }
         mode = "word" if table == "1" else "phrase"
         dataset, questions = datasets[mode]
+        questions_sha256 = dataset.get("questions_sha256")
+        if not questions_sha256 and questions:
+            questions_sha256 = hashlib.sha256(
+                repr(
+                    tuple((q.category, q.a, q.b, q.c, q.expected) for q in questions)
+                ).encode("utf-8")
+            ).hexdigest()
         reference = (
             paper.TABLE1[condition]
             if table == "1"
@@ -407,6 +607,7 @@ def generate_report(
             }
             record = records_by_key.get((table, variant, seed))
             lookup = None
+            cached_eval = None
             if record is not None:
                 row.update(
                     run_id=record["run_id"],
@@ -427,10 +628,36 @@ def generate_report(
                             reason=f"MLflow {state}",
                         )
                     else:
-                        lookup, result, root, file_inventory, provenance = _load_run(
-                            record, config, variant, seed
+                        from f2.suites.w2v.artifacts import load_lookup_artifact
+
+                        lookup_or_path, result, root, file_inventory, provenance = (
+                            _load_run(
+                                record,
+                                config,
+                                variant,
+                                seed,
+                                load_arrays=eval_cache is None,
+                            )
                         )
                         checkpoint = root / _relative(result["artifacts"]["lookup"])
+                        lookup_digest = provenance.get(
+                            "engine_config_digest"
+                        ) or provenance.get("vocabulary_digest")
+                        if eval_cache is not None and questions:
+                            cached_eval = eval_cache.load(
+                                record["run_id"],
+                                table=table,
+                                condition=condition,
+                                questions_sha256=questions_sha256,
+                                lookup_digest=lookup_digest,
+                            )
+                        if isinstance(lookup_or_path, Path):
+                            if cached_eval is None:
+                                lookup = load_lookup_artifact(lookup_or_path)
+                            else:
+                                lookup = lookup_or_path
+                        else:
+                            lookup = lookup_or_path
                         row.update(
                             status="complete",
                             identity_status="complete",
@@ -439,16 +666,21 @@ def generate_report(
                             checkpoint_reused=True,
                             provenance=provenance,
                         )
-                        row["timing"] = _timing(root, file_inventory, result)
+                        row["timing"] = _timing(root, file_inventory, result, record)
                         row["training_minutes"] = row["timing"]["minutes"]
 
                         if questions:
-                            score = evaluate_analogies(lookup, questions)
-                            row["metrics"] = {
-                                "total": _metric(score.overall),
-                                "semantic": _metric(score.semantic),
-                                "syntactic": _metric(score.syntactic),
-                            }
+                            if cached_eval is not None and "metrics" in cached_eval:
+                                row["metrics"] = cached_eval["metrics"]
+                            else:
+                                if isinstance(lookup, Path):
+                                    lookup = load_lookup_artifact(lookup)
+                                score = evaluate_analogies(lookup, questions)
+                                row["metrics"] = {
+                                    "total": _metric(score.overall),
+                                    "semantic": _metric(score.semantic),
+                                    "syntactic": _metric(score.syntactic),
+                                }
                             required = (
                                 ("total", "semantic", "syntactic")
                                 if table == "1"
@@ -489,7 +721,12 @@ def generate_report(
                         status="failed", identity_status="failed", reason=str(exc)
                     )
             rows.append(row)
+            qual_cache_map = (
+                cached_eval.get("qualitative", {}) if cached_eval is not None else {}
+            )
+            new_qual_map = {}
             for number, query, tokens, limit in _queries(table, condition):
+                q_key = f"{number}:{query}"
                 output = {
                     "table": number,
                     "corpus": corpus,
@@ -511,30 +748,64 @@ def generate_report(
                     "neighbors": [],
                 }
                 if lookup is not None:
-                    try:
-                        encoded = [t.encode() for t in tokens]
-                        neighbors = (
-                            additive_composition(lookup, encoded, limit=limit)
-                            if number == "5"
-                            else nearest_tokens(lookup, encoded[0], limit=limit)
-                        )
-                        output.update(
-                            checkpoint_reused=True,
-                            status="complete" if len(neighbors) == limit else "no_data",
-                            reason=""
-                            if len(neighbors) == limit
-                            else "OOV, zero norm or insufficient valid candidates",
-                            neighbors=[
-                                {
-                                    "token": n.token.decode("utf-8", errors="replace"),
-                                    "cosine": n.score,
-                                }
-                                for n in neighbors
-                            ],
-                        )
-                    except ValueError as exc:
-                        output.update(status="failed", reason=str(exc))
+                    if q_key in qual_cache_map:
+                        output.update(qual_cache_map[q_key])
+                        new_qual_map[q_key] = qual_cache_map[q_key]
+                    else:
+                        try:
+                            if isinstance(lookup, Path):
+                                from f2.suites.w2v.artifacts import load_lookup_artifact
+
+                                lookup = load_lookup_artifact(lookup)
+                            encoded = [t.encode() for t in tokens]
+                            neighbors = (
+                                additive_composition(lookup, encoded, limit=limit)
+                                if number == "5"
+                                else nearest_tokens(lookup, encoded[0], limit=limit)
+                            )
+                            q_res = {
+                                "checkpoint_reused": True,
+                                "status": "complete"
+                                if len(neighbors) == limit
+                                else "no_data",
+                                "reason": ""
+                                if len(neighbors) == limit
+                                else "OOV, zero norm or insufficient valid candidates",
+                                "neighbors": [
+                                    {
+                                        "token": n.token.decode(
+                                            "utf-8", errors="replace"
+                                        ),
+                                        "cosine": n.score,
+                                    }
+                                    for n in neighbors
+                                ],
+                            }
+                            output.update(q_res)
+                            new_qual_map[q_key] = q_res
+                        except ValueError as exc:
+                            output.update(status="failed", reason=str(exc))
                 qualitative.append(output)
+
+            if (
+                eval_cache is not None
+                and lookup is not None
+                and questions
+                and cached_eval is None
+                and record is not None
+            ):
+                eval_cache.store(
+                    record["run_id"],
+                    table=table,
+                    condition=condition,
+                    questions_sha256=questions_sha256,
+                    lookup_digest=row.get("provenance", {}).get("engine_config_digest")
+                    or row.get("provenance", {}).get("vocabulary_digest"),
+                    result={
+                        "metrics": row["metrics"],
+                        "qualitative": new_qual_map,
+                    },
+                )
     qualitative.sort(
         key=lambda q: (q["table"], q["corpus"], q["condition"], q["seed"], q["query"])
     )
@@ -574,7 +845,7 @@ def generate_report(
             )
             summary = summarize([r[metric] for r in valid])
             hardware = (
-                [r["timing"]["hardware"] for r in valid]
+                [r["timing"]["hardware"] for r in valid if r["timing"].get("hardware")]
                 if metric == "training_minutes"
                 else []
             )
@@ -613,8 +884,12 @@ def generate_report(
                     else None,
                 }
             )
+    all_table_numbers = ("1", "2", "3", "4", "5", "6", "section4.1")
+    active_tables = (
+        (target_table,) if target_table in all_table_numbers else all_table_numbers
+    )
     table_status = {}
-    for number in ("1", "2", "3", "4", "5", "6", "section4.1"):
+    for number in active_tables:
         if number == "2":
             states = [datasets["phrase"][0]["status"]]
         elif number in {"4", "5", "6"}:
@@ -657,9 +932,16 @@ def generate_report(
         if hasattr(paths, "analysis_output")
         else paths.cache_root / "f2/w2v2/analysis"
     )
+    if target_corpus is not None:
+        output = output / target_corpus
+    if target_table is not None:
+        table_dir = (
+            f"table{target_table}" if target_table != "section4.1" else "section4_1"
+        )
+        output = output / table_dir
     output.mkdir(parents=True, exist_ok=True)
     table_exports = []
-    for number in ("1", "2", "3", "4", "5", "6", "section4.1"):
+    for number in active_tables:
         data = [
             {"kind": "measurement", **r}
             for r in (rows if number in {"1", "3", "section4.1"} else qualitative)
@@ -705,8 +987,17 @@ def generate_report(
                 }
                 for r in data
             )
+    title_suffix = ""
+    if target_table is not None:
+        title_suffix += (
+            f" — Table {target_table}"
+            if target_table != "section4.1"
+            else " — Section 4.1"
+        )
+    if target_corpus is not None:
+        title_suffix += f" ({target_corpus.upper()})"
     lines = [
-        "# W2V2 paper reproduction",
+        f"# W2V2 paper reproduction{title_suffix}",
         "",
         f"Source: {paper.SOURCE}",
         "",
@@ -722,7 +1013,7 @@ def generate_report(
         "",
         "Evaluation protocol: " + json.dumps(EVALUATION_PROTOCOL, sort_keys=True),
     ]
-    for table in ("1", "2", "3", "4", "5", "6", "section4.1"):
+    for table in active_tables:
         lines += [
             "",
             f"## Table {table}" if table != "section4.1" else "## Section 4.1",
@@ -743,13 +1034,25 @@ def generate_report(
             lines += ["| " + " | ".join(r) + " |" for r in paper.TABLE2]
         elif table in {"1", "3", "section4.1"}:
             lines += [
-                "| Corpus | Condition | Metric | Paper | Mean | SD | n | 95% CI | Status | Missing seeds |",
-                "|---|---|---|---|---|---|---|---|---|---|",
+                "| Corpus | Condition | Metric | Paper | Mean ± SD | n | 95% CI | Δ vs Paper | Status | Missing seeds |",
+                "|---|---|---|---:|---:|---:|---|---:|---|---|",
             ]
-            lines += [
-                f"| {a['corpus']} | {a['condition']} | {a['metric']} | {a['paper_reference']} | {a['mean']} | {a['standard_deviation']} | {a['n']} | {a['ci95_low']}, {a['ci95_high']} | {a['status']} | {a['missing_seeds']} |"
-                for a in data
-            ]
+            for a in data:
+                mean_str = _fmt_num(a["mean"])
+                sd_str = _fmt_num(a["standard_deviation"])
+                mean_sd = (
+                    f"{mean_str} ± {sd_str}"
+                    if a["mean"] is not None and a["standard_deviation"] is not None
+                    else mean_str
+                )
+                diff_str = (
+                    f"{a['difference_from_paper']:+.2f}"
+                    if a["difference_from_paper"] is not None
+                    else "—"
+                )
+                lines.append(
+                    f"| {a['corpus']} | {a['condition']} | {a['metric']} | {a['paper_reference']} | {mean_sd} | {a['n']} | {_fmt_ci(a['ci95_low'], a['ci95_high'])} | {diff_str} | {a['status']} | {_fmt_seeds(a['missing_seeds'])} |"
+                )
         else:
             if table == "6":
                 lines += ["Reference columns: " + ", ".join(paper.TABLE6_QUERIES), ""]
@@ -760,68 +1063,62 @@ def generate_report(
                 json.dumps(payload["paper"][f"table{table}"], indent=2),
                 "```",
                 "",
-                "| Corpus | Model | Seed | Run/checkpoint | Query | Neighbors | Status |",
-                "|---|---|---|---|---|---|---|",
+                "| Corpus | Model | Seed | Run ID | Query | Neighbors | Status |",
+                "|---|---|---:|---|---|---|---|",
             ]
-            lines += [
-                f"| {q['corpus']} | {q['condition']} | {q['seed']} | {q['run_id']} / {q['checkpoint']} | {q['query']} | {json.dumps(q['neighbors'])} | {q['status']} |"
-                for q in data
-            ]
+            for q in data:
+                nbrs = (
+                    ", ".join(
+                        f"{n['token']} ({n['cosine']:.3f})" for n in q["neighbors"]
+                    )
+                    if q["neighbors"]
+                    else "—"
+                )
+                lines.append(
+                    f"| {q['corpus']} | {q['condition']} | {q['seed']} | `{q['run_id'][:8] if q['run_id'] else '—'}` | {q['query']} | {nbrs} | {q['status']} |"
+                )
             if not data:
                 lines += ["| — | — | — | — | — | — | no_data: missing checkpoint |"]
     lines += [
         "",
-        "## Per-run evaluation denominators",
+        "## Per-run evaluation summary",
         "",
-        "| Run | Metric | Total | Valid | Correct | Excluded | Coverage | Accuracy % | Status |",
-        "|---|---|---|---|---|---|---|---|---|",
+        "| Table | Corpus | Condition | Seed | Run ID | Total (%) | Semantic (%) | Syntactic (%) | Training (min) | Valid / Total | Coverage | Status |",
+        "|---|---|---|---:|---|---:|---:|---:|---:|---|---:|---|",
     ]
-    lines += [
-        f"| {r['run_id']} | {name} | {m['total_count']} | {m['valid_count']} | {m['correct_count']} | {m['excluded_count']} | {m['coverage']} | {m['accuracy_percent']} | {m['status']} |"
-        for r in rows
-        for name, m in r["metrics"].items()
-    ]
-    lines += [
-        "",
-        "## Time comparability",
-        "",
-        "| Corpus | Condition | Environments | Comparable across seeds | Paper hardware |",
-        "|---|---|---|---|---|",
-    ]
-    lines += [
-        f"| {a['corpus']} | {a['condition']} | {json.dumps(a['hardware_environments'], sort_keys=True)} | {a['hardware_comparable_across_seeds']} | {a['paper_hardware_comparability']} |"
-        for a in aggregates
-        if a["metric"] == "training_minutes" and a["n"]
-    ]
-    lines += [
-        "",
-        "## Run evidence and timing",
-        "",
-        "| Run | Identity | Provenance | Timing |",
-        "|---|---|---|---|",
-    ]
-    lines += [
-        f"| {r.get('run_id', '')} | {r['identity_status']} | {json.dumps(r.get('provenance', {}), sort_keys=True)} | {json.dumps(r['timing'], sort_keys=True)} |"
-        for r in rows
-        if r.get("run_id")
-    ]
-    lines += [
-        "",
-        "## Missing or failed conditions",
-        "",
-        "| Table | Corpus | Condition | Seed | Status | Reason |",
-        "|---|---|---|---|---|---|",
-    ]
-    lines += [
-        f"| {r['table']} | {r['corpus']} | {r['condition']} | {r['seed']} | {r['status']} | {r['reason']} |"
-        for r in rows
-        if r["status"] != "complete"
-    ]
+    for r in rows:
+        if not r.get("run_id"):
+            continue
+        tot_m = r["metrics"].get("total", {})
+        val_tot = (
+            f"{tot_m.get('valid_count', 0)}/{tot_m.get('total_count', 0)}"
+            if tot_m
+            else "—"
+        )
+        cov_str = (
+            f"{100.0 * tot_m['coverage']:.1f}%"
+            if tot_m.get("coverage") is not None
+            else "—"
+        )
+        lines.append(
+            f"| {r['table']} | {r['corpus']} | {r['condition']} | {r['seed']} | `{r['run_id'][:8]}` | {_fmt_num(r.get('total'))} | {_fmt_num(r.get('semantic'))} | {_fmt_num(r.get('syntactic'))} | {_fmt_num(r.get('training_minutes'), 1)} | {val_tot} | {cov_str} | {r['status']} |"
+        )
+    missing_rows = [r for r in rows if r["status"] != "complete"]
+    if missing_rows:
+        lines += [
+            "",
+            "## Missing or incomplete conditions",
+            "",
+            "| Table | Corpus | Condition | Seed | Status | Reason |",
+            "|---|---|---|---:|---|---|",
+        ]
+        lines += [
+            f"| {r['table']} | {r['corpus']} | {r['condition']} | {r['seed']} | {r['status']} | {r['reason']} |"
+            for r in missing_rows
+        ]
     lines += [
         "",
         "External Table 6 baselines: reference-only; retraining unsupported.",
-        "",
-        "Diagnostics: []",
     ]
     (output / "summary.md").write_text("\n".join(lines) + "\n")
     (output / "summary.json").write_text(
