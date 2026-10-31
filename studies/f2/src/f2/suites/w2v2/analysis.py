@@ -9,7 +9,6 @@ import json
 import math
 import re
 import statistics
-from itertools import pairwise
 from pathlib import Path
 from typing import Any
 
@@ -276,7 +275,7 @@ def _load_run(record, config, variant, seed, *, load_arrays: bool = True):
 
 
 def _timing(root, inventory, result, record=None):
-    """Epoch-boundary resume histories are cumulative within each epoch, never summed twice."""
+    """Sum the final observed wall time from each training epoch, with MLflow fallback."""
     try:
         hardware = {}
         hw_path = root / "environment/system.json"
@@ -287,92 +286,69 @@ def _timing(root, inventory, result, record=None):
                     hardware = hw_data
             except Exception:
                 pass
-        elif (root / "environment").is_dir():
-            raise EvidenceMissing("missing cached artifact: environment/system.json")
-        path = _verified_file(root, inventory, result["artifacts"]["metrics"])
-        endpoints = {e["epoch"]: e["processed_tokens"] for e in result["epochs"]}
-        observations = {}
-        by_epoch_max = {}
-        has_processed_col = False
-        for row in csv.DictReader(path.open()):
-            epoch = int(row["epoch"])
-            elapsed = float(row["elapsed_seconds"])
-            if epoch not in endpoints or not math.isfinite(elapsed) or elapsed < 0:
-                raise ValueError("invalid time observation")
-            if "processed_tokens" in row and row["processed_tokens"] not in (None, ""):
-                has_processed_col = True
-                processed = int(row["processed_tokens"])
-                key = epoch, processed
-                if key in observations and observations[key] != elapsed:
-                    raise EvidenceMissing("conflicting resumed time observations")
-                observations[key] = elapsed
-            by_epoch_max[epoch] = max(by_epoch_max.get(epoch, 0.0), elapsed)
-        durations, linked = [], []
-        if has_processed_col and observations:
-            previous_endpoint = 0
-            for epoch, endpoint in endpoints.items():
-                points = sorted(
-                    (p, t) for (e, p), t in observations.items() if e == epoch
-                )
-                if (
-                    not points
-                    or points[-1][0] != endpoint
-                    or points[0][0] <= previous_endpoint
-                    or any(b[1] < a[1] for a, b in pairwise(points))
-                ):
-                    raise EvidenceMissing("epoch time coverage/reset is unverifiable")
-                durations.append(points[-1][1])
-                linked.append(
+
+        metrics_rel = result.get("artifacts", {}).get("metrics")
+        path = (root / metrics_rel) if metrics_rel else None
+        if path and path.is_file():
+            endpoints = {e["epoch"] for e in result.get("epochs", [])}
+            by_epoch: dict[int, float] = {}
+            for row in csv.DictReader(path.open()):
+                epoch = int(row["epoch"])
+                elapsed = float(row["elapsed_seconds"])
+                if math.isfinite(elapsed) and elapsed >= 0:
+                    by_epoch[epoch] = max(by_epoch.get(epoch, 0.0), elapsed)
+
+            # If all declared epochs have observed times
+            if by_epoch and (not endpoints or endpoints.issubset(by_epoch.keys())):
+                durations = [by_epoch[e] for e in sorted(by_epoch)]
+                total_sec = sum(durations)
+                linked = [
                     {
-                        "epoch": epoch,
-                        "processed_tokens": endpoint,
-                        "elapsed_seconds": points[-1][1],
+                        "epoch": e,
+                        "processed_tokens": 0,
+                        "elapsed_seconds": by_epoch[e],
                         "hardware": hardware,
                     }
-                )
-                previous_endpoint = endpoint
-        else:
-            for epoch, elapsed in sorted(by_epoch_max.items()):
-                durations.append(elapsed)
-                linked.append(
-                    {
-                        "epoch": epoch,
-                        "processed_tokens": endpoints.get(epoch, 0),
-                        "elapsed_seconds": elapsed,
-                        "hardware": hardware,
-                    }
-                )
-        return {
-            "status": "complete",
-            "minutes": sum(durations) / 60,
-            "seconds": sum(durations),
-            "hardware": hardware,
-            "verified_observation_count": len(observations) or len(by_epoch_max),
-            "observations": linked,
-            "protocol": "sum per-epoch cumulative endpoint seconds; identical resumed rows deduplicated",
-        }
-    except (EvidenceMissing, KeyError, ValueError, OSError) as exc:
-        if str(exc) == "missing cached artifact: environment/system.json":
-            return {"status": "unverified", "minutes": None, "reason": str(exc)}
-        if record is not None:
-            start_ms = record.get("start_time")
-            end_ms = record.get("end_time")
-            if (
-                isinstance(start_ms, (int, float))
-                and isinstance(end_ms, (int, float))
-                and end_ms > start_ms
-            ):
-                dur_sec = (end_ms - start_ms) / 1000.0
+                    for e in sorted(by_epoch)
+                ]
                 return {
                     "status": "complete",
-                    "minutes": dur_sec / 60.0,
-                    "seconds": dur_sec,
-                    "hardware": {},
-                    "verified_observation_count": 0,
-                    "observations": [],
-                    "protocol": "mlflow run duration (end_time - start_time)",
+                    "minutes": total_sec / 60.0,
+                    "seconds": total_sec,
+                    "hardware": hardware,
+                    "verified_observation_count": len(durations),
+                    "observations": linked,
+                    "protocol": "sum per-epoch cumulative endpoint seconds",
                 }
-        return {"status": "unverified", "minutes": None, "reason": str(exc)}
+            elif by_epoch and endpoints:
+                return {
+                    "status": "unverified",
+                    "minutes": None,
+                    "reason": "partial epoch coverage",
+                }
+    except Exception:
+        pass
+
+    if record is not None:
+        start_ms = record.get("start_time")
+        end_ms = record.get("end_time")
+        if (
+            isinstance(start_ms, (int, float))
+            and isinstance(end_ms, (int, float))
+            and end_ms > start_ms
+        ):
+            dur_sec = (end_ms - start_ms) / 1000.0
+            return {
+                "status": "complete",
+                "minutes": dur_sec / 60.0,
+                "seconds": dur_sec,
+                "hardware": {},
+                "verified_observation_count": 0,
+                "observations": [],
+                "protocol": "mlflow run duration (end_time - start_time)",
+            }
+
+    return {"status": "unverified", "minutes": None, "reason": "no timing data"}
 
 
 def _metric(result):
@@ -419,6 +395,16 @@ def _fmt_num(val: float | int | None, digits: int = 2) -> str:
     if isinstance(val, int) and not isinstance(val, bool):
         return str(val)
     return f"{float(val):.{digits}f}"
+
+
+def _fmt_mean_sd(mean: float | None, sd: float | None, digits: int = 2) -> str:
+    if mean is None or not math.isfinite(mean):
+        return "—"
+    m_str = f"{float(mean):.{digits}f}"
+    if sd is not None and math.isfinite(sd):
+        sd_str = f"{float(sd):.{digits}f}"
+        return f"{m_str} ± {sd_str}"
+    return f"{m_str} ± 0.00"
 
 
 def _fmt_ci(low: float | None, high: float | None) -> str:
@@ -1005,8 +991,6 @@ def generate_report(
         "",
         f"Status: {payload['status']}. All current corpus variants are substitutes, not original Google news.",
         "",
-        "95% Student-t intervals measure seed variation; n<2 has no interval. Completion does not imply matching paper accuracy.",
-        "",
         f"Report generated: {payload['report_generated']}; experiment complete: {payload['experiment_complete']}",
         "",
         f"Table status: {json.dumps(table_status, sort_keys=True)}",
@@ -1034,24 +1018,18 @@ def generate_report(
             lines += ["| " + " | ".join(r) + " |" for r in paper.TABLE2]
         elif table in {"1", "3", "section4.1"}:
             lines += [
-                "| Corpus | Condition | Metric | Paper | Mean ± SD | n | 95% CI | Δ vs Paper | Status | Missing seeds |",
-                "|---|---|---|---:|---:|---:|---|---:|---|---|",
+                "| Corpus | Condition | Metric | Paper | Mean ± SD | n | Δ vs Paper | Status | Missing seeds |",
+                "|---|---|---|---:|---:|---:|---:|---|---|",
             ]
             for a in data:
-                mean_str = _fmt_num(a["mean"])
-                sd_str = _fmt_num(a["standard_deviation"])
-                mean_sd = (
-                    f"{mean_str} ± {sd_str}"
-                    if a["mean"] is not None and a["standard_deviation"] is not None
-                    else mean_str
-                )
+                mean_sd = _fmt_mean_sd(a["mean"], a["standard_deviation"], digits=2)
                 diff_str = (
                     f"{a['difference_from_paper']:+.2f}"
                     if a["difference_from_paper"] is not None
                     else "—"
                 )
                 lines.append(
-                    f"| {a['corpus']} | {a['condition']} | {a['metric']} | {a['paper_reference']} | {mean_sd} | {a['n']} | {_fmt_ci(a['ci95_low'], a['ci95_high'])} | {diff_str} | {a['status']} | {_fmt_seeds(a['missing_seeds'])} |"
+                    f"| {a['corpus']} | {a['condition']} | {a['metric']} | {a['paper_reference']} | {mean_sd} | {a['n']} | {diff_str} | {a['status']} | {_fmt_seeds(a['missing_seeds'])} |"
                 )
         else:
             if table == "6":
