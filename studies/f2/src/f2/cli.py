@@ -237,11 +237,11 @@ def run(
 @cli_errors
 def analyze(
     suite: Annotated[
-        str,
+        str | None,
         typer.Argument(
             help="Target F2 suite (e.g. w2v1, w2v2) or 'corpus'",
         ),
-    ] = "corpus",
+    ] = None,
     tracking_uri: Annotated[str | None, typer.Option("--tracking-uri")] = None,
     questions: Annotated[
         Path | None,
@@ -276,17 +276,25 @@ def analyze(
             "--override", help="Re-run analysis even if results already exist."
         ),
     ] = False,
+    offline: Annotated[
+        bool,
+        typer.Option(
+            "--offline", help="Analyze existing local cache without contacting MLflow."
+        ),
+    ] = False,
 ) -> None:
     """Render or summarize F2 experiment results."""
-    if suite == "corpus":
+    target_suite = (suite or "").lower()
+    if target_suite == "corpus":
         typer.echo("For corpus pipeline analysis, use: repro f2 corpus analyze --help")
         return
-    if suite == "w2v2":
+    if target_suite in ("w2v2", ""):
         output = run_w2v2_analysis(
             tracking_uri=tracking_uri,
             word_questions=questions,
             phrase_questions=phrase_questions,
             override=override,
+            offline=offline,
             table=table,
             corpus=corpus,
         )
