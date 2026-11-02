@@ -669,6 +669,10 @@ def generate_report(
                             else:
                                 if isinstance(lookup, Path):
                                     lookup = load_lookup_artifact(lookup)
+                                print(
+                                    f"Evaluating analogies: {corpus} {condition} (seed {seed})...",
+                                    flush=True,
+                                )
                                 score = evaluate_analogies(lookup, questions)
                                 row["metrics"] = {
                                     "total": _metric(score.overall),

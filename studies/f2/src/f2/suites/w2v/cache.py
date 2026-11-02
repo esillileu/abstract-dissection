@@ -164,7 +164,7 @@ def download_results(
         else:
             need_evaluation_benchmarks = True
 
-    records: list[dict[str, Any]] = []
+    runs_to_process = []
     for run in selected_finished:
         tags = dict(run.data.tags)
         if target_table is not None and suite == "w2v2":
@@ -172,6 +172,22 @@ def download_results(
             allowed = _w2v2_spec_tables.get(spec_id)
             if allowed is not None and target_table not in allowed:
                 continue
+        runs_to_process.append(run)
+
+    total_runs = len(runs_to_process)
+    if total_runs > 0:
+        print(f"Syncing {total_runs} run artifacts from MLflow...", flush=True)
+
+    records: list[dict[str, Any]] = []
+    for idx, run in enumerate(runs_to_process, start=1):
+        tags = dict(run.data.tags)
+        variant = tags.get("implementation.variant", run.info.run_id[:8])
+        seed = tags.get("seed", "")
+        seed_str = f" seed={seed}" if seed else ""
+        print(
+            f"[{idx}/{total_runs}] Syncing artifacts: {variant}{seed_str}...",
+            flush=True,
+        )
         record = {
             "run_id": run.info.run_id,
             "tags": tags,
