@@ -112,14 +112,45 @@ def test_w2v2_phrase_run_completes_declared_schedule_and_reports(tmp_path):
     assert evaluation["phrase"]["pca"]
 
 
-def test_w2v2_rejects_nce_substitution():
+def test_w2v2_supports_independent_nce():
     definition = DEFINITION.get_suite("w2v2")
-    with pytest.raises(ValueError, match="NCE is not substituted"):
-        definition.load_run_spec(
-            definition.config_root / "e02_table3_phrase_skipgram.yaml",
-            atomic_run_id="wmt--neg5-subsampling",
-            overrides={"training": {"objective_kind": "nce"}},
+    source = definition.config_root / "e01_table1_word_skipgram.yaml"
+    nce = definition.load_run_spec(
+        source, atomic_run_id="wmt--nce5-no-subsampling", overrides={}
+    )
+    neg = definition.load_run_spec(
+        source, atomic_run_id="wmt--neg5-no-subsampling", overrides={}
+    )
+    assert nce.training["objective_kind"] == "nce"
+    assert (
+        nce.to_executor_config()["identity"]["config_digest"]
+        != neg.to_executor_config()["identity"]["config_digest"]
+    )
+
+
+def test_nce_revision_changes_only_nce_run_identity():
+    from f2.suites.w2v.spec import _digest
+
+    definition = DEFINITION.get_suite("w2v2")
+    source = definition.config_root / "e01_table1_word_skipgram.yaml"
+    for condition in (
+        "nce5-no-subsampling",
+        "neg5-no-subsampling",
+        "hs-no-subsampling",
+    ):
+        spec = definition.load_run_spec(
+            source, atomic_run_id=f"wmt--{condition}", overrides={}
         )
+        resolved = spec.resolved_config()
+        previous = dict(resolved)
+        previous.pop("nce_objective_revision", None)
+        current_digest = spec.to_executor_config()["identity"]["config_digest"]
+        if condition.startswith("nce"):
+            assert resolved["nce_objective_revision"] == 1
+            assert current_digest != _digest(previous)
+        else:
+            assert "nce_objective_revision" not in resolved
+            assert current_digest == _digest(previous)
 
 
 def test_canonical_phrase_training_uses_twenty_workers() -> None:
@@ -148,3 +179,213 @@ def test_evaluation_resources_do_not_change_w2v2_training_identity() -> None:
     ).to_executor_config()
     assert "evaluation" not in first
     assert first["identity"]["config_digest"] == second["identity"]["config_digest"]
+
+
+TABLE1_CONDITIONS = (
+    "nce5-no-subsampling",
+    "neg5-no-subsampling",
+    "neg15-no-subsampling",
+    "hs-no-subsampling",
+    "neg5-subsampling",
+    "neg15-subsampling",
+    "hs-subsampling",
+)
+
+
+def test_table1_plans_and_catalog_slots_are_distinct_and_bound():
+    from f2.catalog.manifest import read_manifest
+    from repro_core.execution.definition import RunOptions, RunSelection
+    from repro_core.execution.planning import Planner
+
+    definition = DEFINITION.get_suite("w2v2")
+    plans = Planner(definition).build(
+        RunSelection(experiment_ids=("e01",)), RunOptions()
+    )
+    assert len(plans) == 63
+    manifest = read_manifest(Path(__file__).parents[1] / "catalog/w2v.json")
+    slots = {row["planned_run_slot_id"]: row for row in manifest["planned_run_slots"]}
+    seen = set()
+    for plan in plans:
+        spec = definition.load_run_spec(
+            plan.path, atomic_run_id=plan.atomic_run_id, overrides={}
+        ).with_seed(plan.seed)
+        config = spec.to_executor_config()
+        slot = str(config["identity"]["planned_run_slot_id"])
+        assert slot not in seen
+        seen.add(slot)
+        assert slots[slot]["seed"] == plan.seed
+        assert slots[slot]["parameters"]["threads"] == 20
+        assert config["corpus_mode"] == "word"
+        assert "phrase_detection" not in config
+        assert config["training"]["embedding_dimension"] == 300
+        assert config["vocabulary"]["min_count"] == 5
+        assert config["vocabulary"].get("max_lexical_words", 0) == 0
+        corpus, condition = plan.atomic_run_id.split("--")
+        assert condition in TABLE1_CONDITIONS
+        assert config["corpus"]["lexical_token_budget"] == (
+            791_844_834 if corpus == "lm1b" else 1_000_000_000
+        )
+        assert config["training"]["subsampling_threshold"] == (
+            0.0 if condition.endswith("no-subsampling") else 1e-5
+        )
+        objective = config["training"]["objective_kind"]
+        assert objective == (
+            "hierarchical_softmax"
+            if condition.startswith("hs")
+            else "nce"
+            if condition.startswith("nce")
+            else "negative_sampling"
+        )
+        assert config["training"]["negative_sample_count"] == (
+            0
+            if condition.startswith("hs")
+            else 15
+            if condition.startswith("neg15")
+            else 5
+        )
+
+
+@pytest.mark.parametrize("condition", TABLE1_CONDITIONS)
+def test_table1_word_training_and_evaluation(tmp_path, monkeypatch, condition):
+    import numpy as np
+
+    definition = DEFINITION.get_suite("w2v2")
+    source = tmp_path / "words.txt"
+    # Long sentences ensure real context pairs survive the canonical 1e-5 threshold.
+    sentence = b"king queen man woman paris france berlin germany " * 100 + b"\n"
+    source.write_bytes(sentence * 100)
+    spec = definition.load_run_spec(
+        definition.config_root / "e01_table1_word_skipgram.yaml",
+        atomic_run_id=f"wmt--{condition}",
+        overrides={
+            "corpus": {"path": str(source)},
+            "vocabulary": {"initial_capacity": 16, "hash_capacity": 128},
+            "training": {
+                "embedding_dimension": 8,
+                "epochs": 2,
+                "thread_count": 1,
+                "negative_table_size": 1000,
+                "observation_interval": 1000,
+            },
+        },
+    ).with_seed(7)
+    config = spec.to_executor_config()
+    paths = _paths(tmp_path)
+
+    def no_phrases(*args, **kwargs):
+        pytest.fail("word-only training attempted phrase materialization")
+
+    monkeypatch.setattr("f2.suites.w2v2.executor.cached_phrase_corpus", no_phrases)
+    baseline = run_config(
+        config,
+        ExperimentContext(paths=paths, metadata={"run_root": tmp_path / "baseline"}),
+        executor_module=definition.executor_module,
+    )
+    expected = load_checkpoint(baseline.checkpoint)
+    assert expected.completed_epochs == 2
+    assert np.any(expected.output_embeddings() != 0)
+    assert np.isfinite(expected.input_embeddings()).all()
+    lookup = load_lookup_artifact(baseline.lookup)
+    assert lookup.row(b"king") is not None
+    assert nearest_tokens(lookup, b"king", limit=2)
+    questions = tmp_path / "questions-words.txt"
+    questions.write_bytes(b": capital-common-countries\nparis france berlin germany\n")
+    evaluation = evaluate_lookup_artifact("w2v2", baseline.lookup, questions)
+    assert evaluation["analogy"]["overall"]["total_count"] == 1
+    assert evaluation["analogy"]["overall"]["valid_count"] == 1
+    assert not list(paths.staging_root.rglob("phrases*"))
+    assert not (baseline.root / "phrase_lineage.json").exists()
+
+    with pytest.raises(ValueError, match="not empty"):
+        run_config(
+            config,
+            ExperimentContext(paths=paths, metadata={"run_root": baseline.root}),
+            executor_module=definition.executor_module,
+        )
+
+
+@pytest.mark.parametrize(
+    "override, message",
+    [
+        ({"corpus_mode": "unknown"}, "corpus_mode"),
+        ({"subsampling_policy": "paper"}, "subsampling_policy"),
+        ({"subsampling_policy": None}, "subsampling_policy"),
+        ({"phrase_detection": {}}, "phrase_detection"),
+        ({"training": {"objective_kind": "unknown"}}, "unsupported W2V2 objective"),
+    ],
+)
+def test_table1_rejects_unsupported_policies(override, message):
+    definition = DEFINITION.get_suite("w2v2")
+    with pytest.raises(ValueError, match=message):
+        definition.load_run_spec(
+            definition.config_root / "e01_table1_word_skipgram.yaml",
+            atomic_run_id="wmt--neg5-subsampling",
+            overrides=override,
+        )
+
+
+def test_table3_all_conditions_and_seeds_share_phrase_cache(tmp_path):
+    definition = DEFINITION.get_suite("w2v2")
+    paths = _paths(tmp_path)
+    source = tmp_path / "input.txt"
+    source.write_bytes((b"king queen man woman paris france berlin germany\n") * 10)
+    questions = tmp_path / "questions.txt"
+    questions.write_bytes(
+        b": fixture\nking_queen man_woman paris_france berlin_germany\n"
+    )
+    phrase_hashes = set()
+    for seed, condition in ((1, TABLE1_CONDITIONS[1]), (7, TABLE1_CONDITIONS[2])):
+        spec = definition.load_run_spec(
+            definition.config_root / "e02_table3_phrase_skipgram.yaml",
+            atomic_run_id=f"wmt--{condition}",
+            overrides={
+                "corpus": {"path": str(source)},
+                "phrase_detection": {
+                    "passes": 2,
+                    "thresholds": [1e9, 0.0],
+                    "min_count": 1,
+                },
+                "vocabulary": {
+                    "initial_capacity": 16,
+                    "hash_capacity": 128,
+                    "min_count": 1,
+                },
+                "training": {
+                    "embedding_dimension": 8,
+                    "thread_count": 1,
+                    "epochs": 1,
+                    "negative_table_size": 1000,
+                },
+            },
+        ).with_seed(seed)
+        config = spec.to_executor_config()
+        assert config["training"]["negative_sample_count"] == (
+            0
+            if condition.startswith("hs")
+            else 15
+            if condition.startswith("neg15")
+            else 5
+        )
+        assert config["training"]["subsampling_threshold"] == (
+            0.0 if condition.endswith("no-subsampling") else 1e-5
+        )
+        result = run_config(
+            config,
+            ExperimentContext(
+                paths=paths, metadata={"run_root": tmp_path / f"{condition}-{seed}"}
+            ),
+            executor_module=definition.executor_module,
+        )
+        import json
+
+        lineage = json.loads((result.root / "phrase_lineage.json").read_text())
+        phrase_hashes.add(lineage["corpus_sha256"])
+        evaluation = evaluate_lookup_artifact("w2v2", result.lookup, questions)
+        assert evaluation["analogy"]["overall"]["total_count"] == 1
+        assert evaluation["analogy"]["overall"]["valid_count"] == 1
+        assert load_checkpoint(result.checkpoint).completed_epochs == 1
+    assert len(phrase_hashes) == 1
+    assert (
+        len(list((paths.inputs("f2", "prepared") / "phrases").glob("*/phrases.txt")))
+        == 1
+    )

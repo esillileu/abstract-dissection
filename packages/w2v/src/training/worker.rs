@@ -1,7 +1,10 @@
 //! Sentence filling, subsampling, and worker-local rate from the C oracle.
 use super::{ModelStep, ObjectiveLoss, cbow_train, skip_gram_train};
 use crate::{
-    config::{MAX_SENTENCE_LENGTH, ModelKind, Real, Status},
+    config::{
+        ContextPolicy, ENTIRE_SENTENCE_TOKEN_BYTES, ENTIRE_SENTENCE_TOKEN_LIMIT,
+        MAX_SENTENCE_LENGTH, ModelKind, Real, Status,
+    },
     corpus::Tokenizer,
     random::{Rng, RngPurpose, derive_seed},
     trainer::Trainer,
@@ -33,6 +36,7 @@ pub struct Worker {
     pub negative_rng: Rng,
     pub objective_count: u64,
     pub observations: Vec<WorkerObservation>,
+    shard_end: usize,
     tokenizer: Tokenizer<BufReader<File>>,
 }
 
@@ -50,10 +54,23 @@ pub struct WorkerState {
 
 impl Worker {
     pub fn initialize(trainer: &Trainer, worker_id: usize) -> Result<Self, Status> {
-        if worker_id >= trainer.config.thread_count {
+        if (trainer.config.context_policy == ContextPolicy::EntireSentence
+            && !trainer.corpus.full_tokens)
+            || worker_id >= trainer.config.thread_count
+        {
             return Err(Status::InvalidArgument);
         }
-        let shard_start = trainer.corpus.byte_size / trainer.config.thread_count * worker_id;
+        let entire = trainer.config.context_policy == ContextPolicy::EntireSentence;
+        let (shard_start, shard_end) = if entire {
+            trainer
+                .corpus
+                .sentence_shard(worker_id, trainer.config.thread_count)?
+        } else {
+            (
+                trainer.corpus.byte_size / trainer.config.thread_count * worker_id,
+                trainer.corpus.byte_size,
+            )
+        };
         let dimension = trainer.config.embedding_dimension;
         let mut sentence = Vec::new();
         sentence
@@ -80,6 +97,14 @@ impl Worker {
                 trainer.config.rng_algorithm,
             )
         };
+        let mut tokenizer = if entire {
+            trainer.corpus.sentence_tokenizer(shard_start, shard_end)?
+        } else {
+            trainer.corpus.tokenizer(shard_start)?
+        };
+        if trainer.config.context_policy == ContextPolicy::EntireSentence {
+            tokenizer.token_byte_limit = ENTIRE_SENTENCE_TOKEN_BYTES;
+        }
         Ok(Self {
             worker_id,
             shard_start,
@@ -96,13 +121,23 @@ impl Worker {
             negative_rng: rng(RngPurpose::Negative),
             objective_count: 0,
             observations: Vec::new(),
-            tokenizer: trainer.corpus.tokenizer(shard_start)?,
+            shard_end,
+            tokenizer,
         })
     }
 
     pub fn reset_epoch(&mut self, trainer: &Trainer) -> Result<(), Status> {
         self.epoch_token_count = 0;
-        self.tokenizer = trainer.corpus.tokenizer(self.shard_start)?;
+        self.tokenizer = if trainer.config.context_policy == ContextPolicy::EntireSentence {
+            trainer
+                .corpus
+                .sentence_tokenizer(self.shard_start, self.shard_end)?
+        } else {
+            trainer.corpus.tokenizer(self.shard_start)?
+        };
+        if trainer.config.context_policy == ContextPolicy::EntireSentence {
+            self.tokenizer.token_byte_limit = ENTIRE_SENTENCE_TOKEN_BYTES;
+        }
         Ok(())
     }
 
@@ -137,7 +172,48 @@ impl Worker {
         Status::Ok
     }
 
+    fn fill_entire_sentence(&mut self, trainer: &Trainer) -> Result<bool, Status> {
+        self.sentence.clear();
+        let mut raw_tokens = 0;
+        loop {
+            let read = self.tokenizer.read_token()?;
+            if read.at_eof {
+                return Ok(true);
+            }
+            if read.token == b"</s>" {
+                return Ok(false);
+            }
+            raw_tokens += 1;
+            if raw_tokens > ENTIRE_SENTENCE_TOKEN_LIMIT
+                || read.token.len() > ENTIRE_SENTENCE_TOKEN_BYTES
+            {
+                return Err(Status::InvalidArgument);
+            }
+            let Some(token) = trainer.vocab.find(&read.token) else {
+                continue;
+            };
+            self.local_token_count += 1;
+            self.epoch_token_count += 1;
+            let sample = trainer.config.subsampling_threshold;
+            if sample > 0.0 {
+                let count = trainer.vocab.entries[token].count as Real;
+                let scale = sample * trainer.vocab.retained_token_count as Real;
+                let keep = ((count / scale).sqrt() + 1.0) * scale / count;
+                if keep < self.subsampling_rng.uniform() {
+                    continue;
+                }
+            }
+            self.sentence
+                .try_reserve(1)
+                .map_err(|_| Status::OutOfMemory)?;
+            self.sentence.push(token);
+        }
+    }
+
     pub fn fill_sentence(&mut self, trainer: &Trainer) -> Result<bool, Status> {
+        if trainer.config.context_policy == ContextPolicy::EntireSentence {
+            return self.fill_entire_sentence(trainer);
+        }
         self.sentence.clear();
         let subsampling_threshold = trainer.config.subsampling_threshold;
         let retained_token_count = trainer.vocab.retained_token_count;
@@ -247,10 +323,11 @@ impl Worker {
         while !finished {
             finished = self.fill_sentence(trainer)?;
             let limit = trainer.vocab.retained_token_count / trainer.config.thread_count as u64;
-            if self.epoch_token_count > limit {
+            let entire = trainer.config.context_policy == ContextPolicy::EntireSentence;
+            if !entire && self.epoch_token_count > limit {
                 finished = true;
             }
-            if !finished {
+            if !finished || entire {
                 self.train_sentence(trainer, started)?;
             }
         }

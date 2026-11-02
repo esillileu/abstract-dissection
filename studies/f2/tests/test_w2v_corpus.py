@@ -45,6 +45,54 @@ def _paths(tmp_path: Path) -> RuntimePaths:
     )
 
 
+def test_tracked_run_materializes_registered_shards(tmp_path, monkeypatch):
+    from contextlib import nullcontext
+    from unittest.mock import Mock
+
+    import repro_io.s3 as s3
+
+    import f2.corpus.db.repository as repository
+    import f2.corpus.db.session as session
+    import f2.corpus.object_store as object_store
+    from f2.suites.w2v.tracked import _materialize_corpus
+
+    binding, objects = _fixture_binding(tmp_path)
+    rows = [
+        {
+            "shard_index": shard.index,
+            "s3_uri": shard.uri,
+            "sha256": shard.sha256,
+            "byte_size": shard.byte_size,
+            "word_count": shard.word_count,
+            "doc_count": shard.document_count,
+        }
+        for shard in binding.shards
+    ]
+
+    class Repository:
+        def __init__(self, conn):
+            pass
+
+        def list_verified_corpus_shards(self, version):
+            assert version == "f2-wmt-news-2007-2012-normalized-v1"
+            return rows
+
+    monkeypatch.setattr(session, "get_connection", lambda: nullcontext(None))
+    monkeypatch.setattr(repository, "CorpusStateRepository", Repository)
+    monkeypatch.setattr(object_store, "s3_config_from_environment", lambda: None)
+    monkeypatch.setattr(s3, "S3ObjectStore", lambda config: FixtureStore(objects))
+    config = {
+        "identity": {},
+        "atomic_run_id": "wmt--neg5-subsampling",
+        "corpus": {"lexical_token_budget": 3},
+    }
+    reporter = Mock()
+    _materialize_corpus(config, _paths(tmp_path), progress_reporter=reporter)
+    assert Path(config["corpus"]["path"]).is_file()
+    assert config["corpus"]["lexical_tokens"] == 3
+    reporter.write.assert_called_with("corpus shards processed: 1/2; tokens: 3/3")
+
+
 def _fixture_binding(tmp_path: Path) -> tuple[CorpusBinding, dict[str, Path]]:
     contents = [b"one two three\nfour five\n", b"six seven\neight nine ten\n"]
     shards = []
@@ -173,3 +221,125 @@ def test_manifest_cache_skips_stream_and_rebuilds_on_size_mismatch(
     third = materializer.materialize(binding, lexical_token_budget=7)
     assert third == first
     assert rebuilt_calls == 1
+
+
+def test_recovers_same_size_corruption_of_materialized_corpus(tmp_path):
+    binding, objects = _fixture_binding(tmp_path)
+    materializer = CorpusMaterializer(FixtureStore(objects), paths=_paths(tmp_path))
+    original = materializer.materialize(binding, lexical_token_budget=10)
+    data = original.path.read_bytes()
+    original.path.write_bytes(b"x" * len(data))
+    rebuilt = materializer.materialize(binding, lexical_token_budget=10)
+    assert rebuilt.path.read_bytes() == data
+    assert rebuilt.corpus_sha256 == original.corpus_sha256
+
+
+def test_concurrent_materialization_uses_private_work_and_verified_results(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+
+    binding, objects = _fixture_binding(tmp_path)
+    materializer = CorpusMaterializer(FixtureStore(objects), paths=_paths(tmp_path))
+    budgets = (3, 7, 10, 3, 7, 10)
+    with ThreadPoolExecutor(3) as pool:
+        results = list(
+            pool.map(
+                lambda budget: materializer.materialize(
+                    binding, lexical_token_budget=budget
+                ),
+                budgets,
+            )
+        )
+    for i in range(3):
+        assert results[i] == results[i + 3]
+        assert len(results[i].path.read_bytes().split()) == budgets[i]
+    assert not list((materializer._corpus_root() / "work").iterdir())
+
+
+def test_shards_without_final_newline_cannot_join_documents(tmp_path):
+    source = []
+    for i, data in enumerate((b"alpha", b"beta\n")):
+        raw = tmp_path / f"raw-{i}"
+        raw.write_bytes(data)
+        compressed = tmp_path / f"shard-{i}.zst"
+        subprocess.run(
+            ["zstd", "-q", "-f", str(raw), "-o", str(compressed)], check=True
+        )
+        source.append(compressed)
+    binding = CorpusBinding(
+        tuple(
+            CorpusShard(
+                i,
+                f"s3://fixture/{i}",
+                hashlib.sha256(path.read_bytes()).hexdigest(),
+                path.stat().st_size,
+                1,
+                1,
+            )
+            for i, path in enumerate(source)
+        )
+    )
+    store = FixtureStore({f"s3://fixture/{i}": path for i, path in enumerate(source)})
+    result = CorpusMaterializer(store, paths=_paths(tmp_path)).materialize(
+        binding, lexical_token_budget=2
+    )
+    assert result.path.read_bytes() == b"alpha\nbeta\n"
+
+
+def test_swapped_manifest_does_not_supply_another_budget_corpus(tmp_path):
+    from f2.suites.w2v.corpus import _binding_manifest_key
+
+    materializer_binding, objects = _fixture_binding(tmp_path)
+    materializer = CorpusMaterializer(FixtureStore(objects), paths=_paths(tmp_path))
+    small = materializer.materialize(materializer_binding, lexical_token_budget=3)
+    large = materializer.materialize(materializer_binding, lexical_token_budget=10)
+    manifests = materializer._corpus_root() / "manifests"
+    small_manifest = (
+        manifests / f"{_binding_manifest_key(materializer_binding, 3)}.json"
+    )
+    large_manifest = (
+        manifests / f"{_binding_manifest_key(materializer_binding, 10)}.json"
+    )
+    large_manifest.write_bytes(small_manifest.read_bytes())
+    recovered = materializer.materialize(materializer_binding, lexical_token_budget=10)
+    assert recovered == large and recovered != small
+
+
+def test_slice_corpus_file(tmp_path: Path):
+    from f2.suites.w2v.corpus import slice_corpus_file
+
+    source = tmp_path / "raw.txt"
+    source.write_bytes(b"word1 word2 word3\nword4 word5 word6\nword7 word8\n")
+
+    target = tmp_path / "sliced-4.txt"
+    tokens, sha256 = slice_corpus_file(source, target, 4)
+    assert tokens == 4
+    assert target.is_file()
+    assert target.read_bytes() == b"word1 word2 word3\nword4\n"
+
+    # Verify cache hit
+    tokens_cached, sha256_cached = slice_corpus_file(source, target, 4)
+    assert tokens_cached == 4
+    assert sha256_cached == sha256
+
+    # Verify cache hit when budget exceeds available tokens in source
+    target_over = tmp_path / "sliced-over.txt"
+    tokens_over, sha256_over = slice_corpus_file(source, target_over, 50)
+    assert tokens_over == 8
+    tokens_over_cached, sha256_over_cached = slice_corpus_file(source, target_over, 50)
+    assert tokens_over_cached == 8
+    assert sha256_over_cached == sha256_over
+
+
+def test_copy_corpus_prefix_sanitizes_null_bytes(tmp_path: Path):
+    from f2.suites.w2v.corpus import _copy_corpus_prefix
+
+    data = [b"first\x00\x00second </s> third\x00fourth\nfifth\n"]
+    output = tmp_path / "clean.txt"
+    with output.open("wb") as dest:
+        tokens, complete = _copy_corpus_prefix(data, dest, 10, scratch=tmp_path)
+    assert complete
+    assert tokens == 5
+    result = output.read_bytes()
+    assert b"\x00" not in result
+    assert b"</s>" not in result
+    assert result == b"first  second   third fourth\nfifth\n"

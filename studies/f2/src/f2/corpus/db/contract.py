@@ -84,7 +84,7 @@ def validate_connection(
     conn: psycopg.Connection[Any],
     *,
     schema: str,
-    required_schemas: tuple[str, ...] = ("catalog", "corpus"),
+    required_schemas: tuple[str, ...] = ("corpus",),
     latest_migration: str | None = None,
 ) -> None:
     """Validate database identity, owned schemas, and optionally migrations."""

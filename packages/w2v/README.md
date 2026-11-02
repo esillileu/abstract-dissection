@@ -168,6 +168,12 @@ CBOW와 Skip-gram은 `TrainingConfig::for_model(ModelKind::Cbow | ModelKind::Ski
 않습니다. 병렬 학습은 좌표별 갱신의 데이터 레이스를 없앴지만 워커 간
 연산 순서는 고정되지 않아 결과의 비트 단위 재현성을 보장하지 않습니다.
 
+Rust `Corpus::create`와 Python `Corpus(path)`는 기본적으로 기존 C 호환
+토큰 동작을 유지합니다. Python `Corpus(path, full_tokens=True)` 또는 Rust
+`corpus.full_tokens = true`는 긴 Phrase를 자르지 않고 전체 바이트로 읽습니다.
+전체 토큰 모드는 EOF 직전 마지막 토큰도 보존합니다. 이 모드를 사용하는
+호출자는 vocabulary 캐시 identity에 tokenization 정책을 포함해야 합니다.
+
 ## 검증
 
 `tests/stage1_contract.rs`부터 `tests/stage6_trainer.rs`까지 C의 상수,
@@ -182,3 +188,28 @@ HS/negative의 네 경우와 Xorshift CBOW/negative의 입력·출력 임베딩 
 `cargo clippy --all-targets -- -D warnings`, `just check`를 실행합니다.
 `just check`는 패키지 로컬 C 테스트만 실행합니다. 원본 스냅샷은 테스트,
 컴파일, 포맷, sanitizer 대상에서 제외합니다.
+
+
+## Feed-forward NNLM
+
+`src/nnlm/`은 CBOW/Skip-gram의 `Model`, `TrainingSession` 및 arithmetic과 분리된
+subsystem입니다. `NnlmTrainingConfig`, `NnlmModel`, `NnlmTrainingState`,
+`NnlmTrainingSession`과 `NnlmDownpourTrainingSession`을 제공합니다.
+이전 N개 단어의 shared embeddings를 순서대로 concatenate하고 dense hidden layer와
+설정 가능한 tanh/sigmoid를 거쳐 Huffman hierarchical softmax로 다음 단어를 예측합니다.
+NNLM HS는 정확한 logistic loss/derivative를 쓰며 기존 W2V lookup sigmoid를 바꾸지 않습니다.
+
+SGD session은 단일 thread만 허용합니다. Downpour는 embedding, hidden matrix, bias,
+HS output을 sharded PS에서 AdaGrad로 갱신합니다. mini-batch gradient를 합산한 뒤
+제곱하며, sparse replica cache는 batch 동안 stale snapshot을 유지합니다. queue가 drain되고
+workers가 join된 epoch 경계에서만 checkpoint를 내보냅니다. 단일 replica의 continuation은
+uninterrupted run과 bit-identical하고 다중 replica의 update 순서는 비결정적입니다.
+학습 corpus scan은 RNG를 소비하지 않으므로 epoch 경계에는 진행 중 RNG/cursor/history가
+없습니다. 초기화 seed는 config identity에 포함됩니다.
+
+줄바꿈/OOV에서 history를 초기화하고 full history를 가진 lexical target만 학습합니다.
+Corpus/Vocabulary/Huffman/RNG primitive는 재사용합니다. sentence/OOV policy, 초기화,
+activation과 concrete optimizer schedule은 논문이 명시한 값으로 주장하지 않습니다.
+F2의 [NNLM 재현 설정](../../studies/f2/catalog/NNLM_REPRODUCTION.md)에 결정과 경계를 기록합니다.
+NNLM checkpoint는 `f2-nnlm-checkpoint-v1`이고 input/shared embeddings의 평가 artifact는
+기존 `f2-w2v-lookup-v1`을 그대로 사용합니다.

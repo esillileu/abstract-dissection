@@ -2,32 +2,13 @@
 
 from __future__ import annotations
 
-import csv
-import re
-import time
-from dataclasses import dataclass
+import importlib
 from pathlib import Path
 from typing import Any
 
-from repro_io.s3 import S3ObjectStore
-
-from f2.corpus.db.repository import CorpusStateRepository
-from f2.corpus.db.session import get_connection as corpus_connection
-from f2.corpus.object_store import s3_config_from_environment
-from f2.run_identity import RunIdentity
-from f2.suites.w2v.corpus import CorpusBinding, CorpusMaterializer
+from f2.suites.w2v.executor import W2VRunReceipt, _mapping
+from f2.suites.w2v.tracking import publish_run_to_mlflow
 from repro_core.context import ExperimentContext, RuntimePaths
-from repro_core.execution.runner import run_config
-from repro_mlflow.runtime.verification import _verify_uploaded_manifest
-from repro_mlflow.schema_v1 import write_result_manifest
-
-
-@dataclass(frozen=True)
-class W2VRunReceipt:
-    result: object
-    run_id: str
-    staging_root: Path
-    durable_complete: bool
 
 
 def run_tracked_yaml(
@@ -41,14 +22,12 @@ def run_tracked_yaml(
     spec_module: str | None = None,
     tracking_uri: str,
     progress_reporter: object | None = None,
+    override: bool = False,
     **_: object,
 ) -> W2VRunReceipt:
     """Execute and publish one complete paper-reproduction run."""
     if spec_module is None or executor_module is None:
         raise ValueError("tracked W2V execution requires spec and executor modules")
-    import importlib
-
-    from mlflow import MlflowClient
 
     parser = importlib.import_module(spec_module)
     spec = parser.parse_run_spec(path, atomic_run_id=atomic_run_id, overrides=overrides)
@@ -56,49 +35,81 @@ def run_tracked_yaml(
     config = spec.to_executor_config()
     if device not in {None, "cpu"}:
         raise ValueError("canonical W2V parity execution requires CPU")
+
     paths = RuntimePaths.from_environment()
-    suite = _suite(config)
+    is_override = (
+        override
+        or bool(config.get("override", False))
+        or bool(overrides.get("override", False) if overrides else False)
+    )
+
+    # Skip early before expensive corpus materialization or large hash calculation
+    if not is_override:
+        identity = _mapping(config, "identity")
+        config_digest = str(identity["config_digest"])
+        seed_val = int(identity["seed"])
+        suite_name = "w2v2" if "w2v2" in str(executor_module) else "w2v1"
+        experiment_name = str(
+            _mapping(config, "tracking").get("experiment", f"f2.{suite_name}")
+        )
+        from mlflow import MlflowClient
+
+        from f2.suites.w2v.tracking import find_matching_finished_run
+
+        slot_id = str(identity.get("planned_run_slot_id", ""))
+        variant_id = str(config.get("atomic_run_id", ""))
+        client = MlflowClient(tracking_uri=tracking_uri)
+        existing = find_matching_finished_run(
+            client,
+            experiment_name,
+            config_digest,
+            seed_val,
+            planned_run_slot_id=slot_id or None,
+            atomic_run_id=variant_id or None,
+        )
+        if existing is not None:
+            if progress_reporter is not None:
+                progress_reporter.write(
+                    f"Skipping {suite_name}: finished run {existing.info.run_id} exists"
+                )
+            run_root = paths.runs("f2", suite_name, slot_id)
+            return W2VRunReceipt(
+                result=None,
+                run_id=existing.info.run_id,
+                staging_root=run_root,
+                skipped=True,
+            )
+
     if progress_reporter is not None:
         progress_reporter.write("materializing verified corpus binding")
     _materialize_corpus(config, paths, progress_reporter=progress_reporter)
     if progress_reporter is not None:
         progress_reporter.write("verified corpus binding is ready")
 
-    client = MlflowClient(tracking_uri=tracking_uri)
-    experiment_name = str(_mapping(config, "tracking")["experiment"])
-    experiment = client.get_experiment_by_name(experiment_name)
-    experiment_id = (
-        client.create_experiment(experiment_name)
-        if experiment is None
-        else experiment.experiment_id
+    exec_mod = importlib.import_module(executor_module)
+    kind = str(config.get("kind", "word2vec"))
+    resolver = getattr(exec_mod, "get_executor", None)
+    if callable(resolver):
+        executor = resolver(kind)
+    else:
+        executors = getattr(exec_mod, "EXECUTORS", {})
+        executor = executors[kind]
+
+    context = ExperimentContext(
+        paths=paths,
+        metadata={
+            "progress_reporter": progress_reporter,
+            "skip_checked": True,
+        },
     )
-    run_id = _create_run(client, experiment_id, config)
-    run_root = paths.staging_root / f"exp/f2/{suite}/tracked" / run_id
-    try:
-        result = run_config(
-            config,
-            ExperimentContext(
-                paths=paths,
-                metadata={
-                    "run_root": run_root,
-                    "progress_reporter": progress_reporter,
-                },
-            ),
-            executor_module=executor_module,
-        )
-        _publish(client, run_id, result.root)
-        _verify_uploaded_manifest(client, run_id)
-        client.set_tag(run_id, "trial.status", "finished")
-        client.set_tag(run_id, "result.durable_complete", "true")
-        client.set_terminated(run_id, status="FINISHED")
-        return W2VRunReceipt(result, run_id, run_root, True)
-    except BaseException:
-        run = client.get_run(run_id)
-        if run.info.status == "RUNNING":
-            client.set_tag(run_id, "result.durable_complete", "false")
-            client.set_tag(run_id, "trial.status", "failed")
-            client.set_terminated(run_id, status="FAILED")
-        raise
+
+    return executor.execute(
+        config,
+        context,
+        tracking_uri=tracking_uri,
+        override=is_override,
+        progress_reporter=progress_reporter,
+    )
 
 
 def _materialize_corpus(
@@ -107,17 +118,54 @@ def _materialize_corpus(
     *,
     progress_reporter: object | None = None,
 ) -> None:
-    identity = _identity(config)
+    identity = _mapping(config, "identity")
     corpus = _mapping(config, "corpus")
+    if config.get("large_scale"):
+        from repro_io.checksum import sha256_file
+
+        from f2.suites.w2v2.preflight import resolve_source
+
+        source = resolve_source(config, paths)
+        config["corpus"] = {
+            **corpus,
+            "path": str(source),
+            "sha256": sha256_file(source),
+        }
+        return
     try:
         lexical_token_budget = int(corpus["lexical_token_budget"])
     except (KeyError, TypeError, ValueError) as exc:
         raise ValueError("canonical W2V1 corpus requires lexical_token_budget") from exc
+    from f2.common.paths import get_corpus_data_dir
+    from f2.suites.w2v.corpus import slice_corpus_file
+
+    corpus_dir = get_corpus_data_dir(paths)
+
+    def _resolve_budgeted_corpus(source_file: Path, base_name: str) -> tuple[Path, str]:
+        if "holmes" in str(source_file) or lexical_token_budget <= 0:
+            from repro_io.checksum import sha256_file
+
+            digest = corpus.get("sha256") or sha256_file(source_file)
+            return source_file, str(digest)
+
+        budget_file = corpus_dir / f"{base_name}-tokens-{lexical_token_budget}.txt"
+        if progress_reporter is not None and not budget_file.is_file():
+            progress_reporter.write(
+                f"materializing {base_name} corpus sliced to {lexical_token_budget:,} tokens"
+            )
+        _, digest = slice_corpus_file(source_file, budget_file, lexical_token_budget)
+        return budget_file, digest
+
     if "path" in corpus:
         raw_path = Path(str(corpus["path"]))
-        corpus_path = raw_path if raw_path.is_absolute() else paths.repo_root / raw_path
+        if raw_path.is_absolute():
+            corpus_path = raw_path
+        elif (corpus_dir / raw_path.name).is_file():
+            corpus_path = corpus_dir / raw_path.name
+        else:
+            corpus_path = paths.repo_root / raw_path
         if "holmes" in str(raw_path):
-            from f2.suites.w2v1.table7 import ensure_holmes_corpus
+            from f2.suites.w2v1.resources import ensure_holmes_corpus
 
             if progress_reporter is not None:
                 progress_reporter.write(f"materializing Holmes corpus at {corpus_path}")
@@ -126,34 +174,70 @@ def _materialize_corpus(
             raise FileNotFoundError(
                 f"configured corpus path does not exist: {corpus_path}"
             )
-        if "sha256" not in corpus:
-            from repro_io.checksum import sha256_file
-
-            corpus["sha256"] = sha256_file(corpus_path)
+        resolved_path, digest = _resolve_budgeted_corpus(corpus_path, corpus_path.stem)
         config["corpus"] = {
-            "path": str(corpus_path),
-            "sha256": corpus["sha256"],
+            "path": str(resolved_path),
+            "sha256": digest,
             "lexical_tokens": lexical_token_budget,
         }
         return
 
-    slot_id = str(identity["planned_run_slot_id"])
-    with corpus_connection(validate_contract=True) as connection:
-        rows = CorpusStateRepository(connection).list_verified_training_shards(slot_id)
-    binding = CorpusBinding.from_rows(rows)
+    atomic_run_id = str(config.get("atomic_run_id", ""))
+    corpus_id = atomic_run_id.split("--", 1)[0] if "--" in atomic_run_id else ""
+    candidate_paths = [
+        corpus_dir / f"{corpus_id}.txt",
+        corpus_dir / corpus_id / "corpus.txt",
+    ]
+    if corpus_id == "holmes":
+        from f2.suites.w2v1.resources import ensure_holmes_corpus
 
-    def report(shard: int, total: int, tokens: int) -> None:
-        if progress_reporter is not None:
-            progress_reporter.write(
-                f"corpus shard={shard}/{total} lexical_tokens={tokens}/{lexical_token_budget}"
-            )
+        candidate_paths.insert(0, ensure_holmes_corpus(corpus_dir / "holmes.txt"))
 
+    for candidate in candidate_paths:
+        if candidate.is_file():
+            resolved_path, digest = _resolve_budgeted_corpus(candidate, corpus_id)
+            config["corpus"] = {
+                "path": str(resolved_path),
+                "sha256": digest,
+                "lexical_tokens": lexical_token_budget,
+            }
+            return
+
+    from repro_io.s3 import S3ObjectStore
+
+    from f2.corpus.db.repository import CorpusStateRepository
+    from f2.corpus.db.session import get_connection
+    from f2.corpus.object_store import s3_config_from_environment
+    from f2.corpus.sources import SOURCE_BY_KEY
+    from f2.suites.w2v.corpus import CorpusBinding, CorpusMaterializer
+
+    source = SOURCE_BY_KEY.get(corpus_id)
+    if source is None:
+        raise FileNotFoundError(
+            f"Unknown corpus {corpus_id!r}; checked {candidate_paths}"
+        )
+    with get_connection() as conn:
+        rows = CorpusStateRepository(conn).list_verified_corpus_shards(
+            source.normalized_resource_version_id
+        )
+    if not rows:
+        raise FileNotFoundError(
+            f"No verified normalized shards for {corpus_id}; prepare and validate "
+            "the corpus with repro f2 corpus sources first"
+        )
     materialized = CorpusMaterializer(
         S3ObjectStore(s3_config_from_environment()), paths=paths
     ).materialize(
-        binding,
+        CorpusBinding.from_rows(rows),
         lexical_token_budget=lexical_token_budget,
-        progress=report,
+        progress=(
+            None
+            if progress_reporter is None
+            else lambda completed, total, tokens: progress_reporter.write(
+                f"corpus shards processed: {completed}/{total}; "
+                f"tokens: {tokens:,}/{lexical_token_budget:,}"
+            )
+        ),
     )
     config["corpus"] = {
         "path": str(materialized.path),
@@ -162,111 +246,27 @@ def _materialize_corpus(
     }
 
 
-def _create_run(
+def _publish(
     client: Any,
-    experiment_id: str,
-    config: dict[str, object],
-) -> str:
-    identity = _identity(config)
-    suite = _suite(config)
-    run_identity = RunIdentity(
-        planned_run_slot_id=str(identity["planned_run_slot_id"]),
-        plan_revision=_plan_revision(str(identity["execution_plan_id"])),
-        config_digest=str(identity["config_digest"]),
+    run_id: str,
+    root: Path,
+    *,
+    include_checkpoints: bool = False,
+) -> None:
+    # Forward to tracking helper if called directly
+    publish_run_to_mlflow(
+        client,
+        "f2.w2v",
+        {
+            "identity": {
+                "planned_run_slot_id": run_id,
+                "execution_plan_id": "r1",
+                "config_digest": "",
+            }
+        },
+        root,
+        include_checkpoints=include_checkpoints,
     )
-    tags = {
-        **run_identity.tags(),
-        "paper.id": "mikolov-2013-efficient-estimation",
-        "suite.name": suite,
-        "experiment_spec.id": str(
-            identity.get(
-                "experiment_spec_id",
-                "w2v1-table2-cbow"
-                if suite == "w2v1"
-                else "w2v2-phrase-skipgram-1b-objectives",
-            )
-        ),
-        "implementation.variant": str(config["atomic_run_id"]),
-        "seed": str(identity["seed"]),
-        "trial.status": "running",
-        "result.durable_complete": "false",
-    }
-    return client.create_run(
-        experiment_id,
-        start_time=int(time.time() * 1000),
-        tags=tags,
-        run_name=str(identity["planned_run_slot_id"]),
-    ).info.run_id
-
-
-def _plan_revision(execution_plan_id: str) -> int:
-    match = re.search(r"-r(\d+)$", execution_plan_id)
-    if match is None:
-        raise ValueError("execution_plan_id must end with an explicit revision")
-    return int(match.group(1))
-
-
-def _publish(client: Any, run_id: str, root: Path) -> None:
-    write_result_manifest(root, exclude_dirs=("checkpoints",))
-    for path in sorted(item for item in root.rglob("*") if item.is_file()):
-        rel = path.relative_to(root)
-        if any(part == "checkpoints" for part in rel.parts):
-            continue
-        parent = path.parent.relative_to(root)
-        client.log_artifact(
-            run_id,
-            str(path),
-            artifact_path=None if parent == Path(".") else parent.as_posix(),
-        )
-    metrics = root / "metrics/observations.csv"
-    if metrics.is_file():
-        from mlflow.entities import Metric
-
-        with metrics.open(encoding="utf-8", newline="") as stream:
-            for row in csv.DictReader(stream):
-                step = int(row["processed_tokens"])
-                client.log_batch(
-                    run_id,
-                    metrics=[
-                        Metric(
-                            "train/objective_loss",
-                            float(row["objective_loss"]),
-                            int(time.time() * 1000),
-                            step,
-                        ),
-                        Metric(
-                            "train/learning_rate",
-                            float(row["learning_rate"]),
-                            int(time.time() * 1000),
-                            step,
-                        ),
-                        Metric(
-                            "runtime/tokens_per_second",
-                            float(row["tokens_per_second"]),
-                            int(time.time() * 1000),
-                            step,
-                        ),
-                    ],
-                )
-
-
-def _mapping(config: dict[str, object], key: str) -> dict[str, Any]:
-    value = config.get(key)
-    if not isinstance(value, dict):
-        raise ValueError(f"{key} must be a mapping")
-    return value
-
-
-def _identity(config: dict[str, object]) -> dict[str, Any]:
-    return _mapping(config, "identity")
-
-
-def _suite(config: dict[str, object]) -> str:
-    experiment = str(_mapping(config, "tracking")["experiment"])
-    suite = experiment.rsplit(".", 1)[-1]
-    if suite not in {"w2v1", "w2v2"}:
-        raise ValueError(f"unsupported tracked W2V suite: {suite}")
-    return suite
 
 
 __all__ = ["W2VRunReceipt", "run_tracked_yaml"]

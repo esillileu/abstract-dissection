@@ -2,6 +2,9 @@
 
 pub const MAX_TOKEN_LENGTH: usize = 100;
 pub const MAX_SENTENCE_LENGTH: usize = 1000;
+/// Entire-sentence input limit before OOV filtering or subsampling. Never split.
+pub const ENTIRE_SENTENCE_TOKEN_LIMIT: usize = 65_536;
+pub const ENTIRE_SENTENCE_TOKEN_BYTES: usize = 16_387;
 pub const MAX_CODE_LENGTH: usize = 40;
 pub type Real = f32;
 
@@ -45,6 +48,7 @@ pub enum ModelKind {
 pub enum ObjectiveKind {
     HierarchicalSoftmax = 0,
     NegativeSampling = 1,
+    Nce = 2,
 }
 #[repr(i32)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -71,6 +75,7 @@ pub enum UpdateStrategy {
 pub enum ContextPolicy {
     Dynamic = 0,
     Fixed = 1,
+    EntireSentence = 2,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -168,7 +173,9 @@ impl TrainingConfig {
         config
     }
     pub fn validate(&self) -> Status {
-        if self.embedding_dimension == 0
+        if (self.context_policy == ContextPolicy::EntireSentence
+            && self.model_kind != ModelKind::SkipGram)
+            || self.embedding_dimension == 0
             || self.window_radius == 0
             || self.window_radius > usize::MAX / 2
             || self.epochs == 0
@@ -182,8 +189,12 @@ impl TrainingConfig {
             || self.sigmoid_max <= 0.0
             || self.sigmoid_table_size < 2
             || self.embedding_dimension > usize::MAX / size_of::<Real>()
+            || (matches!(
+                self.objective_kind,
+                ObjectiveKind::NegativeSampling | ObjectiveKind::Nce
+            ) && self.negative_sample_count == 0)
             || (self.objective_kind == ObjectiveKind::NegativeSampling
-                && (self.negative_sample_count == 0 || self.negative_table_size == 0))
+                && self.negative_table_size == 0)
         {
             Status::InvalidArgument
         } else {

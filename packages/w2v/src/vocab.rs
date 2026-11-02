@@ -40,6 +40,58 @@ pub struct NegativeSampler {
     pub table: Vec<usize>,
 }
 
+/// Lexical unigram^0.75 distribution, represented by positive integer masses.
+/// The probability used by NCE is exactly the mass used by the sampler.
+#[derive(Clone, Debug, Default)]
+pub struct NceNoiseSampler {
+    cumulative: Vec<u64>,
+    total: u64,
+}
+
+impl NceNoiseSampler {
+    pub fn initialize(vocab: &Vocabulary) -> Result<Self, Status> {
+        if vocab.entries.len() < 2 || vocab.entries[1..].iter().any(|e| e.count == 0) {
+            return Err(Status::InvalidArgument);
+        }
+        let sum: f64 = vocab.entries[1..]
+            .iter()
+            .map(|e| (e.count as f64).powf(0.75))
+            .sum();
+        let mut cumulative = Vec::new();
+        cumulative
+            .try_reserve_exact(vocab.entries.len())
+            .map_err(|_| Status::OutOfMemory)?;
+        cumulative.push(0); // EOS has no mass: it is never a training target.
+        let mut total = 0u64;
+        for entry in &vocab.entries[1..] {
+            let mass =
+                (((entry.count as f64).powf(0.75) / sum * (1u64 << 53) as f64) as u64).max(1);
+            total = total.checked_add(mass).ok_or(Status::InvalidArgument)?;
+            cumulative.push(total);
+        }
+        Ok(Self { cumulative, total })
+    }
+
+    pub fn probability(&self, token: usize) -> f64 {
+        if token == 0 || token >= self.cumulative.len() {
+            return 0.0;
+        }
+        (self.cumulative[token] - self.cumulative[token - 1]) as f64 / self.total as f64
+    }
+
+    pub fn draw(&self, rng: &mut Rng) -> usize {
+        // Rejection removes modulo bias for a uniform 64-bit RNG output.
+        let threshold = self.total.wrapping_neg() % self.total;
+        loop {
+            let value = rng.next_u64();
+            if value >= threshold {
+                let quantile = value % self.total;
+                return self.cumulative.partition_point(|&mass| mass <= quantile);
+            }
+        }
+    }
+}
+
 impl Vocabulary {
     pub fn export_state(&self) -> VocabularyState {
         VocabularyState {

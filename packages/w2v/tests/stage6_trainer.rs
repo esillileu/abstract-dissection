@@ -167,8 +167,27 @@ fn c_learning_rate_interval() {
 
 #[test]
 fn single_thread_epoch_resume_matches_continuous_training() {
+    verify_epoch_resume(
+        ModelKind::SkipGram,
+        ObjectiveKind::NegativeSampling,
+        RngAlgorithm::Lcg,
+    );
+}
+
+#[test]
+fn nce_epoch_resume_matches_continuous_training() {
+    for model in [ModelKind::SkipGram, ModelKind::Cbow] {
+        for rng in [RngAlgorithm::Lcg, RngAlgorithm::Xorshift] {
+            verify_epoch_resume(model, ObjectiveKind::Nce, rng);
+        }
+    }
+}
+
+fn verify_epoch_resume(model: ModelKind, objective: ObjectiveKind, rng: RngAlgorithm) {
     let (corpus, vocab) = fixture();
-    let mut config = TrainingConfig::for_model(ModelKind::SkipGram);
+    let mut config = TrainingConfig::for_model(model);
+    config.objective_kind = objective;
+    config.rng_algorithm = rng;
     config.embedding_dimension = 8;
     config.window_radius = 2;
     config.epochs = 3;
@@ -440,4 +459,284 @@ fn objective_observation_is_finite_and_does_not_change_training() {
         observed.observations.len() / 2
     );
     fs::remove_file(&corpus.path).unwrap();
+}
+
+#[test]
+fn checkpoint_identity_preserves_hs_neg_and_rejects_prior_nce_semantics() {
+    use w2v::{DownpourConfig, DownpourTrainingSession};
+    let (corpus, vocab) = fixture();
+    // Historical digests from the pre-snapshot identity encoding, for the
+    // fixed configuration below. Both persistence paths must reject old NCE.
+    for (objective, old_shared, old_downpour) in [
+        (
+            ObjectiveKind::HierarchicalSoftmax,
+            "fnv1a64:5ae7cdfdd63cefe6",
+            "fnv1a64:4f8337bc4a55a433",
+        ),
+        (
+            ObjectiveKind::NegativeSampling,
+            "fnv1a64:ff44b5ffaa22bfab",
+            "fnv1a64:1f9349eef73bfb8e",
+        ),
+        (
+            ObjectiveKind::Nce,
+            "fnv1a64:bbd9f20a8ed97138",
+            "fnv1a64:1cebb6a6ab82e161",
+        ),
+    ] {
+        let config = TrainingConfig {
+            objective_kind: objective,
+            embedding_dimension: 4,
+            thread_count: 1,
+            negative_table_size: 17,
+            ..TrainingConfig::default()
+        };
+        let model =
+            Arc::new(Model::create(&vocab, 4, config.root_seed, config.rng_algorithm).unwrap());
+        let trainer = Arc::new(
+            Trainer::create(Arc::clone(&corpus), Arc::clone(&vocab), model, &config).unwrap(),
+        );
+        let session = trainer.session().unwrap();
+        let mut state = session.export_state().unwrap();
+        if objective == ObjectiveKind::Nce {
+            assert_ne!(state.descriptor.config_digest, old_shared);
+        } else {
+            assert_eq!(state.descriptor.config_digest, old_shared);
+        }
+        state.descriptor.config_digest = old_shared.into();
+        let restored = TrainingSession::restore(Arc::clone(&trainer), &state);
+        if objective == ObjectiveKind::Nce {
+            assert!(matches!(restored, Err(w2v::Status::IdentityMismatch)));
+        } else {
+            assert!(restored.is_ok());
+        }
+
+        let distribution = DownpourConfig::default();
+        let session =
+            DownpourTrainingSession::create(Arc::clone(&trainer), distribution.clone()).unwrap();
+        let mut state = session.export_state().unwrap();
+        if objective == ObjectiveKind::Nce {
+            assert_ne!(state.descriptor.config_digest, old_downpour);
+        } else {
+            assert_eq!(state.descriptor.config_digest, old_downpour);
+        }
+        state.descriptor.config_digest = old_downpour.into();
+        let restored = DownpourTrainingSession::restore(trainer, distribution, &state);
+        if objective == ObjectiveKind::Nce {
+            assert!(matches!(restored, Err(w2v::Status::IdentityMismatch)));
+        } else {
+            assert!(restored.is_ok());
+        }
+    }
+    fs::remove_file(&corpus.path).unwrap();
+}
+
+fn entire_fixture(text: &[u8], threads: usize, sample: f32) -> Arc<Trainer> {
+    let path = std::env::temp_dir().join(format!(
+        "w2v-entire-{}-{}",
+        std::process::id(),
+        std::thread::current().name().unwrap()
+    ));
+    fs::write(&path, text).unwrap();
+    let mut source = Corpus::create(path).unwrap();
+    source.full_tokens = true;
+    let corpus = Arc::new(source);
+    let vocab = Arc::new(
+        Vocabulary::build(
+            &corpus,
+            &VocabularyConfig {
+                initial_capacity: 2,
+                hash_capacity: 101,
+                min_count: 2,
+                max_lexical_words: 0,
+            },
+        )
+        .unwrap(),
+    );
+    let config = TrainingConfig {
+        model_kind: ModelKind::SkipGram,
+        objective_kind: ObjectiveKind::HierarchicalSoftmax,
+        embedding_dimension: 1000,
+        context_policy: w2v::ContextPolicy::EntireSentence,
+        epochs: 2,
+        thread_count: threads,
+        subsampling_threshold: sample,
+        observation_interval: 1,
+        ..TrainingConfig::default()
+    };
+    let model = Arc::new(Model::create(&vocab, 1000, 1, RngAlgorithm::Lcg).unwrap());
+    Arc::new(Trainer::create(corpus, vocab, model, &config).unwrap())
+}
+
+#[test]
+fn entire_sentences_keep_long_input_and_partition_boundaries_oov_and_eof() {
+    let text = format!("{}rare\nbeta beta\nalpha beta", "alpha ".repeat(1001));
+    let trainer = entire_fixture(text.as_bytes(), 2, 0.0);
+    let mut first = Worker::initialize(&trainer, 0).unwrap();
+    assert!(!first.fill_sentence(&trainer).unwrap());
+    assert_eq!(first.sentence.len(), 1001);
+    assert!(first.fill_sentence(&trainer).unwrap());
+    assert!(first.sentence.is_empty()); // first contiguous shard ends after the long line
+    let mut second = Worker::initialize(&trainer, 1).unwrap();
+    assert!(!second.fill_sentence(&trainer).unwrap());
+    assert_eq!(
+        second.sentence,
+        vec![trainer.vocab.find(b"beta").unwrap(); 2]
+    );
+    assert!(second.fill_sentence(&trainer).unwrap());
+    assert_eq!(second.sentence.len(), 2); // final line without LF is retained in the last shard
+}
+
+#[test]
+fn entire_rejects_oversized_raw_sentence_even_when_oov() {
+    let unknown: String = (0..65_537).map(|index| format!("rare{index} ")).collect();
+    let text = format!("{unknown}\nalpha alpha\n");
+    let trainer = entire_fixture(text.as_bytes(), 1, 0.0);
+    let mut worker = Worker::initialize(&trainer, 0).unwrap();
+    assert_eq!(
+        worker.fill_sentence(&trainer),
+        Err(w2v::Status::InvalidArgument)
+    );
+}
+
+#[test]
+fn entire_subsampling_occurs_before_context_and_preserves_boundaries() {
+    let trainer = entire_fixture(b"alpha alpha alpha\nbeta beta beta\n", 1, 1e-20);
+    let mut worker = Worker::initialize(&trainer, 0).unwrap();
+    assert!(!worker.fill_sentence(&trainer).unwrap());
+    assert_eq!(worker.local_token_count, 3);
+    assert!(worker.sentence.is_empty());
+    assert!(!worker.fill_sentence(&trainer).unwrap());
+    assert_eq!(worker.local_token_count, 6);
+    assert!(worker.sentence.is_empty());
+}
+
+#[test]
+fn entire_1000d_hs_checkpoint_resume_and_parallel_counts() {
+    let text = b"alpha beta alpha\nbeta alpha beta\nalpha beta";
+    let trainer = entire_fixture(text, 1, 0.0);
+    let mut session = trainer.session().unwrap();
+    session.train_epoch().unwrap();
+    let state = session.export_state().unwrap();
+    let restored = entire_fixture(text, 1, 0.0);
+    let mut resumed = TrainingSession::restore(Arc::clone(&restored), &state).unwrap();
+    resumed.train_epoch().unwrap();
+    session.train_epoch().unwrap();
+    assert_eq!(
+        resumed.export_state().unwrap(),
+        session.export_state().unwrap()
+    );
+    let parallel = entire_fixture(text, 2, 0.0);
+    parallel.train().unwrap();
+    assert_eq!(parallel.processed_tokens(), trainer.processed_tokens());
+    assert_eq!(parallel.processed_tokens(), 16);
+    let mut changed = restored.config.clone();
+    changed.context_policy = w2v::ContextPolicy::Fixed;
+    let incompatible = Arc::new(
+        Trainer::create(
+            Arc::clone(&restored.corpus),
+            Arc::clone(&restored.vocab),
+            Arc::clone(&restored.model),
+            &changed,
+        )
+        .unwrap(),
+    );
+    assert!(matches!(
+        TrainingSession::restore(incompatible, &state),
+        Err(w2v::Status::IdentityMismatch)
+    ));
+}
+
+#[test]
+fn entire_context_pairs_are_all_other_positions_without_rng_draws() {
+    use w2v::training::context_position;
+    let length = 4;
+    let pairs: Vec<_> = (0..length)
+        .flat_map(|center| {
+            (0..=length * 2).filter_map(move |offset| {
+                context_position(length, center, length, offset).map(|context| (center, context))
+            })
+        })
+        .collect();
+    assert_eq!(
+        pairs,
+        vec![
+            (0, 1),
+            (0, 2),
+            (0, 3),
+            (1, 0),
+            (1, 2),
+            (1, 3),
+            (2, 0),
+            (2, 1),
+            (2, 3),
+            (3, 0),
+            (3, 1),
+            (3, 2)
+        ]
+    );
+    let trainer = entire_fixture(b"alpha beta alpha\nbeta alpha beta\n", 1, 0.0);
+    let mut worker = Worker::initialize(&trainer, 0).unwrap();
+    worker.fill_sentence(&trainer).unwrap();
+    let rng = worker.window_rng.state;
+    worker
+        .train_sentence(&trainer, std::time::Instant::now())
+        .unwrap();
+    assert_eq!(worker.window_rng.state, rng);
+    let expected: u64 = worker
+        .sentence
+        .iter()
+        .map(|&id| trainer.vocab.entries[id].huffman_path.len() as u64 * 2)
+        .sum();
+    assert_eq!(
+        worker
+            .observations
+            .iter()
+            .map(|value| value.objective_loss_count)
+            .sum::<u64>(),
+        expected
+    );
+}
+
+#[test]
+fn entire_token_limit_is_enforced_during_tokenization() {
+    let text = format!("{} {}\n", "x".repeat(16_388), "x".repeat(16_388));
+    let trainer = entire_fixture(text.as_bytes(), 1, 0.0);
+    let mut worker = Worker::initialize(&trainer, 0).unwrap();
+    assert_eq!(
+        worker.fill_sentence(&trainer),
+        Err(w2v::Status::InvalidArgument)
+    );
+}
+
+#[test]
+fn hs_nonfinite_score_or_gradient_aborts_before_epoch_success() {
+    for overflowing_score in [false, true] {
+        let base = entire_fixture(b"alpha beta\nalpha beta\n", 1, 0.0);
+        let mut config = base.config.clone();
+        config.initial_learning_rate = 1e30;
+        let model = Arc::new(Model::create(&base.vocab, 1000, 1, RngAlgorithm::Lcg).unwrap());
+        let count = base.vocab.entries.len() * 1000;
+        let input = vec![if overflowing_score { 1e30 } else { 0.0 }; count];
+        let output = vec![1e20; count];
+        assert_eq!(model.restore_embeddings(&input, &output), w2v::Status::Ok);
+        let trainer = Arc::new(
+            Trainer::create(
+                Arc::clone(&base.corpus),
+                Arc::clone(&base.vocab),
+                Arc::clone(&model),
+                &config,
+            )
+            .unwrap(),
+        );
+        let mut session = trainer.session().unwrap();
+        assert!(matches!(
+            session.train_epoch(),
+            Err(w2v::Status::InvalidState)
+        ));
+        assert_eq!(session.completed_epochs(), 0);
+        let mut after = vec![0.; count];
+        model.snapshot_into(EmbeddingKind::Input, &mut after);
+        assert_eq!(after, input);
+    }
 }

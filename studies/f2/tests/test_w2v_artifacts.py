@@ -392,3 +392,49 @@ def test_download_cache_roundtrip_preserves_verified_manifest(tmp_path: Path) ->
         remote / "manifest.json"
     ).read_bytes()
     assert CHECKPOINT_FORMAT in (downloaded / "manifest.json").read_text()
+
+
+@pytest.mark.parametrize(
+    "objective", ["negative_sampling", "hierarchical_softmax", "nce"]
+)
+@pytest.mark.parametrize("context", ["dynamic", "fixed", "entire_sentence"])
+def test_reporting_training_fingerprint_matches_native_descriptor(
+    tmp_path, objective, context
+):
+    """The verifier's digest contract is checked against the existing native API.
+
+    No epoch is executed; all model/vocabulary/table sizes are test-owned and tiny.
+    """
+    from f2.suites.w2v.artifacts import training_config_digest
+
+    path = tmp_path / "fingerprint.txt"
+    path.write_text("a b c d\na b c d\n")
+    corpus = Corpus(path, full_tokens=context == "entire_sentence")
+    vocabulary = Vocabulary.build(
+        corpus, VocabularyConfig(initial_capacity=2, hash_capacity=17, min_count=1)
+    )
+    values = {
+        "model_kind": "skip_gram",
+        "objective_kind": objective,
+        "embedding_dimension": 4,
+        "window_radius": 2,
+        "context_policy": context,
+        "epochs": 3,
+        "thread_count": 1,
+        "learning_rate_update_interval": 10,
+        "observation_interval": 10,
+        "initial_learning_rate": 0.025,
+        "subsampling_threshold": 0.00001,
+        "negative_sample_count": 0 if objective == "hierarchical_softmax" else 5,
+        "rng_algorithm": "lcg",
+        "negative_table_size": 257,
+        "sigmoid_table_size": 101,
+        "sigmoid_max": 6.0,
+        "hs_out_of_range_policy": "use_boundary_value",
+        "update_strategy": "cas",
+    }
+    native = TrainingConfig(**values, root_seed=19)
+    model = Model.create(vocabulary, native)
+    session = TrainingSession(corpus, vocabulary, model, native, corpus_digest="a" * 64)
+    assert training_config_digest(values, 19) == session.descriptor()[1]
+    assert training_config_digest(values, 7) != session.descriptor()[1]

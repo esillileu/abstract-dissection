@@ -11,16 +11,9 @@ training:
   embedding_dimension: 300
   epochs: 3
   thread_count: 20
-  learning_rate_update_interval: 10000
   observation_interval: 100000
   initial_learning_rate: 0.025
-  subsampling_threshold: 0.0
-  negative_sample_count: 0
   rng_algorithm: lcg
-  negative_table_size: 100
-  sigmoid_table_size: 1000
-  sigmoid_max: 6.0
-  hs_out_of_range_policy: skip
 checkpoint: {save_latest: true, save_final: true, best_payload: full}
 tracking: {experiment: f2.w2v1}
 
@@ -32,15 +25,69 @@ resources:
   umbc: &umbc
     identity: {execution_plan_id: w2v1-table4-umbc-r1}
 
+  fineweb: &fineweb
+    identity: {execution_plan_id: w2v1-fineweb-reconstruction-r1}
+
 conditions:
   cbow: &cbow
     experiment_spec_id: w2v1-google-news-cbow-scale
     corpus: {lexical_token_budget: 783000000}
-    training: {model_kind: cbow, window_radius: 4, context_policy: fixed}
+    training: &word2vec_training
+      learning_rate_update_interval: 10000
+      subsampling_threshold: 0.0
+      negative_sample_count: 0
+      negative_table_size: 100
+      sigmoid_table_size: 1000
+      sigmoid_max: 6.0
+      hs_out_of_range_policy: skip
+      model_kind: cbow
+      window_radius: 4
+      context_policy: fixed
   skipgram: &skipgram
     experiment_spec_id: w2v1-google-news-skipgram-scale
     corpus: {lexical_token_budget: 783000000}
-    training: {model_kind: skip_gram, window_radius: 10, context_policy: dynamic}
+    training: {<<: *word2vec_training, model_kind: skip_gram, window_radius: 10, context_policy: dynamic}
+
+  nnlm-d20-w6000m: &nnlm-d20-w6000m
+    experiment_spec_id: w2v1-google-news-nnlm-6b
+    corpus: {lexical_token_budget: 6000000000}
+    # Reconstruction decisions, not paper-specified: history=8 and hidden=640
+    # carried from Table 3, tanh, 3 epochs, 14 local replicas, 4 PS shards.
+    # AdaGrad gamma=0.05, epsilon=1e-6, summed mini-batches=250, queue=128,
+    # fetch/push once per batch, no separate LR decay; no subsampling.
+    # Same initialization and sentence/OOV history policy as Table 3 NNLM.
+    # Decisions are recorded in the existing w2v1-google-news-nnlm-6b spec notes.
+    training: &nnlm_training
+      model_kind: feedforward_nnlm
+      embedding_dimension: 20
+      history_length: 8
+      hidden_dimension: 640
+      hidden_activation: tanh
+      epochs: 3
+      thread_count: 14
+      objective_kind: hierarchical_softmax
+      initial_learning_rate: 0.05
+      observation_interval: 100000
+      rng_algorithm: lcg
+    distribution: &nnlm_distribution
+      mode: downpour
+      parameter_server_shards: 4
+      mini_batch_targets: 250
+      adagrad_gamma: 0.05
+      adagrad_epsilon: 1.0e-6
+      queue_capacity: 128
+      fetch_interval: 1
+      push_interval: 1
+  nnlm-d50-w6000m: &nnlm-d50-w6000m
+    experiment_spec_id: w2v1-google-news-nnlm-6b
+    corpus: {lexical_token_budget: 6000000000}
+    training: {<<: *nnlm_training, embedding_dimension: 50}
+    distribution: *nnlm_distribution
+  nnlm-d100-w6000m: &nnlm-d100-w6000m
+    experiment_spec_id: w2v1-google-news-nnlm-6b
+    corpus: {lexical_token_budget: 6000000000}
+    training: {<<: *nnlm_training, embedding_dimension: 100}
+    distribution: *nnlm_distribution
 
 variants:
   wmt--cbow-d300-w783m: {<<: [*wmt, *cbow]}
@@ -49,3 +96,6 @@ variants:
   lm1b--skipgram-d300-w783m: {<<: [*lm1b, *skipgram]}
   umbc--cbow-d300-w783m: {<<: [*umbc, *cbow]}
   umbc--skipgram-d300-w783m: {<<: [*umbc, *skipgram]}
+  fineweb--nnlm-d20-w6000m: {<<: [*fineweb, *nnlm-d20-w6000m]}
+  fineweb--nnlm-d50-w6000m: {<<: [*fineweb, *nnlm-d50-w6000m]}
+  fineweb--nnlm-d100-w6000m: {<<: [*fineweb, *nnlm-d100-w6000m]}

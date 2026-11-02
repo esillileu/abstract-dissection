@@ -2,67 +2,16 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 from dataclasses import dataclass
 from pathlib import Path
 
+from f2.suites.w2v.spec import Word2VecRunSpec, _condition_id, _digest
 from repro_core.execution.spec import load_variant, mapping
 
 
-def _digest(value: dict[str, object]) -> str:
-    encoded = json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
-    return hashlib.sha256(encoded).hexdigest()
-
-
 @dataclass(frozen=True)
-class RunSpec:
-    atomic_run_id: str
-    identity: dict[str, object]
-    corpus: dict[str, object]
-    vocabulary: dict[str, object]
-    training: dict[str, object]
-    checkpoint: dict[str, object]
-    tracking: dict[str, object]
-    path: Path
-    distribution: dict[str, object] | None = None
-
-    def with_seed(self, seed: int) -> RunSpec:
-        """Bind a planner-selected seed to its immutable catalog slot."""
-        identity = dict(self.identity)
-        identity["seed"] = seed
-        identity["planned_run_slot_id"] = (
-            f"{identity['execution_plan_id']}-"
-            f"{_condition_id(self.atomic_run_id)}-s{seed}"
-        )
-        return RunSpec(
-            atomic_run_id=self.atomic_run_id,
-            identity=identity,
-            corpus=self.corpus,
-            vocabulary=self.vocabulary,
-            training=self.training,
-            checkpoint=self.checkpoint,
-            tracking=self.tracking,
-            path=self.path,
-            distribution=self.distribution,
-        )
-
-    def to_executor_config(self) -> dict[str, object]:
-        resolved: dict[str, object] = {
-            "corpus": self.corpus,
-            "vocabulary": self.vocabulary,
-            "training": self.training,
-        }
-        if self.distribution is not None:
-            resolved["distribution"] = self.distribution
-        return {
-            "kind": "word2vec",
-            "atomic_run_id": self.atomic_run_id,
-            "identity": {**self.identity, "config_digest": _digest(resolved)},
-            **resolved,
-            "checkpoint": self.checkpoint,
-            "tracking": self.tracking,
-        }
+class RunSpec(Word2VecRunSpec):
+    """W2V1 paper reproduction run specification inheriting top-down defaults."""
 
 
 def parse_run_spec(
@@ -133,16 +82,4 @@ def parse_run_spec(
     )
 
 
-def _condition_id(atomic_run_id: str) -> str:
-    try:
-        corpus_id, condition_id = atomic_run_id.split("--", 1)
-    except ValueError as exc:
-        raise ValueError(
-            "canonical W2V atomic run IDs must be <corpus>--<condition>"
-        ) from exc
-    if not corpus_id or not condition_id:
-        raise ValueError("W2V atomic run corpus and condition IDs must be non-empty")
-    return condition_id
-
-
-__all__ = ["RunSpec", "parse_run_spec"]
+__all__ = ["RunSpec", "_condition_id", "_digest", "parse_run_spec"]

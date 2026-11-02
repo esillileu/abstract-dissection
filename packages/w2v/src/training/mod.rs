@@ -11,6 +11,7 @@ use std::sync::atomic::AtomicU32;
 pub mod backend;
 mod cbow;
 mod hierarchical_softmax;
+pub mod nce;
 mod negative_sampling;
 mod skip_gram;
 pub mod worker;
@@ -104,7 +105,7 @@ pub fn context_radius_with_policy(
     policy: ContextPolicy,
 ) -> usize {
     match policy {
-        ContextPolicy::Fixed => window_radius,
+        ContextPolicy::Fixed | ContextPolicy::EntireSentence => window_radius,
         ContextPolicy::Dynamic => {
             let shrink = window_rng.next_u64() % window_radius as u64;
             window_radius - shrink as usize

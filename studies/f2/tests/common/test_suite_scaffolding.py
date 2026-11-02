@@ -137,7 +137,6 @@ def test_f2_cli_suites_command(tmp_path: Path) -> None:
         DEFINITION._suites.pop("dummy_suite", None)
 
 
-def test_f2_catalog_materialize_missing_suite() -> None:
-    result = runner.invoke(catalog_cli_app, ["materialize", "non_existent_suite"])
+def test_f2_catalog_validate_missing_manifest() -> None:
+    result = runner.invoke(catalog_cli_app, ["validate", "non_existent_manifest.json"])
     assert result.exit_code != 0
-    assert "Unknown F2 suite" in result.output or "Error" in result.output

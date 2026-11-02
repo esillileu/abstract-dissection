@@ -4,7 +4,7 @@ use crate::{
     identity::StableDigest,
     model::{EmbeddingKind, Model, SigmoidTable},
     training::worker::{Worker, WorkerState},
-    vocab::{NegativeSampler, Vocabulary, VocabularyState},
+    vocab::{NceNoiseSampler, NegativeSampler, Vocabulary, VocabularyState},
 };
 use std::{
     sync::{
@@ -66,6 +66,7 @@ pub struct Trainer {
     pub vocab: Arc<Vocabulary>,
     pub model: Arc<Model>,
     pub negative_sampler: NegativeSampler,
+    pub nce_noise_sampler: NceNoiseSampler,
     pub sigmoid_table: SigmoidTable,
     pub config: TrainingConfig,
     pub processed_tokens: AtomicU64,
@@ -73,6 +74,7 @@ pub struct Trainer {
 
 pub struct TrainingSession {
     trainer: Arc<Trainer>,
+    descriptor: StateDescriptor,
     workers: Vec<Worker>,
     completed_epochs: usize,
     running: bool,
@@ -111,6 +113,12 @@ fn config_digest(config: &TrainingConfig) -> String {
     ] {
         hash.value(value);
     }
+    if config.context_policy == crate::ContextPolicy::EntireSentence {
+        hash.update(b"sentence-contiguous-shards-v2");
+    }
+    if config.objective_kind == ObjectiveKind::Nce {
+        hash.update(b"nce-objective-snapshot-v1");
+    }
     hash.finish()
 }
 
@@ -134,7 +142,10 @@ impl Trainer {
         if config.validate() != Status::Ok
             || model.vocab_size != vocab.entries.len()
             || model.embedding_dimension != config.embedding_dimension
-            || (config.objective_kind == ObjectiveKind::NegativeSampling && vocab.entries.len() < 2)
+            || (matches!(
+                config.objective_kind,
+                ObjectiveKind::NegativeSampling | ObjectiveKind::Nce
+            ) && vocab.entries.len() < 2)
         {
             return Err(Status::InvalidArgument);
         }
@@ -149,12 +160,18 @@ impl Trainer {
             Some(digest) => digest,
             None => corpus.digest()?,
         };
+        let nce_noise_sampler = if config.objective_kind == ObjectiveKind::Nce {
+            NceNoiseSampler::initialize(&vocab)?
+        } else {
+            NceNoiseSampler::default()
+        };
         Ok(Self {
             corpus,
             corpus_digest,
             vocab,
             model,
             negative_sampler,
+            nce_noise_sampler,
             sigmoid_table,
             config: config.clone(),
             processed_tokens: AtomicU64::new(0),
@@ -197,8 +214,10 @@ impl TrainingSession {
         for worker_id in 0..trainer.config.thread_count {
             workers.push(Worker::initialize(&trainer, worker_id)?);
         }
+        let descriptor = trainer.state_descriptor()?;
         Ok(Self {
             trainer,
+            descriptor,
             workers,
             completed_epochs: 0,
             running: false,
@@ -342,6 +361,97 @@ impl TrainingSession {
         })
     }
 
+    pub fn descriptor(&self) -> Result<StateDescriptor, Status> {
+        Ok(self.descriptor.clone())
+    }
+    pub fn processed_tokens(&self) -> u64 {
+        self.trainer.processed_tokens()
+    }
+    pub fn vocabulary_state(&self) -> VocabularyState {
+        self.trainer.vocab.export_state()
+    }
+    pub fn worker_states(&self) -> Vec<WorkerState> {
+        self.workers.iter().map(Worker::export_state).collect()
+    }
+    /// Bounded snapshot at an epoch boundary; reject non-finite values before publication.
+    pub fn embedding_chunk(
+        &self,
+        kind: EmbeddingKind,
+        start: usize,
+        count: usize,
+    ) -> Result<Vec<Real>, Status> {
+        if self.running {
+            return Err(Status::InvalidState);
+        }
+        let values = if kind == EmbeddingKind::Input {
+            &self.trainer.model.input_embeddings
+        } else {
+            &self.trainer.model.output_embeddings
+        };
+        let end = start.checked_add(count).ok_or(Status::InvalidArgument)?;
+        let row = values.get(start..end).ok_or(Status::InvalidArgument)?;
+        let mut chunk = Vec::new();
+        chunk
+            .try_reserve_exact(count)
+            .map_err(|_| Status::OutOfMemory)?;
+        for value in row {
+            let value = crate::atomic_float::load(value);
+            if !value.is_finite() {
+                return Err(Status::InvalidState);
+            }
+            chunk.push(value);
+        }
+        Ok(chunk)
+    }
+
+    pub fn restore_chunk(&self, kind: EmbeddingKind, start: usize, values: &[Real]) -> Status {
+        if self.running || values.iter().any(|v| !v.is_finite()) {
+            return Status::InvalidState;
+        }
+        let target = if kind == EmbeddingKind::Input {
+            &self.trainer.model.input_embeddings
+        } else {
+            &self.trainer.model.output_embeddings
+        };
+        let Some(end) = start.checked_add(values.len()) else {
+            return Status::InvalidArgument;
+        };
+        let Some(target) = target.get(start..end) else {
+            return Status::InvalidArgument;
+        };
+        for (target, &value) in target.iter().zip(values) {
+            crate::atomic_float::store(target, value);
+        }
+        Status::Ok
+    }
+
+    pub fn restore_progress(
+        &mut self,
+        descriptor: &StateDescriptor,
+        completed: usize,
+        processed: u64,
+        workers: &[WorkerState],
+    ) -> Status {
+        if self.running
+            || self.descriptor().as_ref() != Ok(descriptor)
+            || completed > self.trainer.config.epochs
+            || workers.len() != self.workers.len()
+        {
+            return Status::IdentityMismatch;
+        }
+        for (worker, state) in self.workers.iter_mut().zip(workers) {
+            let status = worker.restore_state(state);
+            if status != Status::Ok {
+                return status;
+            }
+        }
+        self.completed_epochs = completed;
+        self.trainer
+            .processed_tokens
+            .store(processed, Ordering::Relaxed);
+        Status::Ok
+    }
+
     pub fn export_state(&self) -> Result<TrainingState, Status> {
         if self.running {
             return Err(Status::InvalidState);
@@ -363,7 +473,7 @@ impl TrainingSession {
             return Err(Status::InvalidState);
         }
         Ok(TrainingState {
-            descriptor: self.trainer.state_descriptor()?,
+            descriptor: self.descriptor.clone(),
             completed_epochs: self.completed_epochs,
             processed_tokens: self.trainer.processed_tokens(),
             vocabulary: self.trainer.vocab.export_state(),

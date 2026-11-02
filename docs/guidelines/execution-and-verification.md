@@ -41,10 +41,7 @@ uv run repro f2-cc corpus analyze --manifest <provenance.parquet>
 uv run repro f2-cc corpus calibrate --manifest <provenance.parquet> --audit-file <audit.jsonl>
 
 # 2. F2 reproduction catalog and completed-source preparation
-uv run repro f2 catalog migrate
-uv run repro f2 catalog load-manifest studies/f2/catalog/w2v.json
-uv run repro f2 catalog status
-uv run repro f2 catalog matrix
+uv run repro f2 catalog validate
 uv run repro f2 corpus sources status
 
 # 3. Canonical training (after preflight and explicit cost approval)

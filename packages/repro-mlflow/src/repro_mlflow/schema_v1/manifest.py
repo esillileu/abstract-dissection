@@ -21,6 +21,10 @@ def write_result_manifest(
         if path == manifest_path:
             continue
         rel = path.relative_to(artifact_root)
+        if "checkpoints" in rel.parts and any(
+            part.startswith(".") for part in rel.parts
+        ):
+            continue
         if any(part in exclude_dirs for part in rel.parts):
             continue
         digest = hashlib.sha256()

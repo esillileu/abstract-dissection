@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from heapq import nsmallest
 from typing import Iterable, Protocol, Sequence
 
 import numpy as np
@@ -23,14 +24,19 @@ class EvaluationResult:
     """A score together with the denominator and vocabulary coverage that produced it."""
 
     metric_id: str
-    score: float
+    score: float | None
     total_count: int
     valid_count: int
     excluded_count: int
 
     @property
-    def coverage(self) -> float:
-        return self.valid_count / self.total_count if self.total_count else 0.0
+    def coverage(self) -> float | None:
+        return self.valid_count / self.total_count if self.total_count else None
+
+    def require_score(self) -> float:
+        if self.score is None:
+            raise ValueError(f"undefined evaluation: {self.metric_id}")
+        return self.score
 
 
 @dataclass(frozen=True)
@@ -111,8 +117,10 @@ def evaluate_analogies(
         if vocabulary_limit < 1:
             raise ValueError("analogy vocabulary_limit must be positive")
         row_count = min(row_count, vocabulary_limit)
-    normalized = _normalized_embeddings(lookup.embeddings[:row_count], dtype=np.float32)
-    analogy_rows = _analogy_rows(lookup, row_count)
+    wanted = {
+        token.upper() for question in questions for token in _analogy_tokens(question)
+    }
+    analogy_rows = _analogy_rows(lookup, row_count, wanted=wanted)
     category_counts: dict[str, list[int]] = {}
     valid: list[tuple[AnalogyQuestion, tuple[int, int, int, int]]] = []
     for question in questions:
@@ -124,25 +132,13 @@ def evaluate_analogies(
         counts[1] += 1
         valid.append((question, tuple(int(row) for row in rows)))
 
-    for start in range(0, len(valid), batch_size):
-        batch = valid[start : start + batch_size]
-        rows = np.asarray([item[1] for item in batch], dtype=np.int64)
-        queries = (
-            normalized[rows[:, 1]] - normalized[rows[:, 0]] + normalized[rows[:, 2]]
-        )
-        scores = normalized @ queries.T
-        columns = np.arange(len(batch))
-        scores[rows[:, 0], columns] = -np.inf
-        scores[rows[:, 1], columns] = -np.inf
-        scores[rows[:, 2], columns] = -np.inf
-        predictions = np.argmax(scores, axis=0)
-        positive = np.max(scores, axis=0) > 0.0
-        for (question, row), prediction, has_positive in zip(
-            batch, predictions, positive, strict=True
-        ):
-            category_counts[question.category][2] += int(
-                has_positive and int(prediction) == row[3]
-            )
+    question_rows = [item[1] for item in valid]
+    for (question, row), (prediction, positive) in zip(
+        valid,
+        _analogy_predictions(lookup.embeddings[:row_count], question_rows, batch_size),
+        strict=True,
+    ):
+        category_counts[question.category][2] += int(positive and prediction == row[3])
 
     categories = tuple(
         _accuracy_result(name, total, valid, correct)
@@ -164,6 +160,63 @@ def evaluate_analogies(
     )
 
 
+EVALUATION_CHUNK_ROWS = 4096
+
+
+def _analogy_predictions(
+    embeddings: np.ndarray,
+    question_rows: Sequence[tuple[int, int, int, int]],
+    batch_size: int,
+) -> Iterable[tuple[int, bool]]:
+    """Scan candidates in fixed blocks, keeping original vocabulary tie order."""
+    if not question_rows:
+        return
+    batches: list[
+        tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]
+    ] = []
+    for start in range(0, len(question_rows), batch_size):
+        rows = np.asarray(question_rows[start : start + batch_size], dtype=np.int64)
+        flat = rows[:, :3].ravel()
+        selected_chunks = [
+            _normalized_embeddings(
+                embeddings[flat[i : i + EVALUATION_CHUNK_ROWS]], dtype=np.float32
+            )
+            for i in range(0, len(flat), EVALUATION_CHUNK_ROWS)
+        ]
+        selected = np.concatenate(selected_chunks, axis=0).reshape(
+            len(rows), 3, embeddings.shape[1]
+        )
+        queries_t = np.ascontiguousarray(
+            (selected[:, 1] - selected[:, 0] + selected[:, 2]).T
+        )
+        best = np.full(len(rows), -np.inf, dtype=np.float32)
+        predictions = np.zeros(len(rows), dtype=np.int64)
+        columns = np.arange(len(rows))
+        batches.append((rows, queries_t, best, predictions, columns))
+
+    for offset in range(0, len(embeddings), EVALUATION_CHUNK_ROWS):
+        block = _normalized_embeddings(
+            embeddings[offset : offset + EVALUATION_CHUNK_ROWS], dtype=np.float32
+        )
+        for rows, queries_t, best, predictions, columns in batches:
+            scores = block @ queries_t
+            for column in range(3):
+                excluded = rows[:, column] - offset
+                inside = (excluded >= 0) & (excluded < len(block))
+                scores[excluded[inside], columns[inside]] = -np.inf
+            local = np.argmax(scores, axis=0)
+            values = scores[local, columns]
+            better = values > best
+            predictions[better] = offset + local[better]
+            best[better] = values[better]
+
+    for _, _, best, predictions, _ in batches:
+        yield from (
+            (int(row), bool(score > 0.0))
+            for row, score in zip(predictions, best, strict=True)
+        )
+
+
 def evaluate_word_similarity(
     lookup: VectorLookup, pairs: Sequence[SimilarityPair]
 ) -> EvaluationResult:
@@ -177,7 +230,7 @@ def evaluate_word_similarity(
             continue
         human.append(pair.human_score)
         predicted.append(_cosine(left, right))
-    score = _pearson(_ranks(human), _ranks(predicted)) if len(human) >= 2 else 0.0
+    score = _pearson(_ranks(human), _ranks(predicted)) if len(human) >= 2 else None
     return EvaluationResult(
         "word_similarity_spearman",
         score,
@@ -224,7 +277,7 @@ def evaluate_sentence_completion(
         valid += 1
     return EvaluationResult(
         "sentence_completion_accuracy",
-        correct / valid if valid else 0.0,
+        correct / valid if valid else None,
         len(questions),
         valid,
         len(questions) - valid,
@@ -260,17 +313,14 @@ def parse_msr_sentence_completion_questions(
         _to_bytes(line).strip() for line in answers_lines if _to_bytes(line).strip()
     ]
 
-    if len(q_lines) != 5200:
+    if len(q_lines) % 5 != 0 or len(q_lines) // 5 != len(a_lines):
         raise ValueError(
-            f"canonical MSR Sentence Completion requires exactly 5,200 question lines (1,040 questions * 5); found {len(q_lines)}"
-        )
-    if len(a_lines) != 1040:
-        raise ValueError(
-            f"canonical MSR Sentence Completion requires exactly 1,040 answer lines; found {len(a_lines)}"
+            f"canonical MSR Sentence Completion requires question lines to be 5x answer lines; found {len(q_lines)} questions and {len(a_lines)} answers"
         )
 
+    num_questions = len(a_lines)
     parsed: list[SentenceCompletionQuestion] = []
-    for i in range(1040):
+    for i in range(num_questions):
         cand_sentences = [line.split() for line in q_lines[i * 5 : (i + 1) * 5]]
         ans_tokens = a_lines[i].split()
 
@@ -430,21 +480,21 @@ def evaluate_msr_sentence_completion(
 
     overall_res = EvaluationResult(
         metric_id="msr_sentence_completion_accuracy",
-        score=correct_total / len(questions) if questions else 0.0,
+        score=correct_total / len(questions) if questions else None,
         total_count=len(questions),
         valid_count=len(questions),
         excluded_count=0,
     )
     dev_res = EvaluationResult(
         metric_id="msr_sentence_completion_dev_accuracy",
-        score=correct_dev / dev_count if dev_count else 0.0,
+        score=correct_dev / dev_count if dev_count else None,
         total_count=dev_count,
         valid_count=dev_count,
         excluded_count=0,
     )
     test_res = EvaluationResult(
         metric_id="msr_sentence_completion_test_accuracy",
-        score=correct_test / test_count if test_count else 0.0,
+        score=correct_test / test_count if test_count else None,
         total_count=test_count,
         valid_count=test_count,
         excluded_count=0,
@@ -466,7 +516,11 @@ def select_best_epoch(
     direction = 1.0 if maximize else -1.0
     return max(
         results,
-        key=lambda item: (direction * item[1].score, item[1].coverage, -item[0]),
+        key=lambda item: (
+            direction * item[1].require_score(),
+            item[1].coverage,
+            -item[0],
+        ),
     )
 
 
@@ -479,40 +533,47 @@ def nearest_tokens(
         return ()
     if limit < 1:
         raise ValueError("neighbor limit must be positive")
-    normalized = _normalized_embeddings(lookup.embeddings)
-    scores = normalized @ normalized[row]
-    scores[row] = -np.inf
-    ranked = sorted(
-        (index for index in range(len(scores)) if np.isfinite(scores[index])),
-        key=lambda index: (-float(scores[index]), _token_at(lookup, index)),
-    )[:limit]
-    return tuple(
-        NearestNeighbor(_token_at(lookup, index), float(scores[index]))
-        for index in ranked
-    )
+    query = _normalized_embeddings(lookup.embeddings[[row]])[0]
+    if not np.any(query):
+        return ()
+    return _nearest_query(lookup, query, {row}, limit)
+
+
+def _nearest_query(lookup, query, excluded, limit):
+    def candidates():
+        for offset in range(0, len(lookup.embeddings), EVALUATION_CHUNK_ROWS):
+            block = _normalized_embeddings(
+                lookup.embeddings[offset : offset + EVALUATION_CHUNK_ROWS]
+            )
+            scores = block @ query
+            nonzero = np.any(block, axis=1)
+            for local, score in enumerate(scores):
+                row = offset + local
+                if row not in excluded and np.isfinite(score) and nonzero[local]:
+                    yield (-float(score), _token_at(lookup, row), row)
+
+    ranked = nsmallest(limit, candidates())
+    return tuple(NearestNeighbor(token, -score) for score, token, _ in ranked)
 
 
 def additive_composition(
     lookup: VectorLookup, tokens: Sequence[bytes], *, limit: int = 10
 ) -> tuple[NearestNeighbor, ...]:
-    """Rank tokens nearest to the normalized sum of all supplied token vectors."""
+    """Rank tokens nearest to the normalized sum with bounded candidate memory."""
+    if limit < 1:
+        raise ValueError("neighbor limit must be positive")
     rows = [lookup.row(token) for token in tokens]
     if not tokens or any(row is None for row in rows):
         return ()
-    normalized = _normalized_embeddings(lookup.embeddings)
-    query = normalized[[int(row) for row in rows]].sum(axis=0)
+    rows = [int(row) for row in rows]
+    inputs = _normalized_embeddings(lookup.embeddings[rows])
+    if not np.all(np.any(inputs, axis=1)):
+        return ()
+    query = inputs.sum(axis=0)
     norm = float(np.linalg.norm(query))
     if norm == 0.0:
         return ()
-    scores = normalized @ (query / norm)
-    scores[[int(row) for row in rows]] = -np.inf
-    ranked = sorted(
-        (index for index in range(len(scores)) if np.isfinite(scores[index])),
-        key=lambda index: (-float(scores[index]), _token_at(lookup, index)),
-    )[:limit]
-    return tuple(
-        NearestNeighbor(_token_at(lookup, i), float(scores[i])) for i in ranked
-    )
+    return _nearest_query(lookup, query / norm, set(rows), limit)
 
 
 def pca_projection(
@@ -557,7 +618,7 @@ def _accuracy_result(
     metric_id: str, total: int, valid: int, correct: int
 ) -> EvaluationResult:
     return EvaluationResult(
-        metric_id, correct / valid if valid else 0.0, total, valid, total - valid
+        metric_id, correct / valid if valid else None, total, valid, total - valid
     )
 
 
@@ -567,27 +628,37 @@ def _combine_accuracy(
     selected = tuple(results)
     total = sum(result.total_count for result in selected)
     valid = sum(result.valid_count for result in selected)
-    correct = sum(round(result.score * result.valid_count) for result in selected)
+    correct = sum(
+        round(result.require_score() * result.valid_count)
+        for result in selected
+        if result.valid_count
+    )
     return EvaluationResult(
-        metric_id, correct / valid if valid else 0.0, total, valid, total - valid
+        metric_id, correct / valid if valid else None, total, valid, total - valid
     )
 
 
-def _analogy_rows(lookup: VectorLookup, row_count: int) -> dict[bytes, int]:
+def _analogy_rows(
+    lookup: VectorLookup, row_count: int, *, wanted: set[bytes]
+) -> dict[bytes, int]:
+    row_count = min(row_count, len(lookup.embeddings))
     token_bytes = getattr(lookup, "token_bytes", None)
     offsets = getattr(lookup, "token_offsets", None)
     if token_bytes is not None and offsets is not None:
         rows: dict[bytes, int] = {}
         for row in range(row_count):
             token = bytes(token_bytes[offsets[row] : offsets[row + 1]]).upper()
-            rows.setdefault(token, row)
+            if token in wanted:
+                rows.setdefault(token, row)
         return rows
 
     # Lightweight in-memory test lookups do not expose packed token arrays.
     tokens = getattr(lookup, "tokens", ())
     if tokens:
         return {
-            bytes(token).upper(): row for row, token in enumerate(tokens[:row_count])
+            bytes(token).upper(): row
+            for row, token in enumerate(tokens[:row_count])
+            if bytes(token).upper() in wanted
         }
     raise ValueError("analogy evaluation requires lookup token arrays")
 
@@ -622,7 +693,7 @@ def _ranks(values: Sequence[float]) -> list[float]:
     return ranks
 
 
-def _pearson(left: Sequence[float], right: Sequence[float]) -> float:
+def _pearson(left: Sequence[float], right: Sequence[float]) -> float | None:
     left_values = np.asarray(left, dtype=np.float64)
     right_values = np.asarray(right, dtype=np.float64)
     left_centered = left_values - left_values.mean()
@@ -631,7 +702,7 @@ def _pearson(left: Sequence[float], right: Sequence[float]) -> float:
     return (
         float(np.dot(left_centered, right_centered) / denominator)
         if denominator
-        else 0.0
+        else None
     )
 
 

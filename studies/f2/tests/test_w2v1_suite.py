@@ -15,9 +15,9 @@ from f2.suites.w2v1.analysis import (
     Table2EvaluationCache,
     Table2RunResult,
     _complete_conditions,
-    ensure_questions_words,
     observed_training_seconds,
 )
+from f2.suites.w2v1.resources import ensure_questions_words
 from repro_core.cli import app
 from repro_core.context import ExperimentContext, RuntimePaths
 from repro_core.execution.runner import run_config
@@ -71,12 +71,107 @@ def test_table2_evaluation_cache_requires_matching_protocol_signature(tmp_path) 
     run_id = "a" * 32
     result = Table2RunResult(24, 50, 1, run_id, 12.5, 8.0, 15.0, 30.0, 10, 12)
     first = Table2EvaluationCache(tmp_path, questions_sha256="first")
-    first.store(result, lookup_identity={"vocabulary_digest": "digest"})
+    first.store(result)
 
     assert first.load(run_id) == result
     assert (
         Table2EvaluationCache(tmp_path, questions_sha256="second").load(run_id) is None
     )
+
+
+def test_table6_evaluation_cache_lifecycle_and_seeding(tmp_path) -> None:
+    from f2.suites.w2v1.table6 import Table6EvaluationCache, Table6RunResult
+
+    run_id = "c" * 32
+    result = Table6RunResult(
+        architecture="cbow",
+        embedding_dimension=1000,
+        seed=1,
+        mlflow_run_id=run_id,
+        source_table=6,
+        semantic_accuracy_percent=55.0,
+        syntactic_accuracy_percent=65.0,
+        total_accuracy_percent=60.0,
+        included_questions=17000,
+        total_questions=19544,
+        observed_training_seconds=1200.0,
+        paper_training_days=2.0,
+        paper_cpu_cores=140,
+    )
+    cache = Table6EvaluationCache(tmp_path / "cache", questions_sha256="qsha")
+    cache.store(result)
+    assert cache.load(run_id) == result
+
+    # Signature mismatch
+    other = Table6EvaluationCache(tmp_path / "cache", questions_sha256="different")
+    assert other.load(run_id) is None
+
+
+def test_table3_table4_table5_table7_evaluation_caches(tmp_path) -> None:
+    from f2.suites.w2v1.table3 import Table3EvaluationCache, Table3RunResult
+    from f2.suites.w2v1.table4 import Table4EvaluationCache, Table4RunResult
+    from f2.suites.w2v1.table5 import Table5EvaluationCache, Table5RunResult
+    from f2.suites.w2v1.table7 import Table7EvaluationCache, Table7RunResult
+
+    # Table 3
+    t3_id = "3" * 32
+    t3_res = Table3RunResult(
+        "cbow",
+        "wmt",
+        1,
+        t3_id,
+        20.0,
+        50.0,
+        35.0,
+        40.0,
+        500,
+        1000,
+        500,
+        1000,
+        400,
+        8000,
+        100.0,
+    )
+    t3_cache = Table3EvaluationCache(
+        tmp_path / "t3", questions_sha256="q", msr_sha256="m"
+    )
+    t3_cache.store(t3_res)
+    assert t3_cache.load(t3_id) == t3_res
+    assert (
+        Table3EvaluationCache(
+            tmp_path / "t3", questions_sha256="diff", msr_sha256="m"
+        ).load(t3_id)
+        is None
+    )
+
+    # Table 4
+    t4_id = "4" * 32
+    t4_res = Table4RunResult(
+        "skipgram", "lm1b", 7, t4_id, 45.0, 55.0, 50.0, 18000, 19544, 500.0
+    )
+    t4_cache = Table4EvaluationCache(tmp_path / "t4", questions_sha256="q")
+    t4_cache.store(t4_res)
+    assert t4_cache.load(t4_id) == t4_res
+
+    # Table 5
+    t5_id = "5" * 32
+    t5_res = Table5RunResult(
+        "cbow", 300, 783, 3, "wmt", 19, t5_id, 15.0, 50.0, 32.0, 17000, 19544, 300.0
+    )
+    t5_cache = Table5EvaluationCache(tmp_path / "t5", questions_sha256="q")
+    t5_cache.store(t5_res)
+    assert t5_cache.load(t5_id) == t5_res
+
+    # Table 7
+    t7_id = "7" * 32
+    t7_res = Table7RunResult(
+        "skipgram", 640, 50, 1, "holmes", 1, t7_id, 48.0, 50.0, 47.0, 1040, 50.0
+    )
+    t7_cache = Table7EvaluationCache(
+        tmp_path / "t7", questions_sha256="q", answers_sha256="a"
+    )
+    t7_cache.store(t7_res)
+    assert t7_cache.load(t7_id) == t7_res
 
 
 def test_table2_conditions_are_partitioned_by_corpus_source() -> None:
@@ -339,7 +434,7 @@ def test_w2v_tracked_run_publishes_one_complete_mlflow_run(
     run = runs[0]
     assert run.info.status == "FINISHED"
     assert run.data.tags["mlflow.runName"] == expected_slot
-    assert run.data.tags["result.durable_complete"] == "true"
+    assert "result.durable_complete" not in run.data.tags
     assert run.data.tags["suite.name"] == suite
     assert "f2.resource_manifest_digest" not in run.data.tags
     assert "f2.resource_version_id" not in run.data.tags

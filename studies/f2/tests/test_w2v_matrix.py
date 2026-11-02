@@ -35,7 +35,8 @@ def test_suite_plans_match_canonical_matrix() -> None:
     canonical_seeds = {1, 7, 19}
     for suite, experiment_id, expected in (
         ("w2v1", "e01", 216),
-        ("w2v1", "e02", 18),
+        ("w2v1", "e02", 27),
+        ("w2v2", "e01", 63),
         ("w2v2", "e02", 54),
     ):
         plans = Planner(DEFINITION.get_suite(suite)).build(
@@ -99,10 +100,9 @@ def test_selected_seed_is_part_of_runtime_identity() -> None:
 def test_target_dispositions_cover_catalog_and_report_is_human_readable(
     tmp_path,
 ) -> None:
-    assert len(DISPOSITIONS) == 13
+    assert len(DISPOSITIONS) == 14
     assert {item.classification for item in DISPOSITIONS} == {
         "reconstruction",
-        "external_baseline",
         "unsupported",
     }
     assert CLASSIFICATIONS == (

@@ -62,5 +62,8 @@ pub fn downpour_config_digest(training: &TrainingConfig, downpour: &DownpourConf
     ] {
         hash.value(value);
     }
+    if training.objective_kind == crate::ObjectiveKind::Nce {
+        hash.update(b"nce-objective-snapshot-v1");
+    }
     hash.finish()
 }

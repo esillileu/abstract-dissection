@@ -1,0 +1,44 @@
+domain: f2.w2v2
+kind: word2vec
+execution: {mode: seeded, default_device: cpu}
+seed_policy: {seed_set: research_v1, seed_count: 3}
+identity:
+  planned_run_slot_id: resolved-from-atomic-run-and-seed
+  execution_plan_id: w2v2-section4-33b-reconstruction-r3
+  experiment_spec_id: w2v2-section4-phrase-33b
+  seed: 1
+corpus:
+  path: fineweb-33b.txt
+  lexical_token_budget: 32991052431
+large_scale:
+  paper_lexical_tokens: 33000000000
+  lexical_tokens: 32991052431
+  artifact_id: f2.w2v2.section4.phrase-33b.hs1000.entire-sentence.r3
+  sentence_policy: terminal-punctuation-or-lf-v1
+  execution_policy: contiguous-sentence-shards-v2
+  classification: reconstruction
+  decision: FineWeb substitute; accepted existing 32991052431-word corpus in place of 33B (8947569 words short, user-approved); terminal punctuation and LF boundaries; 3 epochs and C subsampling reconstructed; contiguous sentence shards change worker RNG assignment
+phrase_detection: {passes: 2, threshold: 100.0, min_count: 5, separator: _}
+vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 5}
+training:
+  model_kind: skip_gram
+  objective_kind: hierarchical_softmax
+  embedding_dimension: 1000
+  context_policy: entire_sentence
+  window_radius: 5
+  epochs: 3
+  thread_count: 20
+  learning_rate_update_interval: 10000
+  observation_interval: 100000
+  initial_learning_rate: 0.025
+  subsampling_threshold: 0.00001
+  negative_sample_count: 0
+  rng_algorithm: lcg
+  negative_table_size: 1
+  sigmoid_table_size: 1000
+  sigmoid_max: 6.0
+  hs_out_of_range_policy: skip
+checkpoint: {save_latest: true, save_final: true, best_payload: full}
+tracking: {experiment: f2.w2v2}
+variants:
+  fineweb--phrase-33b: {}

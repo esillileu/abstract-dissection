@@ -45,6 +45,7 @@ extend-exclude = [
 testpaths = ["packages", "studies", "tests"]
 addopts = "-m 'not network and not database'"
 norecursedirs = [
+    "target",
     "references",
     "data",
     "artifacts",

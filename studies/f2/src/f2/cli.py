@@ -6,14 +6,14 @@ import json
 from collections.abc import Callable
 from functools import wraps
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 import typer
 
 from repro_core.execution.definition import RunOrder
 
 from .catalog.cli import app as catalog_app
-from .corpus.preprocessing_cli import app as corpus_app
+from .corpus.cli import app as corpus_app
 from .definition import DEFINITION
 
 Experiments = Annotated[
@@ -63,7 +63,7 @@ def evaluate(
     suite: Annotated[
         str,
         typer.Argument(
-            help="Evaluation policy: w2v1-table2, w2v1-table4, w2v1-table7, or w2v2."
+            help="Evaluation policy: w2v1-table2, w2v1-table4, w2v1-table7, w2v2-table3, or w2v2."
         ),
     ],
     lookup: Annotated[Path, typer.Option(help="Saved lookup artifact directory.")],
@@ -185,6 +185,13 @@ def run(
             help="Acknowledge the cost of canonical W2V training.",
         ),
     ] = False,
+    override: Annotated[
+        bool,
+        typer.Option(
+            "--override",
+            help="Re-run and publish a new MLflow run, preserving existing runs.",
+        ),
+    ] = False,
 ) -> None:
     """Execute F2 suite experiments."""
     from repro_core.cli.commands import run_command
@@ -201,7 +208,12 @@ def run(
     if suite in {"w2v1", "w2v2"}:
         from .suites.w2v.tracked import run_tracked_yaml
 
-        run_fn = run_tracked_yaml
+        if override:
+
+            def run_fn(*args, **kwargs):
+                return run_tracked_yaml(*args, override=True, **kwargs)
+        else:
+            run_fn = run_tracked_yaml
     run_command(
         suite_def,
         experiments=experiment or [],
@@ -221,78 +233,154 @@ def run(
     )
 
 
+@app.command("analyze")
 @cli_errors
 def analyze(
     suite: Annotated[
-        str,
+        str | None,
         typer.Argument(
-            help="Target F2 suite (e.g. w2v_pretrain) or 'corpus'",
+            help="Target F2 suite (e.g. w2v1, w2v2) or 'corpus'",
         ),
-    ] = "corpus",
+    ] = None,
     tracking_uri: Annotated[str | None, typer.Option("--tracking-uri")] = None,
     questions: Annotated[
         Path | None,
         typer.Option("--questions", help="Canonical questions-words.txt path."),
     ] = None,
+    phrase_questions: Annotated[
+        Path | None,
+        typer.Option(
+            "--phrase-questions", help="Canonical questions-phrases.txt path."
+        ),
+    ] = None,
     corpus: Annotated[
         str | None,
         typer.Option(
             "--corpus",
-            help="W2V1 corpus source: wmt, lm1b, or umbc. Omit to analyze all.",
+            help="W2V1 corpus source: wmt, lm1b, umbc; fineweb for Tables 4/6. Omit to analyze all.",
         ),
     ] = None,
     table: Annotated[
-        int, typer.Option("--table", help="W2V1 table number: 2, 4, 5, or 7.")
-    ] = 2,
+        int | None,
+        typer.Option("--table", help="Table number to analyze (W2V1: 2-7; W2V2: 1-6)."),
+    ] = None,
+    msr_questions: Annotated[
+        Path | None,
+        typer.Option(
+            "--msr-questions", help="Table 3 MSR syntactic word-analogy benchmark path."
+        ),
+    ] = None,
+    override: Annotated[
+        bool,
+        typer.Option(
+            "--override", help="Re-run analysis even if results already exist."
+        ),
+    ] = False,
+    offline: Annotated[
+        bool,
+        typer.Option(
+            "--offline", help="Analyze existing local cache without contacting MLflow."
+        ),
+    ] = False,
 ) -> None:
     """Render or summarize F2 experiment results."""
-    if suite == "corpus":
+    target_suite = (suite or "").lower()
+    if target_suite == "corpus":
         typer.echo("For corpus pipeline analysis, use: repro f2 corpus analyze --help")
+        return
+    if target_suite in ("w2v2", ""):
+        output = run_w2v2_analysis(
+            tracking_uri=tracking_uri,
+            word_questions=questions,
+            phrase_questions=phrase_questions,
+            override=override,
+            offline=offline,
+            table=table,
+            corpus=corpus,
+        )
+        typer.echo(f"W2V2 report written: {output / 'summary.md'}")
         return
     if suite == "w2v1":
         from repro_core.context import RuntimePaths
 
-        from .common.paths import get_benchmark_data_dir
         from .suites.w2v1.analysis import analyze_table2_sources
+        from .suites.w2v1.table3 import analyze_table3_sources
         from .suites.w2v1.table4 import analyze_table4_sources
         from .suites.w2v1.table5 import analyze_table5_sources
+        from .suites.w2v1.table6 import analyze_table6_sources
         from .suites.w2v1.table7 import analyze_table7_sources
         from .tracking import resolve_tracking_uri
 
         paths = RuntimePaths.from_environment()
-        if table not in (2, 4, 5, 7):
-            raise ValueError("W2V1 analysis table must be 2, 4, 5, or 7")
+        if table is None:
+            table = 2
+        if table not in (2, 3, 4, 5, 6, 7):
+            raise ValueError("W2V1 analysis table must be 2, 3, 4, 5, 6, or 7")
+        if msr_questions is not None and table != 3:
+            raise ValueError("--msr-questions applies only to Table 3")
+        from .suites.w2v.cache import download_results
+
+        cache_root = download_results(resolve_tracking_uri(tracking_uri), "w2v1", paths)
         if table == 7:
             questions = (
                 questions
-                or get_benchmark_data_dir(paths)
-                / "msr_sentence_completion"
+                or cache_root
+                / "evaluation/msr_sentence_completion"
                 / "Holmes.lm_format.questions.txt"
             )
             analyzer = analyze_table7_sources
             outputs = analyzer(
-                resolve_tracking_uri(tracking_uri),
+                cache_root,
                 questions,
                 paths=paths,
             )
         else:
+            benchmarks = paths.inputs("f2", "benchmarks")
             questions = (
-                questions or get_benchmark_data_dir(paths) / "questions-words.txt"
+                questions
+                or (
+                    benchmarks / "questions-words.txt"
+                    if (benchmarks / "questions-words.txt").is_file()
+                    else None
+                )
+                or next(
+                    (
+                        p
+                        for p in cache_root.glob("*/evaluation/questions-words.txt")
+                        if p.is_file()
+                    ),
+                    cache_root / "evaluation/questions-words.txt",
+                )
             )
             if table == 2:
                 analyzer = analyze_table2_sources
+            elif table == 3:
+                outputs = analyze_table3_sources(
+                    cache_root,
+                    questions,
+                    msr_questions_path=msr_questions,
+                    corpus_source=corpus,
+                    paths=paths,
+                )
+                for output in outputs:
+                    typer.echo(f"W2V1 Table 3 analysis written: {output}")
+                analyzer = None
             elif table == 4:
                 analyzer = analyze_table4_sources
-            else:
+            elif table == 5:
                 analyzer = analyze_table5_sources
-            outputs = analyzer(
-                resolve_tracking_uri(tracking_uri),
-                questions,
-                corpus_source=corpus,
-                paths=paths,
-            )
-        for output in outputs:
-            typer.echo(f"W2V1 Table {table} analysis written: {output}")
+            else:
+                analyzer = analyze_table6_sources
+
+            if analyzer is not None:
+                outputs = analyzer(
+                    cache_root,
+                    questions,
+                    corpus_source=corpus,
+                    paths=paths,
+                )
+                for output in outputs:
+                    typer.echo(f"W2V1 Table {table} analysis written: {output}")
         return
     typer.echo(f"Analysis orchestration for F2 suite '{suite}' is initialized.")
 
@@ -302,7 +390,7 @@ def check(
     suite: Annotated[
         str,
         typer.Argument(
-            help="Target F2 suite (e.g. w2v_pretrain)",
+            help="Target F2 suite (e.g. w2v1, w2v2)",
         ),
     ],
     experiment: Experiments = None,
@@ -315,7 +403,250 @@ def check(
     tracking_uri: Annotated[str | None, typer.Option("--tracking-uri")] = None,
 ) -> None:
     """Compare declared plans with recorded F2 run state in MLflow."""
-    typer.echo(f"Checking run state for F2 suite '{suite}'...")
+    from mlflow.tracking import MlflowClient
+
+    from repro_core.execution import RunOptions, RunSelection
+    from repro_core.execution.parsing import parse_overrides
+    from repro_core.execution.planning import Planner
+
+    from .definition import DEFINITION
+    from .tracking import resolve_tracking_uri
+
+    suite_def = DEFINITION.get_suite(suite)
+    overrides = parse_overrides(override_values or [])
+    plans = Planner(suite_def).build(
+        RunSelection(
+            experiment_ids=tuple(experiment or []),
+            all_experiments=all_experiments or not experiment,
+            atomic_run_ids=tuple(atomic_run or []),
+            excluded_atomic_run_ids=tuple(exclude_atomic_run or []),
+            seed_values=seed,
+            seed_set=seed_set,
+        ),
+        RunOptions(overrides=overrides),
+    )
+    uri = resolve_tracking_uri(tracking_uri)
+    client = MlflowClient(tracking_uri=uri)
+    experiment_name = f"f2.{suite}"
+    exp = client.get_experiment_by_name(experiment_name)
+    if exp is None:
+        typer.echo(
+            f"No MLflow experiment found for '{experiment_name}'. "
+            f"All {len(plans)} planned runs are missing."
+        )
+        return
+
+    runs = client.search_runs([exp.experiment_id], max_results=10000)
+    completed_slots = {
+        r.data.tags.get("planned_run_slot_id")
+        or r.data.tags.get("f2.planned_run_slot_id")
+        for r in runs
+        if r.info.status == "FINISHED"
+    }
+    completed_count = 0
+    missing_count = 0
+    for plan in plans:
+        spec = suite_def.load_run_spec(
+            plan.path, atomic_run_id=plan.atomic_run_id, overrides=overrides
+        )
+        seeded_spec = spec.with_seed(plan.seed) if plan.seed is not None else spec
+        slot_id = str(seeded_spec.identity.get("planned_run_slot_id", ""))
+        if slot_id in completed_slots:
+            completed_count += 1
+        else:
+            missing_count += 1
+    typer.echo(
+        f"f2/{suite}: planned={len(plans)} completed={completed_count} missing={missing_count}"
+    )
 
 
 __all__ = ["analyze", "app", "check", "evaluate", "list_suites", "plan", "run"]
+
+
+@app.command("phrase-preflight")
+@cli_errors
+def phrase_preflight(
+    config: Path,
+    atomic_run: Annotated[str, typer.Option("--atomic-run")],
+    source: Annotated[Path | None, typer.Option("--source")] = None,
+    prepare: Annotated[
+        bool,
+        typer.Option(
+            "--prepare",
+            help="Explicitly prepare phrases and measure vocabulary; never train.",
+        ),
+    ] = False,
+) -> None:
+    """Inspect Section 4.1 local inputs and resources without acquisition/training."""
+    from repro_core.context.paths import RuntimePaths
+
+    from .suites.w2v2.preflight import preflight, resolve_source
+    from .suites.w2v2.spec import parse_run_spec
+
+    paths = RuntimePaths.from_environment()
+    spec = parse_run_spec(config, atomic_run_id=atomic_run)
+    resolved = spec.to_executor_config()
+    candidate = resolve_source(resolved, paths, source)
+    typer.echo(
+        json.dumps(
+            preflight(
+                resolved,
+                candidate,
+                paths.staging_root / "f2/preparation",
+                staging_root=paths.staging_root,
+                prepare=prepare,
+            ),
+            indent=2,
+            sort_keys=True,
+        )
+    )
+
+
+def run_w2v2_analysis(
+    *,
+    paths: Any | None = None,
+    tracking_uri: str | None = None,
+    word_questions: Path | None = None,
+    phrase_questions: Path | None = None,
+    override: bool = False,
+    offline: bool = False,
+    table: int | str | None = None,
+    corpus: str | None = None,
+) -> Path:
+    """Run W2V2 analysis or return existing result without MLflow access or recomputation."""
+    from repro_core.context import RuntimePaths
+
+    paths = paths or RuntimePaths.from_environment()
+    output = (
+        paths.analysis_output("f2", "w2v2")
+        if hasattr(paths, "analysis_output")
+        else paths.cache_root / "f2/w2v2/analysis"
+    )
+    target_table = str(table).lower() if table is not None else None
+    if target_table in {"section4", "4.1"}:
+        target_table = "section4.1"
+    target_corpus = str(corpus).lower() if corpus is not None else None
+    check_output = output
+    if target_corpus is not None:
+        check_output = check_output / target_corpus
+    if target_table is not None:
+        table_dir = (
+            f"table{target_table}" if target_table != "section4.1" else "section4_1"
+        )
+        check_output = check_output / table_dir
+
+    # 1. Reuse existing result if already present and override not requested
+    if (
+        not override
+        and (check_output / "summary.json").is_file()
+        and (check_output / "summary.md").is_file()
+    ):
+        return check_output
+
+    # 2. Otherwise query MLflow (or local cache if offline) and generate report
+    from .suites.w2v.cache import download_results, read_records
+    from .suites.w2v2.analysis import generate_report
+    from .tracking import resolve_tracking_uri
+
+    cache_dir = paths.analysis_cache("f2", "w2v2")
+    if offline:
+        records = read_records(cache_dir)
+        result_source = "offline; MLflow not queried"
+    else:
+        resolved_uri = resolve_tracking_uri(tracking_uri)
+        records = read_records(
+            download_results(resolved_uri, "w2v2", paths, table=table)
+        )
+        result_source = f"MLflow f2.w2v2 ({resolved_uri})"
+
+    # 3. Connect evaluation question paths (explicit > local benchmarks > run cache)
+    w_questions = word_questions
+    p_questions = phrase_questions
+    benchmarks = paths.inputs("f2", "benchmarks")
+
+    if w_questions is None:
+        if (benchmarks / "questions-words.txt").is_file():
+            w_questions = benchmarks / "questions-words.txt"
+        else:
+            for r in records:
+                art_root = r.get("artifact_root")
+                if (
+                    art_root
+                    and (Path(art_root) / "evaluation/questions-words.txt").is_file()
+                ):
+                    w_questions = Path(art_root) / "evaluation/questions-words.txt"
+                    break
+
+    if p_questions is None:
+        if (benchmarks / "questions-phrases.txt").is_file():
+            p_questions = benchmarks / "questions-phrases.txt"
+        else:
+            for r in records:
+                art_root = r.get("artifact_root")
+                if (
+                    art_root
+                    and (Path(art_root) / "evaluation/questions-phrases.txt").is_file()
+                ):
+                    p_questions = Path(art_root) / "evaluation/questions-phrases.txt"
+                    break
+
+    return generate_report(
+        records=records,
+        paths=paths,
+        word_questions=w_questions,
+        phrase_questions=p_questions,
+        result_source=result_source,
+        table_filter=table,
+        corpus_filter=corpus,
+        use_evaluation_cache=True,
+    )
+
+
+@app.command("w2v2-report")
+@cli_errors
+def w2v2_report(
+    offline: Annotated[
+        bool,
+        typer.Option(
+            help="Analyze the existing local cache without contacting MLflow."
+        ),
+    ] = False,
+    tracking_uri: Annotated[
+        str | None, typer.Option(help="Read existing f2.w2v2 MLflow results.")
+    ] = None,
+    word_questions: Annotated[
+        Path | None,
+        typer.Option(help="Existing questions-words.txt; never downloaded."),
+    ] = None,
+    phrase_questions: Annotated[
+        Path | None,
+        typer.Option(help="Existing questions-phrases.txt; never downloaded."),
+    ] = None,
+    table: Annotated[
+        int | None,
+        typer.Option("--table", help="Filter downloaded runs by W2V2 table number."),
+    ] = None,
+    corpus: Annotated[
+        str | None,
+        typer.Option(
+            "--corpus", help="Filter W2V2 corpus source: lm1b, wmt, umbc, fineweb."
+        ),
+    ] = None,
+    override: Annotated[
+        bool,
+        typer.Option(
+            "--override", help="Re-run analysis even if results already exist."
+        ),
+    ] = False,
+) -> None:
+    """Compare all six paper tables and Section 4.1 without training or publishing."""
+    output = run_w2v2_analysis(
+        tracking_uri=tracking_uri,
+        word_questions=word_questions,
+        phrase_questions=phrase_questions,
+        override=override,
+        offline=offline,
+        table=table,
+        corpus=corpus,
+    )
+    typer.echo(f"W2V2 report: {output / 'summary.md'}")

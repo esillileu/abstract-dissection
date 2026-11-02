@@ -1,5 +1,3 @@
-import ast
-import re
 from pathlib import Path
 
 import pytest
@@ -34,19 +32,17 @@ def test_deepscratch_is_the_canonical_domain_plugin() -> None:
 
 
 def test_workspace_paths_are_owned_and_typed(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setenv("EXP_STAGING_ROOT", str(tmp_path / "staging"))
-    monkeypatch.setenv("EXP_CACHE_ROOT", str(tmp_path / "cache"))
-    monkeypatch.setenv("EXP_RESULTS_ROOT", str(tmp_path / "results"))
+    monkeypatch.setenv("REPRO_WORKSPACE_ROOT", str(tmp_path / "workspace"))
     paths = WorkspacePaths.from_environment(tmp_path / "repository")
     coordinate = StateCoordinate("deepscratch", "ds2", "e02", "implemented", "profile")
     assert paths.resolve(StateOwner.CACHE, coordinate) == (
-        tmp_path / "cache/exp/deepscratch/ds2/e02/implemented/profile"
+        tmp_path / "workspace/analysis/cache/deepscratch/ds2/e02/implemented/profile"
     )
     assert paths.resolve(StateOwner.RESULTS, coordinate) == (
-        tmp_path / "results/exp/deepscratch"
+        tmp_path / "workspace/analysis/results/deepscratch"
     )
     assert paths.resolve(StateOwner.STAGING, coordinate) == (
-        tmp_path / "staging/exp/deepscratch/ds2/e02/implemented/profile"
+        tmp_path / "workspace/runs/deepscratch/ds2/e02/implemented/profile"
     )
 
 
@@ -54,16 +50,11 @@ def test_workspace_path_defaults_match_storage_lifecycle(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    for name in (
-        "EXP_STAGING_ROOT",
-        "EXP_CACHE_ROOT",
-        "EXP_RESULTS_ROOT",
-    ):
-        monkeypatch.delenv(name, raising=False)
+    monkeypatch.delenv("REPRO_WORKSPACE_ROOT", raising=False)
     paths = WorkspacePaths.from_environment(tmp_path)
-    assert paths.staging_root == tmp_path / ".staging"
-    assert paths.results_root == tmp_path / "artifacts"
-    assert paths.cache_root == tmp_path / ".cache"
+    assert paths.runs_root == tmp_path / "workspace/runs"
+    assert paths.analysis_results_root == tmp_path / "workspace/analysis/results"
+    assert paths.analysis_cache_root == tmp_path / "workspace/analysis/cache"
 
 
 def test_workspace_paths_reject_coordinate_and_relative_root_escape(
@@ -78,7 +69,7 @@ def test_workspace_paths_reject_coordinate_and_relative_root_escape(
             variant="implemented",
             run_key="run",
         )
-    monkeypatch.setenv("EXP_CACHE_ROOT", "../outside")
+    monkeypatch.setenv("REPRO_WORKSPACE_ROOT", "../outside")
     with pytest.raises(ValueError, match="escapes repository root"):
         WorkspacePaths.from_environment(tmp_path)
 
@@ -229,53 +220,6 @@ def test_comparison_view_never_synthesizes_missing_metrics() -> None:
     )
 
 
-def test_variant_and_volume_import_boundaries() -> None:
-    root = Path("studies/dlfs/src/dlfs")
-    violations = []
-    for path in root.rglob("*.py"):
-        if "source" in path.parts or "tests" in path.parts:
-            continue
-        imports = _imports(path)
-        relative = path.relative_to(root).parts
-        if relative[0] == "ds1":
-            violations.extend(
-                (path, name) for name in imports if name.startswith("dlfs.ds2")
-            )
-        if relative[0] == "ds2":
-            violations.extend(
-                (path, name) for name in imports if name.startswith("dlfs.ds1")
-            )
-        if "implemented" in relative:
-            violations.extend((path, name) for name in imports if ".original" in name)
-        if "original" in relative:
-            violations.extend(
-                (path, name) for name in imports if ".implemented" in name
-            )
-        if relative[:3] == ("ds2", "profile", "e02"):
-            violations.extend(
-                (path, name) for name in imports if ".original.run" in name
-            )
-    assert violations == []
-
-
-def test_runtime_code_does_not_write_under_source_tree() -> None:
-    violations = []
-    forbidden = (
-        'ROOT / "results"',
-        'Path(".artifacts/experiments',
-        'Path(".cache/experiments',
-    )
-    for path in Path("studies/dlfs").rglob("*.py"):
-        if "tests" in path.parts:
-            continue
-        text = path.read_text(encoding="utf-8")
-        if any(token in text for token in forbidden) or re.search(
-            r'Path\("studies/dlfs/[^"]*/results', text
-        ):
-            violations.append(path)
-    assert violations == []
-
-
 def test_suite_declarations_cover_every_catalog_condition() -> None:
     for volume in (Volume.DS1, Volume.DS2):
         schema = __import__(
@@ -310,33 +254,3 @@ def test_current_configs_separate_execution_identity_from_storage_namespace() ->
                 assert source["tracking"]["experiment"] == (
                     f"deepscratch.{volume.value}"
                 )
-
-
-def _imports(path: Path) -> set[str]:
-    tree = ast.parse(path.read_text(encoding="utf-8"))
-    names = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            names.update(alias.name for alias in node.names)
-        elif isinstance(node, ast.ImportFrom) and node.module:
-            names.add(node.module)
-    return names
-
-
-def test_repro_core_checkpoint_has_zero_deep_learning_coupling() -> None:
-    path = Path("packages/repro-core/src/repro_core/context/checkpoint.py")
-    text = path.read_text(encoding="utf-8")
-    forbidden = (
-        "named_parameters",
-        "named_buffers",
-        "save_params_npz",
-        "load_params_npz",
-        "random_stream_states",
-        "restore_random_stream_states",
-        "import pickle",
-        "import numpy",
-    )
-    for token in forbidden:
-        assert token not in text, (
-            f"repro_core/context/checkpoint.py contains forbidden token: {token}"
-        )

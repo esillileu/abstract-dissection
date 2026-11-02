@@ -54,14 +54,27 @@ DISPOSITIONS = (
         "verified WMT substitute and deterministic phrase materialization",
     ),
     TargetDisposition(
+        "w2v2-word-skipgram-1b-objectives",
+        "reconstruction",
+        "Table 1 word-only NEG-5/NEG-15/HS on substitute corpora with explicit C subsampling; NCE-5 unsupported until Phase 3",
+    ),
+    TargetDisposition(
         "w2v1-table3-nnlm",
-        "unsupported",
-        "the Word2Vec engine does not implement NNLM",
+        "reconstruction",
+        "feed-forward NNLM with local asynchronous PS/AdaGrad on verified substitute corpora; activation and training schedule are reconstruction decisions",
     ),
     TargetDisposition(
         "w2v1-google-news-nnlm-6b",
-        "external_baseline",
-        "published NNLM result is retained for comparison only",
+        "reconstruction",
+        "Our NNLM 20/50/100d uses existing FineWeb 6B surrogate and local PS/AdaGrad; Table 6 reuses 100d",
+    ),
+    *(
+        TargetDisposition(
+            f"w2v2-section4-phrase-{scale}b",
+            "reconstruction",
+            "1000d HS entire-sentence implementation ready; exact local corpus and conservative resource preflight required",
+        )
+        for scale in (6, 33)
     ),
     *(
         TargetDisposition(spec, "unsupported", reason)
@@ -75,11 +88,6 @@ DISPOSITIONS = (
                 "w2v1-msr-sentence-skipgram",
                 "evaluation files have no verified checksum",
             ),
-            (
-                "w2v2-word-skipgram-1b-objectives",
-                "canonical word-only plan is not bound",
-            ),
-            ("w2v2-large-phrase-skipgram", "6B/33B source corpus is unavailable"),
         )
     ),
 )

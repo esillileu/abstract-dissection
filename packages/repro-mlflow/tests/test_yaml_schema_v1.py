@@ -8,7 +8,7 @@ from repro_mlflow.schema_v1 import SchemaV1Run, _select_final_checkpoint
 def test_yaml_contract_projects_to_the_schema_v1_artifact_tree(
     tmp_path, monkeypatch
 ) -> None:
-    monkeypatch.setenv("REPRO_STAGING_ROOT", str(tmp_path / "staging"))
+    monkeypatch.setenv("REPRO_WORKSPACE_ROOT", str(tmp_path / "workspace"))
     run = SchemaV1Run(
         {
             "kind": "supervised_classification",
@@ -43,7 +43,7 @@ def test_yaml_contract_projects_to_the_schema_v1_artifact_tree(
     assert run.identity.schema_version == 1
     expected = (
         tmp_path
-        / "staging/exp/deepscratch.ds1/deepscratch.ds1/e01/implemented"
+        / "workspace/runs/deepscratch.ds1/deepscratch.ds1"
         / run.identity.run_key
     )
     assert run.artifact_root == expected / "record"
@@ -98,7 +98,7 @@ def test_final_checkpoint_selects_latest_v2_generation(tmp_path) -> None:
 
 
 def test_deepscratch_writer_uses_durable_staging_root(tmp_path, monkeypatch) -> None:
-    monkeypatch.setenv("EXP_STAGING_ROOT", str(tmp_path / "staging"))
+    monkeypatch.setenv("REPRO_WORKSPACE_ROOT", str(tmp_path / "workspace"))
     run = SchemaV1Run(
         {
             "kind": "supervised_classification",
@@ -124,8 +124,6 @@ def test_deepscratch_writer_uses_durable_staging_root(tmp_path, monkeypatch) -> 
         tracking_uri="sqlite:///test.db",
     )
 
-    expected = (
-        tmp_path / "staging/exp/deepscratch/ds1/e01/implemented" / run.identity.run_key
-    )
+    expected = tmp_path / "workspace/runs/deepscratch/ds1" / run.identity.run_key
     assert run.artifact_root == expected / "record"
     assert run.local_checkpoint_root == expected / "checkpoints"

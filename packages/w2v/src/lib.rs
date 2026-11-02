@@ -8,6 +8,8 @@ pub mod corpus;
 pub mod downpour;
 mod identity;
 pub mod model;
+pub mod nnlm;
+pub mod phrase;
 pub mod random;
 mod simd;
 pub mod trainer;

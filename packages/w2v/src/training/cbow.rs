@@ -1,7 +1,7 @@
 use super::{
     ModelStep, ObjectiveLoss, ObjectiveScratch, backend::ParameterBackend,
     backend::SharedModelBackend, context_position, context_radius_with_policy,
-    hierarchical_softmax, negative_sampling,
+    hierarchical_softmax, nce, negative_sampling,
 };
 use crate::{
     config::{ObjectiveKind, Real, Status},
@@ -68,7 +68,25 @@ pub fn train_with_backend<B: ParameterBackend>(
             },
             step.observe_objective,
         ),
+        ObjectiveKind::Nce => nce::train_with_backend(
+            step.trainer,
+            backend,
+            step.target_token,
+            step.learning_rate,
+            step.negative_rng,
+            step.hidden,
+            ObjectiveScratch {
+                hidden_gradient: step.hidden_gradient,
+                output_snapshot: step.output_snapshot,
+            },
+            step.observe_objective,
+        ),
     }?;
+    if step.trainer.config.objective_kind == ObjectiveKind::Nce {
+        // Only NCE differentiates the context mean exactly. HS/NEG retain
+        // their historical word2vec C update convention.
+        simd::divide_in_place(step.hidden_gradient, context_count as Real);
+    }
     for offset in 0..=radius * 2 {
         if let Some(position) =
             context_position(step.sentence.len(), step.sentence_position, radius, offset)

@@ -20,4 +20,4 @@ def test_profile_path_owners_are_separate_cache_coordinates() -> None:
     assert analysis.parts[-3:] == ("implemented", "profile", "analysis")
     assert artifacts.parts[-3:] == ("implemented", "profile", "artifacts")
     assert len({measurements, analysis, artifacts}) == 3
-    assert ".cache" in measurements.parts
+    assert "cache" in measurements.parts

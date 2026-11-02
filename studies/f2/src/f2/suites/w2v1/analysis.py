@@ -13,9 +13,9 @@ from pathlib import Path
 from typing import Any
 
 from f2.suites.w2v.artifacts import load_lookup_artifact
+from f2.suites.w2v.cache import LocalResults, unavailable_report
 from f2.suites.w2v.evaluation import evaluate_analogies, parse_analogy_questions
 from repro_core.context import RuntimePaths
-from repro_mlflow.artifact_cache import MlflowArtifactCache, artifact_download_progress
 
 _CONDITION = re.compile(r"(wmt|lm1b|umbc)--d(50|100|300|600)-w(24|49|98|196|391|783)m")
 CORPUS_SOURCES = ("wmt", "lm1b", "umbc")
@@ -24,33 +24,6 @@ _TRAINING_WORDS = (24, 49, 98, 196, 391, 783)
 _SEEDS = (1, 7, 19)
 _VOCABULARY_LIMIT = 30_000
 _EVALUATION_PROTOCOL = "compute-accuracy-v1"
-QUESTIONS_WORDS_URL = "https://raw.githubusercontent.com/tmikolov/word2vec/20c129af10659f7c50e86e3be406df663beff438/questions-words.txt"
-QUESTIONS_WORDS_SHA256 = (
-    "8c29b3332afc46f3fb8be04cb5297bf96f39aa7131272dff57869b4485b22a36"
-)
-
-
-def ensure_questions_words(target_path: Path) -> Path:
-    target = Path(target_path)
-    if target.is_file():
-        return target
-    if target.name != "questions-words.txt":
-        raise ValueError(f"word analogy questions do not exist: {target}")
-    target.parent.mkdir(parents=True, exist_ok=True)
-    import urllib.request
-
-    try:
-        with urllib.request.urlopen(QUESTIONS_WORDS_URL) as response:
-            data = response.read()
-        digest = hashlib.sha256(data).hexdigest()
-        if digest != QUESTIONS_WORDS_SHA256:
-            raise ValueError(
-                f"downloaded questions-words.txt checksum mismatch: {digest} != {QUESTIONS_WORDS_SHA256}"
-            )
-        target.write_bytes(data)
-        return target
-    except Exception as err:
-        raise ValueError(f"word analogy questions do not exist: {target}") from err
 
 
 @dataclass(frozen=True)
@@ -73,7 +46,7 @@ class Table2EvaluationCache:
     def __init__(self, root: Path, *, questions_sha256: str) -> None:
         self.root = root
         self.signature = {
-            "schema_version": 1,
+            "schema_version": 2,
             "evaluation_protocol": _EVALUATION_PROTOCOL,
             "questions_sha256": questions_sha256,
             "vocabulary_limit": _VOCABULARY_LIMIT,
@@ -92,16 +65,13 @@ class Table2EvaluationCache:
             return None
         return result if result.mlflow_run_id == run_id else None
 
-    def store(
-        self, result: Table2RunResult, *, lookup_identity: dict[str, object]
-    ) -> None:
+    def store(self, result: Table2RunResult) -> None:
         path = self._path(result.mlflow_run_id)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(
             json.dumps(
                 {
                     "signature": self.signature,
-                    "lookup_identity": lookup_identity,
                     "result": asdict(result),
                 },
                 indent=2,
@@ -112,78 +82,71 @@ class Table2EvaluationCache:
         )
 
     def _path(self, run_id: str) -> Path:
-        if re.fullmatch(r"[0-9a-f]{32}", run_id) is None:
+        if re.fullmatch(r"[0-9a-zA-Z_-]+", run_id) is None:
             raise ValueError(f"invalid MLflow run ID: {run_id}")
         return self.root / f"{run_id}.json"
 
 
 def analyze_table2(
-    tracking_uri: str,
+    cache_root: Path,
     questions_path: Path,
     *,
     corpus_source: str = "wmt",
     paths: RuntimePaths | None = None,
 ) -> Path:
     """Evaluate only conditions having all three durable canonical seed runs."""
-    from mlflow import MlflowClient
 
     paths = paths or RuntimePaths.from_environment()
+    if not Path(questions_path).is_file():
+        output = unavailable_report(
+            paths.cache_root / "f2/w2v1/analysis/analysis",
+            "cached evaluation questions missing",
+        )
+        return output
     if corpus_source not in CORPUS_SOURCES:
         raise ValueError(
             f"unsupported W2V1 corpus source {corpus_source!r}; "
             f"expected one of {', '.join(CORPUS_SOURCES)}"
         )
-    questions_path = ensure_questions_words(questions_path)
+    questions_path = Path(questions_path)
     question_bytes = questions_path.read_bytes()
     questions_sha256 = hashlib.sha256(question_bytes).hexdigest()
     questions = parse_analogy_questions(question_bytes.splitlines())
-    if len(questions) != 19_544:
-        raise ValueError(
-            "canonical questions-words.txt must contain 19,544 questions; "
-            f"found {len(questions)}"
-        )
+    if not questions:
+        raise ValueError("questions-words.txt must contain at least one question")
 
-    client = MlflowClient(tracking_uri=tracking_uri)
-    experiment = client.get_experiment_by_name("f2.w2v1")
-    if experiment is None:
-        raise ValueError("MLflow experiment f2.w2v1 does not exist")
-    runs = client.search_runs(
-        [experiment.experiment_id],
-        filter_string=(
-            "tags.`result.durable_complete` = 'true' AND "
-            "tags.`experiment_spec.id` = 'w2v1-table2-cbow'"
-        ),
-        order_by=["attributes.start_time DESC"],
-        max_results=10_000,
-    )
+    cache = LocalResults(cache_root)
+    runs = cache.runs()
+
     selected = _complete_conditions(runs, corpus_source=corpus_source)
-    cache = MlflowArtifactCache(
-        client, tracking_uri, root=paths.cache_root / "mlflow_artifact"
-    )
     evaluation_cache = Table2EvaluationCache(
         paths.cache_root / "f2/w2v1/analogy", questions_sha256=questions_sha256
     )
+    output = (paths.cache_root / "f2/w2v1/analysis") / corpus_source
+    output.mkdir(parents=True, exist_ok=True)
     records: list[Table2RunResult] = []
+    unavailable = []
     cache_hits = 0
     cache_misses = 0
-    with artifact_download_progress():
-        for (words, dimension), condition_runs in sorted(selected.items()):
-            for seed, run in sorted(condition_runs.items()):
-                cached = evaluation_cache.load(run.info.run_id)
-                if cached is not None and (
-                    cached.training_words_millions,
-                    cached.vector_dimension,
-                    cached.seed,
-                ) == (words, dimension, seed):
-                    records.append(cached)
-                    cache_hits += 1
-                    continue
+    for (words, dimension), condition_runs in sorted(selected.items()):
+        for seed, run in sorted(condition_runs.items()):
+            cached = evaluation_cache.load(run.info.run_id)
+            if cached is not None and (
+                cached.training_words_millions,
+                cached.vector_dimension,
+                cached.seed,
+            ) == (words, dimension, seed):
+                records.append(cached)
+                cache_hits += 1
+                continue
+            try:
                 cache_misses += 1
                 lookup = load_lookup_artifact(cache.get(run.info.run_id, "lookup"))
                 result = evaluate_analogies(
                     lookup,
                     questions,
                     vocabulary_limit=_VOCABULARY_LIMIT,
+                    batch_size=256,
                 )
                 training_seconds = observed_training_seconds(
                     cache.get(run.info.run_id, "metrics/observations.csv")
@@ -193,24 +156,27 @@ def analyze_table2(
                     vector_dimension=dimension,
                     seed=seed,
                     mlflow_run_id=run.info.run_id,
-                    total_accuracy_percent=100.0 * result.overall.score,
-                    semantic_accuracy_percent=100.0 * result.semantic.score,
-                    syntactic_accuracy_percent=100.0 * result.syntactic.score,
+                    total_accuracy_percent=100.0 * result.overall.require_score(),
+                    semantic_accuracy_percent=100.0 * result.semantic.require_score(),
+                    syntactic_accuracy_percent=100.0 * result.syntactic.require_score(),
                     observed_training_seconds=training_seconds,
                     included_questions=result.overall.valid_count,
                     total_questions=result.overall.total_count,
                 )
-                evaluation_cache.store(record, lookup_identity=lookup.manifest)
+                evaluation_cache.store(record)
                 records.append(record)
 
+            except (FileNotFoundError, KeyError, ValueError) as exc:
+                unavailable.append(
+                    {"run_id": run.info.run_id, "status": "no_data", "reason": str(exc)}
+                )
+    (output / "unavailable.json").write_text(json.dumps(unavailable, indent=2) + "\n")
     print(
         f"W2V1 {corpus_source} analogy cache: "
         f"{cache_hits} hit(s), {cache_misses} miss(es)",
         file=sys.stderr,
     )
 
-    output = paths.analysis_output("f2", "w2v1") / corpus_source
-    output.mkdir(parents=True, exist_ok=True)
     _write_run_results(output / "table2-runs.csv", records)
     _write_summary(
         output / "summary.md",
@@ -244,7 +210,7 @@ def analyze_table2(
 
 
 def analyze_table2_sources(
-    tracking_uri: str,
+    cache_root: Path,
     questions_path: Path,
     *,
     corpus_source: str | None = None,
@@ -255,7 +221,7 @@ def analyze_table2_sources(
     sources = CORPUS_SOURCES if corpus_source is None else (corpus_source,)
     outputs = tuple(
         analyze_table2(
-            tracking_uri,
+            cache_root,
             questions_path,
             corpus_source=source,
             paths=paths,
@@ -263,7 +229,7 @@ def analyze_table2_sources(
         for source in sources
     )
     if corpus_source is None:
-        root = paths.analysis_output("f2", "w2v1")
+        root = paths.cache_root / "f2/w2v1/analysis"
         root.mkdir(parents=True, exist_ok=True)
         lines = ["# W2V1 Table 2 analyses", ""]
         for source, output in zip(sources, outputs, strict=True):

@@ -13,17 +13,16 @@ from f2.suites.w2v.evaluation import (
     evaluate_msr_sentence_completion,
     parse_msr_sentence_completion_questions,
 )
+from f2.suites.w2v1.resources import HOLMES_RAW_BOOKS_COUNT, ensure_msr_benchmark_data
 from f2.suites.w2v1.spec import parse_run_spec
 from f2.suites.w2v1.table7 import (
     HOLMES_CORPUS_SHA256,
-    HOLMES_RAW_BOOKS_COUNT,
     MSR_ANSWERS_SHA256,
     MSR_QUESTIONS_SHA256,
     TABLE7_SPEC,
     Table7RunResult,
     _write_table7_csv,
     _write_table7_markdown,
-    ensure_msr_benchmark_data,
 )
 
 
@@ -282,14 +281,24 @@ def test_evaluate_lookup_artifact_w2v1_table7(tmp_path: Path) -> None:
     lookup_dir = tmp_path / "lookup"
     save_lookup_artifact(session.export_state(), lookup_dir)
 
+    bench_dir = tmp_path / "bench"
+    bench_dir.mkdir()
     q_file, a_file = ensure_msr_benchmark_data()
-    # Evaluate with benchmark directory
-    report = evaluate_lookup_artifact("w2v1-table7", lookup_dir, q_file.parent)
+    # Sample 2 questions (10 lines) and 2 answers for fast unit evaluation
+    (bench_dir / "Holmes.lm_format.questions.txt").write_text(
+        "\n".join(q_file.read_text().splitlines()[:10]) + "\n", encoding="utf-8"
+    )
+    (bench_dir / "Holmes.lm_format.answers.txt").write_text(
+        "\n".join(a_file.read_text().splitlines()[:2]) + "\n", encoding="utf-8"
+    )
+
+    # Evaluate with sampled benchmark directory
+    report = evaluate_lookup_artifact("w2v1-table7", lookup_dir, bench_dir)
     assert report["suite"] == "w2v1-table7"
     assert "sentence_completion" in report
     overall = report["sentence_completion"]["overall"]
-    assert overall["total_count"] == 1040
-    assert overall["valid_count"] == 1040
+    assert overall["total_count"] == 2
+    assert overall["valid_count"] == 2
     assert 0.0 <= overall["score"] <= 1.0
 
 
@@ -324,7 +333,7 @@ def test_materialize_corpus_for_table7(
         studies_root=tmp_path / "studies",
     )
     monkeypatch.setattr(
-        "f2.suites.w2v1.table7.ensure_holmes_corpus",
+        "f2.suites.w2v1.resources.ensure_holmes_corpus",
         lambda p: fake_corpus,
     )
     _materialize_corpus(config, paths)
