@@ -16,7 +16,7 @@ from pathlib import Path
 import psutil
 from repro_io.checksum import sha256_file
 
-from f2.suites.w2v.phrases import _tokens
+from f2.suites.common.w2v.phrases import _tokens
 
 SENTENCE_POLICY = "terminal-punctuation-or-lf-v1"
 MAX_SENTENCE_TOKENS = 65_536
@@ -287,7 +287,7 @@ def resource_estimate(config: dict, statistics: dict) -> dict:
 
 
 def _load_statistics(manifest: Path) -> dict | None:
-    from f2.suites.w2v.artifacts import VOCABULARY_FORMAT, verify_artifact
+    from f2.suites.common.w2v.artifacts import VOCABULARY_FORMAT, verify_artifact
 
     try:
         stored = json.loads(manifest.read_text())
@@ -326,11 +326,11 @@ def preflight(
     """Inspect cached real statistics; preparation is explicit and never trains."""
     from w2v import Corpus, TrainingConfig, VocabularyConfig
 
-    from f2.suites.w2v.artifacts import (
+    from f2.suites.common.w2v.artifacts import (
         resolve_or_build_vocabulary,
         vocabulary_cache_path,
     )
-    from f2.suites.w2v.phrases import (
+    from f2.suites.common.w2v.phrases import (
         PhrasePolicy,
         cached_phrase_corpus,
         load_cached_phrase_corpus,

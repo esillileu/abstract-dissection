@@ -18,8 +18,8 @@ from w2v import (
 )
 
 from f2.cli import app
-from f2.suites.w2v import artifacts as artifact_module
-from f2.suites.w2v.artifacts import (
+from f2.suites.common.w2v import artifacts as artifact_module
+from f2.suites.common.w2v.artifacts import (
     CHECKPOINT_FORMAT,
     create_checkpoint_manager,
     load_checkpoint,
@@ -28,7 +28,7 @@ from f2.suites.w2v.artifacts import (
     save_checkpoint,
     save_lookup_artifact,
 )
-from f2.suites.w2v.evaluate import evaluate_lookup_artifact
+from f2.suites.common.w2v.evaluate import evaluate_lookup_artifact
 from repro_mlflow.artifact_cache import MlflowArtifactCache
 
 
@@ -405,7 +405,7 @@ def test_reporting_training_fingerprint_matches_native_descriptor(
 
     No epoch is executed; all model/vocabulary/table sizes are test-owned and tiny.
     """
-    from f2.suites.w2v.artifacts import training_config_digest
+    from f2.suites.common.w2v.artifacts import training_config_digest
 
     path = tmp_path / "fingerprint.txt"
     path.write_text("a b c d\na b c d\n")

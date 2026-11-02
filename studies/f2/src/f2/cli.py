@@ -77,7 +77,7 @@ def evaluate(
     ] = "_",
 ) -> None:
     """Evaluate a saved model artifact independently of training."""
-    from .suites.w2v.evaluate import (
+    from .suites.common.w2v.evaluate import (
         evaluate_lookup_artifact,
         write_evaluation_report,
     )

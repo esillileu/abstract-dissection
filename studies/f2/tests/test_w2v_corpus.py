@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from f2.suites.w2v.corpus import (
+from f2.suites.common.w2v.corpus import (
     CorpusBinding,
     CorpusMaterializer,
     CorpusShard,
@@ -286,7 +286,7 @@ def test_shards_without_final_newline_cannot_join_documents(tmp_path):
 
 
 def test_swapped_manifest_does_not_supply_another_budget_corpus(tmp_path):
-    from f2.suites.w2v.corpus import _binding_manifest_key
+    from f2.suites.common.w2v.corpus import _binding_manifest_key
 
     materializer_binding, objects = _fixture_binding(tmp_path)
     materializer = CorpusMaterializer(FixtureStore(objects), paths=_paths(tmp_path))
@@ -305,7 +305,7 @@ def test_swapped_manifest_does_not_supply_another_budget_corpus(tmp_path):
 
 
 def test_slice_corpus_file(tmp_path: Path):
-    from f2.suites.w2v.corpus import slice_corpus_file
+    from f2.suites.common.w2v.corpus import slice_corpus_file
 
     source = tmp_path / "raw.txt"
     source.write_bytes(b"word1 word2 word3\nword4 word5 word6\nword7 word8\n")
@@ -331,7 +331,7 @@ def test_slice_corpus_file(tmp_path: Path):
 
 
 def test_copy_corpus_prefix_sanitizes_null_bytes(tmp_path: Path):
-    from f2.suites.w2v.corpus import _copy_corpus_prefix
+    from f2.suites.common.w2v.corpus import _copy_corpus_prefix
 
     data = [b"first\x00\x00second </s> third\x00fourth\nfifth\n"]
     output = tmp_path / "clean.txt"

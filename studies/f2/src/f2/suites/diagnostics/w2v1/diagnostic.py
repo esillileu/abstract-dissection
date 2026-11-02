@@ -12,8 +12,8 @@ from typing import Any
 import numpy as np
 
 from f2.common.paths import get_benchmark_data_dir
-from f2.suites.w2v.artifacts import load_lookup_artifact
-from f2.suites.w2v.evaluation import (
+from f2.suites.common.w2v.artifacts import load_lookup_artifact
+from f2.suites.common.w2v.evaluation import (
     _analogy_predictions,
     _analogy_rows,
     _analogy_tokens,

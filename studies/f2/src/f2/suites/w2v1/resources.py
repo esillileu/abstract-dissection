@@ -12,7 +12,7 @@ from repro_io.checksum import sha256_file
 from repro_io.http import SerialDownloader
 
 from f2.common.paths import get_benchmark_data_dir, get_corpus_data_dir
-from f2.suites.w2v.evaluation import parse_analogy_questions
+from f2.suites.common.w2v.evaluation import parse_analogy_questions
 from repro_core.context import RuntimePaths
 
 QUESTIONS_WORDS_URL = "https://raw.githubusercontent.com/tmikolov/word2vec/20c129af10659f7c50e86e3be406df663beff438/questions-words.txt"

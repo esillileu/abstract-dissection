@@ -50,8 +50,11 @@ def test_table5_plan_and_catalog_slots() -> None:
 def test_table5_smoke_execution(tmp_path: Path) -> None:
     import csv
 
-    from f2.suites.w2v.artifacts import load_checkpoint, load_lookup_artifact
-    from f2.suites.w2v.evaluation import evaluate_analogies, parse_analogy_questions
+    from f2.suites.common.w2v.artifacts import load_checkpoint, load_lookup_artifact
+    from f2.suites.common.w2v.evaluation import (
+        evaluate_analogies,
+        parse_analogy_questions,
+    )
     from repro_core.context import ExperimentContext, RuntimePaths
     from repro_core.execution.runner import run_config
 

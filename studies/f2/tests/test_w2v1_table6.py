@@ -7,7 +7,7 @@ import pytest
 from w2v import DownpourTrainingSession, TrainingSession
 
 from f2.definition import DEFINITION
-from f2.suites.w2v.artifacts import load_checkpoint, load_lookup_artifact
+from f2.suites.common.w2v.artifacts import load_checkpoint, load_lookup_artifact
 from f2.suites.w2v1.executor import create_session
 from repro_core.context import ExperimentContext, RuntimePaths
 from repro_core.execution.definition import RunOptions, RunSelection

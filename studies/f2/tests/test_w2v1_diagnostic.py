@@ -2,8 +2,8 @@
 
 import numpy as np
 
-from f2.suites.w2v.evaluation import _analogy_predictions, _normalized_embeddings
-from f2.suites.w2v1.diagnostic import _build_summary_markdown
+from f2.suites.common.w2v.evaluation import _analogy_predictions, _normalized_embeddings
+from f2.suites.diagnostics.w2v1.diagnostic import _build_summary_markdown
 
 
 def test_predictions_exclude_inputs_and_require_positive_score():

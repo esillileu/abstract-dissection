@@ -25,17 +25,17 @@ from mlflow import MlflowClient
 from w2v import TrainingSession
 
 from f2.definition import DEFINITION
-from f2.suites.w2v.artifacts import (
+from f2.suites.common.w2v.artifacts import (
     load_checkpoint,
     load_lookup_artifact,
 )
-from f2.suites.w2v.cache import download_results, read_records
-from f2.suites.w2v.engine import Word2VecEngine
-from f2.suites.w2v.evaluation import (
+from f2.suites.common.w2v.engine import Word2VecEngine
+from f2.suites.common.w2v.evaluation import (
     AnalogyQuestion,
     evaluate_analogies,
     nearest_tokens,
 )
+from f2.suites.w2v.cache import download_results, read_records
 from f2.suites.w2v.executor import W2VRunReceipt
 from f2.suites.w2v2 import analysis
 from f2.suites.w2v2.executor import W2V2Executor
@@ -423,7 +423,7 @@ def test_g_analysis_result_reuse_and_override(
     """Result reuse skips MLflow query & computation; override recalculates and overwrites."""
     import f2.suites.w2v2.analysis as analysis_mod
     from f2.cli import run_w2v2_analysis
-    from f2.suites.w2v.evaluation import AnalogyQuestion
+    from f2.suites.common.w2v.evaluation import AnalogyQuestion
 
     config = _make_config(test_env, slot_id="slot-g1")
     paths: RuntimePaths = test_env["paths"]

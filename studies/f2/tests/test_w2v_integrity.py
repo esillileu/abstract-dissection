@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 
 from f2.definition import DEFINITION
-from f2.suites.w2v.phrases import (
+from f2.suites.common.w2v.phrases import (
     PhrasePolicy,
     cached_phrase_corpus,
     materialize_phrase_corpus,
@@ -104,7 +104,7 @@ def test_matching_rerun_and_unidentified_results_are_preserved(tmp_path):
         paths=paths(tmp_path), metadata={"run_root": tmp_path / "run"}
     )
     first = run_config(settings, context, executor_module="f2.suites.w2v2.executor")
-    from f2.suites.w2v.artifacts import load_checkpoint
+    from f2.suites.common.w2v.artifacts import load_checkpoint
 
     expected = load_checkpoint(first.checkpoint).input_embeddings().copy()
     with pytest.raises(ValueError, match="not empty"):
@@ -149,7 +149,7 @@ def test_unsupported_tokens_never_publish_or_reach_vocabulary(tmp_path, data):
 def test_chunk_boundary_preserves_documents_and_greedy_joins(
     tmp_path, monkeypatch, size
 ):
-    import f2.suites.w2v.phrases as phrases
+    import f2.suites.common.w2v.phrases as phrases
 
     monkeypatch.setattr(phrases, "TOKEN_CHUNK_BYTES", size)
     source = tmp_path / "source"
@@ -181,7 +181,7 @@ def test_long_line_memory_does_not_scale_with_document_length(tmp_path):
 
 
 def test_injected_disk_full_never_publishes_and_retry_recovers(tmp_path, monkeypatch):
-    import f2.suites.w2v.phrases as phrases
+    import f2.suites.common.w2v.phrases as phrases
 
     source = tmp_path / "source"
     source.write_bytes(b"a b\na b\n")
@@ -205,7 +205,7 @@ def test_injected_disk_full_never_publishes_and_retry_recovers(tmp_path, monkeyp
 def test_strict_evaluation_uses_verified_snapshot_even_when_file_changes(
     tmp_path, monkeypatch
 ):
-    import f2.suites.w2v.evaluate as module
+    import f2.suites.common.w2v.evaluate as module
 
     source = tmp_path / "source"
     source.write_bytes(b"a b c d\n" * 6)
@@ -247,8 +247,8 @@ def test_strict_evaluation_uses_verified_snapshot_even_when_file_changes(
 
 
 def test_blocked_evaluation_matches_dense_reference_and_caps_allocations(monkeypatch):
-    import f2.suites.w2v.evaluation as module
-    from f2.suites.w2v.artifacts import LookupEmbeddings
+    import f2.suites.common.w2v.evaluation as module
+    from f2.suites.common.w2v.artifacts import LookupEmbeddings
 
     rng = np.random.default_rng(7)
     vectors = rng.normal(size=(101, 12)).astype(np.float32)
@@ -302,7 +302,7 @@ def test_blocked_evaluation_matches_dense_reference_and_caps_allocations(monkeyp
 
 
 def test_candidate_exclusion_oov_denominator_and_ties_across_blocks(monkeypatch):
-    import f2.suites.w2v.evaluation as module
+    import f2.suites.common.w2v.evaluation as module
 
     lookup = SimpleNamespace(
         tokens=(b"a", b"b", b"c", b"d", b"e"),
@@ -362,7 +362,7 @@ def test_mutating_input_during_construction_never_publishes(tmp_path):
 
 
 def test_phrase_checkpoint_without_provable_run_identity_is_preserved(tmp_path):
-    from f2.suites.w2v.artifacts import create_checkpoint_manager
+    from f2.suites.common.w2v.artifacts import create_checkpoint_manager
     from f2.suites.w2v.executor import create_session
 
     source = tmp_path / "source"
@@ -383,8 +383,8 @@ def test_phrase_checkpoint_without_provable_run_identity_is_preserved(tmp_path):
 
 
 def test_long_phrases_train_restore_and_evaluate_without_aliases(tmp_path):
-    from f2.suites.w2v.artifacts import load_checkpoint, load_lookup_artifact
-    from f2.suites.w2v.evaluate import evaluate_lookup_artifact
+    from f2.suites.common.w2v.artifacts import load_checkpoint, load_lookup_artifact
+    from f2.suites.common.w2v.evaluate import evaluate_lookup_artifact
 
     left = b"a" * 60
     right = b"b" * 60
@@ -436,7 +436,7 @@ def test_long_phrases_train_restore_and_evaluate_without_aliases(tmp_path):
 def test_vocabulary_cache_separates_tokenization_modes(tmp_path):
     from w2v import Corpus
 
-    from f2.suites.w2v.artifacts import resolve_or_build_vocabulary
+    from f2.suites.common.w2v.artifacts import resolve_or_build_vocabulary
 
     source = tmp_path / "source"
     source.write_bytes((b"a" * 120 + b"x\n") * 2 + (b"a" * 120 + b"y\n") * 2)

@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from f2.suites.w2v.spec import Word2VecRunSpec, _condition_id, _digest
+from f2.suites.common.w2v.spec import Word2VecRunSpec, _condition_id, _digest
 from repro_core.execution.spec import load_variant, mapping
 
 

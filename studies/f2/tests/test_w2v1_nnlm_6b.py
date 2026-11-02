@@ -10,7 +10,7 @@ import pytest
 from typer.testing import CliRunner
 
 from f2.definition import DEFINITION
-from f2.suites.w2v.artifacts import load_lookup_artifact
+from f2.suites.common.w2v.artifacts import load_lookup_artifact
 from f2.suites.w2v.nnlm_artifacts import load_checkpoint
 from f2.suites.w2v1 import table4, table6
 from repro_core.cli import app

@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from f2.suites.w2v.corpus import _copy_corpus_prefix
+from f2.suites.common.w2v.corpus import _copy_corpus_prefix
 
 
 def reference(data, budget):
@@ -83,7 +83,7 @@ def test_row_index_handles_many_queries_without_repeated_scans(tmp_path, monkeyp
     import gc
     import sqlite3
 
-    from f2.suites.w2v import artifacts
+    from f2.suites.common.w2v import artifacts
     from repro_core.context import RuntimePaths
 
     monkeypatch.setattr(

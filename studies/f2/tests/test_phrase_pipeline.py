@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from f2.suites.w2v.phrases import (
+from f2.suites.common.w2v.phrases import (
     PhrasePolicy,
     cached_phrase_corpus,
     materialize_phrase_corpus,
@@ -97,7 +97,7 @@ def test_concurrent_build_reuse_and_corruption_recovery(tmp_path, monkeypatch):
     assert len({r.path for r in results}) == 1
     first = results[0]
     stamp = first.path.stat().st_mtime_ns
-    import f2.suites.w2v.phrases as phrases
+    import f2.suites.common.w2v.phrases as phrases
 
     original = phrases.materialize_phrase_corpus
 
@@ -175,7 +175,7 @@ def test_invalid_threshold_schedule(thresholds):
 
 
 def test_full_benchmark_does_not_accept_fixture():
-    from f2.suites.w2v.evaluate import verify_phrase_questions
+    from f2.suites.common.w2v.evaluate import verify_phrase_questions
 
     with pytest.raises(ValueError, match="3218"):
         verify_phrase_questions(

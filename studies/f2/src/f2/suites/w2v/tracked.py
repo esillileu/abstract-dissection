@@ -45,41 +45,35 @@ def run_tracked_yaml(
 
     # Skip early before expensive corpus materialization or large hash calculation
     if not is_override:
-        identity = _mapping(config, "identity")
-        config_digest = str(identity["config_digest"])
-        seed_val = int(identity["seed"])
-        suite_name = str(
-            identity.get("suite_id")
-            or ("w2v2" if "w2v2" in str(executor_module) else "w2v1")
+        from f2.execution.coordinator import (
+            ExecutionDecisionKind,
+            F2ExecutionCoordinator,
         )
+        from f2.execution.identity import ConditionIdentity
+
+        coordinator = F2ExecutionCoordinator(tracking_uri=tracking_uri, paths=paths)
+        suite_hint = (
+            "w2v2" if executor_module and "w2v2" in str(executor_module) else "w2v1"
+        )
+        condition = ConditionIdentity.from_config(config, suite_id=suite_hint)
         experiment_name = str(
-            _mapping(config, "tracking").get("experiment", f"f2.{suite_name}")
+            _mapping(config, "tracking").get("experiment", f"f2.{condition.suite_id}")
         )
-        from mlflow import MlflowClient
-
-        from f2.suites.w2v.tracking import find_matching_finished_run
-
-        slot_id = str(identity.get("planned_run_slot_id", ""))
-        variant_id = str(config.get("atomic_run_id", ""))
-        client = MlflowClient(tracking_uri=tracking_uri)
-        existing = find_matching_finished_run(
-            client,
-            experiment_name,
-            config_digest,
-            seed_val,
-            planned_run_slot_id=slot_id or None,
-            atomic_run_id=variant_id or None,
+        decision = coordinator.decide(
+            condition,
+            experiment_name=experiment_name,
+            override=False,
+            atomic_run_id=str(config.get("atomic_run_id", "")) or None,
         )
-        if existing is not None:
+        if decision.kind == ExecutionDecisionKind.SKIP and decision.existing_run_id:
             if progress_reporter is not None:
                 progress_reporter.write(
-                    f"Skipping {suite_name}: finished run {existing.info.run_id} exists"
+                    f"Skipping {condition.suite_id}: finished run {decision.existing_run_id} exists"
                 )
-            run_root = paths.runs("f2", suite_name, slot_id)
             return W2VRunReceipt(
                 result=None,
-                run_id=existing.info.run_id,
-                staging_root=run_root,
+                run_id=decision.existing_run_id,
+                staging_root=decision.run_dir,
                 skipped=True,
             )
 
@@ -140,7 +134,7 @@ def _materialize_corpus(
     except (KeyError, TypeError, ValueError) as exc:
         raise ValueError("canonical W2V1 corpus requires lexical_token_budget") from exc
     from f2.common.paths import get_corpus_data_dir
-    from f2.suites.w2v.corpus import slice_corpus_file
+    from f2.suites.common.w2v.corpus import slice_corpus_file
 
     corpus_dir = get_corpus_data_dir(paths)
 
@@ -212,7 +206,7 @@ def _materialize_corpus(
     from f2.corpus.db.session import get_connection
     from f2.corpus.object_store import s3_config_from_environment
     from f2.corpus.sources import SOURCE_BY_KEY
-    from f2.suites.w2v.corpus import CorpusBinding, CorpusMaterializer
+    from f2.suites.common.w2v.corpus import CorpusBinding, CorpusMaterializer
 
     source = SOURCE_BY_KEY.get(corpus_id)
     if source is None:

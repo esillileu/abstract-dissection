@@ -6,7 +6,7 @@ from typing import Any
 import numpy as np
 from w2v import NnlmReplicaState, NnlmTrainingState, VocabularyState
 
-from f2.suites.w2v.artifacts import (
+from f2.suites.common.w2v.artifacts import (
     _VOCABULARY_ARRAYS,
     _load_array,
     _read_json,

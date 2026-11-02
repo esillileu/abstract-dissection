@@ -446,7 +446,7 @@ def spelling_coverage(corpus, data, questions, stats):
             }
         )
         # Use the evaluator's canonical row selection rather than a spelling guess.
-        from f2.suites.w2v.evaluation import _analogy_rows
+        from f2.suites.common.w2v.evaluation import _analogy_rows
 
         eval_rows = _analogy_rows(
             data["lookup"], 82000, wanted={word.upper() for word in words}

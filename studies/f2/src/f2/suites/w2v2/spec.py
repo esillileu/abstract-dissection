@@ -5,8 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from f2.suites.w2v.phrases import PhrasePolicy
-from f2.suites.w2v.spec import Word2VecRunSpec
+from f2.suites.common.w2v.phrases import PhrasePolicy
+from f2.suites.common.w2v.spec import Word2VecRunSpec
 from repro_core.execution.spec import load_variant, mapping
 
 

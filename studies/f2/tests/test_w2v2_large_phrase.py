@@ -10,7 +10,7 @@ import pytest
 from repro_io.checksum import sha256_file
 
 from f2.definition import DEFINITION
-from f2.suites.w2v.artifacts import load_checkpoint
+from f2.suites.common.w2v.artifacts import load_checkpoint
 from f2.suites.w2v2.executor import W2V2Executor
 from f2.suites.w2v2.preflight import cached_sentences, preflight, sentences
 from f2.suites.w2v2.spec import parse_run_spec
@@ -308,7 +308,7 @@ def test_chunked_checkpoint_never_exports_full_matrices_and_reuses_final(
 ):
     from w2v import TrainingSession
 
-    from f2.suites.w2v import artifacts
+    from f2.suites.common.w2v import artifacts
 
     resolved, source = small_config(tmp_path)
     monkeypatch.setattr(

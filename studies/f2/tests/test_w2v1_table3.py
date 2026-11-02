@@ -13,7 +13,7 @@ from w2v import NnlmDownpourTrainingSession, NnlmTrainingSession
 
 from f2.catalog.manifest import read_manifest
 from f2.definition import DEFINITION
-from f2.suites.w2v.artifacts import load_lookup_artifact
+from f2.suites.common.w2v.artifacts import load_lookup_artifact
 from f2.suites.w2v.nnlm_artifacts import load_checkpoint
 from f2.suites.w2v.tracked import run_tracked_yaml
 from f2.suites.w2v1 import resources, table3

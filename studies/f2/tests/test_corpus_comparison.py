@@ -2,7 +2,11 @@
 
 import numpy as np
 
-from f2.suites.w2v1.corpus_comparison import correlation, percentile_interval, resamples
+from f2.suites.diagnostics.w2v1.corpus_comparison import (
+    correlation,
+    percentile_interval,
+    resamples,
+)
 
 
 def test_controls_remove_spurious_frequency_association():

@@ -59,7 +59,11 @@ class PublicationService:
                     continue
 
             if atomic_run_id:
-                run_variant = tags.get("atomic_run_id") or tags.get("f2.atomic_run_id")
+                run_variant = (
+                    tags.get("implementation.variant")
+                    or tags.get("atomic_run_id")
+                    or tags.get("f2.atomic_run_id")
+                )
                 if run_variant and run_variant != atomic_run_id:
                     continue
 

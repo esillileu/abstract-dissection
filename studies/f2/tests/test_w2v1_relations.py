@@ -5,7 +5,7 @@ import hashlib
 import numpy as np
 import pytest
 
-from f2.suites.w2v1.relations import context_counts, relation_statistics
+from f2.suites.diagnostics.w2v1.relations import context_counts, relation_statistics
 
 
 def test_context_counts_filter_oov_and_do_not_cross_sentence_boundaries():
@@ -57,7 +57,7 @@ def test_contexts_stop_at_literal_sentence_tokens_and_engine_block_limit():
 def test_bound_corpus_bytes_match_budget_truncation_and_blank_lines(
     tmp_path, monkeypatch
 ):
-    from f2.suites.w2v1 import relations
+    from f2.suites.diagnostics.w2v1 import relations
 
     payload = b"a b\n\nc d\n"
 

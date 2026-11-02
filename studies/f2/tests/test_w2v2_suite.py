@@ -5,17 +5,17 @@ from pathlib import Path
 import pytest
 
 from f2.definition import DEFINITION
-from f2.suites.w2v.artifacts import (
+from f2.suites.common.w2v.artifacts import (
     load_checkpoint,
     load_lookup_artifact,
 )
-from f2.suites.w2v.evaluate import evaluate_lookup_artifact
-from f2.suites.w2v.evaluation import (
+from f2.suites.common.w2v.evaluate import evaluate_lookup_artifact
+from f2.suites.common.w2v.evaluation import (
     additive_composition,
     nearest_tokens,
     pca_projection,
 )
-from f2.suites.w2v.phrases import PhrasePolicy, materialize_phrase_corpus
+from f2.suites.common.w2v.phrases import PhrasePolicy, materialize_phrase_corpus
 from repro_core.context import ExperimentContext, RuntimePaths
 from repro_core.execution.runner import run_config
 
@@ -129,7 +129,7 @@ def test_w2v2_supports_independent_nce():
 
 
 def test_nce_revision_changes_only_nce_run_identity():
-    from f2.suites.w2v.spec import _digest
+    from f2.suites.common.w2v.spec import _digest
 
     definition = DEFINITION.get_suite("w2v2")
     source = definition.config_root / "e01_table1_word_skipgram.yaml"

@@ -22,11 +22,12 @@ from w2v import (
     TrainingSession,
 )
 
-from repro_core.context import ExperimentContext
-from repro_core.execution.locator import PathRunLocator
-from repro_core.storage.local_store import LocalStore
-
-from .artifacts import (
+from f2.execution.coordinator import (
+    ExecutionDecisionKind,
+    F2ExecutionCoordinator,
+)
+from f2.execution.identity import ConditionIdentity
+from f2.suites.common.w2v.artifacts import (
     create_checkpoint_manager,
     load_checkpoint,
     lookup_from_checkpoint,
@@ -34,12 +35,15 @@ from .artifacts import (
     save_lookup_artifact,
     vocabulary_cache_path,
 )
-from .engine import Word2VecEngine
+from f2.suites.common.w2v.engine import Word2VecEngine
+from f2.suites.common.w2v.observations import DenseObservationWriter
+from repro_core.context import ExperimentContext
+from repro_core.storage.local_store import LocalStore
+
 from .nnlm_artifacts import (
     create_checkpoint_manager as create_nnlm_checkpoint_manager,
 )
-from .observations import DenseObservationWriter
-from .tracking import find_matching_finished_run, publish_run_to_mlflow
+from .tracking import publish_run_to_mlflow
 
 
 @dataclass(frozen=True)
@@ -75,63 +79,48 @@ class Word2VecExecutor:
         override: bool = False,
         progress_reporter: Any | None = None,
     ) -> W2VRunReceipt:
-        identity = _mapping(config, "identity")
-        slot_id = str(identity["planned_run_slot_id"])
-        config_digest = str(identity["config_digest"])
-        seed = int(identity["seed"])
+        condition = ConditionIdentity.from_config(config, suite_id=self.suite_name)
         experiment_name = str(
             _mapping(config, "tracking").get("experiment", f"f2.{self.suite_name}")
         )
 
-        root_override = context.metadata.get("run_root")
-        run_root = (
-            Path(root_override)
-            if root_override
-            else context.paths.runs("f2", self.suite_name, slot_id)
+        coordinator = F2ExecutionCoordinator(
+            tracking_uri=tracking_uri, paths=context.paths
         )
-        if override and run_root.exists() and any(run_root.iterdir()):
-            idx = 1
-            while (run_root / f"run_{idx:02d}").exists() and any(
-                (run_root / f"run_{idx:02d}").iterdir()
-            ):
-                idx += 1
-            run_root = run_root / f"run_{idx:02d}"
+        decision = coordinator.decide(
+            condition,
+            experiment_name=experiment_name,
+            override=override,
+            atomic_run_id=str(config.get("atomic_run_id", "")) or None,
+        )
+
+        root_override = context.metadata.get("run_root")
+        run_root = Path(root_override) if root_override else decision.run_dir
 
         local_store = LocalStore(run_root)
         local_store.ensure_directories()
         client = MlflowClient(tracking_uri=tracking_uri)
 
-        # 1. Skip check: MLflow FINISHED run (if not already verified before corpus materialization)
-        if not override and not context.metadata.get("skip_checked"):
-            existing = find_matching_finished_run(
-                client,
-                experiment_name,
-                config_digest,
-                seed,
-                planned_run_slot_id=slot_id or None,
-                atomic_run_id=str(config.get("atomic_run_id", "")) or None,
-            )
-            if existing is not None:
+        # 1. Skip check: MLflow FINISHED run
+        if decision.kind == ExecutionDecisionKind.SKIP and not override:
+            existing_run_id = decision.existing_run_id
+            if existing_run_id is not None:
                 if progress_reporter is not None:
                     progress_reporter.write(
-                        f"Skipping {self.suite_name} slot={slot_id}: finished run {existing.info.run_id} exists"
+                        f"Skipping {self.suite_name} slot={condition.planned_run_slot_id}: finished run {existing_run_id} exists"
                     )
                 return W2VRunReceipt(
                     result=None,
-                    run_id=existing.info.run_id,
+                    run_id=existing_run_id,
                     staging_root=run_root,
                     skipped=True,
                 )
 
-        # 2. LocalStore status via PathRunLocator
-        locator = PathRunLocator()
-        location = locator.locate(run_root)
-
-        # 3. If local final result exists and not override: publish immediately
-        if location.is_final and not override:
+        # 2. Local complete result exists: publish immediately
+        if decision.kind == ExecutionDecisionKind.PUBLISH and not override:
             if progress_reporter is not None:
                 progress_reporter.write(
-                    f"Publishing existing local result for slot={slot_id}"
+                    f"Publishing existing local result for slot={condition.planned_run_slot_id}"
                 )
             run_id = self.publish_to_mlflow(client, experiment_name, config, run_root)
             result = self._load_local_result(run_root)
@@ -142,16 +131,16 @@ class Word2VecExecutor:
                 skipped=False,
             )
 
-        # 4. If local checkpoint exists and not override: resume locally
+        # 3. Resume from checkpoint if valid
         resume_from = None
-        if location.is_checkpoint and not override:
-            resume_from = location.checkpoint_path
+        if decision.kind == ExecutionDecisionKind.RESUME and not override:
+            resume_from = decision.resume_checkpoint
             if progress_reporter is not None:
                 progress_reporter.write(
-                    f"Resuming {self.suite_name} slot={slot_id} from epoch {location.epoch} checkpoint"
+                    f"Resuming {self.suite_name} slot={condition.planned_run_slot_id} from epoch {decision.resume_epoch} checkpoint"
                 )
 
-        # 5. Run training
+        # 4. Run training
         self.prepare_benchmarks(run_root, context.paths)
         result = self._run_training(
             config,
@@ -162,7 +151,7 @@ class Word2VecExecutor:
             progress_reporter=progress_reporter,
         )
 
-        # 6. Publish to MLflow
+        # 5. Publish to MLflow
         run_id = self.publish_to_mlflow(client, experiment_name, config, run_root)
         return W2VRunReceipt(
             result=result,

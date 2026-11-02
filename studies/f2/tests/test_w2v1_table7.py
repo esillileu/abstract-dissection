@@ -8,7 +8,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from f2.suites.w2v.evaluation import (
+from f2.suites.common.w2v.evaluation import (
     SentenceCompletionQuestion,
     evaluate_msr_sentence_completion,
     parse_msr_sentence_completion_questions,
@@ -253,8 +253,8 @@ def test_evaluate_lookup_artifact_w2v1_table7(tmp_path: Path) -> None:
         VocabularyConfig,
     )
 
-    from f2.suites.w2v.artifacts import save_lookup_artifact
-    from f2.suites.w2v.evaluate import evaluate_lookup_artifact
+    from f2.suites.common.w2v.artifacts import save_lookup_artifact
+    from f2.suites.common.w2v.evaluate import evaluate_lookup_artifact
 
     corpus_file = tmp_path / "toy_corpus.txt"
     corpus_file.write_bytes(

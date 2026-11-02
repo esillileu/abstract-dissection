@@ -70,6 +70,59 @@ class ConditionIdentity:
             tags[f"f2.{k}"] = str(v)
         return tags
 
+    @classmethod
+    def from_config(
+        cls, config: dict[str, Any], suite_id: str | None = None
+    ) -> ConditionIdentity:
+        """Create ConditionIdentity directly from an executor/run config dictionary."""
+        identity = (
+            config.get("identity", {})
+            if isinstance(config.get("identity"), dict)
+            else {}
+        )
+        slot_id = str(identity.get("planned_run_slot_id", ""))
+        config_digest = str(identity.get("config_digest", ""))
+        seed = int(identity.get("seed", 1))
+
+        resolved_suite = suite_id or str(identity.get("suite_id", ""))
+        if not resolved_suite:
+            tracking = config.get("tracking")
+            if isinstance(tracking, dict) and "experiment" in tracking:
+                exp_str = str(tracking["experiment"])
+                resolved_suite = exp_str.rsplit(".", 1)[-1]
+        if not resolved_suite:
+            resolved_suite = "w2v"
+
+        atomic_run_id = str(config.get("atomic_run_id", ""))
+        if "--" in atomic_run_id:
+            condition_id = atomic_run_id.split("--", 1)[1]
+        elif atomic_run_id:
+            condition_id = atomic_run_id
+        else:
+            condition_id = str(identity.get("experiment_spec_id") or "default")
+
+        plan_id = str(identity.get("execution_plan_id", ""))
+        plan_rev = 1
+        if "-r" in plan_id:
+            try:
+                plan_rev = int(plan_id.rsplit("-r", 1)[1])
+            except ValueError:
+                plan_rev = 1
+
+        experiment_id = str(
+            identity.get("study") or identity.get("experiment_id") or "e01"
+        )
+
+        return cls(
+            suite_id=resolved_suite,
+            experiment_id=experiment_id,
+            condition_id=condition_id,
+            seed=seed,
+            config_digest=config_digest,
+            plan_revision=plan_rev,
+            planned_run_slot_id=slot_id,
+        )
+
 
 @dataclass(frozen=True)
 class AttemptIdentity:

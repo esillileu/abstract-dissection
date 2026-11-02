@@ -4,8 +4,7 @@ import numpy as np
 import pytest
 
 from f2.common.analysis.targets import PaperTargetMetric
-from f2.suites.w2v.analysis import summarize_evaluations, summary_record
-from f2.suites.w2v.evaluation import (
+from f2.suites.common.w2v.evaluation import (
     EvaluationResult,
     SentenceCompletionQuestion,
     SimilarityPair,
@@ -16,6 +15,7 @@ from f2.suites.w2v.evaluation import (
     pca_projection,
     select_best_epoch,
 )
+from f2.suites.w2v.analysis import summarize_evaluations, summary_record
 
 
 class Lookup:
@@ -156,7 +156,7 @@ def test_nearest_neighbors_exclude_zero_norm_queries_and_candidates():
 
     import numpy as np
 
-    from f2.suites.w2v.evaluation import additive_composition, nearest_tokens
+    from f2.suites.common.w2v.evaluation import additive_composition, nearest_tokens
 
     tokens = [b"query", b"zero", b"opposite"]
     embeddings = np.array([[1.0, 0.0], [0.0, 0.0], [-1.0, 0.0]], dtype=np.float32)

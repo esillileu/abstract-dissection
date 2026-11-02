@@ -14,8 +14,8 @@ from typing import Any
 
 import yaml
 
-from f2.suites.w2v.evaluate import verify_phrase_questions
-from f2.suites.w2v.evaluation import (
+from f2.suites.common.w2v.evaluate import verify_phrase_questions
+from f2.suites.common.w2v.evaluation import (
     additive_composition,
     evaluate_analogies,
     nearest_tokens,
@@ -220,7 +220,7 @@ def _verified_file(root, inventory, name):
 
 def _load_run(record, config, variant, seed, *, load_arrays: bool = True):
     """Read the published lookup; execution lineage is owned by the executor."""
-    from f2.suites.w2v.artifacts import load_lookup_artifact
+    from f2.suites.common.w2v.artifacts import load_lookup_artifact
 
     if record.get("error") or not record.get("artifact_root"):
         raise EvidenceMissing(record.get("error", "cached artifacts unavailable"))
@@ -621,7 +621,7 @@ def generate_report(
                             reason=f"MLflow {state}",
                         )
                     else:
-                        from f2.suites.w2v.artifacts import load_lookup_artifact
+                        from f2.suites.common.w2v.artifacts import load_lookup_artifact
 
                         lookup_or_path, result, root, file_inventory, provenance = (
                             _load_run(
@@ -753,7 +753,9 @@ def generate_report(
                     else:
                         try:
                             if isinstance(lookup, Path):
-                                from f2.suites.w2v.artifacts import load_lookup_artifact
+                                from f2.suites.common.w2v.artifacts import (
+                                    load_lookup_artifact,
+                                )
 
                                 lookup = load_lookup_artifact(lookup)
                             encoded = [t.encode() for t in tokens]

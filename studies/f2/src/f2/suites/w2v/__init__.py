@@ -1,19 +1,20 @@
 """Shared Word2Vec suite policies."""
 
-from .corpus import (
+from f2.suites.common.w2v.corpus import (
     CorpusBinding,
     CorpusMaterializer,
     CorpusShard,
     MaterializedCorpus,
 )
-from .evaluation import EvaluationResult
-from .executor import Word2VecExecutor, Word2VecResult
-from .observations import (
+from f2.suites.common.w2v.evaluation import EvaluationResult
+from f2.suites.common.w2v.observations import (
     DenseObservationWriter,
     ObservationRow,
     sparse_metric_rows,
 )
-from .spec import Word2VecRunSpec
+from f2.suites.common.w2v.spec import Word2VecRunSpec
+
+from .executor import Word2VecExecutor, Word2VecResult
 
 __all__ = [
     "CorpusBinding",

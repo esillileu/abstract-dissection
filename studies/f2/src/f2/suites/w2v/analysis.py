@@ -11,8 +11,7 @@ from f2.common.analysis.targets import (
     TargetComparisonResult,
     compare_to_target,
 )
-
-from .evaluation import EvaluationResult
+from f2.suites.common.w2v.evaluation import EvaluationResult
 
 
 @dataclass(frozen=True)

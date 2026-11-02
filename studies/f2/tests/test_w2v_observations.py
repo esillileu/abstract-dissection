@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 import pytest
 
-from f2.suites.w2v.observations import DenseObservationWriter, sparse_metric_rows
+from f2.suites.common.w2v.observations import DenseObservationWriter, sparse_metric_rows
 
 
 @dataclass

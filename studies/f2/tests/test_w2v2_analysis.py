@@ -7,8 +7,12 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from f2.suites.w2v.artifacts import _LOOKUP_ARRAYS, LOOKUP_FORMAT, _write_manifest
-from f2.suites.w2v.evaluation import AnalogyQuestion
+from f2.suites.common.w2v.artifacts import (
+    _LOOKUP_ARRAYS,
+    LOOKUP_FORMAT,
+    _write_manifest,
+)
+from f2.suites.common.w2v.evaluation import AnalogyQuestion
 from f2.suites.w2v2 import analysis, paper
 from f2.suites.w2v2.spec import parse_run_spec
 from repro_core.context import RuntimePaths
@@ -71,7 +75,7 @@ def fixture_record(root, table, variant, seed=1):
     import os
     import shutil
 
-    from f2.suites.w2v.artifacts import (
+    from f2.suites.common.w2v.artifacts import (
         _CHECKPOINT_ARRAYS,
         _VOCABULARY_ARRAYS,
         CHECKPOINT_FORMAT,
@@ -80,7 +84,7 @@ def fixture_record(root, table, variant, seed=1):
         _vocabulary_policy,
         training_config_digest,
     )
-    from f2.suites.w2v.phrases import PhrasePolicy, _digest
+    from f2.suites.common.w2v.phrases import PhrasePolicy, _digest
 
     target = next(t for t in analysis.targets() if t[0] == table and t[3] == variant)
     config = (
@@ -381,7 +385,7 @@ def test_synthetic_all_tables_read_only_and_reused(tmp_path, monkeypatch):
         analysis, "_dataset", lambda *args: ({"status": "complete"}, questions)
     )
     calls = []
-    from f2.suites.w2v import artifacts
+    from f2.suites.common.w2v import artifacts
 
     original = artifacts.load_lookup_artifact
 

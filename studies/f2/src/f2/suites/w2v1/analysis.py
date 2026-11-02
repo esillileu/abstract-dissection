@@ -12,9 +12,9 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-from f2.suites.w2v.artifacts import load_lookup_artifact
+from f2.suites.common.w2v.artifacts import load_lookup_artifact
+from f2.suites.common.w2v.evaluation import evaluate_analogies, parse_analogy_questions
 from f2.suites.w2v.cache import LocalResults, unavailable_report
-from f2.suites.w2v.evaluation import evaluate_analogies, parse_analogy_questions
 from repro_core.context import RuntimePaths
 
 _CONDITION = re.compile(r"(wmt|lm1b|umbc)--d(50|100|300|600)-w(24|49|98|196|391|783)m")

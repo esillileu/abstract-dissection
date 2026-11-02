@@ -4,8 +4,11 @@ from collections import Counter
 
 import numpy as np
 
-from f2.suites.w2v1.corpus_investigation import bound_lines, prediction_proxy
-from f2.suites.w2v1.corpus_statistics import (
+from f2.suites.diagnostics.w2v1.corpus_investigation import (
+    bound_lines,
+    prediction_proxy,
+)
+from f2.suites.diagnostics.w2v1.corpus_statistics import (
     BottomHashes,
     CorpusStatistics,
     js_divergence,
@@ -64,7 +67,7 @@ def test_js_divergence_extremes():
 
 
 def test_grouped_proxy_uses_only_training_templates_and_reports_chance():
-    from f2.suites.w2v1.corpus_statistics import hash64
+    from f2.suites.diagnostics.w2v1.corpus_statistics import hash64
 
     signatures = [i.to_bytes(16, "little").hex() for i in range(20)]
     train = next(s for s in signatures if hash64(bytes.fromhex(s)) % 5 != 0)
@@ -81,7 +84,7 @@ def test_grouped_proxy_uses_only_training_templates_and_reports_chance():
 def test_annotated_materialization_keeps_exact_partial_line_and_cleans_shard(
     tmp_path, monkeypatch
 ):
-    from f2.suites.w2v1 import corpus_investigation as module
+    from f2.suites.diagnostics.w2v1 import corpus_investigation as module
 
     class Store:
         def get_file(self, uri, path):
@@ -107,7 +110,7 @@ def test_annotated_materialization_keeps_exact_partial_line_and_cleans_shard(
 def test_count_based_center_information_separates_disjoint_from_shared_contexts(
     tmp_path,
 ):
-    from f2.suites.w2v1.corpus_evidence import discriminability_evidence
+    from f2.suites.diagnostics.w2v1.corpus_evidence import discriminability_evidence
 
     contexts = np.lib.format.open_memmap(
         tmp_path / "contexts.npy", mode="w+", dtype=np.uint32, shape=(2, 2, 4, 5)
@@ -153,7 +156,7 @@ def test_count_based_center_information_separates_disjoint_from_shared_contexts(
 def test_accuracy_aggregates_keep_common_question_subset_and_unique_pairs():
     from types import SimpleNamespace
 
-    from f2.suites.w2v1.corpus_report import accuracy_records
+    from f2.suites.diagnostics.w2v1.corpus_report import accuracy_records
 
     questions = [SimpleNamespace(category="family"), SimpleNamespace(category="family")]
     data = {
