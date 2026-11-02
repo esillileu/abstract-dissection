@@ -328,3 +328,18 @@ def test_slice_corpus_file(tmp_path: Path):
     tokens_over_cached, sha256_over_cached = slice_corpus_file(source, target_over, 50)
     assert tokens_over_cached == 8
     assert sha256_over_cached == sha256_over
+
+
+def test_copy_corpus_prefix_sanitizes_null_bytes(tmp_path: Path):
+    from f2.suites.w2v.corpus import _copy_corpus_prefix
+
+    data = [b"first\x00\x00second </s> third\x00fourth\nfifth\n"]
+    output = tmp_path / "clean.txt"
+    with output.open("wb") as dest:
+        tokens, complete = _copy_corpus_prefix(data, dest, 10, scratch=tmp_path)
+    assert complete
+    assert tokens == 5
+    result = output.read_bytes()
+    assert b"\x00" not in result
+    assert b"</s>" not in result
+    assert result == b"first  second   third fourth\nfifth\n"

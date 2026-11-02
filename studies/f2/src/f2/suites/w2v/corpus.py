@@ -350,6 +350,10 @@ def _copy_corpus_prefix(chunks, destination, budget, *, scratch):
             pending.truncate()
 
         for chunk in chunks:
+            if b"\x00" in chunk:
+                chunk = chunk.replace(b"\x00", b" ")
+            if b"</s>" in chunk:
+                chunk = chunk.replace(b"</s>", b" ")
             for match in _RUNS.finditer(chunk):
                 part = match.group()
                 if part[0] not in b" \t\r\n":
