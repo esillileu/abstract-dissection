@@ -174,20 +174,15 @@ def download_results(
                 continue
         runs_to_process.append(run)
 
-    total_runs = len(runs_to_process)
-    if total_runs > 0:
-        print(f"Syncing {total_runs} run artifacts from MLflow...", flush=True)
+    from tqdm import tqdm
 
     records: list[dict[str, Any]] = []
-    for idx, run in enumerate(runs_to_process, start=1):
+    pbar = tqdm(runs_to_process, desc="Syncing MLflow artifacts", unit="run")
+    for run in pbar:
         tags = dict(run.data.tags)
         variant = tags.get("implementation.variant", run.info.run_id[:8])
         seed = tags.get("seed", "")
-        seed_str = f" seed={seed}" if seed else ""
-        print(
-            f"[{idx}/{total_runs}] Syncing artifacts: {variant}{seed_str}...",
-            flush=True,
-        )
+        pbar.set_postfix_str(f"{variant} (s{seed})" if seed else variant)
         record = {
             "run_id": run.info.run_id,
             "tags": tags,

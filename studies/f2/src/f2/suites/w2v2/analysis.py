@@ -552,7 +552,11 @@ def generate_report(
 
     conflicts = {key for grp in run_owners.values() if len(grp) > 1 for key in grp}
 
+    from tqdm import tqdm
+
     rows, qualitative = [], []
+    total_eval_runs = len(inventory) * len(SEEDS)
+    pbar = tqdm(total=total_eval_runs, desc="Evaluating W2V2 runs", unit="run")
     for table, corpus, condition, variant, raw in inventory:
         from .spec import parse_run_spec
 
@@ -577,6 +581,7 @@ def generate_report(
             else paper.SECTION4[condition]
         )
         for seed in SEEDS:
+            pbar.set_postfix_str(f"{corpus} {condition} (s{seed})")
             row = {
                 "table": table,
                 "corpus": corpus,
@@ -669,10 +674,6 @@ def generate_report(
                             else:
                                 if isinstance(lookup, Path):
                                     lookup = load_lookup_artifact(lookup)
-                                print(
-                                    f"Evaluating analogies: {corpus} {condition} (seed {seed})...",
-                                    flush=True,
-                                )
                                 score = evaluate_analogies(lookup, questions)
                                 row["metrics"] = {
                                     "total": _metric(score.overall),
@@ -804,6 +805,8 @@ def generate_report(
                         "qualitative": new_qual_map,
                     },
                 )
+            pbar.update(1)
+    pbar.close()
     qualitative.sort(
         key=lambda q: (q["table"], q["corpus"], q["condition"], q["seed"], q["query"])
     )
