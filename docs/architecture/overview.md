@@ -18,12 +18,14 @@ graph TD
         CORE[packages/repro-core]
         MLFLOW[packages/repro-mlflow]
         ENGINE[packages/deepscratch]
+        W2V[packages/w2v]
         IO[packages/repro-io]
     end
 
     subgraph Layer 3: Studies [3. Studies (Scientific Experiments & Campaigns)]
-        STUDY_DLFS[studies/dlfs\nDLFS Vol 1 & 2 Suite]
-        STUDY_F2[studies/f2\nF2 Campaign: Corpus Pipeline + 8-10 Studies]
+        STUDY_DLFS[studies/dlfs\nDLFS Vol 1 & 2 Suite (Legacy)]
+        STUDY_F2[studies/f2\nF2 Word2Vec Reproduction Campaign]
+        STUDY_F2CC[studies/f2_cc\nIndependent Common Crawl Producer]
         ADAPTERS[studies/*/adapters\nTranslation Adapters Boundary]
     end
 
@@ -35,13 +37,15 @@ graph TD
     STUDY_F2 -->|orchestrates via| ADAPTERS
     ADAPTERS -->|uses pure retention| CORE
     ADAPTERS -->|injects datasets & builds models| ENGINE
+    STUDY_F2 -->|high-performance numeric kernels| W2V
     STUDY_DLFS -->|tracks runs| MLFLOW
     STUDY_F2 -->|tracks runs| MLFLOW
-    STUDY_F2 -->|acquires bytes| IO
+    STUDY_F2CC -->|acquires bytes| IO
     STUDY_DLFS -->|reads immutable baseline| REF
     MLFLOW -->|depends on| CORE
     INFRA -.->|provides endpoints| MLFLOW
     INFRA -.->|provides database/object-store services| STUDY_F2
+    INFRA -.->|provides database services| STUDY_F2CC
 ```
 
 ---
@@ -50,14 +54,12 @@ graph TD
 
 | Top-Level Directory | Ownership / Role | Dependency Rules |
 | :--- | :--- | :--- |
-| **`packages/`** | Reusable, self-contained Python libraries (`repro-core`, `repro-mlflow`, `repro-io`, `deepscratch`). | **Must NOT depend on `studies/` or external references.** `deepscratch` has 0 dependencies on other workspace packages. `repro-core` has 0 dependencies on `repro-mlflow`, `deepscratch`, or `studies/`. |
-| **`studies/`** | Domain-specific reproduction studies and experimental protocols (`studies/dlfs`, `studies/f2`). | Orchestrates `packages/` engines and compares against `references/`. Contains explicit **adapters**, study catalogs, configs, and custom analysis scripts. |
+| **`packages/`** | Reusable, self-contained computational and infrastructure libraries (`repro-core`, `repro-mlflow`, `repro-io`, `w2v`, `deepscratch`). | **Must NOT depend on `studies/` or external references.** `deepscratch`, `w2v`, and `repro-io` have 0 dependencies on other workspace packages. `repro-core` has 0 dependencies on `repro-mlflow`, `deepscratch`, or `studies/`. |
+| **`studies/`** | Domain-specific reproduction studies and experimental protocols (`studies/dlfs`, `studies/f2`, `studies/f2_cc`). | Orchestrates `packages/` engines and compares against `references/`. Contains explicit **adapters**, study catalogs, configs, and custom analysis scripts. |
 | **`references/`** | Vendored immutable upstream baselines (`references/dlfs1-book`, `references/dlfs2-book`). | Read-only snapshots of upstream code. Must include `provenance.json`. |
 | **External services** | MLflow, PostgreSQL, and S3-compatible services operated outside this repository. | Provide endpoints and durable infrastructure; service operation, server schemas, roles, buckets, backups, and availability are outside repository/study ownership. |
-| **`artifacts/`** | Human-readable final analysis reports, paper figures, and markdown summaries. | Ephemeral scratch data must NOT be committed here. |
-| **`data/`** | Canonical dataset directory (`data/mnist`, `data/ptb`, `data/sequence`). | Managed via 3-tier fallback resolution. Ignored by Git. |
-| **`.staging/`** | Volatile in-memory / scratch buffer during live runs. | Completely disposable (`rm -rf .staging` safe). |
-| **`.cache/`** | Derived local cache (MLflow artifact downloads, analysis intermediate caches). | 100% reconstructible (`rm -rf .cache` safe). |
+| **`workspace/`** | Unified local runtime workspace (`REPRO_WORKSPACE_ROOT`). | Contains `inputs/` (raw corpora, benchmarks, prepared data), `runs/` (local execution states, preserved runs/checkpoints), and `analysis/` (MLflow download cache, results eval cache, and final reports). |
+| **Legacy paths (`data/`, `.staging/`, `.cache/`, `artifacts/`)** | Maintained for DLFS backwards compatibility only. | F2 uses the unified `workspace/` hierarchy (`inputs/`, `runs/`, `analysis/`). |
 
 ---
 
@@ -74,10 +76,11 @@ graph TD
    `repro-core` owns checkpoint retention policies, generational naming, atomic staging, and pointer JSONs (`latest.json`, `best.json`, `final.json`), with **zero coupling** to deep learning parameters or serialization formats. Study adapters own state serialization and restoration.
 5. **Reproducibility Contract:**
    All executions must declare exact seeds, backend targets (CPU/GPU), precision dtypes, and configuration digests.
-6. **Module-Scoped Study Isolation:**
+6. **Module-Scoped Study Isolation & Lifecycle Independence:**
    `repro-core` dispatches execution dynamically to study adapters through declared `executor_module`s (`ExecutionDefinition.executor_module`). No process-global registries or cross-study name collisions exist.
+   F2 follows a dedicated single-lifecycle architecture (Coordinator + Storage + Suites) with MLflow `FINISHED` as the sole authority of execution completion. DLFS is preserved as a legacy runner system and is not forced onto the F2 execution lifecycle.
 
 `infra/` records external service interfaces and operator handoff only; it is not
 an in-repository service operations responsibility. F2 retains only research-domain
 DDL, migrations, and lineage semantics.
-Independent repro-io and deepscratch sit beside the core/tracking dependency chain.
+Independent repro-io, w2v, and deepscratch sit beside the core/tracking dependency chain.

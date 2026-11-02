@@ -10,6 +10,7 @@ Welcome to the `abstract-dissection` reproduction monorepo. This document define
 | :--- | :--- |
 | Packages and core | `docs/architecture/packages.md` |
 | Studies and experiments | `docs/architecture/studies.md` |
+| F2 execution & storage architecture | `docs/architecture/f2-experiments.md` (and design spec `ref.md`) |
 | Adapters and representation translation | `docs/architecture/adapters.md` |
 | Corpus pipeline | `docs/architecture/corpus-pipeline.md` |
 | Paths, storage, MLflow, and databases | `docs/guidelines/path-and-storage.md` |
@@ -31,9 +32,15 @@ All AI agents working in this repository MUST adhere to the following 6 golden r
 * **Environment:** Python 3.12.14 managed via root [`pyproject.toml`](file:///home/esillileu/abstract-dissection/pyproject.toml) and [`uv.lock`](file:///home/esillileu/abstract-dissection/uv.lock).
 
 ### 2) Zero-Dependency Invariants & Package Isolation
-* **`deepscratch`:** 100% standalone deep learning library. NEVER import `repro_core`, `repro_mlflow`, or studies (`dlfs`, `f2`). Allowed: `numpy`, `psutil`, (optional: `cupy`).
+* **`deepscratch`:** 100% standalone deep learning library. NEVER import `repro_core`, `repro_mlflow`, `repro_io`, or studies (`dlfs`, `f2`, `f2_cc`). Allowed: `numpy`, `psutil`, (optional: `cupy`).
+* **`w2v`:** Standalone high-performance Rust computation library (PyO3). Pure computational algorithms (CBOW/SG, HS/NEG/NCE, NNLM, Downpour SGD). NEVER import MLflow, study catalogs, or F2 storage paths.
+* **`repro-io`:** Dedicated, tracking-neutral I/O and protocol library (HTTP range/streaming, S3 SigV4, SHA-256, Common Crawl protocol/ARC). NEVER import workspace studies, MLflow, or study-specific business logic.
 * **`repro-core`:** Tracking-neutral experiment orchestration library. NEVER import `repro_mlflow`, `deepscratch`, or studies. Orchestrates executions via injected delegates and module-scoped executor dispatch (`ExecutionDefinition.executor_module`).
 * **Directionality:** Unidirectional dependency flow: $\text{studies} \rightarrow \text{repro-mlflow} \rightarrow \text{repro-core} \rightarrow \text{standard library / third-party}$.
+* **Study & Execution Independence:**
+  * **F2 Execution & Storage Architecture:** F2 employs a single, unified execution lifecycle managed by its Execution Coordinator and Storage layer. Completion is judged solely by native MLflow `FINISHED`. F2 does NOT share run lifecycle / execution policy with DLFS.
+  * **DLFS Legacy Isolation:** `studies/dlfs` maintains its legacy runner/locator execution convention. DLFS is NOT required to adopt F2's new execution contracts, and F2 must not force new interfaces onto DLFS.
+  * **F2-CC Study:** `studies/f2_cc` is an independent Common Crawl producer study with its own database (`f2_cc`); it is not an executor for F2 paper experiments.
 
 
 ### 3) 3-Tier Dataset Resolution & Path Injection
@@ -41,20 +48,23 @@ All AI agents working in this repository MUST adhere to the following 6 golden r
 * **Inside `deepscratch`:** Rely on 3-tier fallback (`data_dir` arg $\rightarrow$ `DEEPSCRATCH_DATA_DIR` env $\rightarrow$ `./data/<name>`).
 * **Inside `studies/`:** Always inject paths via translation adapters using `RuntimePaths.from_environment().dataset("<name>")`.
 
-### 4) Storage Lifecycle & Cache Discipline (Unified Workspace)
-* **Single Root:** All local runtime output and data are managed under `REPRO_WORKSPACE_ROOT` (`workspace/`):
-  * `workspace/inputs/`: Local input corpora, benchmarks, and reusable prepared/preprocessed data (`workspace/inputs/f2/prepared/corpus/`).
-  * `workspace/runs/`: Per-run local results, checkpoints, and intermediate files. Fully preserved on override (stored in subdirectories `run_01/`, etc., never automatically wiped).
-  * `workspace/analysis/cache/mlflow/`: Downloaded MLflow artifacts isolated per run ID (`root / <server_key> / <run_id> /`).
-  * `workspace/analysis/cache/results/`: Signature-checked intermediate statistical analysis and evaluation cache (`eval_*.json`). Reconstructible from MLflow artifacts.
-  * `workspace/analysis/results/`: Final human-readable deliverables (paper plots `.png`/`.pdf`, `summary.md`, `summary.csv`, JSON tables).
-* **MLflow:** Single source of truth for published production run checkpoints, manifests, and metrics. Execution completion is judged exclusively by MLflow native `FINISHED` status (no redundant `durable_complete`, `trial.status`, or external completion registries).
-* **5-Layer Architecture:**
-  * **Engine:** Pure computation (no storage paths, no MLflow access, no execution policy).
-  * **Executor:** Interprets configuration, checks MLflow/LocalStore for completed runs, decides skip/resume/run, delegates persistence, and publishes to MLflow.
-  * **RunLocator:** Path-based locator (`PathRunLocator`) verifying physical artifact existence and `complete=true`.
-  * **LocalStore:** File/checkpoint persistence without business logic; preserves all runs.
-  * **Analyzer:** Reads MLflow download cache, checks/updates results cache, produces evaluation reports. Never accesses training staging or raw corpora.
+### 4) Storage Lifecycle, Cache Discipline & Execution Boundaries
+* **Single Workspace Root:** All local runtime output, checkpoints, datasets, and analysis caches are managed under `REPRO_WORKSPACE_ROOT` (`workspace/`):
+  * `workspace/inputs/`: Local input corpora, benchmarks, and reusable prepared/preprocessed data (`workspace/inputs/f2/prepared/corpus/`). Shared across runs and suites if source revision and transformation policies match.
+  * `workspace/runs/`: Per-run local results, checkpoints, and intermediate files (`workspace/runs/f2/<suite>/<slot>/<attempt>/`). Preserved on override (never wiped automatically; re-runs allocate new Attempt IDs or indexed subdirectories).
+  * `workspace/analysis/cache/mlflow/`: Downloaded MLflow artifacts isolated per tracking server and run ID (`root / <server_key> / <run_id> /`).
+  * `workspace/analysis/cache/results/`: Signature-checked intermediate statistical analysis and evaluation cache (`eval_*.json`). Fully reconstructible from MLflow artifacts and benchmarks.
+  * `workspace/analysis/results/`: Final human-readable deliverables (paper plots `.png`/`.pdf`, `summary.md`, `summary.csv`, JSON tables). Each table/filter has a **stable, fixed path**; updates overwrite the stable location rather than creating unbounded duplicate version files.
+* **MLflow as Single Source of Truth:** Published production run checkpoints, manifests, and metrics are authoritative in MLflow.
+  * In F2, execution completion is judged exclusively by MLflow native `FINISHED` status (no redundant `durable_complete`, `trial.status`, or external completion registries).
+  * Prior to marking `FINISHED`, all required artifacts must be verified and durably uploaded.
+* **Separation of Policy and Mechanism (F2 Architecture):**
+  * **Engine (`packages/w2v`, `packages/deepscratch`):** Pure computation and numerical routines (no storage paths, no MLflow access, no execution policy).
+  * **Coordinator (`studies/f2/execution`):** Sole policy decision maker for the execution lifecycle (skip on existing FINISHED / resume from valid checkpoint / publish unposted local complete / new attempt).
+  * **Storage & Publication (`studies/f2/storage`):** Local attempt layout, checkpoint search/retention, atomic MLflow publication, and download cache management.
+  * **Suite Executor (`studies/f2/suites/`):** Pure execution sequencing, numerical configuration, and adapter invocation. Does not manage MLflow lifecycle or local retry policies.
+  * **Analyzer (`studies/f2/common/analysis` & suite analyzers):** Independent analysis; reads MLflow download cache or local result cache, produces reports. Never trains, resumes checkpoints, or touches raw corpora. Missing inputs are marked `unavailable` (never masked with zeros).
+* **Zero Legacy Shim / No Artificial Fallback:** Never add permanent wrappers, shims, or fallback aliases for obsolete APIs or deprecated storage layouts. Required migrations must be executed once cleanly.
 
 ### 5) Immutable References
 * **Rule:** Never modify files inside [`references/`](file:///home/esillileu/abstract-dissection/references).
@@ -99,6 +109,7 @@ docs/
 │   ├── overview.md                       # Monorepo 4-tier layer topology and dependency rules
 │   ├── packages.md                       # Responsibilities and strict boundaries of packages/
 │   ├── studies.md                        # Structure of studies/ and dynamic repro CLI plugin discovery
+│   ├── f2-experiments.md                 # F2 Word2Vec execution, storage & analysis contracts
 │   ├── adapters.md                       # Adapter boundary & representation translation contracts
 │   └── corpus-pipeline.md                # Common Crawl sampling, auditing, two-phase estimation, corpus extraction & lifecycle lineage
 └── guidelines/
@@ -109,6 +120,7 @@ docs/
 
 * **For Package & Core Work:** Read [`docs/architecture/packages.md`](file:///home/esillileu/abstract-dissection/docs/architecture/packages.md).
 * **For Study & Experiment Work:** Read [`docs/architecture/studies.md`](file:///home/esillileu/abstract-dissection/docs/architecture/studies.md).
+* **For F2 Execution & Storage Architecture:** Read [`docs/architecture/f2-experiments.md`](file:///home/esillileu/abstract-dissection/docs/architecture/f2-experiments.md) and [`ref.md`](file:///home/esillileu/abstract-dissection/ref.md).
 * **For Adapter & Representation Translation:** Read [`docs/architecture/adapters.md`](file:///home/esillileu/abstract-dissection/docs/architecture/adapters.md).
 * **For Corpus Sampling, Auditing & Pipeline Work:** Read [`docs/architecture/corpus-pipeline.md`](file:///home/esillileu/abstract-dissection/docs/architecture/corpus-pipeline.md).
 * **For Paths, Datasets & Storage:** Read [`docs/guidelines/path-and-storage.md`](file:///home/esillileu/abstract-dissection/docs/guidelines/path-and-storage.md).
@@ -140,9 +152,10 @@ uv run repro f2 corpus calibrate
 
 ## Acquisition and semantic boundaries
 
-- Read `docs/architecture/ownership-inventory.md` for the component ownership map.
+- Component ownership mapping follows implementation boundaries.
 - `repro-io` owns HTTP, S3, checksum, Common Crawl protocol and ARC parsing only.
   No workspace/study imports, F2 environment interpretation or research policy.
+- `w2v` owns core algorithmic computation (CBOW/SG, HS/NEG/NCE, NNLM Downpour SGD); it has no knowledge of MLflow or study catalogs.
 - Core analysis is tracking-neutral; DLFS owns run selection, book smoothing and
   parameter reports. MLflow result loading belongs to repro-mlflow.
 - F2 SQL/DBML and migration ledgers stay in the study. Never modify existing SQL

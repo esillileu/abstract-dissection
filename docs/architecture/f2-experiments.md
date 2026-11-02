@@ -1,10 +1,53 @@
-# F2 Word2Vec experiment lifecycle
+# F2 Word2Vec Experiment Lifecycle & Storage Architecture
 
-F2/W2V1 and F2/W2V2 use MLflow as the only permanent record of experiment
-execution. Corpus production and the research catalog remain separate domain
-systems; neither records execution completion.
+> **Architecture Reference:** This document defines the execution, persistence, publication, and analysis contracts for the F2 Word2Vec reproduction campaign. For the full refactoring target design specification, refer to [`ref.md`](../../ref.md).
 
-## Responsibilities before and after
+F2/W2V1 and F2/W2V2 use MLflow as the only permanent record of experiment execution. Corpus production and the research catalog remain separate domain systems; neither records execution completion.
+
+---
+
+## 1. Core Architectural Separation
+
+```mermaid
+flowchart TD
+    CLI[CLI: repro f2 plan / run / check / analyze] --> PLANNER[Planner: Spec + Variant + Seed]
+    PLANNER --> COORD[Execution Coordinator: Single Lifecycle Policy]
+    
+    subgraph Storage [studies/f2/storage]
+        RUNS["runs.py: workspace/runs/f2/<suite>/<slot>/<attempt>/"]
+        PUB["publication.py: MLflow Publication & Query"]
+        CACHE["analysis_cache.py: workspace/analysis/cache/"]
+    end
+
+    COORD <-->|Query FINISHED / Checkpoints| Storage
+    COORD -->|Execute Computation| SUITE[Suite Executor: w2v1 / w2v2]
+    SUITE --> COMMON[suites/common/w2v: Preparation / Codec / Lookup]
+    COMMON --> ENGINE[packages/w2v: Pure Rust Kernel]
+    
+    COORD -->|Upload verified artifacts| PUB
+    PUB --> MLFLOW[(MLflow: Single Source of Truth)]
+    
+    subgraph Analysis [Independent Analyzer]
+        MLFLOW -->|Download Artifacts| CACHE
+        ANALYZER[Suite Analyzer] -->|Read Cached Artifacts| CACHE
+        ANALYZER -->|Write Fixed Path Reports| DELIV["workspace/analysis/results/f2/<suite>/"]
+    end
+```
+
+### Responsibility Matrix
+
+| Layer | Responsibility | Forbidden Actions |
+|---|---|---|
+| **Planner** | Normalizes YAML configurations, variants, and seeds; produces deterministic `ConditionIdentity`. | MLflow queries, heavy corpus materialization, checkpoint restoration. |
+| **Coordinator** | Sole lifecycle decision maker (`skip` if FINISHED / `resume` from checkpoint / `publish` local complete / `run` new attempt). | Numerical calculations, paper table analysis, low-level MLflow calls. |
+| **Storage & Publication** | Local run layout (`workspace/runs/`), checkpoint discovery, atomic artifact publication to MLflow, analysis cache retrieval. | Experiment execution decisions, scientific validity adjudication. |
+| **Suite Executor** | Numerical execution sequencing and adapter invocation. | MLflow run creation/termination, retry/override policy logic. |
+| **Engine (`packages/w2v`)** | CBOW/SG, NEG/HS/NCE, NNLM Downpour SGD calculations. | Storage paths, CLI, MLflow integration. |
+| **Analyzer** | Independent report and figure generation; reads cached MLflow artifacts. | Training loops, checkpoint restoration, mutating MLflow runs. |
+
+---
+
+## 2. Responsibilities Before and After
 
 | Component | Previous responsibilities | Current responsibility |
 | --- | --- | --- |
@@ -54,8 +97,8 @@ required for reading a completed run.
 ## Files and analysis
 
 `workspace/runs/` contains training preprocessing, vocabulary files, checkpoints and
-intermediate observations. When `override=True` is specified, existing run directories
-are preserved intact, and the new run is stored in an indexed subdirectory (e.g. `run_01/`).
+intermediate observations under `workspace/runs/f2/<suite>/<slot>/<attempt>/`. When `override=True` is specified, existing run directories
+are preserved intact, and a new attempt is recorded.
 Atomic checkpoint writes, bounded matrix serialization, finite-value checks and
 local retention remain. Native engine checkpoint serialization/restoration APIs
 remain library mechanisms, not an automatic experiment recovery workflow.
@@ -76,8 +119,9 @@ W2V1 analysis entry points take a cache directory rather than a tracking URI.
 W2V2 receives records from the same cached snapshot. The CLI owns the download
 phase. `w2v2-report --offline` reads the existing local snapshot without MLflow.
 W2V1 results live in `workspace/analysis/results/f2/w2v1/`; W2V2 results in
-`workspace/analysis/results/f2/w2v2/`. Derived calculation caches live in
-`workspace/analysis/cache/results/f2/<suite>/`. Explicit benchmark arguments refer to cached benchmark
+`workspace/analysis/results/f2/w2v2/`. Each table and filter combination has a **stable, fixed path**
+(e.g., `workspace/analysis/results/f2/w2v1/table03/wmt/summary.md`), updating in place on overwrite rather than creating unbounded duplicate version files.
+Derived calculation caches live in `workspace/analysis/cache/results/f2/<suite>/`. Explicit benchmark arguments refer to cached benchmark
 files. Absent benchmarks or required artifacts produce unavailable analysis, with
 no source-data download, staging lookup or repair attempt.
 

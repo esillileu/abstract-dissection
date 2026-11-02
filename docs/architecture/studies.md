@@ -16,23 +16,24 @@ The `studies/` directory contains reproduction studies, experimental campaigns, 
 
 Studies are grouped into cohesive experimental volumes or research campaigns. Each study suite exposes its own subcommands through the `repro` CLI plugin system:
 
-### 1) DLFS Reproduction Suite (`studies/dlfs`)
+### 1) DLFS Reproduction Suite (`studies/dlfs` — Legacy Runner)
 Reproduces the canonical "Deep Learning from Scratch" curriculum (Volumes 1 & 2):
 * **`ds1/`:** Volume 1 experiments (MNIST, MLP, CNN filters, numerical gradients — e01 to e11).
 * **`ds2/`:** Volume 2 experiments (Word2Vec CBOW/Skip-Gram, PTB language modeling, RNN, LSTM, Seq2Seq, Attention — e01 to e08).
+* Preserved as a legacy execution system using `repro-core`'s runner. DLFS is not required to adapt to F2's single-lifecycle coordinator.
 
-### 2) F2 Research Campaign Suite (`studies/f2`)
-A comprehensive reproduction and analysis campaign comprising **8~10 distinct sub-studies**:
-* **F2-CC producer (`f2-cc corpus` / Pre-requisite Phase 0):** Independent
-  Common Crawl sampling, auditing, estimation, and release publication.
-* **Corpus preparation (`f2 corpus`):** Acquisition, normalization, and
-  validation of completed releases consumed by Word2Vec experiments.
-* **Corpus-Dependent Studies (2 Studies):** Word2Vec pretraining dynamics, vocabulary scaling, and representation evaluations trained directly on the constructed corpus.
-* **Independent Studies (5 Studies):** Dedicated theoretical, architecture, and embedding benchmark studies.
+### 2) F2 Word2Vec Reproduction Campaign Suite (`studies/f2`)
+A rigorous reproduction campaign for Word2Vec (Mikolov et al., 2013) following a single execution lifecycle:
+* **F2-CC Producer (`studies/f2_cc`):** Independent Common Crawl candidate sampling, audit, two-phase estimation, and release creation backed by its own database.
+* **Corpus Domain (`f2 corpus`):** Acquisition, normalization, and validation of completed releases consumed by downstream experiments.
+* **Reproduction Suites (`f2/suites/`):**
+  * `w2v1`: Efficient Estimation of Word Representations in Vector Space (CBOW, Skip-Gram, NNLM).
+  * `w2v2`: Distributed Representations of Words and Phrases and their Compositionality (Word/Phrase Skip-Gram, NEG/HS/NCE, subsampling).
+  * `suites/common/w2v`: Reusable W2V algorithmic preparation, training coordination, checkpoint codec, and analogy evaluation.
 
 ```text
 studies/
-├── dlfs/                              # DLFS Vol 1 & Vol 2 Reproduction Suite
+├── dlfs/                              # DLFS Vol 1 & Vol 2 Reproduction Suite (Legacy)
 │   ├── pyproject.toml
 │   └── src/dlfs/
 │       ├── ds1/                       # Volume 1: Vision & Feedforward
@@ -42,25 +43,20 @@ studies/
 │   └── src/f2_cc/
 │       ├── corpus/                    # Sampling, audit, analysis, release creation
 │       └── db/                        # Dedicated f2_cc operational schema
-└── f2/                                # F2 Research & Benchmark Campaign
+└── f2/                                # F2 Word2Vec Reproduction Campaign
     ├── pyproject.toml
-    ├── catalog/w2v.json               # W2V1/W2V2 catalog input
+    ├── catalog/                       # Static reproduction catalog manifest and offline validator
+    │   ├── w2v.json                   # W2V1/W2V2 catalog input
+    │   └── ...
     └── src/f2/
         ├── plugin.py                  # Plugin entrypoint (registers `repro f2 ...`)
-        ├── cli.py                     # Root CLI dispatcher (`repro f2 corpus ...`, `repro f2 catalog ...`)
-        ├── definition.py              # F2 ExecutionDefinitions registry
-        ├── common/                    # Shared statistics, analysis & adapters
-        │   ├── paths.py               # RuntimePaths centralized helper
-        │   ├── stats/                 # BootstrapVarianceEngine, DifferenceEstimator, ClassifierMetrics
-        │   ├── analysis/              # Theme, declarations, BaseAnalysisOrchestrator
-        │   └── adapters/              # CheckpointAdapter
+        ├── cli/                       # Command-line subcommands (plan, run, check, analyze, evaluate, data)
+        ├── execution/                 # F2 single execution coordinator & condition identity
+        ├── storage/                   # F2 run persistence, MLflow publication, analysis cache
+        ├── common/                    # Shared statistics, analysis helpers, paths
         ├── corpus/                    # Completed-source preparation and validation
-        │   ├── cli.py                 # `repro f2 corpus sources ...`
-        │   └── db/                    # F2-owned release metadata schema
-        ├── catalog/                   # Static reproduction catalog manifest and offline validator
-        │   ├── manifest.py            # Manifest reader and digest utilities
-        │   └── cli.py                 # `repro f2 catalog validate`
-        └── suites/                    # Downstream experimental volumes (w2v_pretrain, vocab, bench)
+        ├── catalog/                   # Static catalog manifest parsing and validation
+        └── suites/                    # Paper suites (w2v1, w2v2) & common/w2v
 ```
 
 ---

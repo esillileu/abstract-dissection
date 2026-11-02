@@ -44,7 +44,7 @@ The `packages/` directory houses independent, reusable Python libraries. Each pa
   * **Schema Enforcement:** Standardized tag and metric namespaces (`SchemaV1Run`).
   * **Durable Uploads:** Synchronous/asynchronous artifact and metric batching (`client.log_batch`, `client.log_artifact`).
   * **Verification:** Integrity checksum verification (`_verify_uploaded_manifest`) before marking runs as durable.
-  * **Artifact Caching:** Transparent local caching of remote checkpoints and metric payloads (`.cache/mlflow_artifact/`).
+  * **Artifact Caching:** Transparent local caching of remote checkpoints and metric payloads (`.cache/mlflow_artifact/`, `workspace/analysis/cache/mlflow/`).
   * **YAML Runner:** CLI run orchestration with metadata validation (`run_yaml`).
 * **Non-Goals:** Does not operate MLflow infrastructure, own its server-side
   database/schema, administer credentials or buckets, transfer historical runs,
@@ -53,14 +53,41 @@ The `packages/` directory houses independent, reusable Python libraries. Each pa
 
 ---
 
+### 4) `w2v` (`packages/w2v`)
+* **Role:** Standalone, high-performance Rust computation library (PyO3).
+* **Responsibilities:**
+  * Implements pure numerical Word2Vec training algorithms (CBOW, Skip-Gram, Hierarchical Softmax, Negative Sampling, NCE).
+  * Implements feed-forward Neural Network Language Model (NNLM) with Downpour SGD parameter server.
+  * Manages thread scheduling, CPU affinity, Huffman tree construction, and fast vocabulary hashing.
+* **Strict Invariants:**
+  * Zero knowledge of MLflow, study catalogs, or F2 storage paths. Purely computational.
+
+---
+
+### 5) `repro-io` (`packages/repro-io`)
+* **Role:** Independent, tracking-neutral I/O mechanism library.
+* **Dependencies:** `requests`, `warcio`.
+* **Responsibilities:**
+  * Byte transport: HTTP range/resume/retry, bandwidth rate-limiting, SHA-256 streaming verification.
+  * S3 transport: Explicit S3 client / SigV4 mechanism without ambient credentials.
+  * Common Crawl protocol: CDX index querying and raw ARC/WARC archive parsing.
+* **Strict Invariants:**
+  * 0 imports from other workspace packages or studies. No knowledge of F2 environment variables, research corpus filters, or campaign policies.
+
+---
+
 ## 2. Dependency Matrix & Zero-Dependency Invariant
 
-| Source Package | `numpy` / `psutil` | `repro-core` | `repro-mlflow` | `deepscratch` | `studies/*` |
-| :--- | :---: | :---: | :---: | :---: | :---: |
-| **`deepscratch`** | ✅ Allowed | ❌ **PROHIBITED** | ❌ **PROHIBITED** | — | ❌ **PROHIBITED** |
-| **`repro-core`** | ✅ Allowed | — | ❌ **PROHIBITED** | ❌ **PROHIBITED** | ❌ **PROHIBITED** |
-| **`repro-mlflow`** | ✅ Allowed | ✅ Allowed | — | ❌ **PROHIBITED** | ❌ **PROHIBITED** |
-| **`studies/dlfs`** | ✅ Allowed | ✅ Allowed | ✅ Allowed | ✅ Allowed | — |
+| Source Package | `numpy` / `psutil` | `repro-core` | `repro-mlflow` | `deepscratch` | `w2v` / `repro-io` | `studies/*` |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
+| **`deepscratch`** | ✅ Allowed | ❌ **PROHIBITED** | ❌ **PROHIBITED** | — | ❌ **PROHIBITED** | ❌ **PROHIBITED** |
+| **`w2v`** | ✅ Allowed | ❌ **PROHIBITED** | ❌ **PROHIBITED** | ❌ **PROHIBITED** | — | ❌ **PROHIBITED** |
+| **`repro-io`** | ❌ Independent | ❌ **PROHIBITED** | ❌ **PROHIBITED** | ❌ **PROHIBITED** | — | ❌ **PROHIBITED** |
+| **`repro-core`** | ✅ Allowed | — | ❌ **PROHIBITED** | ❌ **PROHIBITED** | ❌ **PROHIBITED** | ❌ **PROHIBITED** |
+| **`repro-mlflow`** | ✅ Allowed | ✅ Allowed | — | ❌ **PROHIBITED** | ❌ **PROHIBITED** | ❌ **PROHIBITED** |
+| **`studies/dlfs`** | ✅ Allowed | ✅ Allowed | ✅ Allowed | ✅ Allowed | ❌ Not used | — |
+| **`studies/f2`** | ✅ Allowed | ✅ Allowed | ✅ Allowed | ❌ Not used | ✅ Allowed | — |
+| **`studies/f2_cc`** | ✅ Allowed | ✅ Allowed | ❌ Not used | ❌ Not used | ✅ (`repro-io`) | — |
 
 ---
 
@@ -80,7 +107,7 @@ Architecture boundaries are strictly tested across all packages in [`tests/test_
    Scans all Python files in `packages/repro-mlflow/src` and asserts **0 occurrences** of `deepscratch` or `dlfs`.
 
 
-## Acquisition I/O and semantic ownership
+## Historical acquisition and semantic ownership
 
 `repro-io` is the fourth independent package. It owns HTTP range/resume/retry,
 bandwidth mechanisms, SHA-256, explicit S3/SigV4, Common Crawl indexes and ARC
@@ -93,8 +120,5 @@ selection/cache, book smoothing, history assembly, summary and model-parameter
 reports. `repro_mlflow.results.MlflowResultStore` owns MLflow result loading and
 `repro_mlflow.analysis.mlflow_client` creates clients. Old import facades are removed.
 
-`tests/test_workspace_ownership.py` supplements the original architecture tests:
-it discovers every workspace package, checks source and independent unit-test
-imports and dependency declarations, forbids direct MLflow in core, checks I/O
-research coupling, and protects F2 SQL/DBML checksums and DDL ownership.
-See [ownership inventory](ownership-inventory.md) for the component decisions.
+Boundary tests (`tests/test_deepscratch_architecture.py`) protect package isolation
+and forbid illegal cross-imports.

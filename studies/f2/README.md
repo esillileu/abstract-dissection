@@ -17,13 +17,14 @@ The all-eligible-corpus comparison policy is maintained in
 data, engines, suites and analysis work that is not a corpus problem is tracked
 separately in [`catalog/NON_CORPUS_RESOURCES.md`](catalog/NON_CORPUS_RESOURCES.md).
 * **Subsystems & Architecture**:
-  * **Common Infrastructure (`f2/common/`)**: Shared research statistics,
-    analysis declarations, and study adapters.
+  * **Execution Lifecycle (`f2/execution/`)**: Central Execution Coordinator and Condition Identity; single authority for execution decisions (`skip`, `resume`, `publish`, `run`).
+  * **Storage & Publication (`f2/storage/`)**: Local run attempt layout under `workspace/runs/f2/`, checkpoint discovery, MLflow publication, and analysis download caching.
+  * **Common Infrastructure (`f2/common/`)**: Shared research statistics, analysis declarations, and F2 path combination.
   * **Corpus Preparation (`f2/corpus/`)**: Acquisition and normalization of
     completed source releases, with lifecycle, lineage, and validation metadata
     in the `corpus` schema.
   * **Reproduction Catalog (`f2/catalog/`)**: Static catalog manifest (`catalog/w2v.json`) and offline validators tracking paper targets, experiment specs, resource lineage, and canonical run slots. Experiment planning and execution are 100% YAML-driven.
-  * **Experimental Suites (`f2/suites/`)**: Modular volumes for downstream Word2Vec pretraining, vocabulary scaling, and embedding evaluation benchmarks.
+  * **Experimental Suites (`f2/suites/`)**: Paper reproduction suites (`w2v1`, `w2v2`) and shared algorithmic implementations (`suites/common/w2v`).
 
 ---
 
