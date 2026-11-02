@@ -1,0 +1,214 @@
+"""Standalone evaluation of durable Word2Vec lookup artifacts."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+from dataclasses import asdict
+from itertools import islice
+from pathlib import Path
+from typing import Any
+
+from .artifacts import LookupEmbeddings, load_lookup_artifact
+from .evaluation import (
+    additive_composition,
+    evaluate_analogies,
+    nearest_tokens,
+    parse_analogy_questions,
+    pca_projection,
+)
+
+PHRASE_QUESTIONS_SHA256 = (
+    "55cfc0894d0fe6cf974d106da3e09b5fb2fa6125b6ddc633d06e298dc5aa7901"
+)
+PHRASE_QUESTIONS_SOURCE = "https://raw.githubusercontent.com/tmikolov/word2vec/ced016432bce8d62afbd11a112d353d13e422ea5/questions-phrases.txt"
+
+
+def verify_phrase_questions(path: Path) -> dict[str, object]:
+    """Require the published 3,218-question resource, never a fixture substitute."""
+    if not path.is_file():
+        raise ValueError(f"Table 3 evaluation data is not ready: {path}")
+    return _phrase_questions_identity(path.read_bytes())
+
+
+def _phrase_questions_identity(data: bytes) -> dict[str, object]:
+    digest = hashlib.sha256(data).hexdigest()
+    count = len(parse_analogy_questions(data.splitlines()))
+    if digest != PHRASE_QUESTIONS_SHA256 or count != 3218:
+        raise ValueError(
+            "Table 3 requires the original 3218 questions and pinned SHA256"
+        )
+    return {
+        "questions_sha256": digest,
+        "total_questions": count,
+        "source": PHRASE_QUESTIONS_SOURCE,
+        "verified": True,
+    }
+
+
+_IDENTITY_KEYS = (
+    "schema_version",
+    "config_digest",
+    "vocabulary_digest",
+    "corpus_digest",
+    "completed_epochs",
+    "processed_tokens",
+)
+
+
+def evaluate_lookup_artifact(
+    suite: str,
+    lookup_path: Path,
+    questions_path: Path,
+    *,
+    phrase_separator: bytes = b"_",
+) -> dict[str, Any]:
+    """Evaluate one immutable lookup artifact without a training session."""
+    if suite not in {
+        "w2v1-table2",
+        "w2v1-table4",
+        "w2v2",
+        "w2v2-table3",
+        "w2v1-table7",
+    }:
+        raise ValueError(
+            "evaluation policy must be w2v1-table2, w2v1-table4, w2v1-table7, w2v2-table3, or w2v2"
+        )
+    questions = b""
+    if suite != "w2v1-table7":
+        if not questions_path.is_file():
+            raise ValueError(f"analogy questions do not exist: {questions_path}")
+        questions = questions_path.read_bytes()
+    benchmark = (
+        _phrase_questions_identity(questions) if suite == "w2v2-table3" else None
+    )
+    lookup = load_lookup_artifact(lookup_path)
+
+    if suite == "w2v1-table7":
+        from .evaluation import (
+            evaluate_msr_sentence_completion,
+            parse_msr_sentence_completion_questions,
+        )
+
+        if questions_path.is_dir():
+            q_file = questions_path / "Holmes.lm_format.questions.txt"
+            a_file = questions_path / "Holmes.lm_format.answers.txt"
+        else:
+            q_file = questions_path
+            a_file = questions_path.parent / "Holmes.lm_format.answers.txt"
+        if not q_file.is_file():
+            raise ValueError(f"sentence completion questions do not exist: {q_file}")
+        if not a_file.is_file():
+            raise ValueError(f"sentence completion answers do not exist: {a_file}")
+
+        q_bytes = q_file.read_bytes()
+        a_bytes = a_file.read_bytes()
+        msr_questions = parse_msr_sentence_completion_questions(
+            q_bytes.splitlines(), a_bytes.splitlines()
+        )
+        completion = evaluate_msr_sentence_completion(lookup, msr_questions)
+        return {
+            "suite": suite,
+            "lookup_identity": {key: lookup.manifest[key] for key in _IDENTITY_KEYS},
+            "evaluation_identity": {
+                "questions_sha256": hashlib.sha256(q_bytes).hexdigest(),
+                "answers_sha256": hashlib.sha256(a_bytes).hexdigest(),
+                "total_questions": len(msr_questions),
+            },
+            "sentence_completion": {
+                "overall": asdict(completion.overall),
+                "dev": asdict(completion.dev),
+                "test": asdict(completion.test),
+            },
+        }
+
+    vocabulary_limit = 30_000 if suite == "w2v1-table2" else None
+    try:
+        separator = phrase_separator.decode("ascii")
+    except UnicodeDecodeError as exc:
+        raise ValueError("phrase separator must be ASCII") from exc
+    analogy = evaluate_analogies(
+        lookup,
+        parse_analogy_questions(questions.splitlines()),
+        vocabulary_limit=vocabulary_limit,
+        batch_size=256,
+    )
+    evaluation_identity = {
+        "questions_sha256": hashlib.sha256(questions).hexdigest(),
+        "phrase_separator": separator,
+    }
+    if benchmark is not None:
+        evaluation_identity.update(benchmark)
+    if suite not in {"w2v2", "w2v2-table3"}:
+        evaluation_identity["vocabulary_limit"] = vocabulary_limit
+    payload: dict[str, Any] = {
+        "suite": suite,
+        "lookup_identity": {key: lookup.manifest[key] for key in _IDENTITY_KEYS},
+        "evaluation_identity": evaluation_identity,
+        "analogy": {
+            "overall": asdict(analogy.overall),
+            "semantic": asdict(analogy.semantic),
+            "syntactic": asdict(analogy.syntactic),
+            "categories": [asdict(category) for category in analogy.categories],
+        },
+    }
+    if suite in {"w2v2", "w2v2-table3"}:
+        payload["phrase"] = _phrase_report(lookup, phrase_separator)
+    return payload
+
+
+def write_evaluation_report(payload: dict[str, Any], output_path: Path) -> Path:
+    """Create a separate evaluation report without overwriting any artifact."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with output_path.open("x", encoding="utf-8") as stream:
+            json.dump(payload, stream, indent=2, sort_keys=True)
+            stream.write("\n")
+    except FileExistsError as exc:
+        raise ValueError(f"evaluation report already exists: {output_path}") from exc
+    return output_path
+
+
+def _phrase_report(lookup: LookupEmbeddings, separator: bytes) -> dict[str, object]:
+    phrase_tokens = list(
+        islice(
+            (
+                token
+                for row in range(lookup.counts.size)
+                if separator and separator in (token := _token_at(lookup, row))
+            ),
+            8,
+        )
+    )
+    neighbors = {
+        token.hex(): [
+            asdict(item) | {"token": item.token.hex()}
+            for item in nearest_tokens(lookup, token, limit=5)
+        ]
+        for token in phrase_tokens
+    }
+    composition_tokens = phrase_tokens[:2]
+    return {
+        "nearest_entities": neighbors,
+        "additive_composition": {
+            "tokens": [token.hex() for token in composition_tokens],
+            "neighbors": [
+                asdict(item) | {"token": item.token.hex()}
+                for item in additive_composition(lookup, composition_tokens, limit=5)
+            ],
+        },
+        "pca": {
+            token.hex(): point
+            for token, point in pca_projection(lookup, phrase_tokens).items()
+        },
+        "token_encoding": "hex",
+    }
+
+
+def _token_at(lookup: LookupEmbeddings, row: int) -> bytes:
+    return bytes(
+        lookup.token_bytes[lookup.token_offsets[row] : lookup.token_offsets[row + 1]]
+    )
+
+
+__all__ = ["evaluate_lookup_artifact", "write_evaluation_report"]
