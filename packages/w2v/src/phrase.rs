@@ -793,6 +793,18 @@ where
     let mut unigram_disk_runs = Vec::new();
     let mut bigram_disk_runs = Vec::new();
 
+    let mut primary_count_err: Option<Status> = None;
+    for res in &count_results {
+        if let Err(status) = res {
+            if *status != Status::IoError || primary_count_err.is_none() {
+                primary_count_err = Some(*status);
+            }
+        }
+    }
+    if let Some(err) = primary_count_err {
+        return Err(err);
+    }
+
     for res in count_results {
         let worker_out = res?;
         token_total += worker_out.tokens;
@@ -1066,6 +1078,18 @@ where
                 .map(|h| h.join().unwrap_or(Err(Status::IoError)))
                 .collect()
         });
+
+        let mut primary_write_err: Option<Status> = None;
+        for res in &write_results {
+            if let Err(status) = res {
+                if *status != Status::IoError || primary_write_err.is_none() {
+                    primary_write_err = Some(*status);
+                }
+            }
+        }
+        if let Some(err) = primary_write_err {
+            return Err(err);
+        }
 
         let mut total_joined = 0u64;
         for res in write_results {
