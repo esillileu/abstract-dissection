@@ -2,7 +2,7 @@ domain: f2.w2v1
 kind: word2vec
 execution: {mode: seeded, default_device: cpu}
 seed_policy: {seed_set: research_v1, seed_count: 3}
-identity: {planned_run_slot_id: resolved-from-atomic-run-and-seed, seed: 1}
+identity: {planned_run_slot_id: resolved-from-atomic-run-and-seed, seed: 1, study: table2, experiment_spec_id: w2v1-table2-cbow}
 corpus: {}
 vocabulary: {initial_capacity: 1000, hash_capacity: 30000000, min_count: 1, max_lexical_words: 30000}
 training:

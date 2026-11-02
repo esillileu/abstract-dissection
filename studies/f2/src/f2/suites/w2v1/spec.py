@@ -34,41 +34,12 @@ def parse_run_spec(
     training = mapping(raw, "training")
     distribution = mapping(raw, "distribution") if "distribution" in raw else None
     if "study" not in identity:
-        if "table7" in path.name:
-            identity["study"] = "table7"
-        elif "table6" in path.name:
-            identity["study"] = "table6"
-        elif "table3" in path.name:
-            identity["study"] = "table3"
-        elif "table4" in path.name:
-            identity["study"] = "table4"
-        elif "table5" in path.name:
-            identity["study"] = "table5"
-        else:
-            identity["study"] = "table2"
+        identity["study"] = "table2"
     if "experiment_spec_id" not in identity:
         if raw.get("experiment_spec_id"):
             identity["experiment_spec_id"] = raw["experiment_spec_id"]
-        elif identity.get("study") == "table7" or "table7" in path.name:
-            identity["experiment_spec_id"] = "w2v1-msr-sentence-skipgram"
-        elif identity.get("study") == "table6" or "table6" in path.name:
-            model_kind = training.get("model_kind")
-            if model_kind == "cbow":
-                identity["experiment_spec_id"] = "w2v1-table6-cbow-6b"
-            elif model_kind == "skip_gram":
-                identity["experiment_spec_id"] = "w2v1-table6-skipgram-6b"
-            else:
-                identity["experiment_spec_id"] = "w2v1-table6"
-        elif identity.get("study") == "table3" or "table3" in path.name:
-            model_kind = training.get("model_kind")
-            if model_kind == "cbow":
-                identity["experiment_spec_id"] = "w2v1-table3-cbow"
-            elif model_kind == "skip_gram":
-                identity["experiment_spec_id"] = "w2v1-table3-skipgram"
-            else:
-                identity["experiment_spec_id"] = "w2v1-table3"
         else:
-            identity["experiment_spec_id"] = "w2v1-table2-cbow"
+            identity["experiment_spec_id"] = f"w2v1-{identity['study']}"
     return RunSpec(
         atomic_run_id=str(raw["atomic_run_id"]),
         identity=identity,

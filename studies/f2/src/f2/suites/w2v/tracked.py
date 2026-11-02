@@ -48,7 +48,7 @@ def run_tracked_yaml(
         identity = _mapping(config, "identity")
         config_digest = str(identity["config_digest"])
         seed_val = int(identity["seed"])
-        suite_name = "w2v2" if "w2v2" in str(executor_module) else "w2v1"
+        suite_name = str(identity.get("suite_id") or ("w2v2" if "w2v2" in str(executor_module) else "w2v1"))
         experiment_name = str(
             _mapping(config, "tracking").get("experiment", f"f2.{suite_name}")
         )
