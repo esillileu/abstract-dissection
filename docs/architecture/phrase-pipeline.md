@@ -55,19 +55,21 @@ training in both modes; the historical RNG and experiment IDs are unchanged.
 
 ## Disk aggregation and lifecycle
 
-Each pass builds private SQLite WITHOUT ROWID unigram and bigram count tables,
-then an indexed eligible-pair table. Input and output stream by document. SQLite's
-page cache is capped at 16 MiB, temporary storage uses files, and Python retains
-only fixed-size token batches and 64 KiB input chunks. Token parsing and output
-writing span chunks without retaining an entire line. Batches flush at 8,192
-tokens or 1 MiB of token bytes. Memory is O(fixed page/batch/chunk buffers plus
-the largest individual token), independent of total unique pairs and the number
-of ordinary tokens in one line. Scratch disk is O(unique
-token/pair bytes plus eligible pairs and intermediate corpora). Counts are exact
-64-bit SQLite integers; no token count is truncated to 32 bits. The implementation
-has no corpus token-budget ceiling, so 1B–33B inputs use the same code path.
-Billions of indexed updates/lookups still require substantial disk capacity and
-I/O time; full-scale throughput has not been benchmarked or promised.
+Each pass runs in the native Rust engine (`w2v.phrase_pass`) across newline-aligned
+document shards. Worker threads scan 64 KiB chunks without retaining full lines and
+aggregate unigram and bigram counts in bounded hash tables (16 MiB unigram budget and
+64 MiB bigram budget across workers), spilling sorted binary runs to a private
+temporary directory when the budget is reached. A K-way merge combines runs into exact
+64-bit counts and scores eligible pairs (`count >= min_count` and
+`score > threshold`), falling back to an external sort-merge join if frequent unigrams
+exceed 256 MiB. Output rewriting also executes in parallel across newline-aligned
+shards and concatenates shard outputs deterministically before `fsync`. Memory is
+O(fixed hash/merge/chunk buffers plus the largest individual token and eligible set),
+independent of total unique pairs and the number of ordinary tokens in one line.
+Scratch disk is O(spilled sorted runs plus shard outputs and intermediate corpora).
+Counts are exact 64-bit integers; no token count is truncated to 32 bits. The
+implementation has no corpus token-budget ceiling, so 1B–33B inputs use the same
+code path. All temporary run files and structures are discarded after each pass.
 
 The executor uses `<RuntimePaths.cache_root>/f2/w2v/phrases/`:
 

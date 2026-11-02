@@ -9,11 +9,12 @@ import math
 import os
 import re
 import shutil
-import sqlite3
 import tempfile
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
+
+from w2v import phrase_pass as _native_phrase_pass
 
 # Full-token training preserves phrase identity. Memory is bounded by fixed I/O
 # batches plus the largest individual token, never the largest document.
@@ -132,6 +133,7 @@ def materialize_phrase_corpus(
     *,
     progress: Callable[[str], None] | None = None,
     source_sha256: str | None = None,
+    _verified_source_sha256: str | None = None,
 ) -> PhraseCorpus:
     """Apply the historical F2 token-total-normalized score in stable left-to-right passes.
 
@@ -141,7 +143,7 @@ def materialize_phrase_corpus(
     source = Path(source)
     if not source.is_file():
         raise ValueError(f"phrase source does not exist: {source}")
-    source_sha = _sha256(source)
+    source_sha = _verified_source_sha256 or _sha256(source)
     if source_sha256 is not None and source_sha != source_sha256:
         raise ValueError("phrase source checksum mismatch")
     policy_payload = policy.record()
@@ -184,7 +186,7 @@ def materialize_phrase_corpus(
     if _sha256(source) != source_sha:
         destination.unlink(missing_ok=True)
         raise ValueError("phrase source changed during materialization")
-    corpus_sha = _sha256(destination)
+    corpus_sha = str(pass_statistics[-1]["corpus_sha256"])
     token_count = int(pass_statistics[-1]["output_tokens"])
     lineage = {
         "format": "f2-phrase-corpus-v2",
@@ -219,160 +221,52 @@ def _phrase_pass(
     pass_index: int,
     pass_count: int,
     progress: Callable[[str], None] | None,
+    threads: int = 0,
 ) -> dict[str, object]:
-    # A private scratch database has a fixed 16 MiB page cache. Counts are exact;
-    # neither vocabulary nor bigram cardinality determines resident memory.
+    threshold = (policy.thresholds or (policy.threshold,) * policy.passes)[
+        pass_index - 1
+    ]
     with tempfile.TemporaryDirectory(
         prefix="phrase-counts-", dir=destination.parent
     ) as work:
-        with sqlite3.connect(Path(work) / "counts.sqlite") as db:
-            db.execute("PRAGMA cache_size=-16384")
-            db.execute("PRAGMA temp_store=FILE")
-            db.execute("PRAGMA journal_mode=OFF")
-            db.execute(
-                "CREATE TABLE unigram (token BLOB PRIMARY KEY, n INTEGER) WITHOUT ROWID"
-            )
-            db.execute(
-                "CREATE TABLE bigram (a BLOB, b BLOB, n INTEGER, PRIMARY KEY(a,b)) WITHOUT ROWID"
-            )
-            token_total = 0
-            document_count = 0
-            unigrams: list[tuple[bytes]] = []
-            bigrams: list[tuple[bytes, bytes]] = []
-            previous = None
-            batch_bytes = 0
-
-            def flush_counts():
-                db.executemany(
-                    "INSERT INTO unigram VALUES (?,1) ON CONFLICT(token) DO UPDATE SET n=n+1",
-                    unigrams,
-                )
-                db.executemany(
-                    "INSERT INTO bigram VALUES (?,?,1) ON CONFLICT(a,b) DO UPDATE SET n=n+1",
-                    bigrams,
-                )
-                db.commit()
-                unigrams.clear()
-                bigrams.clear()
-
-            for token in _tokens(source):
-                if token is None:
-                    previous = None
-                    document_count += 1
-                    if progress is not None and document_count % 100_000 == 0:
-                        progress(
-                            f"phrase pass={pass_index}/{pass_count} counted_documents={document_count}"
-                        )
-                    continue
-                token_total += 1
-                unigrams.append((token,))
-                batch_bytes += len(token)
-                if previous is not None:
-                    bigrams.append((previous, token))
-                previous = token
-                if len(unigrams) >= 8192 or batch_bytes >= 1024 * 1024:
-                    flush_counts()
-                    batch_bytes = 0
-            flush_counts()
-            threshold = (policy.thresholds or (policy.threshold,) * policy.passes)[
-                pass_index - 1
-            ]
-            # Preserve Python's historical floating-point operation order.
-            db.create_function(
-                "score",
-                3,
-                lambda n, a, b: (n - policy.min_count) * token_total / (a * b),
-            )
-            db.execute(
-                "CREATE TABLE eligible (a BLOB, b BLOB, PRIMARY KEY(a,b)) WITHOUT ROWID"
-            )
-            db.execute(
-                "INSERT INTO eligible SELECT b.a,b.b FROM bigram b "
-                "JOIN unigram l ON l.token=b.a JOIN unigram r ON r.token=b.b "
-                "WHERE b.n>=? AND score(b.n,l.n,r.n)>?",
-                (policy.min_count, threshold),
-            )
-            stats = {
-                "pass": pass_index,
-                "threshold": threshold,
-                "input_tokens": token_total,
-                "documents": document_count,
-                "unique_unigrams": db.execute(
-                    "SELECT count(*) FROM unigram"
-                ).fetchone()[0],
-                "unique_bigrams": db.execute("SELECT count(*) FROM bigram").fetchone()[
-                    0
-                ],
-            }
-            joined = _write_pass(
-                source,
-                destination,
-                policy,
-                db,
-                pass_index,
-                pass_count,
-                document_count,
-                progress,
-            )
-            return stats | {
-                "joined_count": joined,
-                "output_tokens": token_total - joined,
-                "corpus_sha256": _sha256(destination),
-            }
-
-
-def _write_pass(
-    source, destination, policy, db, pass_index, pass_count, document_count, progress
-):
-    joined = 0
-    left = None
-    first = True
-    written_documents = 0
-    with destination.open("wb") as stream:
-
-        def emit(token):
-            nonlocal first
-            if not first:
-                stream.write(b" ")
-            stream.write(token)
-            first = False
-
-        for token in _tokens(source):
-            if token is None:
-                if left is not None:
-                    emit(left)
-                    left = None
-                stream.write(b"\n")
-                first = True
-                written_documents += 1
-                if progress is not None and written_documents % 100_000 == 0:
-                    progress(
-                        f"phrase pass={pass_index}/{pass_count} written_documents={written_documents}/{document_count}"
-                    )
-            elif left is None:
-                left = token
-            elif (
-                db.execute(
-                    "SELECT 1 FROM eligible WHERE a=? AND b=?", (left, token)
-                ).fetchone()
-                is not None
-            ):
-                phrase = left + policy.separator + token
-                _validate_token(phrase)
-                emit(phrase)
-                joined += 1
-                left = None
-            else:
-                emit(left)
-                left = token
-        stream.flush()
+        (
+            token_total,
+            document_count,
+            unique_unigrams,
+            unique_bigrams,
+            joined,
+            output_tokens,
+        ) = _native_phrase_pass(
+            source,
+            destination,
+            Path(work),
+            policy.min_count,
+            threshold,
+            policy.separator,
+            pass_index=pass_index,
+            pass_count=pass_count,
+            chunk_bytes=TOKEN_CHUNK_BYTES,
+            threads=threads,
+            progress=progress,
+        )
+    with destination.open("rb") as stream:
         os.fsync(stream.fileno())
     if progress is not None:
         progress(
             f"phrase pass={pass_index}/{pass_count} complete "
             f"documents={document_count} joined={joined}"
         )
-    return joined
+    return {
+        "pass": pass_index,
+        "threshold": threshold,
+        "input_tokens": token_total,
+        "documents": document_count,
+        "unique_unigrams": unique_unigrams,
+        "unique_bigrams": unique_bigrams,
+        "joined_count": joined,
+        "output_tokens": output_tokens,
+        "corpus_sha256": _sha256(destination),
+    }
 
 
 def _digest(value: object) -> str:
@@ -459,6 +353,7 @@ def cached_phrase_corpus(
                 policy,
                 progress=progress,
                 source_sha256=source_sha,
+                _verified_source_sha256=source_sha,
             )
             with result.path.with_suffix(".txt.json").open("rb") as stream:
                 os.fsync(stream.fileno())

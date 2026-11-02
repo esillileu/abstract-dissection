@@ -1597,5 +1597,87 @@ fn w2v(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyWorkerState>()?;
     m.add_class::<PyTrainingSession>()?;
     m.add_class::<PyDownpourTrainingSession>()?;
+    m.add_function(pyo3::wrap_pyfunction!(phrase_pass, m)?)?;
     Ok(())
+}
+
+#[pyfunction]
+#[pyo3(signature = (source, destination, work_dir, min_count, threshold, separator, *, pass_index=1, pass_count=1, chunk_bytes=65536, threads=0, progress=None))]
+#[allow(clippy::too_many_arguments)]
+fn phrase_pass(
+    py: Python<'_>,
+    source: PathBuf,
+    destination: PathBuf,
+    work_dir: PathBuf,
+    min_count: u64,
+    threshold: f64,
+    separator: Vec<u8>,
+    pass_index: usize,
+    pass_count: usize,
+    chunk_bytes: usize,
+    threads: usize,
+    progress: Option<Py<PyAny>>,
+) -> PyResult<(u64, u64, u64, u64, u64, u64)> {
+    let cb_err: std::sync::Mutex<Option<PyErr>> = std::sync::Mutex::new(None);
+    let report = py.allow_threads(|| {
+        crate::phrase::run_phrase_pass(
+            &source,
+            &destination,
+            &work_dir,
+            min_count,
+            threshold,
+            &separator,
+            chunk_bytes,
+            threads,
+            |doc_num| {
+                if let Some(cb) = &progress {
+                    Python::with_gil(|py| {
+                        let msg = format!(
+                            "phrase pass={pass_index}/{pass_count} counted_documents={doc_num}"
+                        );
+                        if let Err(e) = cb.call1(py, (msg,)) {
+                            *cb_err.lock().unwrap() = Some(e);
+                            return Err(Status::IoError);
+                        }
+                        Ok(())
+                    })
+                } else {
+                    Ok(())
+                }
+            },
+            |doc_num, total_docs| {
+                if let Some(cb) = &progress {
+                    Python::with_gil(|py| {
+                        let msg = format!(
+                            "phrase pass={pass_index}/{pass_count} written_documents={doc_num}/{total_docs}"
+                        );
+                        if let Err(e) = cb.call1(py, (msg,)) {
+                            *cb_err.lock().unwrap() = Some(e);
+                            return Err(Status::IoError);
+                        }
+                        Ok(())
+                    })
+                } else {
+                    Ok(())
+                }
+            },
+        )
+    });
+    if let Some(err) = cb_err.into_inner().unwrap() {
+        return Err(err);
+    }
+    let report = report.map_err(|status| match status {
+        Status::InvalidArgument => PyValueError::new_err(
+            "phrase token violates engine contract (no NUL or reserved </s>)",
+        ),
+        other => status_error(other),
+    })?;
+    Ok((
+        report.input_tokens,
+        report.documents,
+        report.unique_unigrams,
+        report.unique_bigrams,
+        report.joined_count,
+        report.output_tokens,
+    ))
 }

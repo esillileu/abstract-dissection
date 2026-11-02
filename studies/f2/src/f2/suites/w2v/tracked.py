@@ -203,10 +203,47 @@ def _materialize_corpus(
             }
             return
 
-    raise FileNotFoundError(
-        f"Corpus file not found for {corpus_id}. Checked: {candidate_paths}. "
-        f"Please ensure corpus is placed under {corpus_dir} or specified via corpus.path in YAML."
+    from repro_io.s3 import S3ObjectStore
+
+    from f2.corpus.db.repository import CorpusStateRepository
+    from f2.corpus.db.session import get_connection
+    from f2.corpus.object_store import s3_config_from_environment
+    from f2.corpus.sources import SOURCE_BY_KEY
+    from f2.suites.w2v.corpus import CorpusBinding, CorpusMaterializer
+
+    source = SOURCE_BY_KEY.get(corpus_id)
+    if source is None:
+        raise FileNotFoundError(
+            f"Unknown corpus {corpus_id!r}; checked {candidate_paths}"
+        )
+    with get_connection() as conn:
+        rows = CorpusStateRepository(conn).list_verified_corpus_shards(
+            source.normalized_resource_version_id
+        )
+    if not rows:
+        raise FileNotFoundError(
+            f"No verified normalized shards for {corpus_id}; prepare and validate "
+            "the corpus with repro f2 corpus sources first"
+        )
+    materialized = CorpusMaterializer(
+        S3ObjectStore(s3_config_from_environment()), paths=paths
+    ).materialize(
+        CorpusBinding.from_rows(rows),
+        lexical_token_budget=lexical_token_budget,
+        progress=(
+            None
+            if progress_reporter is None
+            else lambda completed, total, tokens: progress_reporter.write(
+                f"corpus shards processed: {completed}/{total}; "
+                f"tokens: {tokens:,}/{lexical_token_budget:,}"
+            )
+        ),
     )
+    config["corpus"] = {
+        "path": str(materialized.path),
+        "sha256": materialized.corpus_sha256,
+        "lexical_tokens": materialized.lexical_tokens,
+    }
 
 
 def _publish(

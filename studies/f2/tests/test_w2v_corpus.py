@@ -45,6 +45,54 @@ def _paths(tmp_path: Path) -> RuntimePaths:
     )
 
 
+def test_tracked_run_materializes_registered_shards(tmp_path, monkeypatch):
+    from contextlib import nullcontext
+    from unittest.mock import Mock
+
+    import repro_io.s3 as s3
+
+    import f2.corpus.db.repository as repository
+    import f2.corpus.db.session as session
+    import f2.corpus.object_store as object_store
+    from f2.suites.w2v.tracked import _materialize_corpus
+
+    binding, objects = _fixture_binding(tmp_path)
+    rows = [
+        {
+            "shard_index": shard.index,
+            "s3_uri": shard.uri,
+            "sha256": shard.sha256,
+            "byte_size": shard.byte_size,
+            "word_count": shard.word_count,
+            "doc_count": shard.document_count,
+        }
+        for shard in binding.shards
+    ]
+
+    class Repository:
+        def __init__(self, conn):
+            pass
+
+        def list_verified_corpus_shards(self, version):
+            assert version == "f2-wmt-news-2007-2012-normalized-v1"
+            return rows
+
+    monkeypatch.setattr(session, "get_connection", lambda: nullcontext(None))
+    monkeypatch.setattr(repository, "CorpusStateRepository", Repository)
+    monkeypatch.setattr(object_store, "s3_config_from_environment", lambda: None)
+    monkeypatch.setattr(s3, "S3ObjectStore", lambda config: FixtureStore(objects))
+    config = {
+        "identity": {},
+        "atomic_run_id": "wmt--neg5-subsampling",
+        "corpus": {"lexical_token_budget": 3},
+    }
+    reporter = Mock()
+    _materialize_corpus(config, _paths(tmp_path), progress_reporter=reporter)
+    assert Path(config["corpus"]["path"]).is_file()
+    assert config["corpus"]["lexical_tokens"] == 3
+    reporter.write.assert_called_with("corpus shards processed: 1/2; tokens: 3/3")
+
+
 def _fixture_binding(tmp_path: Path) -> tuple[CorpusBinding, dict[str, Path]]:
     contents = [b"one two three\nfour five\n", b"six seven\neight nine ten\n"]
     shards = []

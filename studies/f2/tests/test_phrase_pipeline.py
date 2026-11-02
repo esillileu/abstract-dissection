@@ -70,6 +70,15 @@ def test_disk_counts_equal_historical_counts(tmp_path, passes, scheduled):
     assert result.path.read_bytes().splitlines()[-2:] == [b"york", b"new"]
 
 
+def test_phrase_counts_across_memory_batches(tmp_path):
+    data = b"new york city new york\n" * 220_000
+    source = tmp_path / "input"
+    source.write_bytes(data)
+    policy = PhrasePolicy(2, 0.1, 5)
+    result = materialize_phrase_corpus(source, tmp_path / "output", policy)
+    assert result.path.read_bytes() == _reference(data, policy)
+
+
 def _build(arguments):
     source, root = arguments
     return cached_phrase_corpus(source, root, PhrasePolicy(2, 0, 1))
@@ -155,7 +164,7 @@ def test_unique_bigram_growth_does_not_grow_python_count_tables(tmp_path):
         peaks.append(tracemalloc.get_traced_memory()[1])
         tracemalloc.stop()
         assert result.token_count == count * 3
-    # Fixed streaming/hash buffers dominate; sqlite pages have a separate 16 MiB cap.
+    # Fixed streaming/hash buffers dominate; sqlite pages have a separate cap.
     assert peaks[1] < peaks[0] * 2 + 500_000
 
 
