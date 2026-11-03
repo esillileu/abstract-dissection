@@ -1,24 +1,29 @@
-from __future__ import annotations
-
 """Full-vocabulary Table 4 analogy analysis over durable canonical runs."""
 
+from __future__ import annotations
 
-import csv
 import hashlib
 import json
 import re
 import sys
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from f2.storage.analysis_cache import LocalResults, unavailable_report
+from f2.suites.common.w2v.analysis import (
+    W2VTableEvaluationCache,
+    format_accuracy_and_time,
+    format_mean_sd,
+    observed_training_seconds,
+    write_run_records_csv,
+    write_table_summary,
+)
 from f2.suites.common.w2v.artifacts import load_lookup_artifact
 from f2.suites.common.w2v.evaluation import evaluate_analogies, parse_analogy_questions
 from repro_core.context import RuntimePaths
 
-from .table02 import CORPUS_SOURCES, observed_training_seconds
-from .table04_report import write_summary
+from .table02 import CORPUS_SOURCES
 
 _CONDITION = re.compile(r"(wmt|lm1b|umbc)--(cbow|skipgram)-d300-w783m")
 _NNLM_CONDITION = re.compile(r"fineweb--nnlm-d(20|50|100)-w6000m")
@@ -60,81 +65,31 @@ class Table4RunResult:
 _EVALUATION_PROTOCOL = "table4-v1"
 
 
-class Table4EvaluationCache:
-    """Signature-checked per-run cache for reconstructible Table 4 analogy results."""
-
-    def __init__(self, root: Path, *, questions_sha256: str) -> None:
-        self.root = root
-        self.signature = {
-            "schema_version": 2,
-            "evaluation_protocol": _EVALUATION_PROTOCOL,
-            "questions_sha256": questions_sha256,
-        }
-
-    def load(self, run_id: str) -> Table4RunResult | None:
-        path = self._path(run_id)
-        if not path.is_file():
-            return None
-        try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
-            if payload.get("signature") != self.signature:
-                return None
-            result = Table4RunResult(**payload["result"])
-        except (KeyError, TypeError, ValueError, json.JSONDecodeError):
-            return None
-        return result if result.mlflow_run_id == run_id else None
-
-    def store(self, result: Table4RunResult) -> None:
-        path = self._path(result.mlflow_run_id)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(
-            json.dumps(
-                {
-                    "signature": self.signature,
-                    "result": asdict(result),
-                },
-                indent=2,
-                sort_keys=True,
-            )
-            + "\n",
-            encoding="utf-8",
-        )
-
-    def _path(self, run_id: str) -> Path:
-        if re.fullmatch(r"[0-9a-zA-Z_-]+", run_id) is None:
-            raise ValueError(f"invalid MLflow run ID: {run_id}")
-        return self.root / f"{run_id}.json"
-
-
 def complete_conditions(runs: list[Any], corpus: str) -> dict[str, dict[int, Any]]:
     grouped: dict[str, dict[int, Any]] = {}
     for run in runs:
         tags = run.data.tags
-        variant = tags.get("implementation.variant", "")
-        nnlm = _NNLM_CONDITION.fullmatch(variant)
-        if nnlm is not None and corpus == "fineweb":
-            dimension = nnlm.group(1)
-            architecture = f"nnlm-d{dimension}"
-            if tags.get("experiment_spec.id") != "w2v1-google-news-nnlm-6b":
-                continue
-            seed = int(tags.get("seed", "0"))
-            slot = f"w2v1-fineweb-reconstruction-r1-nnlm-d{dimension}-w6000m-s{seed}"
-        else:
-            match = _CONDITION.fullmatch(variant)
+        slot = tags.get("f2.planned_run_slot_id", "")
+        if corpus in CORPUS_SOURCES:
+            match = _CONDITION.search(tags.get("implementation.variant", ""))
             if match is None or match.group(1) != corpus:
                 continue
-            architecture = match.group(2)
-            if (
-                tags.get("experiment_spec.id")
-                != f"w2v1-google-news-{architecture}-scale"
-            ):
+            arch = match.group(2)
+        elif corpus == "fineweb":
+            match = _NNLM_CONDITION.search(tags.get("implementation.variant", ""))
+            if match is None:
                 continue
-            seed = int(tags.get("seed", "0"))
-            slot = f"w2v1-table4-{corpus}-r1-{architecture}-d300-w783m-s{seed}"
-        if seed not in _SEEDS or run.data.tags.get("f2.planned_run_slot_id") != slot:
+            arch = f"nnlm-d{match.group(1)}"
+        else:
             continue
-        grouped.setdefault(architecture, {}).setdefault(seed, run)
-    return {key: value for key, value in grouped.items() if set(value) == _SEEDS}
+
+        try:
+            seed = int(tags.get("seed", tags.get("f2.seed", "")))
+        except ValueError:
+            continue
+        if seed in _SEEDS:
+            grouped.setdefault(arch, {})[seed] = run
+    return {arch: s for arch, s in grouped.items() if set(s) == _SEEDS}
 
 
 def analyze_table4_sources(
@@ -144,121 +99,136 @@ def analyze_table4_sources(
     corpus_source: str | None = None,
     paths: RuntimePaths | None = None,
 ) -> tuple[Path, ...]:
-
+    sources = TABLE4_CORPUS_SOURCES if corpus_source is None else (corpus_source,)
     paths = paths or RuntimePaths.from_environment()
+
     if not Path(questions_path).is_file():
-        output = unavailable_report(
-            paths.cache_root / "f2/w2v1/analysis/table4",
+        out = unavailable_report(
+            paths.analysis_results_root / "f2/w2v1/table04",
             "cached evaluation questions missing",
         )
-        return (output,)
-    if corpus_source is not None and corpus_source not in TABLE4_CORPUS_SOURCES:
-        raise ValueError(f"unsupported W2V1 corpus source: {corpus_source}")
-    questions_path = Path(questions_path)
-    question_bytes = questions_path.read_bytes()
-    questions = parse_analogy_questions(question_bytes.splitlines())
-    if not questions:
-        raise ValueError("questions-words.txt must contain at least one question")
-    question_digest = hashlib.sha256(question_bytes).hexdigest()
-    artifact_cache = LocalResults(cache_root)
-    runs = artifact_cache.runs()
+        return (out,)
 
-    evaluation_cache = Table4EvaluationCache(
-        paths.cache_root / "f2/w2v1/table4", questions_sha256=question_digest
+    q_bytes = Path(questions_path).read_bytes()
+    q_digest = hashlib.sha256(q_bytes).hexdigest()
+    questions = parse_analogy_questions(q_bytes.decode("utf-8"))
+
+    return tuple(
+        _analyze_single_corpus(cache_root, c, questions, q_digest, paths)
+        for c in sources
     )
-    sources = TABLE4_CORPUS_SOURCES if corpus_source is None else (corpus_source,)
-    outputs = []
-    for corpus in sources:
-        output = (paths.cache_root / "f2/w2v1/analysis") / corpus / "table4"
-        output.mkdir(parents=True, exist_ok=True)
-        records = []
-        unavailable = []
-        cache_hits = 0
-        cache_misses = 0
-        for architecture, condition_runs in sorted(
-            complete_conditions(runs, corpus).items()
-        ):
-            for seed, run in sorted(condition_runs.items()):
-                cached = evaluation_cache.load(run.info.run_id)
-                if (
-                    cached is not None
-                    and cached.seed == seed
-                    and cached.architecture == architecture
-                    and cached.corpus == corpus
-                ):
-                    records.append(cached)
-                    cache_hits += 1
-                    continue
-                try:
-                    cache_misses += 1
-                    lookup = load_lookup_artifact(
-                        artifact_cache.get(run.info.run_id, "lookup")
-                    )
-                    result = evaluate_analogies(
-                        lookup, questions, vocabulary_limit=None, batch_size=256
-                    )
-                    seconds = observed_training_seconds(
-                        artifact_cache.get(run.info.run_id, "metrics/observations.csv")
-                    )
-                    record = Table4RunResult(
-                        architecture,
-                        corpus,
-                        seed,
-                        run.info.run_id,
-                        100 * result.semantic.require_score(),
-                        100 * result.syntactic.require_score(),
-                        100 * result.overall.require_score(),
-                        result.overall.valid_count,
-                        result.overall.total_count,
-                        seconds,
-                    )
-                    evaluation_cache.store(record)
-                    records.append(record)
-                except (FileNotFoundError, KeyError, ValueError) as exc:
-                    unavailable.append(
-                        {
-                            "run_id": run.info.run_id,
-                            "status": "no_data",
-                            "reason": str(exc),
-                        }
-                    )
-        (output / "unavailable.json").write_text(
-            json.dumps(unavailable, indent=2) + "\n"
+
+
+def _analyze_single_corpus(
+    cache_root: Path,
+    corpus: str,
+    questions: Any,
+    q_digest: str,
+    paths: RuntimePaths,
+) -> Path:
+    output = paths.analysis_results_root / f"f2/w2v1/table04/{corpus}"
+    output.mkdir(parents=True, exist_ok=True)
+    cache = LocalResults(cache_root)
+    runs = cache.runs()
+    selected = complete_conditions(runs, corpus)
+    if not selected:
+        return unavailable_report(output, "no complete condition sets found")
+
+    evaluation_cache = W2VTableEvaluationCache(
+        paths.analysis_cache_root / f"f2/w2v1/analysis/table4/{corpus}",
+        protocol=_EVALUATION_PROTOCOL,
+        result_cls=Table4RunResult,
+        questions_sha256=q_digest,
+    )
+
+    records: list[Table4RunResult] = []
+    unavailable: list[dict[str, Any]] = []
+    cache_hits = cache_misses = 0
+
+    for arch, seed_runs in sorted(selected.items()):
+        for seed in sorted(_SEEDS):
+            run = seed_runs[seed]
+            cached = evaluation_cache.load(run.info.run_id)
+            if cached is not None:
+                records.append(cached)
+                cache_hits += 1
+                continue
+            try:
+                cache_misses += 1
+                lookup = load_lookup_artifact(cache.get(run.info.run_id, "lookup"))
+                eval_res = evaluate_analogies(
+                    lookup, questions, vocabulary_limit=None, batch_size=256
+                )
+                seconds = observed_training_seconds(
+                    cache.get(run.info.run_id, "metrics/observations.csv")
+                )
+                record = Table4RunResult(
+                    architecture=arch,
+                    corpus=corpus,
+                    seed=seed,
+                    mlflow_run_id=run.info.run_id,
+                    semantic_accuracy_percent=100.0 * eval_res.semantic.require_score(),
+                    syntactic_accuracy_percent=100.0
+                    * eval_res.syntactic.require_score(),
+                    total_accuracy_percent=100.0 * eval_res.overall.require_score(),
+                    included_questions=eval_res.overall.valid_count,
+                    total_questions=eval_res.overall.total_count,
+                    observed_training_seconds=seconds,
+                )
+                evaluation_cache.store(run.info.run_id, record)
+                records.append(record)
+            except (FileNotFoundError, KeyError, ValueError) as exc:
+                unavailable.append(
+                    {
+                        "architecture": arch,
+                        "seed": seed,
+                        "run_id": run.info.run_id,
+                        "reason": str(exc),
+                    }
+                )
+
+    print(
+        f"W2V1 Table 4 ({corpus}) cache: {cache_hits} hit(s), {cache_misses} miss(es)",
+        file=sys.stderr,
+    )
+    (output / "unavailable.json").write_text(
+        json.dumps(unavailable, indent=2) + "\n", encoding="utf-8"
+    )
+    write_run_records_csv(output / "runs.csv", records)
+
+    rows: list[list[str]] = []
+    for arch in sorted(selected.keys()):
+        items = [r for r in records if r.architecture == arch]
+        if not items:
+            continue
+        tot_str, time_str = format_accuracy_and_time(items, "total_accuracy_percent")
+        sem_str = format_mean_sd([x.semantic_accuracy_percent for x in items])
+        syn_str = format_mean_sd([x.syntactic_accuracy_percent for x in items])
+        paper_ref = " / ".join(str(v) for v in _REFERENCE.get(arch, ()))
+        rows.append(
+            [arch, str(len(items)), tot_str, sem_str, syn_str, time_str, paper_ref]
         )
-        print(
-            f"W2V1 {corpus} Table 4 analogy cache: {cache_hits} hit(s), {cache_misses} miss(es)",
-            file=sys.stderr,
-        )
-        with (output / "runs.csv").open("w", encoding="utf-8", newline="") as stream:
-            writer = csv.DictWriter(
-                stream, fieldnames=Table4RunResult.__dataclass_fields__
-            )
-            writer.writeheader()
-            writer.writerows(asdict(record) for record in records)
-        write_summary(
-            output / "summary.md",
-            corpus,
-            records,
-            question_digest,
-            _REFERENCE,
-            _EXTERNAL_REFERENCE,
-        )
-        (output / "results.json").write_text(
-            json.dumps(
-                {
-                    "protocol": {
-                        "questions_sha256": question_digest,
-                        "vocabulary_limit": None,
-                        "analogy": "b - a + c; cosine; exclude a, b, c",
-                    },
-                    "reference": _REFERENCE,
-                    "runs": [asdict(record) for record in records],
-                },
-                indent=2,
-                sort_keys=True,
-            )
-            + "\n",
-            encoding="utf-8",
-        )
-        outputs.append(output)
-    return tuple(outputs)
+
+    write_table_summary(
+        output / "summary.md",
+        title=f"W2V1 Table 4 — {corpus.upper()} (Word Analogy Accuracies & Training Time)",
+        headers=[
+            "Architecture",
+            "Runs",
+            "Total (%)",
+            "Semantic (%)",
+            "Syntactic (%)",
+            "Training Time",
+            "Paper Ref (Sem/Syn/Tot)",
+        ],
+        rows=rows,
+    )
+    return output
+
+
+__all__ = [
+    "TABLE4_CORPUS_SOURCES",
+    "Table4RunResult",
+    "analyze_table4_sources",
+    "complete_conditions",
+]

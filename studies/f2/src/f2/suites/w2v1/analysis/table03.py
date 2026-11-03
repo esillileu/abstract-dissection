@@ -1,25 +1,29 @@
-from __future__ import annotations
-
-from .table03_report import write_summary
-
 """Full-vocabulary Table 3 comparison on both word-relationship benchmarks."""
 
+from __future__ import annotations
 
-import csv
 import hashlib
 import json
 import re
 import sys
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from f2.storage.analysis_cache import LocalResults, unavailable_report
+from f2.suites.common.w2v.analysis import (
+    W2VTableEvaluationCache,
+    format_accuracy_and_time,
+    format_mean_sd,
+    observed_training_seconds,
+    write_run_records_csv,
+    write_table_summary,
+)
 from f2.suites.common.w2v.artifacts import load_lookup_artifact
 from f2.suites.common.w2v.evaluation import evaluate_analogies, parse_analogy_questions
 from repro_core.context import RuntimePaths
 
-from .table02 import CORPUS_SOURCES, observed_training_seconds
+from .table02 import CORPUS_SOURCES
 
 _SEEDS = {1, 7, 19}
 _PLANS = {
@@ -62,194 +66,181 @@ class Table3RunResult:
 _EVALUATION_PROTOCOL = "table3-v1"
 
 
-class Table3EvaluationCache:
-    """Signature-checked per-run cache for reconstructible Table 3 analogy results."""
-
-    def __init__(self, root: Path, *, questions_sha256: str, msr_sha256: str) -> None:
-        self.root = root
-        self.signature = {
-            "schema_version": 2,
-            "evaluation_protocol": _EVALUATION_PROTOCOL,
-            "questions_sha256": questions_sha256,
-            "msr_sha256": msr_sha256,
-        }
-
-    def load(self, run_id: str) -> Table3RunResult | None:
-        path = self._path(run_id)
-        if not path.is_file():
-            return None
-        try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
-            if payload.get("signature") != self.signature:
-                return None
-            result = Table3RunResult(**payload["result"])
-        except (KeyError, TypeError, ValueError, json.JSONDecodeError):
-            return None
-        return result if result.mlflow_run_id == run_id else None
-
-    def store(self, result: Table3RunResult) -> None:
-        path = self._path(result.mlflow_run_id)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(
-            json.dumps(
-                {
-                    "signature": self.signature,
-                    "result": asdict(result),
-                },
-                indent=2,
-                sort_keys=True,
-            )
-            + "\n",
-            encoding="utf-8",
-        )
-
-    def _path(self, run_id: str) -> Path:
-        if re.fullmatch(r"[0-9a-zA-Z_-]+", run_id) is None:
-            raise ValueError(f"invalid MLflow run ID: {run_id}")
-        return self.root / f"{run_id}.json"
-
-
 def complete_conditions(runs: list[Any], corpus: str) -> dict[str, dict[int, Any]]:
+    plan_prefix = _PLANS[corpus]
     grouped: dict[str, dict[int, Any]] = {}
     for run in runs:
-        tags = run.data.tags
-        for architecture, condition in _CONDITIONS.items():
-            if tags.get("implementation.variant") != f"{corpus}--{condition}":
+        slot = run.data.tags.get("f2.planned_run_slot_id", "")
+        for architecture, slug in _CONDITIONS.items():
+            pattern = re.compile(rf"{plan_prefix}-{slug}-s(\d+)")
+            match = pattern.search(slot)
+            if match is None:
                 continue
-            if tags.get("experiment_spec.id") != f"w2v1-table3-{architecture}":
-                continue
-            seed = int(tags.get("seed", "0"))
-            if (
-                seed not in _SEEDS
-                or tags.get("f2.planned_run_slot_id")
-                != f"{_PLANS[corpus]}-{condition}-s{seed}"
-            ):
-                continue
-            grouped.setdefault(architecture, {}).setdefault(seed, run)
-    return {
-        architecture: seeds
-        for architecture, seeds in grouped.items()
-        if set(seeds) == _SEEDS
-    }
+            seed = int(match.group(1))
+            if seed in _SEEDS:
+                grouped.setdefault(architecture, {})[seed] = run
+    return {arch: s for arch, s in grouped.items() if set(s) == _SEEDS}
 
 
 def analyze_table3_sources(
     cache_root: Path,
-    questions_path: Path,
+    google_path: Path,
+    msr_path: Path,
     *,
-    msr_questions_path: Path | None = None,
     corpus_source: str | None = None,
     paths: RuntimePaths | None = None,
 ) -> tuple[Path, ...]:
-
+    sources = CORPUS_SOURCES if corpus_source is None else (corpus_source,)
     paths = paths or RuntimePaths.from_environment()
-    if not Path(questions_path).is_file():
-        output = unavailable_report(
-            paths.cache_root / "f2/w2v1/analysis/table3",
-            "cached evaluation questions missing",
-        )
-        return (output,)
-    if corpus_source is not None and corpus_source not in CORPUS_SOURCES:
-        raise ValueError(f"unsupported W2V1 corpus source: {corpus_source}")
-    google_bytes = Path(questions_path).read_bytes()
-    questions = parse_analogy_questions(google_bytes.splitlines())
-    if not questions:
-        raise ValueError("questions-words.txt must contain at least one question")
-    msr_path = Path(
-        msr_questions_path or Path(cache_root) / "evaluation/MSR-syntax.txt"
-    )
-    if not msr_path.is_file():
-        return (
-            unavailable_report(
-                paths.cache_root / "f2/w2v1/analysis/table3",
-                "cached MSR questions missing",
-            ),
-        )
-    msr_bytes = msr_path.read_bytes()
-    msr = parse_analogy_questions(msr_bytes.splitlines())
+
+    for path, name in ((google_path, "Google"), (msr_path, "MSR")):
+        if not Path(path).is_file():
+            out = unavailable_report(
+                paths.analysis_results_root / "f2/w2v1/table03",
+                f"cached {name} evaluation questions missing",
+            )
+            return (out,)
+
+    google_bytes = Path(google_path).read_bytes()
     google_digest = hashlib.sha256(google_bytes).hexdigest()
+    google_questions = parse_analogy_questions(google_bytes.decode("utf-8"))
+
+    msr_bytes = Path(msr_path).read_bytes()
     msr_digest = hashlib.sha256(msr_bytes).hexdigest()
+    msr_questions = parse_analogy_questions(msr_bytes.decode("utf-8"))
+
+    outputs = []
+    for corpus in sources:
+        outputs.append(
+            _analyze_single_corpus(
+                cache_root,
+                corpus,
+                google_questions,
+                google_digest,
+                msr_questions,
+                msr_digest,
+                paths,
+            )
+        )
+    return tuple(outputs)
+
+
+def _analyze_single_corpus(
+    cache_root: Path,
+    corpus: str,
+    google_questions: Any,
+    google_digest: str,
+    msr_questions: Any,
+    msr_digest: str,
+    paths: RuntimePaths,
+) -> Path:
+    output = paths.analysis_results_root / f"f2/w2v1/table03/{corpus}"
+    output.mkdir(parents=True, exist_ok=True)
     cache = LocalResults(cache_root)
     runs = cache.runs()
+    selected = complete_conditions(runs, corpus)
+    if not selected:
+        return unavailable_report(output, "no complete condition sets found")
 
-    evaluation_cache = Table3EvaluationCache(
-        paths.cache_root / "f2/w2v1/table3",
+    evaluation_cache = W2VTableEvaluationCache(
+        paths.analysis_cache_root / f"f2/w2v1/analysis/table3/{corpus}",
+        protocol=_EVALUATION_PROTOCOL,
+        result_cls=Table3RunResult,
         questions_sha256=google_digest,
-        msr_sha256=msr_digest,
+        extra_signature={"msr_sha256": msr_digest},
     )
-    outputs = []
-    sources = CORPUS_SOURCES if corpus_source is None else (corpus_source,)
-    for corpus in sources:
-        output = (paths.cache_root / "f2/w2v1/analysis") / corpus / "table3"
-        output.mkdir(parents=True, exist_ok=True)
-        records = []
-        unavailable = []
-        cache_hits = 0
-        cache_misses = 0
-        for architecture, seeds in sorted(complete_conditions(runs, corpus).items()):
-            for seed, run in sorted(seeds.items()):
-                cached = evaluation_cache.load(run.info.run_id)
-                if (
-                    cached is not None
-                    and cached.seed == seed
-                    and cached.architecture == architecture
-                    and cached.corpus == corpus
-                ):
-                    records.append(cached)
-                    cache_hits += 1
-                    continue
-                try:
-                    cache_misses += 1
-                    lookup = load_lookup_artifact(cache.get(run.info.run_id, "lookup"))
-                    word_result = evaluate_analogies(
-                        lookup, questions, vocabulary_limit=None, batch_size=256
-                    )
-                    msr_result = evaluate_analogies(
-                        lookup, msr, vocabulary_limit=None, batch_size=256
-                    ).overall
-                    seconds = observed_training_seconds(
-                        cache.get(run.info.run_id, "metrics/observations.csv")
-                    )
-                    record = Table3RunResult(
-                        architecture,
-                        corpus,
-                        seed,
-                        run.info.run_id,
-                        100 * word_result.semantic.score,
-                        100 * word_result.syntactic.score,
-                        100 * word_result.overall.score,
-                        100 * msr_result.score,
-                        word_result.semantic.valid_count,
-                        word_result.semantic.total_count,
-                        word_result.syntactic.valid_count,
-                        word_result.syntactic.total_count,
-                        msr_result.valid_count,
-                        msr_result.total_count,
-                        seconds,
-                    )
-                    evaluation_cache.store(record)
-                    records.append(record)
-                except (FileNotFoundError, KeyError, ValueError) as exc:
-                    unavailable.append(
-                        {
-                            "run_id": run.info.run_id,
-                            "status": "no_data",
-                            "reason": str(exc),
-                        }
-                    )
-        (output / "unavailable.json").write_text(
-            json.dumps(unavailable, indent=2) + "\n"
+
+    records: list[Table3RunResult] = []
+    unavailable: list[dict[str, Any]] = []
+    cache_hits = cache_misses = 0
+
+    for architecture, seed_runs in sorted(selected.items()):
+        for seed in sorted(_SEEDS):
+            run = seed_runs[seed]
+            cached = evaluation_cache.load(run.info.run_id)
+            if cached is not None:
+                records.append(cached)
+                cache_hits += 1
+                continue
+            try:
+                cache_misses += 1
+                lookup = load_lookup_artifact(cache.get(run.info.run_id, "lookup"))
+                g_res = evaluate_analogies(
+                    lookup, google_questions, vocabulary_limit=None, batch_size=256
+                )
+                m_res = evaluate_analogies(
+                    lookup, msr_questions, vocabulary_limit=None, batch_size=256
+                )
+                seconds = observed_training_seconds(
+                    cache.get(run.info.run_id, "metrics/observations.csv")
+                )
+                record = Table3RunResult(
+                    architecture=architecture,
+                    corpus=corpus,
+                    seed=seed,
+                    mlflow_run_id=run.info.run_id,
+                    semantic_accuracy_percent=100.0 * g_res.semantic.require_score(),
+                    syntactic_accuracy_percent=100.0 * g_res.syntactic.require_score(),
+                    total_accuracy_percent=100.0 * g_res.overall.require_score(),
+                    msr_accuracy_percent=100.0 * m_res.overall.require_score(),
+                    semantic_included=g_res.semantic.valid_count,
+                    semantic_total=g_res.semantic.total_count,
+                    syntactic_included=g_res.syntactic.valid_count,
+                    syntactic_total=g_res.syntactic.total_count,
+                    msr_included=m_res.overall.valid_count,
+                    msr_total=m_res.overall.total_count,
+                    observed_training_seconds=seconds,
+                )
+                evaluation_cache.store(run.info.run_id, record)
+                records.append(record)
+            except (FileNotFoundError, KeyError, ValueError) as exc:
+                unavailable.append(
+                    {
+                        "architecture": architecture,
+                        "seed": seed,
+                        "run_id": run.info.run_id,
+                        "reason": str(exc),
+                    }
+                )
+
+    print(
+        f"W2V1 Table 3 ({corpus}) cache: {cache_hits} hit(s), {cache_misses} miss(es)",
+        file=sys.stderr,
+    )
+    (output / "unavailable.json").write_text(
+        json.dumps(unavailable, indent=2) + "\n", encoding="utf-8"
+    )
+    write_run_records_csv(output / "runs.csv", records)
+
+    rows: list[list[str]] = []
+    for arch in ("cbow", "skipgram", "nnlm"):
+        items = [r for r in records if r.architecture == arch]
+        if not items:
+            continue
+        sem_str = format_mean_sd([x.semantic_accuracy_percent for x in items])
+        syn_str = format_mean_sd([x.syntactic_accuracy_percent for x in items])
+        msr_str = format_mean_sd([x.msr_accuracy_percent for x in items])
+        _, time_str = format_accuracy_and_time(items)
+        paper_ref = " / ".join(str(v) for v in _REFERENCE.get(arch, ()))
+        rows.append(
+            [arch, str(len(items)), sem_str, syn_str, msr_str, time_str, paper_ref]
         )
-        print(
-            f"W2V1 {corpus} Table 3 analogy cache: {cache_hits} hit(s), {cache_misses} miss(es)",
-            file=sys.stderr,
-        )
-        with (output / "runs.csv").open("w", encoding="utf-8", newline="") as stream:
-            writer = csv.DictWriter(
-                stream, fieldnames=Table3RunResult.__dataclass_fields__
-            )
-            writer.writeheader()
-            writer.writerows(asdict(record) for record in records)
-        write_summary(output / "summary.md", corpus, records, google_digest, msr_digest)
-        outputs.append(output)
-    return tuple(outputs)
+
+    write_table_summary(
+        output / "summary.md",
+        title=f"W2V1 Table 3 — {corpus.upper()} (Relationship Accuracies & Training Time)",
+        headers=[
+            "Architecture",
+            "Runs",
+            "Semantic (%)",
+            "Syntactic (%)",
+            "MSR (%)",
+            "Training Time",
+            "Paper Ref (Sem/Syn/MSR)",
+        ],
+        rows=rows,
+    )
+    return output
+
+
+__all__ = ["Table3RunResult", "analyze_table3_sources", "complete_conditions"]

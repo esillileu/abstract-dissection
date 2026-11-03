@@ -1,17 +1,29 @@
-"""Stable W2V run summaries and paper-target comparisons."""
+"""Stable W2V run summaries, paper-target comparisons, and suite-level table helpers."""
 
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from typing import Sequence
+from pathlib import Path
+from typing import Any, Sequence, TypeVar
 
 from f2.common.analysis.orchestrator import BaseAnalysisOrchestrator
+from f2.common.analysis.tables import (
+    BaseEvaluationCache,
+    format_duration,
+    format_duration_mean_sd,
+    format_mean_sd,
+    observed_training_seconds,
+    write_run_records_csv,
+    write_table_summary,
+)
 from f2.common.analysis.targets import (
     PaperTargetMetric,
     TargetComparisonResult,
     compare_to_target,
 )
 from f2.suites.common.w2v.evaluation import EvaluationResult
+
+T = TypeVar("T")
 
 
 @dataclass(frozen=True)
@@ -74,4 +86,53 @@ def summary_record(summary: EvaluationSummary) -> dict[str, object]:
     return record
 
 
-__all__ = ["EvaluationSummary", "summarize_evaluations", "summary_record"]
+class W2VTableEvaluationCache(BaseEvaluationCache[T]):
+    """W2V suite-level evaluation cache for questions-based benchmarks."""
+
+    def __init__(
+        self,
+        root: Path,
+        protocol: str,
+        result_cls: type[T],
+        *,
+        questions_sha256: str,
+        extra_signature: dict[str, Any] | None = None,
+    ) -> None:
+        sig = {
+            "schema_version": 2,
+            "evaluation_protocol": protocol,
+            "questions_sha256": questions_sha256,
+        }
+        if extra_signature:
+            sig.update(extra_signature)
+        super().__init__(root, signature=sig, result_cls=result_cls)
+
+
+def format_accuracy_and_time(
+    records: list[Any],
+    acc_field: str = "total_accuracy_percent",
+    time_field: str = "observed_training_seconds",
+    precision: int = 1,
+) -> tuple[str, str]:
+    """Calculate mean ± SD for accuracy and training time."""
+    acc_vals = [float(getattr(r, acc_field)) for r in records]
+    time_vals = [float(getattr(r, time_field)) for r in records]
+    acc_str = format_mean_sd(acc_vals, precision=precision)
+    time_str = format_duration_mean_sd(time_vals)
+    return acc_str, time_str
+
+
+__all__ = [
+    "BaseEvaluationCache",
+    "EvaluationSummary",
+    "W2VTableEvaluationCache",
+    "format_accuracy_and_time",
+    "format_duration",
+    "format_duration_mean_sd",
+    "format_mean_sd",
+    "observed_training_seconds",
+    "summarize_evaluations",
+    "summary_record",
+    "write_run_records_csv",
+    "write_table_summary",
+]

@@ -7,6 +7,8 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class EvaluationResult:
+    """A score together with the denominator and vocabulary coverage that produced it."""
+
     metric_id: str
     score: float | None
     total_count: int
@@ -14,8 +16,13 @@ class EvaluationResult:
     excluded_count: int
 
     @property
-    def coverage(self) -> float:
-        return 0.0 if self.total_count == 0 else self.valid_count / self.total_count
+    def coverage(self) -> float | None:
+        return self.valid_count / self.total_count if self.total_count else None
+
+    def require_score(self) -> float:
+        if self.score is None:
+            raise ValueError(f"undefined evaluation: {self.metric_id}")
+        return self.score
 
 
 @dataclass(frozen=True)
@@ -24,7 +31,11 @@ class AnalogyQuestion:
     a: bytes
     b: bytes
     c: bytes
-    d: bytes
+    expected: bytes
+
+    @property
+    def d(self) -> bytes:
+        return self.expected
 
 
 @dataclass(frozen=True)
@@ -37,15 +48,38 @@ class AnalogyEvaluation:
 
 @dataclass(frozen=True)
 class SimilarityPair:
-    first: bytes
-    second: bytes
-    gold_similarity: float
+    left: bytes
+    right: bytes
+    human_score: float
+
+    @property
+    def first(self) -> bytes:
+        return self.left
+
+    @property
+    def second(self) -> bytes:
+        return self.right
+
+    @property
+    def gold_similarity(self) -> float:
+        return self.human_score
+
+
+@dataclass(frozen=True)
+class SentenceCompletionQuestion:
+    context: tuple[bytes, ...]
+    candidates: tuple[bytes, ...]
+    expected: bytes
 
 
 @dataclass(frozen=True)
 class NearestNeighbor:
     token: bytes
-    cosine_similarity: float
+    score: float
+
+    @property
+    def cosine_similarity(self) -> float:
+        return self.score
 
 
 __all__ = [
@@ -53,5 +87,6 @@ __all__ = [
     "AnalogyQuestion",
     "EvaluationResult",
     "NearestNeighbor",
+    "SentenceCompletionQuestion",
     "SimilarityPair",
 ]
