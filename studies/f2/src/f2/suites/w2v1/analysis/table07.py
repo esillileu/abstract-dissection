@@ -19,13 +19,13 @@ from f2.suites.common.w2v.evaluation import (
 )
 from repro_core.context import RuntimePaths
 
-from .analysis import observed_training_seconds
-from .resources import (
+from ..resources import (
     HOLMES_CORPUS_SHA256,
     HOLMES_RAW_BYTES,
     MSR_ANSWERS_SHA256,
     MSR_QUESTIONS_SHA256,
 )
+from .table02 import observed_training_seconds
 
 # Condition specification for Table 7: Skip-gram 640d on 50M words Holmes corpus
 # (model, dim, words_millions, epochs, orig_accuracy)

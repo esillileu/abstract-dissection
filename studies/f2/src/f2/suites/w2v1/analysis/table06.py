@@ -17,11 +17,11 @@ from f2.suites.common.w2v.artifacts import load_lookup_artifact
 from f2.suites.common.w2v.evaluation import evaluate_analogies, parse_analogy_questions
 from repro_core.context import RuntimePaths
 
-from .analysis import observed_training_seconds
-from .table4 import (
+from .table02 import observed_training_seconds
+from .table04 import (
     Table4EvaluationCache,
 )
-from .table4 import (
+from .table04 import (
     complete_conditions as table4_conditions,
 )
 

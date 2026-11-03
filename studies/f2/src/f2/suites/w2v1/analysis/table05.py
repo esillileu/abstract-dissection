@@ -17,7 +17,7 @@ from f2.suites.common.w2v.artifacts import load_lookup_artifact
 from f2.suites.common.w2v.evaluation import evaluate_analogies, parse_analogy_questions
 from repro_core.context import RuntimePaths
 
-from .analysis import CORPUS_SOURCES, observed_training_seconds
+from .table02 import CORPUS_SOURCES, observed_training_seconds
 
 # Condition specifications for Table 5
 # (model, dim, words_millions, epochs, orig_semantic, orig_syntactic, orig_total, orig_time)

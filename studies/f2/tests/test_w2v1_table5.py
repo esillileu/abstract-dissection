@@ -127,7 +127,7 @@ def test_table5_smoke_execution(tmp_path: Path) -> None:
 def test_collect_table5_runs() -> None:
     from types import SimpleNamespace
 
-    from f2.suites.w2v1.table5 import collect_table5_runs
+    from f2.suites.w2v1.analysis.table05 import collect_table5_runs
 
     def make_run(slot: str, run_id: str) -> Any:
         return SimpleNamespace(

@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 from f2.catalog.manifest import read_manifest
 from f2.execution.definitions import DEFINITION
-from f2.suites.w2v1.table4 import complete_conditions
+from f2.suites.w2v1.analysis.table04 import complete_conditions
 from repro_core.execution.definition import RunOptions, RunSelection
 from repro_core.execution.planning import Planner
 

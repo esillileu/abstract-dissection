@@ -80,7 +80,7 @@ def test_table2_evaluation_cache_requires_matching_protocol_signature(tmp_path) 
 
 
 def test_table6_evaluation_cache_lifecycle_and_seeding(tmp_path) -> None:
-    from f2.suites.w2v1.table6 import Table6EvaluationCache, Table6RunResult
+    from f2.suites.w2v1.analysis.table06 import Table6EvaluationCache, Table6RunResult
 
     run_id = "c" * 32
     result = Table6RunResult(
@@ -108,10 +108,10 @@ def test_table6_evaluation_cache_lifecycle_and_seeding(tmp_path) -> None:
 
 
 def test_table3_table4_table5_table7_evaluation_caches(tmp_path) -> None:
-    from f2.suites.w2v1.table3 import Table3EvaluationCache, Table3RunResult
-    from f2.suites.w2v1.table4 import Table4EvaluationCache, Table4RunResult
-    from f2.suites.w2v1.table5 import Table5EvaluationCache, Table5RunResult
-    from f2.suites.w2v1.table7 import Table7EvaluationCache, Table7RunResult
+    from f2.suites.w2v1.analysis.table03 import Table3EvaluationCache, Table3RunResult
+    from f2.suites.w2v1.analysis.table04 import Table4EvaluationCache, Table4RunResult
+    from f2.suites.w2v1.analysis.table05 import Table5EvaluationCache, Table5RunResult
+    from f2.suites.w2v1.analysis.table07 import Table7EvaluationCache, Table7RunResult
 
     # Table 3
     t3_id = "3" * 32

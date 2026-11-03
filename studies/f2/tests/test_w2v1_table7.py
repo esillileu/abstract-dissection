@@ -13,9 +13,7 @@ from f2.suites.common.w2v.evaluation import (
     evaluate_msr_sentence_completion,
     parse_msr_sentence_completion_questions,
 )
-from f2.suites.w2v1.resources import HOLMES_RAW_BOOKS_COUNT, ensure_msr_benchmark_data
-from f2.suites.w2v1.spec import parse_run_spec
-from f2.suites.w2v1.table7 import (
+from f2.suites.w2v1.analysis.table07 import (
     HOLMES_CORPUS_SHA256,
     MSR_ANSWERS_SHA256,
     MSR_QUESTIONS_SHA256,
@@ -24,6 +22,8 @@ from f2.suites.w2v1.table7 import (
     _write_table7_csv,
     _write_table7_markdown,
 )
+from f2.suites.w2v1.resources import HOLMES_RAW_BOOKS_COUNT, ensure_msr_benchmark_data
+from f2.suites.w2v1.spec import parse_run_spec
 
 
 class DictLookup:

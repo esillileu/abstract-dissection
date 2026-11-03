@@ -300,11 +300,11 @@ def analyze(
         from repro_core.context import RuntimePaths
 
         from .suites.w2v1.analysis import analyze_table2_sources
-        from .suites.w2v1.table3 import analyze_table3_sources
-        from .suites.w2v1.table4 import analyze_table4_sources
-        from .suites.w2v1.table5 import analyze_table5_sources
-        from .suites.w2v1.table6 import analyze_table6_sources
-        from .suites.w2v1.table7 import analyze_table7_sources
+        from .suites.w2v1.analysis.table03 import analyze_table3_sources
+        from .suites.w2v1.analysis.table04 import analyze_table4_sources
+        from .suites.w2v1.analysis.table05 import analyze_table5_sources
+        from .suites.w2v1.analysis.table06 import analyze_table6_sources
+        from .suites.w2v1.analysis.table07 import analyze_table7_sources
         from .tracking import resolve_tracking_uri
 
         paths = RuntimePaths.from_environment()

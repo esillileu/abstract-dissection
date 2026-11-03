@@ -16,7 +16,8 @@ from f2.execution.definitions import DEFINITION
 from f2.suites.common.w2v.artifacts import load_lookup_artifact
 from f2.suites.common.w2v.nnlm_artifacts import load_checkpoint
 from f2.suites.w2v.tracked import run_tracked_yaml
-from f2.suites.w2v1 import resources, table3
+from f2.suites.w2v1 import resources
+from f2.suites.w2v1.analysis import table03 as table3
 from f2.suites.w2v1.executor import create_session
 from repro_core.cli import app
 from repro_core.context import RuntimePaths

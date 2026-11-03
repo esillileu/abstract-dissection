@@ -12,7 +12,8 @@ from typer.testing import CliRunner
 from f2.execution.definitions import DEFINITION
 from f2.suites.common.w2v.artifacts import load_lookup_artifact
 from f2.suites.common.w2v.nnlm_artifacts import load_checkpoint
-from f2.suites.w2v1 import table4, table6
+from f2.suites.w2v1.analysis import table04 as table4
+from f2.suites.w2v1.analysis import table06 as table6
 from repro_core.cli import app
 from repro_core.context import ExperimentContext, RuntimePaths
 from repro_core.execution.definition import RunOptions, RunSelection

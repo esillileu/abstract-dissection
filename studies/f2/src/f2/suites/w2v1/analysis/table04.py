@@ -17,7 +17,7 @@ from f2.suites.common.w2v.artifacts import load_lookup_artifact
 from f2.suites.common.w2v.evaluation import evaluate_analogies, parse_analogy_questions
 from repro_core.context import RuntimePaths
 
-from .analysis import CORPUS_SOURCES, observed_training_seconds
+from .table02 import CORPUS_SOURCES, observed_training_seconds
 
 _CONDITION = re.compile(r"(wmt|lm1b|umbc)--(cbow|skipgram)-d300-w783m")
 _NNLM_CONDITION = re.compile(r"fineweb--nnlm-d(20|50|100)-w6000m")

@@ -133,10 +133,7 @@ def test_analysis_modules_do_not_import_tracking_clients():
     from pathlib import Path
 
     source = Path(__file__).parents[1] / "src/f2/suites"
-    modules = [
-        source / "w2v1" / f"{name}.py"
-        for name in ("analysis", "table3", "table4", "table5", "table6", "table7")
-    ]
+    modules = list((source / "w2v1/analysis").glob("table*.py"))
     modules.append(source / "w2v2/analysis.py")
     for module in modules:
         for node in ast.walk(ast.parse(module.read_text())):

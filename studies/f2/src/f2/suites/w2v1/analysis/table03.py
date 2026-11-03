@@ -17,8 +17,8 @@ from f2.suites.common.w2v.artifacts import load_lookup_artifact
 from f2.suites.common.w2v.evaluation import evaluate_analogies, parse_analogy_questions
 from repro_core.context import RuntimePaths
 
-from .analysis import CORPUS_SOURCES, observed_training_seconds
-from .resources import MSR_SYNTACTIC_URL
+from ..resources import MSR_SYNTACTIC_URL
+from .table02 import CORPUS_SOURCES, observed_training_seconds
 
 _SEEDS = {1, 7, 19}
 _PLANS = {
