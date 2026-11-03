@@ -8,12 +8,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from repro_core.context import RuntimePaths
-
 from f2.storage.analysis_cache import unavailable_report
 from f2.suites.common.w2v.analysis import (
     W2VTableEvaluationCache,
-    format_accuracy_and_time,
     format_mean_sd,
     observed_training_seconds,
     write_run_records_csv,
@@ -21,6 +18,8 @@ from f2.suites.common.w2v.analysis import (
 )
 from f2.suites.common.w2v.artifacts import load_lookup_artifact
 from f2.suites.common.w2v.evaluation import evaluate_analogies, parse_analogy_questions
+from repro_core.context import RuntimePaths
+
 from .. import paper
 
 _OBJECTIVES = (
@@ -75,25 +74,26 @@ def analyze_table3(
     if phrase_questions_path is None or not phrase_questions_path.is_file():
         return unavailable_report(
             output_dir,
-            paper_reference=paper.SOURCE,
-            table="3",
-            reasons=["Phrase analogy benchmark questions-phrases.txt is missing."],
+            "Phrase analogy benchmark questions-phrases.txt is missing.",
         )
 
     questions_bytes = phrase_questions_path.read_bytes()
     questions = parse_analogy_questions(questions_bytes.splitlines())
     questions_sha256 = hashlib.sha256(questions_bytes).hexdigest()
 
-    cache_dir = paths.analysis_cache("f2", "w2v2") / "eval_cache"
-    eval_cache = W2VTableEvaluationCache(cache_dir)
+    cache_dir = paths.analysis_cache_root / "f2/w2v2/analysis/table3"
+    eval_cache = W2VTableEvaluationCache(
+        cache_dir,
+        protocol="w2v2-table3",
+        result_cls=dict,
+        questions_sha256=questions_sha256,
+    )
 
     matching_runs = [r for r in runs if _is_table3_run(r)]
     if not matching_runs:
         return unavailable_report(
             output_dir,
-            paper_reference=paper.SOURCE,
-            table="3",
-            reasons=[f"No matching completed W2V2 Table 3 runs found for corpus {corpus_source}."],
+            f"No matching completed W2V2 Table 3 runs found for corpus {corpus_source}.",
         )
 
     run_results: list[Table3RunResult] = []
@@ -108,12 +108,7 @@ def analyze_table3(
         if not lookup_dir.is_dir():
             lookup_dir = art_root
 
-        cached = eval_cache.load(
-            run_id,
-            table="table03",
-            condition=cond,
-            questions_sha256=questions_sha256,
-        )
+        cached = eval_cache.load(run_id)
         if cached is not None:
             res_dict = cached
         else:
@@ -121,17 +116,11 @@ def analyze_table3(
                 lookup = load_lookup_artifact(lookup_dir)
                 eval_res = evaluate_analogies(lookup, questions)
                 res_dict = {
-                    "phrase_accuracy_percent": eval_res.total_accuracy_percent,
-                    "included_questions": eval_res.included_questions,
-                    "total_questions": eval_res.total_questions,
+                    "phrase_accuracy_percent": 100.0 * eval_res.overall.require_score(),
+                    "included_questions": eval_res.overall.valid_count,
+                    "total_questions": eval_res.overall.total_count,
                 }
-                eval_cache.store(
-                    run_id,
-                    table="table03",
-                    condition=cond,
-                    questions_sha256=questions_sha256,
-                    result=res_dict,
-                )
+                eval_cache.store(run_id, res_dict)
             except Exception:
                 continue
 
@@ -150,9 +139,7 @@ def analyze_table3(
     if not run_results:
         return unavailable_report(
             output_dir,
-            paper_reference=paper.SOURCE,
-            table="3",
-            reasons=["No runs could be evaluated successfully."],
+            "No runs could be evaluated successfully.",
         )
 
     by_condition: dict[str, list[Table3RunResult]] = {}
@@ -223,8 +210,16 @@ def analyze_table3_sources(
         return []
     runs = json.loads(runs_file.read_text(encoding="utf-8"))
     c_source = corpus_source or "news-1b"
-    out = paths.analysis_results("f2", "w2v2", "table03", c_source)
-    return [analyze_table3(runs, phrase_questions_path, output_dir=out, corpus_source=c_source, paths=paths)]
+    out = paths.analysis_results_root / f"f2/w2v2/table03/{c_source}"
+    return [
+        analyze_table3(
+            runs,
+            phrase_questions_path,
+            output_dir=out,
+            corpus_source=c_source,
+            paths=paths,
+        )
+    ]
 
 
 __all__ = ["Table3RunResult", "analyze_table3", "analyze_table3_sources"]

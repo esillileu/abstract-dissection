@@ -4,14 +4,11 @@ from __future__ import annotations
 
 import hashlib
 import json
-import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from repro_core.context import RuntimePaths
-
-from f2.storage.analysis_cache import LocalResults, unavailable_report
+from f2.storage.analysis_cache import unavailable_report
 from f2.suites.common.w2v.analysis import (
     W2VTableEvaluationCache,
     format_accuracy_and_time,
@@ -22,6 +19,8 @@ from f2.suites.common.w2v.analysis import (
 )
 from f2.suites.common.w2v.artifacts import load_lookup_artifact
 from f2.suites.common.w2v.evaluation import evaluate_analogies, parse_analogy_questions
+from repro_core.context import RuntimePaths
+
 from .. import paper
 
 _SEEDS = (1, 7, 19)
@@ -83,25 +82,26 @@ def analyze_table1(
     if questions_path is None or not questions_path.is_file():
         return unavailable_report(
             output_dir,
-            paper_reference=paper.SOURCE,
-            table="1",
-            reasons=["Analogies benchmark questions file questions-words.txt is missing."],
+            "Analogies benchmark questions file questions-words.txt is missing.",
         )
 
     questions_bytes = questions_path.read_bytes()
     questions = parse_analogy_questions(questions_bytes.splitlines())
     questions_sha256 = hashlib.sha256(questions_bytes).hexdigest()
 
-    cache_dir = paths.analysis_cache("f2", "w2v2") / "eval_cache"
-    eval_cache = W2VTableEvaluationCache(cache_dir)
+    cache_dir = paths.analysis_cache_root / "f2/w2v2/analysis/table1"
+    eval_cache = W2VTableEvaluationCache(
+        cache_dir,
+        protocol="w2v2-table1",
+        result_cls=dict,
+        questions_sha256=questions_sha256,
+    )
 
     matching_runs = [r for r in runs if _is_table1_run(r)]
     if not matching_runs:
         return unavailable_report(
             output_dir,
-            paper_reference=paper.SOURCE,
-            table="1",
-            reasons=[f"No matching completed W2V2 Table 1 runs found for corpus {corpus_source}."],
+            f"No matching completed W2V2 Table 1 runs found for corpus {corpus_source}.",
         )
 
     run_results: list[Table1RunResult] = []
@@ -116,12 +116,7 @@ def analyze_table1(
         if not lookup_dir.is_dir():
             lookup_dir = art_root
 
-        cached = eval_cache.load(
-            run_id,
-            table="table01",
-            condition=cond,
-            questions_sha256=questions_sha256,
-        )
+        cached = eval_cache.load(run_id)
         if cached is not None:
             res_dict = cached
         else:
@@ -129,19 +124,15 @@ def analyze_table1(
                 lookup = load_lookup_artifact(lookup_dir)
                 eval_res = evaluate_analogies(lookup, questions)
                 res_dict = {
-                    "total_accuracy_percent": eval_res.total_accuracy_percent,
-                    "semantic_accuracy_percent": eval_res.semantic_accuracy_percent,
-                    "syntactic_accuracy_percent": eval_res.syntactic_accuracy_percent,
-                    "included_questions": eval_res.included_questions,
-                    "total_questions": eval_res.total_questions,
+                    "total_accuracy_percent": 100.0 * eval_res.overall.require_score(),
+                    "semantic_accuracy_percent": 100.0
+                    * eval_res.semantic.require_score(),
+                    "syntactic_accuracy_percent": 100.0
+                    * eval_res.syntactic.require_score(),
+                    "included_questions": eval_res.overall.valid_count,
+                    "total_questions": eval_res.overall.total_count,
                 }
-                eval_cache.store(
-                    run_id,
-                    table="table01",
-                    condition=cond,
-                    questions_sha256=questions_sha256,
-                    result=res_dict,
-                )
+                eval_cache.store(run_id, res_dict)
             except Exception:
                 continue
 
@@ -162,9 +153,7 @@ def analyze_table1(
     if not run_results:
         return unavailable_report(
             output_dir,
-            paper_reference=paper.SOURCE,
-            table="1",
-            reasons=["No runs could be evaluated successfully."],
+            "No runs could be evaluated successfully.",
         )
 
     # Group by condition
@@ -188,10 +177,7 @@ def analyze_table1(
         if not items:
             rows.append([cond, "N/A", "N/A", "N/A", "N/A", ref_str])
             continue
-        time_str = format_accuracy_and_time(
-            [it.total_accuracy_percent for it in items],
-            [it.observed_training_seconds for it in items],
-        ).split("(")[-1].rstrip(")") if items else "N/A"
+        _, time_str = format_accuracy_and_time(items) if items else ("—", "N/A")
         syn_str = format_mean_sd([it.syntactic_accuracy_percent for it in items])
         sem_str = format_mean_sd([it.semantic_accuracy_percent for it in items])
         tot_str = format_mean_sd([it.total_accuracy_percent for it in items])
@@ -247,8 +233,12 @@ def analyze_table1_sources(
         return []
     runs = json.loads(runs_file.read_text(encoding="utf-8"))
     c_source = corpus_source or "news-1b"
-    out = paths.analysis_results("f2", "w2v2", "table01", c_source)
-    return [analyze_table1(runs, questions_path, output_dir=out, corpus_source=c_source, paths=paths)]
+    out = paths.analysis_results_root / f"f2/w2v2/table01/{c_source}"
+    return [
+        analyze_table1(
+            runs, questions_path, output_dir=out, corpus_source=c_source, paths=paths
+        )
+    ]
 
 
 __all__ = ["Table1RunResult", "analyze_table1", "analyze_table1_sources"]

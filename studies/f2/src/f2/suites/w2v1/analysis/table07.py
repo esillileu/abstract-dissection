@@ -64,8 +64,8 @@ def collect_table7_runs(runs: list[Any]) -> dict[int, Any]:
 
 def analyze_table7_sources(
     cache_root: Path,
-    questions_path: Path,
-    answers_path: Path,
+    questions_path: Path | None = None,
+    answers_path: Path | None = None,
     *,
     corpus_source: str | None = None,
     paths: RuntimePaths | None = None,
@@ -74,8 +74,30 @@ def analyze_table7_sources(
         raise ValueError("Table 7 requires Holmes corpus; --corpus must be 'holmes'")
     paths = paths or RuntimePaths.from_environment()
 
+    if questions_path is None:
+        benchmarks = paths.inputs("f2", "benchmarks")
+        default_q = benchmarks / "Holmes.lm_format.questions.txt"
+        if default_q.is_file():
+            questions_path = default_q
+        else:
+            questions_path = (
+                cache_root
+                / "evaluation/msr_sentence_completion/Holmes.lm_format.questions.txt"
+            )
+
+    if answers_path is None:
+        benchmarks = paths.inputs("f2", "benchmarks")
+        default_a = benchmarks / "Holmes.lm_format.answers.txt"
+        if default_a.is_file():
+            answers_path = default_a
+        else:
+            answers_path = (
+                cache_root
+                / "evaluation/msr_sentence_completion/Holmes.lm_format.answers.txt"
+            )
+
     for path, name in ((questions_path, "questions"), (answers_path, "answers")):
-        if not Path(path).is_file():
+        if path is None or not Path(path).is_file():
             out = unavailable_report(
                 paths.analysis_results_root / "f2/w2v1/table07",
                 f"cached MSR {name} missing",

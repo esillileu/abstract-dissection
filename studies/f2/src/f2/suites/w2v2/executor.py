@@ -2,20 +2,14 @@
 
 from __future__ import annotations
 
-import json
 import shutil
 from pathlib import Path
 from typing import Any
 
-from repro_core.context import ExperimentContext, RuntimePaths
-from repro_core.storage.local_store import LocalStore
-
 from f2.suites.common.w2v.adapter import (
     execute_w2v_training,
-    prepare_benchmarks,
     run_w2v_with_coordinator,
 )
-from f2.suites.common.w2v.artifacts import _VOCABULARY_ARRAYS
 from f2.suites.common.w2v.phrases import (
     PhraseCorpus,
     PhrasePolicy,
@@ -26,6 +20,8 @@ from f2.suites.common.w2v.training import (
     Word2VecResult,
     mapping,
 )
+from repro_core.context import ExperimentContext, RuntimePaths
+from repro_core.storage.local_store import LocalStore
 
 
 class W2V2Executor:
@@ -90,16 +86,21 @@ class W2V2Executor:
         elif not source.is_absolute():
             source = context.paths.repo_root / source
 
+        policy = PhrasePolicy.from_config(mapping(config, "phrase_detection"))
+        progress = context.metadata.get("progress_reporter")
+        configured_digest = corpus.get("sha256")
         phrase = cached_phrase_corpus(
             source,
-            PhrasePolicy.from_config(mapping(config, "phrase_detection")),
-            cache_root=context.paths.inputs("f2", "prepared"),
+            context.paths.inputs("f2", "prepared"),
+            policy,
+            progress=None if progress is None else progress.write,
+            source_sha256=str(configured_digest) if configured_digest else None,
         )
         self._record_phrase_lineage(run_root, phrase)
         resolved["corpus"] = {
             "path": str(phrase.path),
-            "sha256": phrase.sha256,
-            "lexical_tokens": phrase.lexical_tokens,
+            "sha256": phrase.corpus_sha256,
+            "lexical_tokens": phrase.token_count,
         }
         return execute_w2v_training(
             resolved,
@@ -113,32 +114,12 @@ class W2V2Executor:
 
     @staticmethod
     def _record_phrase_lineage(run_root: Path, phrase: PhraseCorpus) -> None:
-        metadata_dir = run_root / "metadata"
-        metadata_dir.mkdir(parents=True, exist_ok=True)
-        (metadata_dir / "phrase_lineage.json").write_text(
-            json.dumps(
-                {
-                    "source_corpus": str(phrase.source_path),
-                    "source_sha256": phrase.source_sha256,
-                    "target_corpus": str(phrase.path),
-                    "target_sha256": phrase.sha256,
-                    "passes": [
-                        {
-                            "pass": idx + 1,
-                            "raw_vocabulary_size": step.raw_vocabulary_size,
-                            "min_count": step.min_count,
-                            "threshold": step.threshold,
-                            "phrases_formed": step.phrases_formed,
-                            "phrases_retained": step.phrases_retained,
-                            "vocabulary_sha256": step.vocabulary_sha256,
-                        }
-                        for idx, step in enumerate(phrase.steps)
-                    ],
-                },
-                indent=2,
-            ),
-            encoding="utf-8",
-        )
+        lineage_src = phrase.path.with_suffix(".txt.json")
+        if lineage_src.is_file():
+            shutil.copyfile(lineage_src, run_root / "phrase_lineage.json")
+            metadata_dir = run_root / "metadata"
+            metadata_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(lineage_src, metadata_dir / "phrase_lineage.json")
 
 
 EXECUTORS = {"word2vec": W2V2Executor()}

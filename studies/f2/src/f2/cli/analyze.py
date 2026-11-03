@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
 
@@ -73,7 +72,11 @@ def run_w2v2_analysis(
         corpus=corpus,
         offline=offline,
     )
-    return outputs[0] if outputs else (paths or RuntimePaths.from_environment()).analysis_results("f2", "w2v2")
+    return (
+        outputs[0]
+        if outputs
+        else (paths or RuntimePaths.from_environment()).analysis_results("f2", "w2v2")
+    )
 
 
 def _analyze_w2v2(
@@ -133,13 +136,27 @@ def _analyze_w2v2(
     )
 
     analyzers = {
-        "1": lambda: analyze_table1_sources(cache_root, w_q, corpus_source=corpus, paths=paths),
-        "2": lambda: analyze_table2_sources(cache_root, corpus_source=corpus, paths=paths),
-        "3": lambda: analyze_table3_sources(cache_root, p_q, corpus_source=corpus, paths=paths),
-        "4": lambda: analyze_table4_sources(cache_root, corpus_source=corpus, paths=paths),
-        "5": lambda: analyze_table5_sources(cache_root, corpus_source=corpus, paths=paths),
-        "6": lambda: analyze_table6_sources(cache_root, corpus_source=corpus, paths=paths),
-        "section04_1": lambda: analyze_section04_1_sources(cache_root, p_q, corpus_source=corpus, paths=paths),
+        "1": lambda: analyze_table1_sources(
+            cache_root, w_q, corpus_source=corpus, paths=paths
+        ),
+        "2": lambda: analyze_table2_sources(
+            cache_root, corpus_source=corpus, paths=paths
+        ),
+        "3": lambda: analyze_table3_sources(
+            cache_root, p_q, corpus_source=corpus, paths=paths
+        ),
+        "4": lambda: analyze_table4_sources(
+            cache_root, corpus_source=corpus, paths=paths
+        ),
+        "5": lambda: analyze_table5_sources(
+            cache_root, corpus_source=corpus, paths=paths
+        ),
+        "6": lambda: analyze_table6_sources(
+            cache_root, corpus_source=corpus, paths=paths
+        ),
+        "section04_1": lambda: analyze_section04_1_sources(
+            cache_root, p_q, corpus_source=corpus, paths=paths
+        ),
     }
 
     selected = [tbl_str] if tbl_str in analyzers else list(analyzers.keys())

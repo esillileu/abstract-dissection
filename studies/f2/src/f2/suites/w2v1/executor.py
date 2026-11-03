@@ -4,14 +4,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from repro_core.context import RuntimePaths
-
 from f2.suites.common.w2v.adapter import (
     run_w2v_with_coordinator,
 )
 from f2.suites.common.w2v.training import (
     W2VRunReceipt,
 )
+from repro_core.context import RuntimePaths
 
 
 class W2V1Executor:

@@ -6,12 +6,13 @@ import json
 from pathlib import Path
 from typing import Any
 
-from repro_core.context import RuntimePaths
+import numpy as np
 
 from f2.storage.analysis_cache import unavailable_report
 from f2.suites.common.w2v.analysis import write_table_summary
 from f2.suites.common.w2v.artifacts import load_lookup_artifact
-from f2.suites.common.w2v.evaluation import evaluate_analogies, parse_analogy_questions
+from repro_core.context import RuntimePaths
+
 from .. import paper
 
 
@@ -27,17 +28,20 @@ def analyze_table2(
 
     # Find phrase-capable runs (table3 or section4)
     matching_runs = [
-        r for r in runs
-        if ("e02" in (r.get("artifact_root") or "") or "table3" in (r.get("artifact_root") or "")
-            or "section4" in (r.get("artifact_root") or "") or "e03" in (r.get("artifact_root") or "")
-            or "e04" in (r.get("artifact_root") or ""))
+        r
+        for r in runs
+        if (
+            "e02" in (r.get("artifact_root") or "")
+            or "table3" in (r.get("artifact_root") or "")
+            or "section4" in (r.get("artifact_root") or "")
+            or "e03" in (r.get("artifact_root") or "")
+            or "e04" in (r.get("artifact_root") or "")
+        )
     ]
     if not matching_runs:
         return unavailable_report(
             output_dir,
-            paper_reference=paper.SOURCE,
-            table="2",
-            reasons=["No phrase-trained models available for Table 2 relationship queries."],
+            "No phrase-trained models available for Table 2 relationship queries.",
         )
 
     # Use first available run with valid lookup
@@ -58,36 +62,29 @@ def analyze_table2(
     if lookup is None:
         return unavailable_report(
             output_dir,
-            paper_reference=paper.SOURCE,
-            table="2",
-            reasons=["Could not load lookup artifact from any phrase run."],
+            "Could not load lookup artifact from any phrase run.",
         )
-
-    from f2.suites.common.w2v.evaluation import evaluate_analogies, AnalogyQuestion
-
-    questions = [
-        AnalogyQuestion(
-            category=row[0],
-            a=row[1].encode("utf-8"),
-            b=row[2].encode("utf-8"),
-            c=row[3].encode("utf-8"),
-            d=row[4].encode("utf-8"),
-        )
-        for row in paper.TABLE2
-    ]
-    eval_res = evaluate_analogies(lookup, questions)
 
     headers = ["Relationship", "a", "b", "c", "Published Target (d)", "Predicted"]
     rows = []
-    for q, pred in zip(questions, eval_res.predictions):
-        rows.append([
-            q.category,
-            q.a.decode("utf-8", "replace"),
-            q.b.decode("utf-8", "replace"),
-            q.c.decode("utf-8", "replace"),
-            q.d.decode("utf-8", "replace"),
-            pred.decode("utf-8", "replace") if pred else "<OOV>",
-        ])
+    from f2.suites.common.w2v.geometry import _nearest_query, _normalized_embeddings
+
+    for row in paper.TABLE2:
+        category, a_s, b_s, c_s, d_s = row
+        a_b, b_b, c_b = a_s.encode("utf-8"), b_s.encode("utf-8"), c_s.encode("utf-8")
+        ra, rb, rc = lookup.row(a_b), lookup.row(b_b), lookup.row(c_b)
+        pred_token = "<OOV>"
+        if ra is not None and rb is not None and rc is not None:
+            va = _normalized_embeddings(lookup.embeddings[[ra]])[0]
+            vb = _normalized_embeddings(lookup.embeddings[[rb]])[0]
+            vc = _normalized_embeddings(lookup.embeddings[[rc]])[0]
+            q_vec = vb - va + vc
+            norm = float(np.linalg.norm(q_vec))
+            if norm > 0.0:
+                neighbors = _nearest_query(lookup, q_vec / norm, {ra, rb, rc}, 1)
+                if neighbors:
+                    pred_token = neighbors[0].token.decode("utf-8", "replace")
+        rows.append([category, a_s, b_s, c_s, d_s, pred_token])
 
     write_table_summary(
         output_dir,
@@ -102,7 +99,6 @@ def analyze_table2(
                 "paper": paper.SOURCE,
                 "table": "2",
                 "mlflow_run_id": selected_run_id,
-                "total_accuracy_percent": eval_res.total_accuracy_percent,
             },
             indent=2,
         ),
@@ -123,7 +119,7 @@ def analyze_table2_sources(
         return []
     runs = json.loads(runs_file.read_text(encoding="utf-8"))
     c_source = corpus_source or "news-1b"
-    out = paths.analysis_results("f2", "w2v2", "table02", c_source)
+    out = paths.analysis_results_root / f"f2/w2v2/table02/{c_source}"
     return [analyze_table2(runs, output_dir=out, corpus_source=c_source, paths=paths)]
 
 

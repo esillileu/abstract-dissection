@@ -84,28 +84,40 @@ def complete_conditions(runs: list[Any], corpus: str) -> dict[str, dict[int, Any
 
 def analyze_table3_sources(
     cache_root: Path,
-    google_path: Path,
-    msr_path: Path,
+    questions_path: Path | None = None,
     *,
+    google_path: Path | None = None,
+    msr_path: Path | None = None,
+    msr_questions_path: Path | None = None,
     corpus_source: str | None = None,
     paths: RuntimePaths | None = None,
 ) -> tuple[Path, ...]:
     sources = CORPUS_SOURCES if corpus_source is None else (corpus_source,)
     paths = paths or RuntimePaths.from_environment()
 
-    for path, name in ((google_path, "Google"), (msr_path, "MSR")):
-        if not Path(path).is_file():
+    g_path = google_path or questions_path
+    m_path = msr_path or msr_questions_path
+    if m_path is None:
+        benchmarks = paths.inputs("f2", "benchmarks")
+        default_msr = benchmarks / "MSR-syntax.txt"
+        if default_msr.is_file():
+            m_path = default_msr
+        else:
+            m_path = cache_root / "evaluation/MSR-syntax.txt"
+
+    for path, name in ((g_path, "Google"), (m_path, "MSR")):
+        if path is None or not Path(path).is_file():
             out = unavailable_report(
                 paths.analysis_results_root / "f2/w2v1/table03",
                 f"cached {name} evaluation questions missing",
             )
             return (out,)
 
-    google_bytes = Path(google_path).read_bytes()
+    google_bytes = Path(g_path).read_bytes()
     google_digest = hashlib.sha256(google_bytes).hexdigest()
     google_questions = parse_analogy_questions(google_bytes.decode("utf-8"))
 
-    msr_bytes = Path(msr_path).read_bytes()
+    msr_bytes = Path(m_path).read_bytes()
     msr_digest = hashlib.sha256(msr_bytes).hexdigest()
     msr_questions = parse_analogy_questions(msr_bytes.decode("utf-8"))
 

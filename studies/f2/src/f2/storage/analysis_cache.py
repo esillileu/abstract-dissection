@@ -52,103 +52,47 @@ def download_results(
         if not token:
             break
 
-    def _run_training_settings(r: Any) -> tuple[Any, ...]:
-        t = r.data.tags
-        p = r.data.params
-        variant = t.get("implementation.variant", "")
-        return (
-            t.get("config_digest") or t.get("f2.config_digest", ""),
-            p.get("model_kind") or t.get("training.model_kind", ""),
-            p.get("corpus_id")
-            or t.get("corpus.id")
-            or t.get("f2.source_corpus_sha256", ""),
-            t.get("is_phrase") or str("phrase" in variant),
-            p.get("objective_kind") or t.get("training.objective", ""),
-            p.get("embedding_dimension") or p.get("dim") or t.get("training.dim", ""),
-            p.get("window_radius")
-            or p.get("window_size")
-            or t.get("training.window", ""),
-            p.get("subsampling_threshold") or t.get("training.subsample", ""),
-            p.get("negative_sample_count")
-            or p.get("negative_samples")
-            or t.get("training.negative_samples", ""),
-            p.get("epochs") or t.get("training.epochs", ""),
-            t.get("phrase.delta", ""),
-            t.get("phrase.threshold", ""),
-        )
-
-    def _run_condition(r: Any) -> tuple[Any, ...]:
-        t = r.data.tags
-        p = r.data.params
-        variant = t.get("implementation.variant", "")
-        corpus = (
-            p.get("corpus_id")
-            or t.get("corpus.id")
-            or t.get("f2.source_corpus_sha256", "")
-        )
-        is_phrase = str(t.get("is_phrase") or ("phrase" in variant))
-        obj = str(p.get("objective_kind") or t.get("training.objective", ""))
-        neg = str(
-            p.get("negative_sample_count")
-            or p.get("negative_samples")
-            or t.get("training.negative_samples", "")
-        )
-        sub = str(p.get("subsampling_threshold") or t.get("training.subsample", ""))
-        return (corpus, is_phrase, obj, neg, sub)
-
-    # 1. Group finished runs by target experimental condition (spec_id, variant, condition)
-    # Ref.md P0-2: run, check, and analyze must use the exact same ConditionIdentity selection rule.
-    runs_by_target: dict[tuple[Any, ...], list[Any]] = {}
+    # Group finished runs by Condition Identity:
+    # (suite_id, experiment_id, condition_id, planned_run_slot_id, config_digest, seed)
+    # Ref.md 3.3 / P0-2: run, check, and download_results must use the exact same Condition Identity.
+    # We select the latest FINISHED run for each distinct experimental condition and seed.
+    finished_by_slot_seed: dict[tuple[str, str, str], list[Any]] = {}
     for run in all_runs:
-        if run.info.status == "FINISHED":
-            tags = run.data.tags
-            spec_id = tags.get("experiment_spec.id", "")
-            variant = tags.get("implementation.variant", "")
-            target_key = (spec_id, variant, _run_condition(run))
-            runs_by_target.setdefault(target_key, []).append(run)
-
-    # 2. For each target, determine actual latest training settings and select latest finished run per seed
-    selected_finished: list[Any] = []
-    for target_key in sorted(runs_by_target, key=str):
-        target_runs = runs_by_target[target_key]
-        if not target_runs:
+        if run.info.status != "FINISHED":
             continue
-        # Latest finished run for this experimental target defines actual training conditions
-        latest_target_run = max(
-            target_runs,
+        tags = run.data.tags
+        slot = tags.get("f2.planned_run_slot_id") or tags.get("planned_run_slot_id", "")
+        digest = tags.get("f2.config_digest") or tags.get("config_digest", "")
+        seed = str(
+            tags.get("f2.seed") or tags.get("seed") or run.data.params.get("seed", "")
+        )
+        variant = (
+            tags.get("implementation.variant")
+            or tags.get("atomic_run_id")
+            or tags.get("f2.atomic_run_id", "")
+        )
+        # If planned_run_slot_id and config_digest are present, use canonical identity key
+        if slot and digest:
+            key = (slot, digest, seed)
+        else:
+            # Fallback for runs without slot tags
+            spec_id = tags.get("experiment_spec.id", "")
+            key = (f"{spec_id}:{variant}", digest, seed)
+
+        finished_by_slot_seed.setdefault(key, []).append(run)
+
+    selected_finished: list[Any] = []
+    for key in sorted(finished_by_slot_seed, key=str):
+        candidate_runs = finished_by_slot_seed[key]
+        best = max(
+            candidate_runs,
             key=lambda r: (
                 r.info.end_time or 0,
                 r.info.start_time or 0,
                 r.info.run_id,
             ),
         )
-        target_settings = _run_training_settings(latest_target_run)
-
-        # Do not mix different training settings even for same variant and seed
-        matching_runs = [
-            r for r in target_runs if _run_training_settings(r) == target_settings
-        ]
-
-        # Group by seed and pick the latest finished run
-        seeds_map: dict[str, list[Any]] = {}
-        for r in matching_runs:
-            seed = str(
-                r.data.tags.get("f2.seed")
-                or r.data.tags.get("seed")
-                or r.data.params.get("seed", "")
-            )
-            seeds_map.setdefault(seed, []).append(r)
-
-        for seed in sorted(seeds_map):
-            best = max(
-                seeds_map[seed],
-                key=lambda r: (
-                    r.info.end_time or 0,
-                    r.info.start_time or 0,
-                    r.info.run_id,
-                ),
-            )
-            selected_finished.append(best)
+        selected_finished.append(best)
 
     benchmarks = paths.inputs("f2", "benchmarks") if hasattr(paths, "inputs") else None
     if need_evaluation_benchmarks is None:

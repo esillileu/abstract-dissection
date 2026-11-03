@@ -5,8 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from repro_core.context import RuntimePaths
 from repro_io.checksum import sha256_file
+
+from repro_core.context import RuntimePaths
 
 
 def mapping(config: dict[str, object], key: str) -> dict[str, Any]:
@@ -30,48 +31,91 @@ def resolve_and_prepare_corpus(
     """Ensure the required input corpus exists and bind its path and sha256 to config."""
     identity = mapping(config, "identity")
     corpus = mapping(config, "corpus")
-    if config.get("large_scale"):
-        from repro_io.checksum import sha256_file
 
+    if config.get("large_scale"):
         from f2.suites.w2v2.preflight import resolve_source
 
         resolved = resolve_source(config, paths)
         config["corpus"] = {
             "path": str(resolved),
             "sha256": corpus.get("sha256") or sha256_file(resolved),
-            "lexical_tokens": corpus.get("lexical_tokens")
-            or corpus.get("lexical_token_budget"),
+            "lexical_tokens": (
+                corpus.get("lexical_tokens") or corpus.get("lexical_token_budget")
+            ),
         }
         return
 
-    path_val = corpus.get("path")
-    if path_val:
-        p = Path(str(path_val))
-        candidate = p if p.is_absolute() else paths.repo_root / p
-        if candidate.is_file():
-            config["corpus"] = {
-                "path": str(candidate),
-                "sha256": corpus_digest(corpus, candidate),
-                "lexical_tokens": corpus.get("lexical_tokens")
-                or corpus.get("lexical_token_budget"),
-            }
-            return
+    from f2.common.paths import get_corpus_data_dir
+    from f2.suites.common.w2v.corpus import slice_corpus_file
 
-    corpus_id = str(identity.get("corpus", "")).lower()
+    corpus_dir = get_corpus_data_dir(paths)
+
+    # Determine corpus ID
+    atomic_run_id = str(config.get("atomic_run_id", ""))
+    corpus_id = str(identity.get("corpus") or corpus.get("id") or "").lower()
+    if not corpus_id and "--" in atomic_run_id:
+        corpus_id = atomic_run_id.split("--", 1)[0].lower()
+
     lexical_token_budget = int(
         corpus.get("lexical_tokens")
         or corpus.get("lexical_token_budget")
         or identity.get("budget", 0)
     )
 
-    corpus_dir = paths.inputs("f2", "corpus")
+    def _resolve_budgeted_corpus(source_file: Path, base_name: str) -> tuple[Path, str]:
+        if "holmes" in str(source_file) or lexical_token_budget <= 0:
+            digest = corpus.get("sha256") or sha256_file(source_file)
+            return source_file, str(digest)
+
+        budget_file = corpus_dir / f"{base_name}-tokens-{lexical_token_budget}.txt"
+        if progress_reporter is not None and not budget_file.is_file():
+            progress_reporter.write(
+                f"materializing {base_name} corpus sliced to {lexical_token_budget:,} tokens"
+            )
+        _, digest = slice_corpus_file(source_file, budget_file, lexical_token_budget)
+        return budget_file, digest
+
+    # 1. Configured explicit path
+    path_val = corpus.get("path")
+    if path_val:
+        p = Path(str(path_val))
+        if p.is_absolute():
+            corpus_path = p
+        elif (corpus_dir / p.name).is_file():
+            corpus_path = corpus_dir / p.name
+        else:
+            corpus_path = paths.repo_root / p
+
+        if "holmes" in str(corpus_path):
+            from f2.suites.w2v1.resources import ensure_holmes_corpus
+
+            if progress_reporter is not None:
+                progress_reporter.write(f"materializing Holmes corpus at {corpus_path}")
+            corpus_path = ensure_holmes_corpus(corpus_path)
+
+        if corpus_path.is_file():
+            resolved_path, digest = _resolve_budgeted_corpus(
+                corpus_path, corpus_path.stem
+            )
+            config["corpus"] = {
+                "path": str(resolved_path),
+                "sha256": digest,
+                "lexical_tokens": lexical_token_budget,
+            }
+            return
+        raise FileNotFoundError(f"configured corpus path does not exist: {corpus_path}")
+
+    # 2. Local candidate paths
     prepared_dir = paths.inputs("f2", "prepared")
     budget_suffix = (
-        f"-{lexical_token_budget}" if lexical_token_budget and corpus_id != "holmes" else ""
+        f"-tokens-{lexical_token_budget}"
+        if lexical_token_budget and corpus_id != "holmes"
+        else ""
     )
-    candidate_paths = [
+    candidate_paths: list[Path] = [
         corpus_dir / f"{corpus_id}{budget_suffix}.txt",
         corpus_dir / f"{corpus_id}.txt",
+        corpus_dir / corpus_id / "corpus.txt",
         prepared_dir / f"{corpus_id}{budget_suffix}.txt",
         prepared_dir / f"{corpus_id}.txt",
         paths.repo_root / f"workspace/inputs/f2/corpus/{corpus_id}{budget_suffix}.txt",
@@ -84,14 +128,15 @@ def resolve_and_prepare_corpus(
 
     for candidate in candidate_paths:
         if candidate.is_file():
+            resolved_path, digest = _resolve_budgeted_corpus(candidate, corpus_id)
             config["corpus"] = {
-                "path": str(candidate),
-                "sha256": corpus_digest(corpus, candidate),
+                "path": str(resolved_path),
+                "sha256": digest,
                 "lexical_tokens": lexical_token_budget,
             }
             return
 
-    # If local candidate not found, attempt materialized corpus DB & S3 fetching
+    # 3. If local candidate not found, attempt materialized corpus DB & S3 fetching
     from repro_io.s3 import S3ObjectStore
 
     from f2.corpus.db.repository import CorpusStateRepository

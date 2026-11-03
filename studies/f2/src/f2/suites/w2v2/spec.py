@@ -68,7 +68,7 @@ def parse_run_spec(
         PhrasePolicy.from_config(phrase)
     large = mapping(raw, "large_scale") if "large_scale" in raw else {}
     if large:
-        from .preflight import SENTENCE_POLICY
+        from .sentences import SENTENCE_POLICY
 
         paper_tokens = large.get("paper_lexical_tokens")
         actual_tokens = large.get("lexical_tokens")

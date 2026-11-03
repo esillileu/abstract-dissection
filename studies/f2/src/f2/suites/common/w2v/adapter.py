@@ -7,9 +7,6 @@ import shutil
 from pathlib import Path
 from typing import Any
 
-from repro_core.context import ExperimentContext, RuntimePaths
-from repro_core.storage.local_store import LocalStore
-
 from f2.common.paths import get_benchmark_data_dir
 from f2.execution.coordinator import (
     ExecutionDecisionKind,
@@ -35,6 +32,8 @@ from f2.suites.common.w2v.training import (
     create_session,
     mapping,
 )
+from repro_core.context import ExperimentContext, RuntimePaths
+from repro_core.storage.local_store import LocalStore
 
 
 def prepare_benchmarks(run_root: Path, paths: RuntimePaths) -> None:
@@ -190,9 +189,7 @@ def load_local_w2v_result(run_root: Path) -> Word2VecResult:
     report_path = run_root / "result.json"
     data = json.loads(report_path.read_text(encoding="utf-8"))
     artifacts = data.get("artifacts", {})
-    checkpoint = run_root / artifacts.get(
-        "checkpoint", "checkpoints/generations/final"
-    )
+    checkpoint = run_root / artifacts.get("checkpoint", "checkpoints/generations/final")
     lookup = run_root / artifacts.get("lookup", "lookup")
     metrics = run_root / artifacts.get("metrics", "metrics/observations.csv")
     return Word2VecResult(run_root, checkpoint, lookup, metrics, report_path)
@@ -235,14 +232,16 @@ def run_w2v_with_coordinator(
     )
 
     step_fn = training_step or (
-        lambda cfg, ctx, *, run_root, local_store, resume_from=None, progress_reporter=None: execute_w2v_training(
-            cfg,
-            ctx,
-            suite_name=suite_name,
-            run_root=run_root,
-            local_store=local_store,
-            resume_from=resume_from,
-            progress_reporter=progress_reporter,
+        lambda cfg, ctx, *, run_root, local_store, resume_from=None, progress_reporter=None: (
+            execute_w2v_training(
+                cfg,
+                ctx,
+                suite_name=suite_name,
+                run_root=run_root,
+                local_store=local_store,
+                resume_from=resume_from,
+                progress_reporter=progress_reporter,
+            )
         )
     )
 

@@ -6,12 +6,12 @@ import json
 from pathlib import Path
 from typing import Any
 
-from repro_core.context import RuntimePaths
-
 from f2.storage.analysis_cache import unavailable_report
 from f2.suites.common.w2v.analysis import write_table_summary
 from f2.suites.common.w2v.artifacts import load_lookup_artifact
 from f2.suites.common.w2v.evaluation import nearest_tokens
+from repro_core.context import RuntimePaths
+
 from .. import paper
 
 
@@ -26,17 +26,20 @@ def analyze_table4(
     paths = paths or RuntimePaths.from_environment()
 
     matching_runs = [
-        r for r in runs
-        if ("e02" in (r.get("artifact_root") or "") or "table3" in (r.get("artifact_root") or "")
-            or "section4" in (r.get("artifact_root") or "") or "e03" in (r.get("artifact_root") or "")
-            or "e04" in (r.get("artifact_root") or ""))
+        r
+        for r in runs
+        if (
+            "e02" in (r.get("artifact_root") or "")
+            or "table3" in (r.get("artifact_root") or "")
+            or "section4" in (r.get("artifact_root") or "")
+            or "e03" in (r.get("artifact_root") or "")
+            or "e04" in (r.get("artifact_root") or "")
+        )
     ]
     if not matching_runs:
         return unavailable_report(
             output_dir,
-            paper_reference=paper.SOURCE,
-            table="4",
-            reasons=["No phrase-trained models available for Table 4 queries."],
+            "No phrase-trained models available for Table 4 queries.",
         )
 
     lookup = None
@@ -56,9 +59,7 @@ def analyze_table4(
     if lookup is None:
         return unavailable_report(
             output_dir,
-            paper_reference=paper.SOURCE,
-            table="4",
-            reasons=["Could not load lookup artifact from any phrase run."],
+            "Could not load lookup artifact from any phrase run.",
         )
 
     headers = ["Query Word/Phrase", "Published Targets", "Top Nearest Neighbors"]
@@ -67,11 +68,13 @@ def analyze_table4(
     for query, published_targets in paper.TABLE4.items():
         neighbors = nearest_tokens(lookup, query.encode("utf-8"), limit=5)
         neighbor_tokens = [n.token.decode("utf-8", "replace") for n in neighbors]
-        rows.append([
-            query,
-            ", ".join(published_targets),
-            ", ".join(neighbor_tokens) if neighbor_tokens else "<OOV>",
-        ])
+        rows.append(
+            [
+                query,
+                ", ".join(published_targets),
+                ", ".join(neighbor_tokens) if neighbor_tokens else "<OOV>",
+            ]
+        )
         results_map[query] = {
             "targets": list(published_targets),
             "neighbors": neighbor_tokens,
@@ -111,7 +114,7 @@ def analyze_table4_sources(
         return []
     runs = json.loads(runs_file.read_text(encoding="utf-8"))
     c_source = corpus_source or "news-1b"
-    out = paths.analysis_results("f2", "w2v2", "table04", c_source)
+    out = paths.analysis_results_root / f"f2/w2v2/table04/{c_source}"
     return [analyze_table4(runs, output_dir=out, corpus_source=c_source, paths=paths)]
 
 
