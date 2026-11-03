@@ -37,48 +37,80 @@ class PublicationService:
         self.tracking_uri = tracking_uri
         self.client = MlflowClient(tracking_uri=tracking_uri)
 
+    def get_finished_runs_for_experiment(self, experiment_name: str) -> list[Run]:
+        """Fetch all FINISHED runs for an experiment with pagination."""
+        experiment = self.client.get_experiment_by_name(experiment_name)
+        if experiment is None:
+            return []
+
+        all_runs: list[Run] = []
+        page_token = None
+        while True:
+            page = self.client.search_runs(
+                [experiment.experiment_id],
+                filter_string="attributes.status = 'FINISHED'",
+                max_results=1000,
+                page_token=page_token,
+            )
+            all_runs.extend(page)
+            page_token = getattr(page, "token", None)
+            if not page_token:
+                break
+        return all_runs
+
+    def run_matches_condition(
+        self,
+        run: Run,
+        condition: ConditionIdentity,
+        *,
+        atomic_run_id: str | None = None,
+    ) -> bool:
+        """Check if a MLflow run strictly matches the condition identity."""
+        tags = run.data.tags
+        digest = tags.get("f2.config_digest") or tags.get("config_digest")
+        run_seed = tags.get("f2.seed") or tags.get("seed")
+
+        if not digest or digest != condition.config_digest:
+            return False
+        if not run_seed or run_seed != str(condition.seed):
+            return False
+
+        if condition.planned_run_slot_id:
+            slot = tags.get("f2.planned_run_slot_id") or tags.get("planned_run_slot_id")
+            if not slot or slot != condition.planned_run_slot_id:
+                return False
+
+        if atomic_run_id:
+            run_variant = (
+                tags.get("implementation.variant")
+                or tags.get("atomic_run_id")
+                or tags.get("f2.atomic_run_id")
+            )
+            if not run_variant or run_variant != atomic_run_id:
+                return False
+
+        return True
+
     def find_matching_finished_run(
         self,
         experiment_name: str,
         condition: ConditionIdentity,
         *,
         atomic_run_id: str | None = None,
+        cached_runs: list[Run] | None = None,
     ) -> Run | None:
-        """Find an existing FINISHED run matching the exact condition identity."""
-        experiment = self.client.get_experiment_by_name(experiment_name)
-        if experiment is None:
-            return None
+        """Find an existing FINISHED run matching the exact condition identity.
 
-        runs = self.client.search_runs(
-            [experiment.experiment_id],
-            filter_string="attributes.status = 'FINISHED'",
-            max_results=10000,
+        If cached_runs is provided, searches locally without making remote MLflow calls.
+        """
+        runs = (
+            cached_runs
+            if cached_runs is not None
+            else self.get_finished_runs_for_experiment(experiment_name)
         )
         for run in runs:
-            tags = run.data.tags
-            digest = tags.get("f2.config_digest") or tags.get("config_digest")
-            run_seed = tags.get("f2.seed") or tags.get("seed")
-
-            if digest != condition.config_digest or run_seed != str(condition.seed):
-                continue
-
-            if condition.planned_run_slot_id:
-                slot = tags.get("f2.planned_run_slot_id") or tags.get(
-                    "planned_run_slot_id"
-                )
-                if slot and slot != condition.planned_run_slot_id:
-                    continue
-
-            if atomic_run_id:
-                run_variant = (
-                    tags.get("implementation.variant")
-                    or tags.get("atomic_run_id")
-                    or tags.get("f2.atomic_run_id")
-                )
-                if run_variant and run_variant != atomic_run_id:
-                    continue
-
-            return run
+            if self.run_matches_condition(run, condition, atomic_run_id=atomic_run_id):
+                return run
         return None
 
     def publish_run(
@@ -107,6 +139,77 @@ class PublicationService:
                 isinstance(config.get("training"), dict)
                 and config["training"].get("model_kind") == "feedforward_nnlm"
             )
+
+        # Pre-publication validation (ref.md P0-2):
+        # Validate result.json, complete=True, identity match, and required outputs before creating MLflow run.
+        result_file = run_root / "result.json"
+        if not result_file.is_file():
+            raise ValueError(f"Cannot publish run: missing result.json in {run_root}")
+
+        try:
+            res_data = json.loads(result_file.read_text(encoding="utf-8"))
+        except Exception as exc:
+            raise ValueError(
+                f"Cannot publish run: corrupted result.json: {exc}"
+            ) from exc
+
+        if not res_data.get("complete"):
+            raise ValueError(
+                f"Cannot publish incomplete run: complete={res_data.get('complete')}"
+            )
+
+        res_identity = res_data.get("identity")
+        if isinstance(res_identity, dict):
+            res_digest = res_identity.get("config_digest")
+            if res_digest and res_digest != condition.config_digest:
+                raise ValueError(
+                    f"Cannot publish run: config_digest mismatch ({res_digest} != {condition.config_digest})"
+                )
+            res_seed = res_identity.get("seed")
+            if res_seed is not None and int(res_seed) != condition.seed:
+                raise ValueError(
+                    f"Cannot publish run: seed mismatch ({res_seed} != {condition.seed})"
+                )
+            res_slot = res_identity.get("planned_run_slot_id")
+            if (
+                res_slot
+                and condition.planned_run_slot_id
+                and res_slot != condition.planned_run_slot_id
+            ):
+                raise ValueError(
+                    f"Cannot publish run: slot_id mismatch ({res_slot} != {condition.planned_run_slot_id})"
+                )
+
+        artifacts = res_data.get("artifacts")
+        if not isinstance(artifacts, dict) or not artifacts:
+            raise ValueError(
+                "Cannot publish run: missing artifacts dictionary in result.json"
+            )
+
+        lookup_val = artifacts.get("lookup")
+        if not lookup_val:
+            raise ValueError("Cannot publish run: missing lookup in artifacts")
+        final_lookup_path = run_root / lookup_val
+        if not final_lookup_path.exists():
+            raise ValueError(
+                f"Cannot publish run: designated lookup does not exist: {final_lookup_path}"
+            )
+
+        checkpoint_val = artifacts.get("checkpoint")
+        if checkpoint_val:
+            chk_path = run_root / checkpoint_val
+            if not chk_path.exists():
+                raise ValueError(
+                    f"Cannot publish run: designated checkpoint does not exist: {chk_path}"
+                )
+
+        metrics_val = artifacts.get("metrics")
+        if metrics_val:
+            met_path = run_root / metrics_val
+            if not met_path.exists():
+                raise ValueError(
+                    f"Cannot publish run: designated metrics file does not exist: {met_path}"
+                )
 
         suite = condition.suite_id
         identity = (
@@ -184,36 +287,27 @@ class PublicationService:
         )
         run_id = mlflow_run.info.run_id
 
-        # Log params using actual configuration keys and query aliases
-        for p_key, p_val in {
-            "model_kind": model_kind,
-            "corpus_id": corpus_id,
-            "objective_kind": objective_kind,
-            "embedding_dimension": dimension,
-            "window_radius": window_radius,
-            "subsampling_threshold": subsampling,
-            "negative_sample_count": negative_sample_count,
-            "dim": dimension,
-            "window_size": window_radius,
-            "negative_samples": negative_sample_count,
-            "epochs": epochs,
-            "seed": str(condition.seed),
-        }.items():
-            if p_val:
-                self.client.log_param(run_id, p_key, p_val)
-
         try:
-            # 1. Identify designated final model path from result.json (if present)
-            result_file = run_root / "result.json"
-            final_lookup_rel: Path | None = None
-            if result_file.is_file():
-                try:
-                    res_data = json.loads(result_file.read_text(encoding="utf-8"))
-                    lookup_val = res_data.get("artifacts", {}).get("lookup")
-                    if lookup_val:
-                        final_lookup_rel = Path(lookup_val)
-                except Exception:
-                    pass
+            # Log params using actual configuration keys and query aliases
+            for p_key, p_val in {
+                "model_kind": model_kind,
+                "corpus_id": corpus_id,
+                "objective_kind": objective_kind,
+                "embedding_dimension": dimension,
+                "window_radius": window_radius,
+                "subsampling_threshold": subsampling,
+                "negative_sample_count": negative_sample_count,
+                "dim": dimension,
+                "window_size": window_radius,
+                "negative_samples": negative_sample_count,
+                "epochs": epochs,
+                "seed": str(condition.seed),
+            }.items():
+                if p_val:
+                    self.client.log_param(run_id, p_key, p_val)
+
+            # 1. Identify designated final model path from result.json
+            final_lookup_rel: Path | None = Path(lookup_val)
 
             def should_upload(file_path: Path) -> bool:
                 rel = file_path.relative_to(run_root)

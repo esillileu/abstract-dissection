@@ -905,9 +905,23 @@ def generate_report(
             states = [a["status"] for a in aggregates if a["table"] == number]
         table_status[number] = _status(states)
     complete = all(status == "complete" for status in table_status.values())
+    analysis_signature = {
+        "run_ids": sorted({r.get("run_id") for r in records if r.get("run_id")}),
+        "table_filter": target_table,
+        "corpus_filter": target_corpus,
+        "eval_datasets": {
+            k: {
+                "status": v[0].get("status"),
+                "sha256": v[0].get("sha256"),
+                "count": v[0].get("count"),
+            }
+            for k, v in datasets.items()
+        },
+    }
     payload = {
         "result_source": result_source,
         "source": paper.SOURCE,
+        "analysis_signature": analysis_signature,
         "status": "complete" if complete else "incomplete",
         "report_generated": True,
         "experiment_complete": complete,

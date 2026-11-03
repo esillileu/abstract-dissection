@@ -73,6 +73,7 @@ class Word2VecExecutor:
         tracking_uri: str,
         override: bool = False,
         progress_reporter: Any | None = None,
+        decision: Any | None = None,
     ) -> W2VRunReceipt:
         condition = ConditionIdentity.from_config(config, suite_id=self.suite_name)
         experiment_name = str(
@@ -110,6 +111,7 @@ class Word2VecExecutor:
             override=override,
             progress_reporter=progress_reporter,
             load_result_delegate=self._load_local_result,
+            decision=decision,
         )
         return W2VRunReceipt(
             result=receipt.result,

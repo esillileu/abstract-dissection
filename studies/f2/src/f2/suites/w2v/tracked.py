@@ -41,46 +41,40 @@ def run_tracked_yaml(
         or bool(overrides.get("override", False) if overrides else False)
     )
 
-    # Skip early before expensive corpus materialization or large hash calculation
-    if not is_override:
-        from f2.execution.coordinator import (
-            ExecutionDecisionKind,
-            F2ExecutionCoordinator,
-        )
-        from f2.execution.identity import ConditionIdentity
+    # Single lifecycle evaluation (ref.md P1-4):
+    # Determine lifecycle action before expensive corpus materialization.
+    from f2.execution.coordinator import (
+        ExecutionDecisionKind,
+        F2ExecutionCoordinator,
+    )
+    from f2.execution.identity import ConditionIdentity
 
-        coordinator = F2ExecutionCoordinator(tracking_uri=tracking_uri, paths=paths)
-        suite_hint = (
-            "w2v2" if executor_module and "w2v2" in str(executor_module) else "w2v1"
-        )
-        condition = ConditionIdentity.from_config(config, suite_id=suite_hint)
-        experiment_name = str(
-            _mapping(config, "tracking").get("experiment", f"f2.{condition.suite_id}")
-        )
-        decision = coordinator.decide(
-            condition,
-            experiment_name=experiment_name,
-            override=False,
-            atomic_run_id=str(config.get("atomic_run_id", "")) or None,
-        )
-        if decision.kind == ExecutionDecisionKind.SKIP and decision.existing_run_id:
-            if progress_reporter is not None:
-                progress_reporter.write(
-                    f"Skipping {condition.suite_id}: finished run {decision.existing_run_id} exists"
-                )
-            return W2VRunReceipt(
-                result=None,
-                run_id=decision.existing_run_id,
-                staging_root=decision.run_dir,
-                skipped=True,
+    coordinator = F2ExecutionCoordinator(tracking_uri=tracking_uri, paths=paths)
+    condition = ConditionIdentity.from_config(config)
+    experiment_name = str(
+        _mapping(config, "tracking").get("experiment", f"f2.{condition.suite_id}")
+    )
+    decision = coordinator.decide(
+        condition,
+        experiment_name=experiment_name,
+        override=is_override,
+        atomic_run_id=str(config.get("atomic_run_id", "")) or None,
+    )
+
+    # 1. SKIP on finished run (no corpus materialization needed)
+    if decision.kind == ExecutionDecisionKind.SKIP and not is_override:
+        if progress_reporter is not None:
+            progress_reporter.write(
+                f"Skipping {condition.suite_id}: finished run {decision.existing_run_id} exists"
             )
+        return W2VRunReceipt(
+            result=None,
+            run_id=decision.existing_run_id,
+            staging_root=decision.run_dir,
+            skipped=True,
+        )
 
-    if progress_reporter is not None:
-        progress_reporter.write("materializing verified corpus binding")
-    _materialize_corpus(config, paths, progress_reporter=progress_reporter)
-    if progress_reporter is not None:
-        progress_reporter.write("verified corpus binding is ready")
-
+    # Resolve executor class
     exec_mod = importlib.import_module(executor_module)
     kind = str(config.get("kind", "word2vec"))
     resolver = getattr(exec_mod, "get_executor", None)
@@ -90,11 +84,38 @@ def run_tracked_yaml(
         executors = getattr(exec_mod, "EXECUTORS", {})
         executor = executors[kind]
 
+    # 2. PUBLISH unposted local complete result (no corpus materialization needed)
+    if decision.kind == ExecutionDecisionKind.PUBLISH and not is_override:
+        if progress_reporter is not None:
+            progress_reporter.write(
+                f"Publishing existing local result for slot={condition.planned_run_slot_id}"
+            )
+        run_id = coordinator.publication.publish_run(
+            experiment_name,
+            condition,
+            decision.run_dir,
+            config,
+        )
+        res = getattr(executor, "_load_local_result", None)
+        result = res(decision.run_dir) if callable(res) else None
+        return W2VRunReceipt(
+            result=result,
+            run_id=run_id,
+            staging_root=decision.run_dir,
+            skipped=False,
+        )
+
+    # 3. Only RUN and RESUME require corpus materialization
+    if progress_reporter is not None:
+        progress_reporter.write("materializing verified corpus binding")
+    _materialize_corpus(config, paths, progress_reporter=progress_reporter)
+    if progress_reporter is not None:
+        progress_reporter.write("verified corpus binding is ready")
+
     context = ExperimentContext(
         paths=paths,
         metadata={
             "progress_reporter": progress_reporter,
-            "skip_checked": True,
         },
     )
 
@@ -104,6 +125,7 @@ def run_tracked_yaml(
         tracking_uri=tracking_uri,
         override=is_override,
         progress_reporter=progress_reporter,
+        decision=decision,
     )
 
 

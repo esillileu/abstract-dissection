@@ -440,6 +440,7 @@ def check(
     from f2.storage.publication import PublicationService
 
     publication = PublicationService(tracking_uri=uri)
+    all_finished_runs = publication.get_finished_runs_for_experiment(experiment_name)
     completed_count = 0
     missing_count = 0
     for plan in plans:
@@ -453,6 +454,7 @@ def check(
             experiment_name,
             condition,
             atomic_run_id=plan.atomic_run_id,
+            cached_runs=all_finished_runs,
         )
         if finished_run is not None:
             completed_count += 1
@@ -538,15 +540,42 @@ def run_w2v2_analysis(
         )
         check_output = check_output / table_dir
 
-    # 1. Reuse existing result if already present and override not requested
-    if (
-        not override
-        and (check_output / "summary.json").is_file()
-        and (check_output / "summary.md").is_file()
-    ):
+    summary_file = check_output / "summary.json"
+    summary_md = check_output / "summary.md"
+
+    # 1. Fast path: If result exists and override is not set, reuse directly (ref.md section 0 / P1-5)
+    # When offline or when cached runs are available, signature can be verified.
+    if not override and summary_file.is_file() and summary_md.is_file():
+        # Verify if local cache records exist to check signature
+        cache_dir = paths.analysis_cache("f2", "w2v2")
+        from .suites.w2v.cache import read_records
+
+        cached_records = read_records(cache_dir)
+        if cached_records:
+            try:
+                cached_payload = json.loads(summary_file.read_text(encoding="utf-8"))
+                sig = cached_payload.get("analysis_signature")
+                if isinstance(sig, dict):
+                    current_run_ids = sorted(
+                        {r.get("run_id") for r in cached_records if r.get("run_id")}
+                    )
+                    saved_run_ids = sig.get("run_ids")
+                    if (
+                        saved_run_ids == current_run_ids
+                        and sig.get("table_filter") == target_table
+                        and sig.get("corpus_filter") == target_corpus
+                    ):
+                        return check_output
+                    else:
+                        raise ValueError(
+                            f"Existing analysis in {check_output} corresponds to different runs/inputs. "
+                            f"Use --override to overwrite previous analysis deliverables."
+                        )
+            except json.JSONDecodeError:
+                pass
         return check_output
 
-    # 2. Otherwise query MLflow (or local cache if offline) and generate report
+    # 2. Query MLflow (or local cache if offline)
     from .suites.w2v.cache import download_results, read_records
     from .suites.w2v2.analysis import generate_report
     from .tracking import resolve_tracking_uri
@@ -562,7 +591,29 @@ def run_w2v2_analysis(
         )
         result_source = f"MLflow f2.w2v2 ({resolved_uri})"
 
-    # 3. Connect evaluation question paths (explicit > local benchmarks > run cache)
+    # 3. Check existing report validity against newly queried runs if not already returned
+    current_run_ids = sorted({r.get("run_id") for r in records if r.get("run_id")})
+    if not override and summary_file.is_file() and summary_md.is_file():
+        try:
+            cached_payload = json.loads(summary_file.read_text(encoding="utf-8"))
+            sig = cached_payload.get("analysis_signature")
+            if isinstance(sig, dict):
+                saved_run_ids = sig.get("run_ids")
+                if (
+                    saved_run_ids == current_run_ids
+                    and sig.get("table_filter") == target_table
+                    and sig.get("corpus_filter") == target_corpus
+                ):
+                    return check_output
+                else:
+                    raise ValueError(
+                        f"Existing analysis in {check_output} corresponds to different runs/inputs. "
+                        f"Use --override to overwrite previous analysis deliverables."
+                    )
+        except json.JSONDecodeError:
+            pass
+
+    # 4. Connect evaluation question paths (explicit > local benchmarks > run cache)
     w_questions = word_questions
     p_questions = phrase_questions
     benchmarks = paths.inputs("f2", "benchmarks")

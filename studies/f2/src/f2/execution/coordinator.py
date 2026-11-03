@@ -76,12 +76,6 @@ class F2ExecutionCoordinator:
         atomic_run_id: str | None = None,
     ) -> ExecutionDecision:
         """Determine lifecycle action according to ref.md 4.4."""
-        run_dir = self.run_store.get_run_root(
-            condition.suite_id,
-            condition.planned_run_slot_id,
-            override=override,
-        )
-
         # 1. Skip on existing FINISHED run (unless overridden)
         if not override:
             finished = self.publication.find_matching_finished_run(
@@ -90,32 +84,51 @@ class F2ExecutionCoordinator:
                 atomic_run_id=atomic_run_id,
             )
             if finished is not None:
+                run_dir = self.run_store.get_run_root(
+                    condition.suite_id,
+                    condition.planned_run_slot_id,
+                    override=False,
+                )
                 return ExecutionDecision(
                     kind=ExecutionDecisionKind.SKIP,
                     run_dir=run_dir,
                     existing_run_id=finished.info.run_id,
                 )
 
-        # 2. Inspect local attempt state
-        local_status = self.run_store.inspect_run(run_dir)
-
-        # 3. Publish unposted local complete result (if not override)
-        if local_status.is_complete and not override:
-            return ExecutionDecision(
-                kind=ExecutionDecisionKind.PUBLISH,
-                run_dir=run_dir,
+        # 2. Inspect existing attempts for this slot if not override
+        if not override:
+            attempts = self.run_store.discover_attempts(
+                condition.suite_id,
+                condition.planned_run_slot_id,
             )
+            # Inspect attempts in reverse order (latest attempt first)
+            for attempt_dir in reversed(attempts):
+                status = self.run_store.inspect_run(attempt_dir)
+                if not self.run_store.matches_condition(status, condition):
+                    continue
 
-        # 4. Resume from checkpoint if valid and not override
-        if local_status.is_checkpoint and not override:
-            return ExecutionDecision(
-                kind=ExecutionDecisionKind.RESUME,
-                run_dir=run_dir,
-                resume_checkpoint=local_status.checkpoint_path,
-                resume_epoch=local_status.epoch,
-            )
+                # Publish unposted local complete result matching exact condition
+                if status.is_complete:
+                    return ExecutionDecision(
+                        kind=ExecutionDecisionKind.PUBLISH,
+                        run_dir=attempt_dir,
+                    )
 
-        # 5. Fresh run attempt
+                # Resume from checkpoint if valid and matches condition
+                if status.is_checkpoint:
+                    return ExecutionDecision(
+                        kind=ExecutionDecisionKind.RESUME,
+                        run_dir=attempt_dir,
+                        resume_checkpoint=status.checkpoint_path,
+                        resume_epoch=status.epoch,
+                    )
+
+        # 3. Fresh run attempt (or override)
+        run_dir = self.run_store.get_run_root(
+            condition.suite_id,
+            condition.planned_run_slot_id,
+            override=override,
+        )
         return ExecutionDecision(
             kind=ExecutionDecisionKind.RUN,
             run_dir=run_dir,
@@ -132,15 +145,17 @@ class F2ExecutionCoordinator:
         override: bool = False,
         progress_reporter: Any | None = None,
         load_result_delegate: Callable[[Path], Any] | None = None,
+        decision: ExecutionDecision | None = None,
     ) -> ExecutionReceipt:
         """Own the full execution lifecycle: skip -> publish -> resume -> run -> publish."""
-        atomic_run_id = str(config.get("atomic_run_id", "")) or None
-        decision = self.decide(
-            condition,
-            experiment_name=experiment_name,
-            override=override,
-            atomic_run_id=atomic_run_id,
-        )
+        if decision is None:
+            atomic_run_id = str(config.get("atomic_run_id", "")) or None
+            decision = self.decide(
+                condition,
+                experiment_name=experiment_name,
+                override=override,
+                atomic_run_id=atomic_run_id,
+            )
 
         root_override = context.metadata.get("run_root")
         run_root = Path(root_override) if root_override else decision.run_dir
