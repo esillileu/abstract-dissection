@@ -543,10 +543,50 @@ def run_w2v2_analysis(
     summary_file = check_output / "summary.json"
     summary_md = check_output / "summary.md"
 
-    # 1. Fast path: If result exists and override is not set, reuse directly (ref.md section 0 / P1-5)
-    # When offline or when cached runs are available, signature can be verified.
+    # 1. Resolve evaluation question paths early so their digest can be checked
+    benchmarks = paths.inputs("f2", "benchmarks")
+    w_questions = word_questions
+    if w_questions is None and (benchmarks / "questions-words.txt").is_file():
+        w_questions = benchmarks / "questions-words.txt"
+    p_questions = phrase_questions
+    if p_questions is None and (benchmarks / "questions-phrases.txt").is_file():
+        p_questions = benchmarks / "questions-phrases.txt"
+
+    from repro_io.checksum import sha256_file
+
+    def _eval_digest(path: Path | None) -> str | None:
+        if path is not None and Path(path).is_file():
+            try:
+                return sha256_file(Path(path))
+            except Exception:
+                return None
+        return None
+
+    expected_word_sha = _eval_digest(w_questions)
+    expected_phrase_sha = _eval_digest(p_questions)
+
+    def _verify_sig(sig: dict, current_run_ids: list[str]) -> bool:
+        if not isinstance(sig, dict):
+            return False
+        if sig.get("run_ids") != current_run_ids:
+            return False
+        if sig.get("table_filter") != target_table:
+            return False
+        if sig.get("corpus_filter") != target_corpus:
+            return False
+        eval_ds = sig.get("eval_datasets", {})
+        if expected_word_sha is not None:
+            saved_w_sha = eval_ds.get("word", {}).get("sha256")
+            if saved_w_sha and saved_w_sha != expected_word_sha:
+                return False
+        if expected_phrase_sha is not None:
+            saved_p_sha = eval_ds.get("phrase", {}).get("sha256")
+            if saved_p_sha and saved_p_sha != expected_phrase_sha:
+                return False
+        return True
+
+    # Fast path when offline or when local cache exists:
     if not override and summary_file.is_file() and summary_md.is_file():
-        # Verify if local cache records exist to check signature
         cache_dir = paths.analysis_cache("f2", "w2v2")
         from .suites.w2v.cache import read_records
 
@@ -559,12 +599,7 @@ def run_w2v2_analysis(
                     current_run_ids = sorted(
                         {r.get("run_id") for r in cached_records if r.get("run_id")}
                     )
-                    saved_run_ids = sig.get("run_ids")
-                    if (
-                        saved_run_ids == current_run_ids
-                        and sig.get("table_filter") == target_table
-                        and sig.get("corpus_filter") == target_corpus
-                    ):
+                    if _verify_sig(sig, current_run_ids):
                         return check_output
                     else:
                         raise ValueError(
@@ -591,19 +626,14 @@ def run_w2v2_analysis(
         )
         result_source = f"MLflow f2.w2v2 ({resolved_uri})"
 
-    # 3. Check existing report validity against newly queried runs if not already returned
+    # 3. Check existing report validity against newly queried runs
     current_run_ids = sorted({r.get("run_id") for r in records if r.get("run_id")})
     if not override and summary_file.is_file() and summary_md.is_file():
         try:
             cached_payload = json.loads(summary_file.read_text(encoding="utf-8"))
             sig = cached_payload.get("analysis_signature")
             if isinstance(sig, dict):
-                saved_run_ids = sig.get("run_ids")
-                if (
-                    saved_run_ids == current_run_ids
-                    and sig.get("table_filter") == target_table
-                    and sig.get("corpus_filter") == target_corpus
-                ):
+                if _verify_sig(sig, current_run_ids):
                     return check_output
                 else:
                     raise ValueError(
@@ -614,10 +644,6 @@ def run_w2v2_analysis(
             pass
 
     # 4. Connect evaluation question paths (explicit > local benchmarks > run cache)
-    w_questions = word_questions
-    p_questions = phrase_questions
-    benchmarks = paths.inputs("f2", "benchmarks")
-
     if w_questions is None:
         if (benchmarks / "questions-words.txt").is_file():
             w_questions = benchmarks / "questions-words.txt"

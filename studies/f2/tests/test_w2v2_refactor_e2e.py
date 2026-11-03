@@ -421,6 +421,8 @@ def test_g_analysis_result_reuse_and_override(
     test_env, monkeypatch: pytest.MonkeyPatch
 ):
     """Result reuse skips MLflow query & computation; override recalculates and overwrites."""
+    from repro_io.checksum import sha256_file
+
     import f2.suites.w2v2.analysis as analysis_mod
     from f2.cli import run_w2v2_analysis
     from f2.suites.common.w2v.evaluation import AnalogyQuestion
@@ -437,11 +439,17 @@ def test_g_analysis_result_reuse_and_override(
         ),
         AnalogyQuestion("family", b"man", b"woman", b"king", b"queen"),
     )
+    word_sha = sha256_file(test_env["word_questions"])
+    phrase_sha = sha256_file(test_env["phrase_questions"])
     monkeypatch.setattr(
         analysis_mod,
         "_dataset",
-        lambda *args: (
-            {"status": "complete", "questions_sha256": "dummy_sha256"},
+        lambda p, phrase: (
+            {
+                "status": "complete",
+                "questions_sha256": phrase_sha if phrase else word_sha,
+                "total_questions": len(questions),
+            },
             questions,
         ),
     )
@@ -493,11 +501,17 @@ def test_g_analysis_result_reuse_and_override(
     # 3. When override=True:
     # Restores MLflow query and recomputes, overwriting the exact same file (no history subdirs)
     monkeypatch.undo()
+    word_sha = sha256_file(test_env["word_questions"])
+    phrase_sha = sha256_file(test_env["phrase_questions"])
     monkeypatch.setattr(
         analysis_mod,
         "_dataset",
-        lambda *args: (
-            {"status": "complete", "questions_sha256": "dummy_sha256"},
+        lambda p, phrase: (
+            {
+                "status": "complete",
+                "questions_sha256": phrase_sha if phrase else word_sha,
+                "total_questions": len(questions),
+            },
             questions,
         ),
     )
@@ -512,6 +526,20 @@ def test_g_analysis_result_reuse_and_override(
     assert out3 == out1
     summary3_text = (out3 / "summary.json").read_text()
     assert summary3_text == summary1_text
+
+    # 4. When evaluation data changes without --override, must raise ValueError requiring override
+    different_questions_file = (
+        paths.inputs("f2", "benchmarks") / "questions_different.txt"
+    )
+    different_questions_file.write_bytes(b": diff\na b c d\n")
+    with pytest.raises(ValueError, match="corresponds to different runs/inputs"):
+        run_w2v2_analysis(
+            paths=paths,
+            tracking_uri=test_env["tracking_uri"],
+            word_questions=different_questions_file,
+            phrase_questions=test_env["phrase_questions"],
+            override=False,
+        )
 
 
 def test_g2_distinct_training_conditions_not_mixed(test_env):

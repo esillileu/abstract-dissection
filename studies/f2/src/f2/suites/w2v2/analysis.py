@@ -912,8 +912,8 @@ def generate_report(
         "eval_datasets": {
             k: {
                 "status": v[0].get("status"),
-                "sha256": v[0].get("sha256"),
-                "count": v[0].get("count"),
+                "sha256": v[0].get("sha256") or v[0].get("questions_sha256"),
+                "count": v[0].get("count") or v[0].get("total_questions"),
             }
             for k, v in datasets.items()
         },

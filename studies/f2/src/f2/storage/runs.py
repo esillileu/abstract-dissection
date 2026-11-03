@@ -12,11 +12,13 @@ import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from f2.execution.identity import ConditionIdentity
 from repro_core.context.paths import RuntimePaths
 from repro_core.execution.locator import PathRunLocator, RunLocation
+
+if TYPE_CHECKING:
+    from f2.execution.identity import ConditionIdentity
 
 
 @dataclass(frozen=True)
@@ -61,11 +63,23 @@ class LocalRunStore:
                 # fallback for named attempt folders
                 subdirs.append((9999, p))
 
+        # Check if base_dir itself has run files directly (e.g. initial run before override created subdirs)
+        base_has_direct_run_files = (base_dir / "result.json").is_file() or (
+            base_dir / "checkpoints"
+        ).is_dir()
+
+        attempts: list[Path] = []
+        if base_has_direct_run_files:
+            attempts.append(base_dir)
+
         if subdirs:
             subdirs.sort(key=lambda item: (item[0], item[1].name))
-            return [p for _, p in subdirs]
+            attempts.extend([p for _, p in subdirs])
 
-        # If base_dir itself has run files directly (legacy/initial layout), treat base_dir as attempt
+        if attempts:
+            return attempts
+
+        # If base_dir has any files at all, return base_dir
         if any(base_dir.iterdir()):
             return [base_dir]
         return []
@@ -97,6 +111,26 @@ class LocalRunStore:
 
         return base_dir
 
+    def get_isolated_run_root(
+        self,
+        suite_id: str,
+        slot_id: str,
+    ) -> Path:
+        """Resolve a new, isolated attempt directory when an existing directory belongs to a conflicting condition.
+
+        Prevents overwriting or reusing existing runs when config_digest/identity differs.
+        """
+        base_dir = self._paths.runs("f2", suite_id, slot_id)
+        if not base_dir.exists() or not any(base_dir.iterdir()):
+            return base_dir
+
+        idx = 1
+        while (base_dir / f"run_{idx:02d}").exists() and any(
+            (base_dir / f"run_{idx:02d}").iterdir()
+        ):
+            idx += 1
+        return base_dir / f"run_{idx:02d}"
+
     def inspect_run(self, run_dir: Path) -> LocalRunStatus:
         """Inspect the current state of a local run directory."""
         if not run_dir.exists():
@@ -122,34 +156,54 @@ class LocalRunStore:
         result_file = run_dir / "result.json"
         config_file = run_dir / "config.json"
 
-        config_digest: str | None = None
-        seed: int | None = None
-        slot_id: str | None = None
-
-        # Try to read identity from result.json or config.json
-        data_src = None
+        res_data = None
         if result_file.is_file():
             try:
-                data_src = json.loads(result_file.read_text(encoding="utf-8"))
-            except Exception:
-                pass
-        if data_src is None and config_file.is_file():
-            try:
-                data_src = json.loads(config_file.read_text(encoding="utf-8"))
+                res_data = json.loads(result_file.read_text(encoding="utf-8"))
             except Exception:
                 pass
 
-        if isinstance(data_src, dict):
-            ident = data_src.get("identity")
-            if isinstance(ident, dict):
-                config_digest = ident.get("config_digest")
-                seed_val = ident.get("seed")
-                if seed_val is not None:
-                    try:
-                        seed = int(seed_val)
-                    except ValueError:
-                        pass
-                slot_id = ident.get("planned_run_slot_id")
+        cfg_data = None
+        if config_file.is_file():
+            try:
+                cfg_data = json.loads(config_file.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+
+        # Check for conflicts between result.json and config.json if both exist
+        ident_res = res_data.get("identity") if isinstance(res_data, dict) else None
+        ident_cfg = cfg_data.get("identity") if isinstance(cfg_data, dict) else None
+
+        if isinstance(ident_res, dict) and isinstance(ident_cfg, dict):
+            # If both exist and conflict on essential keys, mark as invalid/unmatched
+            for key in ("config_digest", "seed", "planned_run_slot_id"):
+                v_res = ident_res.get(key)
+                v_cfg = ident_cfg.get(key)
+                if v_res is not None and v_cfg is not None and str(v_res) != str(v_cfg):
+                    return LocalRunStatus(
+                        run_dir=run_dir,
+                        location=loc,
+                        is_complete=False,
+                        is_checkpoint=False,
+                        checkpoint_path=None,
+                        epoch=None,
+                        metrics_path=None,
+                        result_path=None,
+                        config_digest=None,
+                        seed=None,
+                        slot_id=None,
+                    )
+
+        target_ident = ident_res or ident_cfg or {}
+        config_digest = target_ident.get("config_digest")
+        seed = None
+        seed_val = target_ident.get("seed")
+        if seed_val is not None:
+            try:
+                seed = int(seed_val)
+            except ValueError:
+                pass
+        slot_id = target_ident.get("planned_run_slot_id")
 
         return LocalRunStatus(
             run_dir=run_dir,
@@ -170,28 +224,20 @@ class LocalRunStore:
         status: LocalRunStatus,
         condition: ConditionIdentity,
     ) -> bool:
-        """Check if local status matches the given condition identity."""
+        """Check if local status strictly matches the given condition identity."""
         if not status.run_dir.exists():
             return False
-        # If config_digest or seed is present in local status, they must match condition
-        if (
-            status.config_digest is not None
-            and status.config_digest != condition.config_digest
+
+        # Strict identity requirement: essential fields MUST be present and match
+        if not status.config_digest or status.config_digest != condition.config_digest:
+            return False
+        if status.seed is None or status.seed != condition.seed:
+            return False
+        if condition.planned_run_slot_id and (
+            not status.slot_id or status.slot_id != condition.planned_run_slot_id
         ):
             return False
-        if status.seed is not None and status.seed != condition.seed:
-            return False
-        if (
-            status.slot_id is not None
-            and condition.planned_run_slot_id
-            and status.slot_id != condition.planned_run_slot_id
-        ):
-            return False
-        # If neither result nor config has identity information recorded, verify if config.json exists
-        config_file = status.run_dir / "config.json"
-        result_file = status.run_dir / "result.json"
-        if not config_file.is_file() and not result_file.is_file():
-            return False
+
         return True
 
     def load_result_summary(self, run_dir: Path) -> dict[str, Any] | None:

@@ -124,11 +124,18 @@ class F2ExecutionCoordinator:
                     )
 
         # 3. Fresh run attempt (or override)
-        run_dir = self.run_store.get_run_root(
-            condition.suite_id,
-            condition.planned_run_slot_id,
-            override=override,
-        )
+        if override:
+            run_dir = self.run_store.get_run_root(
+                condition.suite_id,
+                condition.planned_run_slot_id,
+                override=True,
+            )
+        else:
+            # Check if default base directory is already occupied by a different condition or incomplete run
+            run_dir = self.run_store.get_isolated_run_root(
+                condition.suite_id,
+                condition.planned_run_slot_id,
+            )
         return ExecutionDecision(
             kind=ExecutionDecisionKind.RUN,
             run_dir=run_dir,
@@ -161,6 +168,11 @@ class F2ExecutionCoordinator:
         run_root = Path(root_override) if root_override else decision.run_dir
         local_store = LocalStore(run_root)
         local_store.ensure_directories()
+
+        # Persist canonical config.json BEFORE training begins (ref.md P0-2 & instructions)
+        # This guarantees that if training is interrupted, the directory has its condition identity preserved
+        if decision.kind in (ExecutionDecisionKind.RUN, ExecutionDecisionKind.RESUME):
+            local_store.write_config(config)
 
         # 1. Skip check: MLflow FINISHED run
         if decision.kind == ExecutionDecisionKind.SKIP and not override:

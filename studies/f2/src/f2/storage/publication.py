@@ -15,12 +15,13 @@ import json
 import re
 import time
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from mlflow import MlflowClient
 from mlflow.entities import Metric, Run
 
-from f2.execution.identity import ConditionIdentity
+if TYPE_CHECKING:
+    from f2.execution.identity import ConditionIdentity
 
 
 def _extract_plan_revision(execution_plan_id: str) -> int:
@@ -140,8 +141,8 @@ class PublicationService:
                 and config["training"].get("model_kind") == "feedforward_nnlm"
             )
 
-        # Pre-publication validation (ref.md P0-2):
-        # Validate result.json, complete=True, identity match, and required outputs before creating MLflow run.
+        # Pre-publication validation (ref.md P0-2 & instructions):
+        # Validate result.json, complete=True, strict identity match, artifact paths, and contents before creating MLflow run.
         result_file = run_root / "result.json"
         if not result_file.is_file():
             raise ValueError(f"Cannot publish run: missing result.json in {run_root}")
@@ -159,26 +160,26 @@ class PublicationService:
             )
 
         res_identity = res_data.get("identity")
-        if isinstance(res_identity, dict):
-            res_digest = res_identity.get("config_digest")
-            if res_digest and res_digest != condition.config_digest:
-                raise ValueError(
-                    f"Cannot publish run: config_digest mismatch ({res_digest} != {condition.config_digest})"
-                )
-            res_seed = res_identity.get("seed")
-            if res_seed is not None and int(res_seed) != condition.seed:
-                raise ValueError(
-                    f"Cannot publish run: seed mismatch ({res_seed} != {condition.seed})"
-                )
-            res_slot = res_identity.get("planned_run_slot_id")
-            if (
-                res_slot
-                and condition.planned_run_slot_id
-                and res_slot != condition.planned_run_slot_id
-            ):
-                raise ValueError(
-                    f"Cannot publish run: slot_id mismatch ({res_slot} != {condition.planned_run_slot_id})"
-                )
+        if not isinstance(res_identity, dict):
+            raise ValueError("Cannot publish run: missing identity in result.json")
+
+        res_digest = res_identity.get("config_digest")
+        if not res_digest or res_digest != condition.config_digest:
+            raise ValueError(
+                f"Cannot publish run: config_digest mismatch ({res_digest} != {condition.config_digest})"
+            )
+        res_seed = res_identity.get("seed")
+        if res_seed is None or int(res_seed) != condition.seed:
+            raise ValueError(
+                f"Cannot publish run: seed mismatch ({res_seed} != {condition.seed})"
+            )
+        res_slot = res_identity.get("planned_run_slot_id")
+        if not res_slot or (
+            condition.planned_run_slot_id and res_slot != condition.planned_run_slot_id
+        ):
+            raise ValueError(
+                f"Cannot publish run: slot_id mismatch ({res_slot} != {condition.planned_run_slot_id})"
+            )
 
         artifacts = res_data.get("artifacts")
         if not isinstance(artifacts, dict) or not artifacts:
@@ -187,29 +188,63 @@ class PublicationService:
             )
 
         lookup_val = artifacts.get("lookup")
-        if not lookup_val:
+        if not lookup_val or not isinstance(lookup_val, str):
             raise ValueError("Cannot publish run: missing lookup in artifacts")
-        final_lookup_path = run_root / lookup_val
+        final_lookup_path = (run_root / lookup_val).resolve()
+        if not final_lookup_path.is_relative_to(run_root.resolve()):
+            raise ValueError(
+                f"Cannot publish run: lookup path escapes run directory: {lookup_val}"
+            )
         if not final_lookup_path.exists():
             raise ValueError(
                 f"Cannot publish run: designated lookup does not exist: {final_lookup_path}"
             )
 
+        # Validate lookup manifest and arrays
+        if final_lookup_path.is_dir():
+            from f2.suites.common.w2v.artifacts import (
+                CHECKPOINT_FORMAT,
+                LOOKUP_FORMAT,
+                verify_artifact,
+            )
+
+            fmt = None
+            lookup_manifest = final_lookup_path / "manifest.json"
+            if lookup_manifest.is_file():
+                try:
+                    fmt = json.loads(lookup_manifest.read_text(encoding="utf-8")).get(
+                        "format"
+                    )
+                except Exception:
+                    pass
+            if fmt in (LOOKUP_FORMAT, CHECKPOINT_FORMAT):
+                verify_artifact(final_lookup_path, format_name=fmt)
+
         checkpoint_val = artifacts.get("checkpoint")
-        if checkpoint_val:
-            chk_path = run_root / checkpoint_val
-            if not chk_path.exists():
-                raise ValueError(
-                    f"Cannot publish run: designated checkpoint does not exist: {chk_path}"
-                )
+        if not checkpoint_val or not isinstance(checkpoint_val, str):
+            raise ValueError("Cannot publish run: missing checkpoint in artifacts")
+        chk_path = (run_root / checkpoint_val).resolve()
+        if not chk_path.is_relative_to(run_root.resolve()):
+            raise ValueError(
+                f"Cannot publish run: checkpoint path escapes run directory: {checkpoint_val}"
+            )
+        if not chk_path.exists():
+            raise ValueError(
+                f"Cannot publish run: designated checkpoint does not exist: {chk_path}"
+            )
 
         metrics_val = artifacts.get("metrics")
-        if metrics_val:
-            met_path = run_root / metrics_val
-            if not met_path.exists():
-                raise ValueError(
-                    f"Cannot publish run: designated metrics file does not exist: {met_path}"
-                )
+        if not metrics_val or not isinstance(metrics_val, str):
+            raise ValueError("Cannot publish run: missing metrics in artifacts")
+        met_path = (run_root / metrics_val).resolve()
+        if not met_path.is_relative_to(run_root.resolve()):
+            raise ValueError(
+                f"Cannot publish run: metrics path escapes run directory: {metrics_val}"
+            )
+        if not met_path.exists():
+            raise ValueError(
+                f"Cannot publish run: designated metrics file does not exist: {met_path}"
+            )
 
         suite = condition.suite_id
         identity = (
@@ -372,7 +407,27 @@ class PublicationService:
                     artifact_path=None if parent == Path(".") else parent.as_posix(),
                 )
 
-            # 4. Upload observations as metrics
+            # 4. Verify remote artifacts were uploaded
+            def list_remote_files(prefix: str | None = None) -> set[str]:
+                found = set()
+                for art in self.client.list_artifacts(run_id, prefix):
+                    if art.is_dir:
+                        found.update(list_remote_files(art.path))
+                    else:
+                        found.add(art.path)
+                return found
+
+            remote_files = list_remote_files()
+            expected_remote = {f["path"] for f in manifest_files} | {
+                "result_manifest.json"
+            }
+            if not expected_remote.issubset(remote_files):
+                missing_remote = expected_remote - remote_files
+                raise RuntimeError(
+                    f"Artifact upload incomplete; missing in remote MLflow run: {missing_remote}"
+                )
+
+            # 5. Upload observations as metrics
             metrics_file = run_root / "metrics/observations.csv"
             if metrics_file.is_file():
                 batch: list[Metric] = []
