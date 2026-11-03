@@ -382,43 +382,55 @@ class PublicationService:
                 if p_val:
                     self.client.log_param(run_id, p_key, p_val)
 
-            # 1. Identify designated final model path from result.json
-            final_lookup_rel: Path | None = Path(lookup_val)
+            # 1. Determine files to upload explicitly from result.json artifacts, evaluation, and root metadata
+            upload_files: set[Path] = set()
 
-            def should_upload(file_path: Path) -> bool:
-                rel = file_path.relative_to(run_root)
-                if "preparation" in rel.parts:
-                    return False
-                # Intermediate pointers (latest.json, best.json, etc.) and hidden/tmp files remain local only
-                if (
-                    file_path.name in {"latest.json", "best.json"}
-                    or file_path.name.startswith(".")
-                    or file_path.name.endswith(".tmp")
-                ):
-                    return False
-                # Always upload the designated final model
-                if final_lookup_rel is not None and (
-                    rel == final_lookup_rel or final_lookup_rel in rel.parents
-                ):
-                    return True
-                # Intermediate checkpoints (generations or periodic/epoch checkpoints) remain local only
-                if "generations" in rel.parts or any(
-                    part.startswith("latest-epoch-")
-                    or part.startswith("periodic-")
-                    or part.startswith("best-")
-                    or part.startswith("epoch-")
-                    for part in rel.parts
-                ):
-                    return False
-                if not include_checkpoints and "checkpoints" in rel.parts:
-                    return False
-                return True
+            # Core root metadata
+            for name in (
+                "result.json",
+                "config.json",
+                "phrase_lineage.json",
+                "large_scale_lineage.json",
+            ):
+                f = run_root / name
+                if f.is_file():
+                    upload_files.add(f)
 
-            # 2. Write local result manifest matching exactly what is uploaded
+            # Artifacts defined in result.json
+            for art_key, art_val in artifacts.items():
+                if not art_val:
+                    continue
+                art_path = run_root / str(art_val)
+                if not include_checkpoints and art_key == "checkpoint":
+                    continue
+                if art_path.is_file():
+                    upload_files.add(art_path)
+                elif art_path.is_dir():
+                    for f in art_path.rglob("*"):
+                        if (
+                            f.is_file()
+                            and not f.name.startswith(".")
+                            and not f.name.endswith(".tmp")
+                        ):
+                            upload_files.add(f)
+
+            # Evaluation benchmarks / outputs if present
+            eval_dir = run_root / "evaluation"
+            if eval_dir.is_dir():
+                for f in eval_dir.rglob("*"):
+                    if f.is_file() and not f.name.startswith("."):
+                        upload_files.add(f)
+
+            # Observations / metrics files
+            for pattern in ("observations.csv", "metrics.jsonl", "history.json"):
+                for f in run_root.glob(pattern):
+                    if f.is_file():
+                        upload_files.add(f)
+
             manifest_path = run_root / "result_manifest.json"
             manifest_files = []
-            for path in sorted(item for item in run_root.rglob("*") if item.is_file()):
-                if path == manifest_path or not should_upload(path):
+            for path in sorted(upload_files):
+                if path == manifest_path:
                     continue
                 digest = hashlib.sha256()
                 with path.open("rb") as stream:
@@ -436,11 +448,10 @@ class PublicationService:
                 json.dumps(manifest_payload, indent=2, sort_keys=True) + "\n",
                 encoding="utf-8",
             )
+            upload_files.add(manifest_path)
 
-            # 3. Upload artifacts matching result manifest
-            for path in sorted(item for item in run_root.rglob("*") if item.is_file()):
-                if not should_upload(path) and path != manifest_path:
-                    continue
+            # 2. Upload artifacts matching explicit selection
+            for path in sorted(upload_files):
                 parent = path.parent.relative_to(run_root)
                 self.client.log_artifact(
                     run_id,

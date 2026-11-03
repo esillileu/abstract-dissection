@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import json
 from pathlib import Path
 
 from f2.suites.w2v.executor import W2VRunReceipt, _mapping
@@ -90,11 +91,19 @@ def run_tracked_yaml(
             progress_reporter.write(
                 f"Publishing existing local result for slot={condition.planned_run_slot_id}"
             )
+        config_file = decision.run_dir / "config.json"
+        stored_config = config
+        if config_file.is_file():
+            try:
+                stored_config = json.loads(config_file.read_text(encoding="utf-8"))
+            except Exception:
+                stored_config = config
+
         run_id = coordinator.publication.publish_run(
             experiment_name,
             condition,
             decision.run_dir,
-            config,
+            stored_config,
         )
         res = getattr(executor, "_load_local_result", None)
         result = res(decision.run_dir) if callable(res) else None

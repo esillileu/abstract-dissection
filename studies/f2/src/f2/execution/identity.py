@@ -125,25 +125,23 @@ class ConditionIdentity:
 
         resolved_exp = (
             experiment_id
-            or str(identity.get("study", "")).strip()
             or str(identity.get("experiment_id", "")).strip()
+            or str(identity.get("study", "")).strip()
+            or str(identity.get("execution_plan_id", "")).strip()
         )
-        if not resolved_exp:
-            plan_id = str(identity.get("execution_plan_id", ""))
-            if plan_id:
-                resolved_exp = plan_id.split("-r", 1)[0]
         if not resolved_exp:
             raise ValueError(
                 "ConditionIdentity requires experiment_id, identity.study, or identity.execution_plan_id"
             )
 
-        plan_id = str(identity.get("execution_plan_id", ""))
-        plan_rev = 1
-        if "-r" in plan_id:
+        raw_rev = identity.get("plan_revision")
+        if raw_rev is not None:
             try:
-                plan_rev = int(plan_id.rsplit("-r", 1)[1])
-            except ValueError:
+                plan_rev = int(raw_rev)
+            except (ValueError, TypeError):
                 plan_rev = 1
+        else:
+            plan_rev = 1
 
         return cls(
             suite_id=resolved_suite,

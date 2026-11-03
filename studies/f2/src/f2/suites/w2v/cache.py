@@ -96,7 +96,8 @@ def download_results(
         sub = str(p.get("subsampling_threshold") or t.get("training.subsample", ""))
         return (corpus, is_phrase, obj, neg, sub)
 
-    # 1. Group finished runs by target experimental condition
+    # 1. Group finished runs by target experimental condition (spec_id, variant, condition)
+    # Ref.md P0-2: run, check, and analyze must use the exact same ConditionIdentity selection rule.
     runs_by_target: dict[tuple[Any, ...], list[Any]] = {}
     for run in all_runs:
         if run.info.status == "FINISHED":
@@ -131,7 +132,11 @@ def download_results(
         # Group by seed and pick the latest finished run
         seeds_map: dict[str, list[Any]] = {}
         for r in matching_runs:
-            seed = r.data.tags.get("seed") or r.data.params.get("seed", "")
+            seed = str(
+                r.data.tags.get("f2.seed")
+                or r.data.tags.get("seed")
+                or r.data.params.get("seed", "")
+            )
             seeds_map.setdefault(seed, []).append(r)
 
         for seed in sorted(seeds_map):

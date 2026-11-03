@@ -318,9 +318,18 @@ def analyze(
             raise ValueError("W2V1 analysis table must be 2, 3, 4, 5, 6, or 7")
         if msr_questions is not None and table != 3:
             raise ValueError("--msr-questions applies only to Table 3")
-        from .suites.w2v.cache import download_results
+        if offline:
+            cache_root = paths.analysis_cache("f2", "w2v1")
+            runs_file = cache_root / "runs.json"
+            if not runs_file.is_file():
+                typer.echo("W2V1 offline analysis cache unavailable: missing runs.json")
+                return
+        else:
+            from .suites.w2v.cache import download_results
 
-        cache_root = download_results(resolve_tracking_uri(tracking_uri), "w2v1", paths)
+            cache_root = download_results(
+                resolve_tracking_uri(tracking_uri), "w2v1", paths
+            )
         if table == 7:
             questions = (
                 questions

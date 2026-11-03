@@ -197,11 +197,20 @@ class F2ExecutionCoordinator:
                 progress_reporter.write(
                     f"Publishing existing local result for slot={condition.planned_run_slot_id}"
                 )
+            # Load stored config from run_root to preserve original provenance and metadata
+            config_file = run_root / "config.json"
+            stored_config = config
+            if config_file.is_file():
+                try:
+                    stored_config = json.loads(config_file.read_text(encoding="utf-8"))
+                except Exception:
+                    stored_config = config
+
             run_id = self.publication.publish_run(
                 experiment_name,
                 condition,
                 run_root,
-                config,
+                stored_config,
             )
             result = (
                 load_result_delegate(run_root)
