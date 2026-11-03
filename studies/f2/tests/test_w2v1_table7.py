@@ -306,7 +306,7 @@ def test_materialize_corpus_for_table7(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Verify _materialize_corpus resolves direct file path without querying database shards."""
-    from f2.suites.w2v.tracked import _materialize_corpus
+    from f2.suites.common.w2v.tracked import _materialize_corpus
     from repro_core.context import RuntimePaths
 
     fake_corpus = tmp_path / "holmes.txt"

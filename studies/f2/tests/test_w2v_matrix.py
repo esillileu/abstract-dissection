@@ -19,7 +19,7 @@ def test_production_w2v_catalogs_cannot_embed_test_scenarios() -> None:
     for config in source_root.glob("w2v*/config/*.yaml"):
         assert "local-smoke" not in config.read_text()
 
-    tracked = (source_root / "w2v/tracked.py").read_text()
+    tracked = (source_root / "common/w2v/tracked.py").read_text()
     executor = (source_root / "w2v1/executor.py").read_text()
     for forbidden in (
         "stop_after_epoch",

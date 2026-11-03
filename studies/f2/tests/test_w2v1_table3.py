@@ -15,7 +15,7 @@ from f2.catalog.manifest import read_manifest
 from f2.execution.definitions import DEFINITION
 from f2.suites.common.w2v.artifacts import load_lookup_artifact
 from f2.suites.common.w2v.nnlm_artifacts import load_checkpoint
-from f2.suites.w2v.tracked import run_tracked_yaml
+from f2.suites.common.w2v.tracked import run_tracked_yaml
 from f2.suites.w2v1 import resources
 from f2.suites.w2v1.analysis import table03 as table3
 from f2.suites.w2v1.executor import create_session
@@ -118,7 +118,7 @@ def test_tracked_nnlm_publishes_checkpoint_and_shared_lookup(tmp_path, monkeypat
     def materialize(config, _paths, **kwargs):
         config["corpus"] = {"path": str(corpus), "sha256": digest}
 
-    monkeypatch.setattr("f2.suites.w2v.tracked._materialize_corpus", materialize)
+    monkeypatch.setattr("f2.suites.common.w2v.tracked._materialize_corpus", materialize)
     monkeypatch.setenv("REPRO_STAGING_ROOT", str(tmp_path / "staging"))
     monkeypatch.setenv("REPRO_CACHE_ROOT", str(tmp_path / "cache"))
     monkeypatch.setenv("MLFLOW_ALLOW_FILE_STORE", "true")

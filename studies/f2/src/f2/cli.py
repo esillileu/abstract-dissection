@@ -205,7 +205,7 @@ def run(
 
         tracking_uri = resolve_tracking_uri(tracking_uri)
 
-    from .suites.w2v.tracked import run_tracked_yaml
+    from .suites.common.w2v.tracked import run_tracked_yaml
 
     def run_fn(*args, **kwargs):
         return run_tracked_yaml(*args, override=override, **kwargs)

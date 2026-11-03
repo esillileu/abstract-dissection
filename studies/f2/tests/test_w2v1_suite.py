@@ -10,7 +10,7 @@ from typer.testing import CliRunner
 
 from f2.execution.definitions import DEFINITION
 from f2.suites.common.w2v.artifacts import load_checkpoint
-from f2.suites.w2v.tracked import run_tracked_yaml
+from f2.suites.common.w2v.tracked import run_tracked_yaml
 from f2.suites.w2v1.analysis import (
     Table2EvaluationCache,
     Table2RunResult,
@@ -397,7 +397,7 @@ def test_w2v_tracked_run_publishes_one_complete_mlflow_run(
                 "negative_table_size": 100,
             }
 
-    monkeypatch.setattr("f2.suites.w2v.tracked._materialize_corpus", materialize)
+    monkeypatch.setattr("f2.suites.common.w2v.tracked._materialize_corpus", materialize)
     monkeypatch.setenv("REPRO_STAGING_ROOT", str(tmp_path / "staging"))
     monkeypatch.setenv("REPRO_CACHE_ROOT", str(tmp_path / "cache"))
     monkeypatch.setenv("MLFLOW_ALLOW_FILE_STORE", "true")

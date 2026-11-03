@@ -54,7 +54,7 @@ def test_tracked_run_materializes_registered_shards(tmp_path, monkeypatch):
     import f2.corpus.db.repository as repository
     import f2.corpus.db.session as session
     import f2.corpus.object_store as object_store
-    from f2.suites.w2v.tracked import _materialize_corpus
+    from f2.suites.common.w2v.tracked import _materialize_corpus
 
     binding, objects = _fixture_binding(tmp_path)
     rows = [
