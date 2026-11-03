@@ -7,12 +7,10 @@ from pathlib import Path
 from typing import Any
 
 import typer
-from repro_io.checksum import sha256_file
 
 from repro_core.context import RuntimePaths
 
-from ..storage.analysis_cache import download_results, read_records
-from ..suites.w2v2.analysis import EVALUATION_PROTOCOL, generate_report
+from ..storage.analysis_cache import download_results
 from ..tracking import resolve_tracking_uri
 
 
@@ -22,7 +20,7 @@ def analyze_command_impl(
     questions: Path | None = None,
     phrase_questions: Path | None = None,
     corpus: str | None = None,
-    table: int | None = None,
+    table: int | str | None = None,
     msr_questions: Path | None = None,
     override: bool = False,
     offline: bool = False,
@@ -33,16 +31,14 @@ def analyze_command_impl(
         typer.echo("For corpus pipeline analysis, use: repro f2 corpus analyze --help")
         return
     if target_suite in ("w2v2", ""):
-        output = run_w2v2_analysis(
+        _analyze_w2v2(
             tracking_uri=tracking_uri,
             word_questions=questions,
             phrase_questions=phrase_questions,
-            override=override,
-            offline=offline,
             table=table,
             corpus=corpus,
+            offline=offline,
         )
-        typer.echo(f"W2V2 report written: {output / 'summary.md'}")
         return
     if suite == "w2v1":
         _analyze_w2v1(
@@ -68,25 +64,61 @@ def run_w2v2_analysis(
     table: int | str | None = None,
     corpus: str | None = None,
 ) -> Path:
-    """Run W2V2 analysis or return existing result without MLflow access or recomputation."""
-    paths = paths or RuntimePaths.from_environment()
-    output = (
-        paths.analysis_output("f2", "w2v2")
-        if hasattr(paths, "analysis_output")
-        else paths.cache_root / "f2/w2v2/analysis"
+    """Facade for W2V2 analysis matching stable paths."""
+    outputs = _analyze_w2v2(
+        tracking_uri=tracking_uri,
+        word_questions=word_questions,
+        phrase_questions=phrase_questions,
+        table=table,
+        corpus=corpus,
+        offline=offline,
     )
-    target_table = str(table).lower() if table is not None else None
-    if target_table in {"section4", "4.1"}:
-        target_table = "section4.1"
-    target_corpus = str(corpus).lower() if corpus is not None else None
-    check_output = output
-    if target_corpus is not None:
-        check_output = check_output / target_corpus
-    if target_table is not None:
-        table_dir = (
-            f"table{target_table}" if target_table != "section4.1" else "section4_1"
-        )
-        check_output = check_output / table_dir
+    return outputs[0] if outputs else (paths or RuntimePaths.from_environment()).analysis_results("f2", "w2v2")
+
+
+def _analyze_w2v2(
+    *,
+    tracking_uri: str | None = None,
+    word_questions: Path | None = None,
+    phrase_questions: Path | None = None,
+    table: int | str | None = None,
+    corpus: str | None = None,
+    offline: bool = False,
+) -> list[Path]:
+    from ..suites.w2v2.analysis import (
+        analyze_section04_1_sources,
+        analyze_table1_sources,
+        analyze_table2_sources,
+        analyze_table3_sources,
+        analyze_table4_sources,
+        analyze_table5_sources,
+        analyze_table6_sources,
+    )
+
+    paths = RuntimePaths.from_environment()
+    tbl_str = str(table).lower() if table is not None else None
+    if tbl_str in {"section4", "4.1"}:
+        tbl_str = "section04_1"
+    elif tbl_str in {"1", "table1", "table01"}:
+        tbl_str = "1"
+    elif tbl_str in {"2", "table2", "table02"}:
+        tbl_str = "2"
+    elif tbl_str in {"3", "table3", "table03"}:
+        tbl_str = "3"
+    elif tbl_str in {"4", "table4", "table04"}:
+        tbl_str = "4"
+    elif tbl_str in {"5", "table5", "table05"}:
+        tbl_str = "5"
+    elif tbl_str in {"6", "table6", "table06"}:
+        tbl_str = "6"
+
+    if offline:
+        cache_root = paths.analysis_cache("f2", "w2v2")
+        if not (cache_root / "runs.json").is_file():
+            typer.echo("W2V2 offline analysis cache unavailable: missing runs.json")
+            return []
+    else:
+        cache_root = download_results(resolve_tracking_uri(tracking_uri), "w2v2", paths)
 
     benchmarks = paths.inputs("f2", "benchmarks")
     w_q = word_questions or (
@@ -100,94 +132,24 @@ def run_w2v2_analysis(
         else None
     )
 
-    cache_dir = paths.analysis_cache("f2", "w2v2")
-    if offline:
-        records = read_records(cache_dir)
-        result_source = "offline; MLflow not queried"
-    else:
-        resolved_uri = resolve_tracking_uri(tracking_uri)
-        records = read_records(
-            download_results(resolved_uri, "w2v2", paths, table=table)
-        )
-        result_source = f"MLflow f2.w2v2 ({resolved_uri})"
+    analyzers = {
+        "1": lambda: analyze_table1_sources(cache_root, w_q, corpus_source=corpus, paths=paths),
+        "2": lambda: analyze_table2_sources(cache_root, corpus_source=corpus, paths=paths),
+        "3": lambda: analyze_table3_sources(cache_root, p_q, corpus_source=corpus, paths=paths),
+        "4": lambda: analyze_table4_sources(cache_root, corpus_source=corpus, paths=paths),
+        "5": lambda: analyze_table5_sources(cache_root, corpus_source=corpus, paths=paths),
+        "6": lambda: analyze_table6_sources(cache_root, corpus_source=corpus, paths=paths),
+        "section04_1": lambda: analyze_section04_1_sources(cache_root, p_q, corpus_source=corpus, paths=paths),
+    }
 
-    current_run_ids = sorted({r.get("run_id") for r in records if r.get("run_id")})
-    summary_file = check_output / "summary.json"
-    summary_md = check_output / "summary.md"
-    if not override and summary_file.is_file() and summary_md.is_file():
-        try:
-            cached_payload = json.loads(summary_file.read_text(encoding="utf-8"))
-            sig = cached_payload.get("analysis_signature")
-            if isinstance(sig, dict):
-                if _verify_sig(
-                    sig, current_run_ids, target_table, target_corpus, w_q, p_q
-                ):
-                    return check_output
-                raise ValueError(
-                    f"Existing analysis in {check_output} corresponds to different runs/inputs. "
-                    f"Use --override to overwrite previous analysis deliverables."
-                )
-            raise ValueError(
-                f"Existing analysis in {check_output} lacks required signature. "
-                f"Use --override to overwrite previous analysis deliverables."
-            )
-        except json.JSONDecodeError:
-            pass
-
-    return generate_report(
-        records=records,
-        paths=paths,
-        word_questions=w_q,
-        phrase_questions=p_q,
-        result_source=result_source,
-        table_filter=table,
-        corpus_filter=corpus,
-        use_evaluation_cache=True,
-    )
-
-
-def _eval_digest(path: Path | None) -> str | None:
-    if path is not None and Path(path).is_file():
-        try:
-            return sha256_file(Path(path))
-        except Exception:
-            return None
-    return None
-
-
-def _verify_sig(
-    sig: dict, current_run_ids: list[str], target_table, target_corpus, w_q, p_q
-) -> bool:
-    if not isinstance(sig, dict):
-        return False
-    for req in (
-        "run_ids",
-        "table_filter",
-        "corpus_filter",
-        "eval_datasets",
-        "evaluation_protocol",
-    ):
-        if req not in sig:
-            return False
-    if sig.get("evaluation_protocol") != EVALUATION_PROTOCOL:
-        return False
-    if sig.get("run_ids") != current_run_ids:
-        return False
-    if (
-        sig.get("table_filter") != target_table
-        or sig.get("corpus_filter") != target_corpus
-    ):
-        return False
-    eval_ds = sig.get("eval_datasets", {})
-    if not isinstance(eval_ds, dict):
-        return False
-    w_sha = _eval_digest(w_q)
-    p_sha = _eval_digest(p_q)
-    if w_sha and eval_ds.get("word", {}).get("sha256") != w_sha:
-        return False
-    if p_sha and eval_ds.get("phrase", {}).get("sha256") != p_sha:
-        return False
-    return True
+    selected = [tbl_str] if tbl_str in analyzers else list(analyzers.keys())
+    results: list[Path] = []
+    for key in selected:
+        outs = analyzers[key]()
+        for out in outs:
+            typer.echo(f"W2V2 {key} analysis written: {out}")
+            results.append(out)
+    return results
 
 
 def _analyze_w2v1(tracking_uri, questions, corpus, table, msr_questions, offline):
@@ -199,7 +161,7 @@ def _analyze_w2v1(tracking_uri, questions, corpus, table, msr_questions, offline
     from ..suites.w2v1.analysis.table07 import analyze_table7_sources
 
     paths = RuntimePaths.from_environment()
-    tbl = 2 if table is None else table
+    tbl = 2 if table is None else int(table)
     if tbl not in (2, 3, 4, 5, 6, 7):
         raise ValueError("W2V1 analysis table must be 2, 3, 4, 5, 6, or 7")
     if msr_questions is not None and tbl != 3:
