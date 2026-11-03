@@ -4,60 +4,35 @@ from __future__ import annotations
 
 import json
 import shutil
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-
-from repro_io.checksum import sha256_file
-from w2v import (
-    Corpus,
-    DownpourConfig,
-    DownpourTrainingSession,
-    Model,
-    NnlmDownpourTrainingSession,
-    NnlmTrainingConfig,
-    NnlmTrainingSession,
-    TrainingConfig,
-    TrainingSession,
-)
 
 from f2.execution.coordinator import F2ExecutionCoordinator
 from f2.execution.identity import ConditionIdentity
 from f2.suites.common.w2v.artifacts import (
     create_checkpoint_manager,
-    load_checkpoint,
     lookup_from_checkpoint,
-    resolve_or_build_vocabulary,
     save_lookup_artifact,
     vocabulary_cache_path,
 )
 from f2.suites.common.w2v.engine import Word2VecEngine
-from f2.suites.common.w2v.observations import DenseObservationWriter
-from repro_core.context import ExperimentContext
-from repro_core.storage.local_store import LocalStore
-
-from ..common.w2v.nnlm_artifacts import (
+from f2.suites.common.w2v.nnlm_artifacts import (
     create_checkpoint_manager as create_nnlm_checkpoint_manager,
 )
-
-
-@dataclass(frozen=True)
-class Word2VecResult:
-    """Artifact bundle output from completed Word2Vec execution."""
-
-    root: Path
-    checkpoint: Path
-    lookup: Path
-    metrics: Path
-    report: Path
-
-
-@dataclass(frozen=True)
-class W2VRunReceipt:
-    result: object
-    run_id: str
-    staging_root: Path
-    skipped: bool = False
+from f2.suites.common.w2v.observations import DenseObservationWriter
+from f2.suites.common.w2v.training import (
+    W2VRunReceipt,
+    Word2VecResult,
+    create_session,
+)
+from f2.suites.common.w2v.training import (
+    corpus_digest as _corpus_digest,
+)
+from f2.suites.common.w2v.training import (
+    mapping as _mapping,
+)
+from repro_core.context import ExperimentContext
+from repro_core.storage.local_store import LocalStore
 
 
 class Word2VecExecutor:
@@ -252,9 +227,6 @@ class Word2VecExecutor:
                 f"epochs={total_epochs} completed={session.completed_epochs}"
             )
 
-        def on_observation(obs: list[dict[str, Any]]) -> None:
-            writer.append(obs)
-
         def on_epoch_complete(
             epoch_num: int, epoch: Any, current_reports: list[dict[str, Any]]
         ) -> None:
@@ -268,7 +240,7 @@ class Word2VecExecutor:
             session,
             total_epochs=total_epochs,
             on_epoch_complete=on_epoch_complete,
-            on_observation=on_observation,
+            on_observation=writer.append,
             progress_callback=progress_reporter.write if progress_reporter else None,
             existing_reports=existing_reports,
         )
@@ -280,6 +252,8 @@ class Word2VecExecutor:
             lookup_path = run_root / "lookup"
             if lookup_path.exists():
                 shutil.rmtree(lookup_path)
+            from w2v import TrainingSession
+
             if isinstance(session, TrainingSession):
                 lookup_from_checkpoint(final.path, lookup_path)
             else:
@@ -313,113 +287,6 @@ class Word2VecExecutor:
         lookup = run_root / artifacts.get("lookup", "lookup")
         metrics = run_root / artifacts.get("metrics", "metrics/observations.csv")
         return Word2VecResult(run_root, checkpoint, lookup, metrics, report_path)
-
-
-def create_session(
-    config: dict[str, object],
-    repo_root: Path,
-    *,
-    cache_root: Path | None = None,
-    corpus_digest: str | None = None,
-    resume_from: Path | None = None,
-) -> (
-    TrainingSession
-    | DownpourTrainingSession
-    | NnlmTrainingSession
-    | NnlmDownpourTrainingSession
-):
-    corpus_path = Path(str(_mapping(config, "corpus")["path"]))
-    corpus = Corpus(
-        corpus_path if corpus_path.is_absolute() else repo_root / corpus_path,
-        full_tokens="phrase_detection" in config,
-    )
-    corpus_digest = corpus_digest or _corpus_digest(
-        _mapping(config, "corpus"), Path(corpus.path)
-    )
-    vocabulary = resolve_or_build_vocabulary(
-        corpus,
-        _mapping(config, "vocabulary"),
-        cache_root=cache_root or repo_root / "workspace/inputs/f2/prepared",
-        corpus_digest=corpus_digest,
-    )
-    values = dict(_mapping(config, "training"))
-    values["root_seed"] = int(_mapping(config, "identity")["seed"])
-    if values.get("model_kind") == "feedforward_nnlm":
-        values.pop("model_kind")
-        training = NnlmTrainingConfig(**values)
-        distribution = config.get("distribution")
-        if distribution is not None:
-            distribution = _mapping(config, "distribution")
-            mode = distribution.pop("mode", None)
-            if mode == "downpour":
-                return NnlmDownpourTrainingSession(
-                    corpus,
-                    vocabulary,
-                    training,
-                    DownpourConfig(**distribution),
-                    corpus_digest=corpus_digest,
-                )
-            if mode != "none":
-                raise ValueError(f"unsupported NNLM distribution mode: {mode}")
-        return NnlmTrainingSession(
-            corpus, vocabulary, training, corpus_digest=corpus_digest
-        )
-    training = TrainingConfig(**values)
-    model = Model.create(vocabulary, training)
-
-    if resume_from is not None:
-        state = load_checkpoint(resume_from)
-        model.restore_input_embeddings(state.input_embeddings())
-        model.restore_output_embeddings(state.output_embeddings())
-        return TrainingSession.restore(
-            corpus, vocabulary, model, training, state, corpus_digest=corpus_digest
-        )
-
-    distribution = config.get("distribution")
-    if distribution is not None and isinstance(distribution, dict):
-        dist_dict = dict(distribution)
-        mode = dist_dict.get("mode")
-        if mode == "downpour":
-            downpour_kwargs: dict[str, Any] = {}
-            for field in (
-                "parameter_server_shards",
-                "mini_batch_targets",
-                "adagrad_gamma",
-                "adagrad_epsilon",
-                "queue_capacity",
-                "fetch_interval",
-                "push_interval",
-            ):
-                if field in dist_dict:
-                    downpour_kwargs[field] = dist_dict[field]
-            downpour_cfg = DownpourConfig(**downpour_kwargs)
-            return DownpourTrainingSession(
-                corpus,
-                vocabulary,
-                model,
-                training,
-                downpour_cfg,
-                corpus_digest=corpus_digest,
-            )
-        if mode != "none":
-            raise ValueError(f"unsupported distribution mode: {mode}")
-
-    return TrainingSession(
-        corpus, vocabulary, model, training, corpus_digest=corpus_digest
-    )
-
-
-def _corpus_digest(corpus_config: dict[str, Any], source: Path) -> str:
-    """Use a materializer-verified identity, hashing only unbound local inputs."""
-    configured = corpus_config.get("sha256")
-    return str(configured) if configured is not None else sha256_file(source)
-
-
-def _mapping(config: dict[str, object], key: str) -> dict[str, Any]:
-    value = config.get(key)
-    if not isinstance(value, dict):
-        raise ValueError(f"{key} must be a mapping")
-    return dict(value)
 
 
 __all__ = [
