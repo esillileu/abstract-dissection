@@ -7,14 +7,13 @@ from f2.suites.common.w2v.corpus import (
     MaterializedCorpus,
 )
 from f2.suites.common.w2v.evaluation import EvaluationResult
+from f2.suites.common.w2v.executor import Word2VecExecutor, Word2VecResult
 from f2.suites.common.w2v.observations import (
     DenseObservationWriter,
     ObservationRow,
     sparse_metric_rows,
 )
 from f2.suites.common.w2v.spec import Word2VecRunSpec
-
-from .executor import Word2VecExecutor, Word2VecResult
 
 __all__ = [
     "CorpusBinding",

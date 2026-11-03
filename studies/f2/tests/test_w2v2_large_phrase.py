@@ -385,7 +385,7 @@ def test_prepared_statistics_do_not_bypass_current_resource_gate(tmp_path, monke
     assert resolved["prepared_training"]["ready"]
     monkeypatch.setattr("f2.suites.w2v2.preflight.available_memory", lambda: 1)
     monkeypatch.setattr(
-        "f2.suites.w2v.executor.create_session",
+        "f2.suites.common.w2v.executor.create_session",
         lambda *a, **kw: pytest.fail("started with stale resource readiness"),
     )
     with pytest.raises(ValueError, match=r"preflight blocked.*RAM"):

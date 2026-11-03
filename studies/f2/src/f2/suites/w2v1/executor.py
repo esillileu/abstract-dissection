@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from f2.suites.w2v.executor import (
+from f2.suites.common.w2v.executor import (
     Word2VecExecutor,
     Word2VecResult,
     _corpus_digest,

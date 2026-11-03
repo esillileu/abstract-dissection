@@ -36,7 +36,7 @@ from f2.suites.common.w2v.evaluation import (
     evaluate_analogies,
     nearest_tokens,
 )
-from f2.suites.w2v.executor import W2VRunReceipt
+from f2.suites.common.w2v.executor import W2VRunReceipt
 from f2.suites.w2v2 import analysis
 from f2.suites.w2v2.executor import W2V2Executor
 from repro_core.context import ExperimentContext, RuntimePaths

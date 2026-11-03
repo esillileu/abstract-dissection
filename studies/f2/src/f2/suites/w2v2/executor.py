@@ -8,12 +8,12 @@ from pathlib import Path
 from typing import Any
 
 from f2.suites.common.w2v.artifacts import _VOCABULARY_ARRAYS
+from f2.suites.common.w2v.executor import Word2VecExecutor, Word2VecResult, _mapping
 from f2.suites.common.w2v.phrases import (
     PhraseCorpus,
     PhrasePolicy,
     cached_phrase_corpus,
 )
-from f2.suites.w2v.executor import Word2VecExecutor, Word2VecResult, _mapping
 from repro_core.context import ExperimentContext
 from repro_core.storage.local_store import LocalStore
 

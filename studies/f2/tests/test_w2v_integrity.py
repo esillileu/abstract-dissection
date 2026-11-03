@@ -363,7 +363,7 @@ def test_mutating_input_during_construction_never_publishes(tmp_path):
 
 def test_phrase_checkpoint_without_provable_run_identity_is_preserved(tmp_path):
     from f2.suites.common.w2v.artifacts import create_checkpoint_manager
-    from f2.suites.w2v.executor import create_session
+    from f2.suites.common.w2v.executor import create_session
 
     source = tmp_path / "source"
     source.write_bytes(b"a b\n" * 6)

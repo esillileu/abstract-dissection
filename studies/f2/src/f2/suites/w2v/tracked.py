@@ -5,7 +5,7 @@ from __future__ import annotations
 import importlib
 from pathlib import Path
 
-from f2.suites.w2v.executor import W2VRunReceipt, _mapping
+from f2.suites.common.w2v.executor import W2VRunReceipt, _mapping
 from repro_core.context import ExperimentContext, RuntimePaths
 
 
