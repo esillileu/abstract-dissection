@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from f2.definition import DEFINITION
+from f2.execution.definitions import DEFINITION
 from f2.suites.w2v.readiness import (
     CLASSIFICATIONS,
     DISPOSITIONS,

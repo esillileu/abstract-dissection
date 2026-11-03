@@ -27,15 +27,15 @@ from w2v import (
     NnlmTrainingConfig,
 )
 
+from f2.suites.common.w2v.nnlm_artifacts import (
+    create_checkpoint_manager,
+    load_checkpoint,
+)
 from f2.suites.w2v.artifacts import (
     resolve_or_build_vocabulary,
     save_lookup_artifact,
 )
 from f2.suites.w2v.executor import _mapping
-from f2.suites.w2v.nnlm_artifacts import (
-    create_checkpoint_manager,
-    load_checkpoint,
-)
 from f2.suites.w2v.observations import DenseObservationWriter
 from f2.suites.w2v.tracked import (
     _materialize_corpus,

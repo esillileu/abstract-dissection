@@ -24,7 +24,8 @@ import pytest
 from mlflow import MlflowClient
 from w2v import TrainingSession
 
-from f2.definition import DEFINITION
+from f2.execution.definitions import DEFINITION
+from f2.storage.analysis_cache import download_results, read_records
 from f2.suites.common.w2v.artifacts import (
     load_checkpoint,
     load_lookup_artifact,
@@ -35,7 +36,6 @@ from f2.suites.common.w2v.evaluation import (
     evaluate_analogies,
     nearest_tokens,
 )
-from f2.suites.w2v.cache import download_results, read_records
 from f2.suites.w2v.executor import W2VRunReceipt
 from f2.suites.w2v2 import analysis
 from f2.suites.w2v2.executor import W2V2Executor
@@ -484,7 +484,7 @@ def test_g_analysis_result_reuse_and_override(
             "generate_report should not be called when result exists!"
         )
     )
-    monkeypatch.setattr("f2.suites.w2v.cache.download_results", mock_download)
+    monkeypatch.setattr("f2.storage.analysis_cache.download_results", mock_download)
     monkeypatch.setattr("f2.suites.w2v2.analysis.generate_report", mock_generate)
 
     out2 = run_w2v2_analysis(

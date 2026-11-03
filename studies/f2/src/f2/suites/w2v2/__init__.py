@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from f2.suites.protocol import SuiteCatalog
+from f2.execution.definitions import SuiteCatalog
 
 DEFINITION = SuiteCatalog("w2v2", Path(__file__).parent).build_definition()
 

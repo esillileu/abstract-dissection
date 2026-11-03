@@ -7,9 +7,9 @@ from pathlib import Path
 
 import pytest
 
+from f2.storage.analysis_cache import LocalResults, download_results, read_records
 from f2.suites.common.w2v.artifacts import load_lookup_artifact
 from f2.suites.common.w2v.evaluation import AnalogyQuestion, evaluate_analogies
-from f2.suites.w2v.cache import LocalResults, download_results, read_records
 
 
 @pytest.mark.parametrize("suite", ["w2v1", "w2v2"])

@@ -14,7 +14,7 @@ from repro_core.execution.definition import RunOrder
 
 from .catalog.cli import app as catalog_app
 from .corpus.cli import app as corpus_app
-from .definition import DEFINITION
+from .execution.definitions import DEFINITION
 
 Experiments = Annotated[
     list[str] | None,
@@ -325,7 +325,7 @@ def analyze(
                 typer.echo("W2V1 offline analysis cache unavailable: missing runs.json")
                 return
         else:
-            from .suites.w2v.cache import download_results
+            from .storage.analysis_cache import download_results
 
             cache_root = download_results(
                 resolve_tracking_uri(tracking_uri), "w2v1", paths
@@ -418,7 +418,7 @@ def check(
     from repro_core.execution.parsing import parse_overrides
     from repro_core.execution.planning import Planner
 
-    from .definition import DEFINITION
+    from .execution.definitions import DEFINITION
     from .tracking import resolve_tracking_uri
 
     suite_def = DEFINITION.get_suite(suite)
@@ -621,7 +621,7 @@ def run_w2v2_analysis(
         return True
 
     # 2. Query MLflow (or local cache if offline)
-    from .suites.w2v.cache import download_results, read_records
+    from .storage.analysis_cache import download_results, read_records
     from .suites.w2v2.analysis import generate_report
     from .tracking import resolve_tracking_uri
 

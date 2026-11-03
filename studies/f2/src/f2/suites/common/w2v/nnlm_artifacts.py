@@ -4,7 +4,6 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from w2v import NnlmReplicaState, NnlmTrainingState, VocabularyState
 
 from f2.suites.common.w2v.artifacts import (
     _VOCABULARY_ARRAYS,
@@ -16,6 +15,7 @@ from f2.suites.common.w2v.artifacts import (
     verify_artifact,
 )
 from repro_core.context.checkpoint import CheckpointManager, CheckpointRetentionPolicy
+from w2v import NnlmReplicaState, NnlmTrainingState, VocabularyState
 
 CHECKPOINT_FORMAT = "f2-nnlm-checkpoint-v1"
 _PARAMETERS = (

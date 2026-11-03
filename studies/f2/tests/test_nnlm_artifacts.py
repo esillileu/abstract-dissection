@@ -15,7 +15,7 @@ from w2v import (
 )
 
 from f2.suites.common.w2v.artifacts import load_lookup_artifact, save_lookup_artifact
-from f2.suites.w2v.nnlm_artifacts import (
+from f2.suites.common.w2v.nnlm_artifacts import (
     create_checkpoint_manager,
     load_checkpoint,
     save_checkpoint,

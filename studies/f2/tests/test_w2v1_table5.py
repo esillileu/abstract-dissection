@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from f2.catalog.manifest import read_manifest
-from f2.definition import DEFINITION
+from f2.execution.definitions import DEFINITION
 from repro_core.execution.definition import RunOptions, RunSelection
 from repro_core.execution.planning import Planner
 

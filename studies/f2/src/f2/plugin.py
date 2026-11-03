@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 from repro_core.registry import CommandGroups
 
-from .definition import DEFINITION, F2Definition
+from .execution.definitions import DEFINITION, F2Definition
 
 
 @dataclass(frozen=True)

@@ -266,7 +266,7 @@ class PublicationService:
                 f"Cannot publish run: failed to parse checkpoint manifest in {chk_path}: {exc}"
             ) from exc
 
-        from f2.suites.w2v.nnlm_artifacts import (
+        from f2.suites.common.w2v.nnlm_artifacts import (
             CHECKPOINT_FORMAT as NNLM_CHECKPOINT_FORMAT,
         )
 

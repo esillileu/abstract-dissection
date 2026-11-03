@@ -8,7 +8,7 @@ from types import SimpleNamespace
 import pytest
 from typer.testing import CliRunner
 
-from f2.definition import DEFINITION
+from f2.execution.definitions import DEFINITION
 from f2.suites.common.w2v.artifacts import load_checkpoint
 from f2.suites.w2v.tracked import run_tracked_yaml
 from f2.suites.w2v1.analysis import (

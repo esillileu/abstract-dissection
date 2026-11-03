@@ -9,7 +9,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from f2.definition import DEFINITION
+from f2.execution.definitions import DEFINITION
 from f2.suites.common.w2v.phrases import (
     PhrasePolicy,
     cached_phrase_corpus,

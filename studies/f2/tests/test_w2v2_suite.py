@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from f2.definition import DEFINITION
+from f2.execution.definitions import DEFINITION
 from f2.suites.common.w2v.artifacts import (
     load_checkpoint,
     load_lookup_artifact,

@@ -9,9 +9,9 @@ from unittest.mock import Mock
 import pytest
 from typer.testing import CliRunner
 
-from f2.definition import DEFINITION
+from f2.execution.definitions import DEFINITION
 from f2.suites.common.w2v.artifacts import load_lookup_artifact
-from f2.suites.w2v.nnlm_artifacts import load_checkpoint
+from f2.suites.common.w2v.nnlm_artifacts import load_checkpoint
 from f2.suites.w2v1 import table4, table6
 from repro_core.cli import app
 from repro_core.context import ExperimentContext, RuntimePaths
@@ -167,7 +167,9 @@ def test_table4_6_analysis_reference_runtime_and_shared_lookup(tmp_path, monkeyp
 @pytest.mark.parametrize("table", (4, 6))
 def test_cli_table4_6_accepts_fineweb(tmp_path, monkeypatch, table):
     module = table4 if table == 4 else table6
-    monkeypatch.setattr("f2.suites.w2v.cache.download_results", lambda *args: tmp_path)
+    monkeypatch.setattr(
+        "f2.storage.analysis_cache.download_results", lambda *args: tmp_path
+    )
     callback = Mock(return_value=(tmp_path / f"table{table}",))
     monkeypatch.setattr(module, f"analyze_table{table}_sources", callback)
     result = CliRunner().invoke(

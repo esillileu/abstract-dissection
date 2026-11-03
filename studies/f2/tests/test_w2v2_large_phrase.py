@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 from repro_io.checksum import sha256_file
 
-from f2.definition import DEFINITION
+from f2.execution.definitions import DEFINITION
 from f2.suites.common.w2v.artifacts import load_checkpoint
 from f2.suites.w2v2.executor import W2V2Executor
 from f2.suites.w2v2.preflight import cached_sentences, preflight, sentences

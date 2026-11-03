@@ -36,7 +36,7 @@ from f2.suites.common.w2v.observations import DenseObservationWriter
 from repro_core.context import ExperimentContext
 from repro_core.storage.local_store import LocalStore
 
-from .nnlm_artifacts import (
+from ..common.w2v.nnlm_artifacts import (
     create_checkpoint_manager as create_nnlm_checkpoint_manager,
 )
 

@@ -12,9 +12,9 @@ from typer.testing import CliRunner
 from w2v import NnlmDownpourTrainingSession, NnlmTrainingSession
 
 from f2.catalog.manifest import read_manifest
-from f2.definition import DEFINITION
+from f2.execution.definitions import DEFINITION
 from f2.suites.common.w2v.artifacts import load_lookup_artifact
-from f2.suites.w2v.nnlm_artifacts import load_checkpoint
+from f2.suites.common.w2v.nnlm_artifacts import load_checkpoint
 from f2.suites.w2v.tracked import run_tracked_yaml
 from f2.suites.w2v1 import resources, table3
 from f2.suites.w2v1.executor import create_session
@@ -277,7 +277,9 @@ def test_table3_analyzer_uses_both_benchmarks_and_shared_evaluator(
 
 
 def test_cli_dispatches_table3_and_msr_path(tmp_path, monkeypatch):
-    monkeypatch.setattr("f2.suites.w2v.cache.download_results", lambda *args: tmp_path)
+    monkeypatch.setattr(
+        "f2.storage.analysis_cache.download_results", lambda *args: tmp_path
+    )
     callback = Mock(return_value=(tmp_path / "table3",))
     monkeypatch.setattr(table3, "analyze_table3_sources", callback)
     result = CliRunner().invoke(
