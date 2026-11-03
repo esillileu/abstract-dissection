@@ -6,7 +6,6 @@ import csv
 import hashlib
 import json
 import re
-import statistics
 import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -16,6 +15,8 @@ from f2.storage.analysis_cache import LocalResults, unavailable_report
 from f2.suites.common.w2v.artifacts import load_lookup_artifact
 from f2.suites.common.w2v.evaluation import evaluate_analogies, parse_analogy_questions
 from repro_core.context import RuntimePaths
+
+from .table02_report import write_run_results, write_summary
 
 _CONDITION = re.compile(r"(wmt|lm1b|umbc)--d(50|100|300|600)-w(24|49|98|196|391|783)m")
 CORPUS_SOURCES = ("wmt", "lm1b", "umbc")
@@ -94,109 +95,106 @@ def analyze_table2(
     corpus_source: str = "wmt",
     paths: RuntimePaths | None = None,
 ) -> Path:
-    """Evaluate only conditions having all three durable canonical seed runs."""
-
+    """Evaluate Table 2 conditions directly from MLflow artifacts."""
     paths = paths or RuntimePaths.from_environment()
+    output = (paths.cache_root / "f2/w2v1/analysis") / corpus_source / "table2"
     if not Path(questions_path).is_file():
-        output = unavailable_report(
-            paths.cache_root / "f2/w2v1/analysis/analysis",
-            "cached evaluation questions missing",
-        )
-        return output
+        return unavailable_report(output, "cached evaluation questions missing")
     if corpus_source not in CORPUS_SOURCES:
-        raise ValueError(
-            f"unsupported W2V1 corpus source {corpus_source!r}; "
-            f"expected one of {', '.join(CORPUS_SOURCES)}"
-        )
-    questions_path = Path(questions_path)
-    question_bytes = questions_path.read_bytes()
-    questions_sha256 = hashlib.sha256(question_bytes).hexdigest()
+        raise ValueError(f"unsupported W2V1 corpus source: {corpus_source}")
+    output.mkdir(parents=True, exist_ok=True)
+    question_bytes = Path(questions_path).read_bytes()
     questions = parse_analogy_questions(question_bytes.splitlines())
     if not questions:
         raise ValueError("questions-words.txt must contain at least one question")
-
-    cache = LocalResults(cache_root)
-    runs = cache.runs()
-
-    selected = _complete_conditions(runs, corpus_source=corpus_source)
+    questions_sha256 = hashlib.sha256(question_bytes).hexdigest()
+    results = LocalResults(cache_root)
     evaluation_cache = Table2EvaluationCache(
-        paths.cache_root / "f2/w2v1/analogy", questions_sha256=questions_sha256
+        paths.cache_root / "f2/w2v1/table2",
+        questions_sha256=questions_sha256,
     )
-    output = (paths.cache_root / "f2/w2v1/analysis") / corpus_source
-    output.mkdir(parents=True, exist_ok=True)
     records: list[Table2RunResult] = []
-    unavailable = []
+    unavailable: list[dict[str, Any]] = []
     cache_hits = 0
     cache_misses = 0
-    for (words, dimension), condition_runs in sorted(selected.items()):
-        for seed, run in sorted(condition_runs.items()):
+    for condition, runs in sorted(
+        _complete_conditions(results.runs(), corpus_source).items()
+    ):
+        for seed in sorted(runs):
+            run = runs[seed]
             cached = evaluation_cache.load(run.info.run_id)
-            if cached is not None and (
-                cached.training_words_millions,
-                cached.vector_dimension,
-                cached.seed,
-            ) == (words, dimension, seed):
+            if (
+                cached is not None
+                and cached.seed == seed
+                and cached.training_words_millions == condition[0]
+                and cached.vector_dimension == condition[1]
+            ):
                 records.append(cached)
                 cache_hits += 1
                 continue
             try:
                 cache_misses += 1
-                lookup = load_lookup_artifact(cache.get(run.info.run_id, "lookup"))
-                result = evaluate_analogies(
+                lookup = load_lookup_artifact(
+                    results.get(run.info.run_id, "lookup"),
+                )
+                evaluation = evaluate_analogies(
                     lookup,
                     questions,
                     vocabulary_limit=_VOCABULARY_LIMIT,
                     batch_size=256,
                 )
-                training_seconds = observed_training_seconds(
-                    cache.get(run.info.run_id, "metrics/observations.csv")
+                seconds = observed_training_seconds(
+                    results.get(run.info.run_id, "metrics/observations.csv")
                 )
                 record = Table2RunResult(
-                    training_words_millions=words,
-                    vector_dimension=dimension,
+                    training_words_millions=condition[0],
+                    vector_dimension=condition[1],
                     seed=seed,
                     mlflow_run_id=run.info.run_id,
-                    total_accuracy_percent=100.0 * result.overall.require_score(),
-                    semantic_accuracy_percent=100.0 * result.semantic.require_score(),
-                    syntactic_accuracy_percent=100.0 * result.syntactic.require_score(),
-                    observed_training_seconds=training_seconds,
-                    included_questions=result.overall.valid_count,
-                    total_questions=result.overall.total_count,
+                    total_accuracy_percent=100.0 * evaluation.overall.require_score(),
+                    semantic_accuracy_percent=100.0
+                    * evaluation.semantic.require_score(),
+                    syntactic_accuracy_percent=100.0
+                    * evaluation.syntactic.require_score(),
+                    observed_training_seconds=seconds,
+                    included_questions=evaluation.overall.valid_count,
+                    total_questions=evaluation.overall.total_count,
                 )
                 evaluation_cache.store(record)
                 records.append(record)
-
             except (FileNotFoundError, KeyError, ValueError) as exc:
                 unavailable.append(
-                    {"run_id": run.info.run_id, "status": "no_data", "reason": str(exc)}
+                    {
+                        "condition": f"d{condition[1]}-w{condition[0]}m",
+                        "seed": seed,
+                        "run_id": run.info.run_id,
+                        "status": "no_data",
+                        "reason": str(exc),
+                    }
                 )
-    (output / "unavailable.json").write_text(json.dumps(unavailable, indent=2) + "\n")
     print(
-        f"W2V1 {corpus_source} analogy cache: "
-        f"{cache_hits} hit(s), {cache_misses} miss(es)",
+        f"W2V1 Table 2 analogy cache: {cache_hits} hit(s), {cache_misses} miss(es)",
         file=sys.stderr,
     )
-
-    _write_run_results(output / "table2-runs.csv", records)
-    _write_summary(
+    (output / "unavailable.json").write_text(
+        json.dumps(unavailable, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    write_run_results(output / "table2-runs.csv", records)
+    write_summary(
         output / "summary.md",
         records,
         corpus_source=corpus_source,
         questions_sha256=questions_sha256,
     )
-    (output / "table2-results.json").write_text(
+    (output / "results.json").write_text(
         json.dumps(
             {
                 "protocol": {
-                    "corpus_source": corpus_source,
-                    "questions_path": str(questions_path),
-                    "questions_sha256": questions_sha256,
-                    "vocabulary_limit": _VOCABULARY_LIMIT,
                     "evaluation_protocol": _EVALUATION_PROTOCOL,
-                    "cache_hits": cache_hits,
-                    "cache_misses": cache_misses,
+                    "vocabulary_limit": _VOCABULARY_LIMIT,
+                    "questions_sha256": questions_sha256,
                     "analogy": "b - a + c; cosine; exclude a, b, c",
-                    "source_protocol": "tmikolov/word2vec compute-accuracy.c",
                 },
                 "runs": [asdict(record) for record in records],
             },
@@ -216,10 +214,8 @@ def analyze_table2_sources(
     corpus_source: str | None = None,
     paths: RuntimePaths | None = None,
 ) -> tuple[Path, ...]:
-    """Analyze one requested corpus or render each canonical corpus independently."""
-    paths = paths or RuntimePaths.from_environment()
     sources = CORPUS_SOURCES if corpus_source is None else (corpus_source,)
-    outputs = tuple(
+    return tuple(
         analyze_table2(
             cache_root,
             questions_path,
@@ -228,26 +224,24 @@ def analyze_table2_sources(
         )
         for source in sources
     )
-    if corpus_source is None:
-        root = paths.cache_root / "f2/w2v1/analysis"
-        root.mkdir(parents=True, exist_ok=True)
-        lines = ["# W2V1 Table 2 analyses", ""]
-        for source, output in zip(sources, outputs, strict=True):
-            lines.append(f"- [{source.upper()}](./{output.name}/summary.md)")
-        (root / "summary.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
-    return outputs
 
 
 def _complete_conditions(
-    runs: list[Any], *, corpus_source: str
+    runs: list[Any], corpus_source: str
 ) -> dict[tuple[int, int], dict[int, Any]]:
     grouped: dict[tuple[int, int], dict[int, Any]] = {}
     for run in runs:
-        variant = run.data.tags.get("implementation.variant", "")
-        match = _CONDITION.fullmatch(variant)
+        experiment = run.data.tags.get("repro.experiment_spec_id")
+        if experiment != "w2v1-table2-cbow":
+            continue
+        slot = run.data.tags.get("f2.planned_run_slot_id", "")
+        match = _CONDITION.search(slot)
         if match is None or match.group(1) != corpus_source:
             continue
-        seed = int(run.data.tags.get("seed", "0"))
+        try:
+            seed = int(run.data.tags.get("f2.seed", ""))
+        except ValueError:
+            continue
         if seed not in _SEEDS:
             continue
         key = (int(match.group(3)), int(match.group(2)))
@@ -256,13 +250,6 @@ def _complete_conditions(
             continue
         seeds[seed] = run
     return {key: seeds for key, seeds in grouped.items() if set(seeds) == set(_SEEDS)}
-
-
-def _write_run_results(path: Path, records: list[Table2RunResult]) -> None:
-    with path.open("w", encoding="utf-8", newline="") as stream:
-        writer = csv.DictWriter(stream, fieldnames=Table2RunResult.__dataclass_fields__)
-        writer.writeheader()
-        writer.writerows(asdict(record) for record in records)
 
 
 def observed_training_seconds(path: Path) -> float:
@@ -276,86 +263,6 @@ def observed_training_seconds(path: Path) -> float:
     if not by_epoch:
         raise ValueError(f"training observations are empty: {path}")
     return sum(by_epoch.values())
-
-
-def _write_summary(
-    path: Path,
-    records: list[Table2RunResult],
-    *,
-    corpus_source: str,
-    questions_sha256: str,
-) -> None:
-    grouped: dict[tuple[int, int], list[Table2RunResult]] = {}
-    for record in records:
-        grouped.setdefault(
-            (record.training_words_millions, record.vector_dimension), []
-        ).append(record)
-    lines = [
-        f"# W2V1 Table 2 word analogy accuracy — {corpus_source.upper()}",
-        "",
-        "Cells are the mean total accuracy (%) across seeds 1, 7, and 19. "
-        "Only conditions with all three durable completed runs are shown.",
-        "",
-        "| Training words | 50 | 100 | 300 | 600 |",
-        "|---:|---:|---:|---:|---:|",
-    ]
-    for words in _TRAINING_WORDS:
-        cells = []
-        for dimension in _DIMENSIONS:
-            values = grouped.get((words, dimension))
-            cells.append(
-                ""
-                if values is None
-                else f"{statistics.fmean(x.total_accuracy_percent for x in values):.2f}"
-            )
-        lines.append(f"| {words}M | " + " | ".join(cells) + " |")
-    lines.extend(
-        [
-            "",
-            "## Condition details",
-            "",
-            "| Training words | Dimension | Runs | Total accuracy mean ± sample SD (%) | Observed training time mean ± sample SD | Questions included / total |",
-            "|---:|---:|---:|---:|---:|---:|",
-        ]
-    )
-    for key, values in sorted(grouped.items()):
-        scores = [value.total_accuracy_percent for value in values]
-        training_times = [value.observed_training_seconds for value in values]
-        coverage = sorted({(x.included_questions, x.total_questions) for x in values})
-        coverage_text = ", ".join(f"{valid}/{total}" for valid, total in coverage)
-        lines.append(
-            f"| {key[0]}M | {key[1]} | {len(values)} | "
-            f"{statistics.fmean(scores):.2f} ± {statistics.stdev(scores):.2f} | "
-            f"{_duration(statistics.fmean(training_times))} ± "
-            f"{_duration(statistics.stdev(training_times))} | "
-            f"{coverage_text} |"
-        )
-    lines.extend(
-        [
-            "",
-            "## Protocol",
-            "",
-            f"- Evaluation vocabulary: the first {_VOCABULARY_LIMIT:,} model vocabulary rows.",
-            "- Questions with any OOV term are excluded; accuracy uses the remaining questions.",
-            "- Candidate score: cosine with `b - a + c`; input terms `a`, `b`, and `c` are excluded.",
-            "- Semantic is the first five source sections; syntactic is the remaining nine sections.",
-            f"- `questions-words.txt` SHA-256: `{questions_sha256}`.",
-            "- Per-run semantic, syntactic, total, observed training time, coverage, and MLflow IDs are in `table2-runs.csv`.",
-            "- Per-run observed training time is the sum of the last dense `elapsed_seconds` observation in each epoch. It excludes setup and artifact publication, but may omit the short tail after the final observation interval.",
-            "- Difference from the C executable: batched NumPy matrix multiplication replaces its scalar loop; token casing, float32 vector normalization, candidate order, positive-score initialization, filtering, and aggregation are preserved.",
-        ]
-    )
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-
-
-def _duration(seconds: float) -> str:
-    hours, remainder = divmod(seconds, 3600.0)
-    minutes, remaining_seconds = divmod(remainder, 60.0)
-    if hours >= 1.0:
-        return f"{int(hours)}h {int(minutes):02d}m {remaining_seconds:04.1f}s"
-    if minutes >= 1.0:
-        return f"{int(minutes)}m {remaining_seconds:04.1f}s"
-    return f"{remaining_seconds:.1f}s"
 
 
 __all__ = [

@@ -1,6 +1,5 @@
 """Shared F2 composition, statistics and analysis standards."""
 
-from .adapters import CheckpointAdapter
 from .analysis import (
     W2V_COLORS,
     BaseAnalysisOrchestrator,
@@ -32,7 +31,6 @@ __all__ = [
     "W2V_COLORS",
     "BaseAnalysisOrchestrator",
     "BootstrapVarianceEngine",
-    "CheckpointAdapter",
     "ClassificationMetrics",
     "ConditionDeclaration",
     "MetricDeclaration",
