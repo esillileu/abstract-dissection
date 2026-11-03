@@ -109,18 +109,15 @@ class ConditionIdentity:
             raise ValueError("ConditionIdentity requires identity.seed")
         seed = int(identity["seed"])
 
-        atomic_run_id = str(config.get("atomic_run_id", "")).strip()
-        if atomic_run_id:
-            condition_id = (
-                atomic_run_id.split("--", 1)[1]
-                if "--" in atomic_run_id
-                else atomic_run_id
-            )
-        else:
-            condition_id = str(identity.get("experiment_spec_id", "")).strip()
+        # Ref.md: Extract canonical condition_id directly from normalized identity or atomic_run_id
+        condition_id = (
+            str(identity.get("condition_id", "")).strip()
+            or str(identity.get("experiment_spec_id", "")).strip()
+            or str(config.get("atomic_run_id", "")).strip()
+        )
         if not condition_id:
             raise ValueError(
-                "ConditionIdentity requires atomic_run_id or identity.experiment_spec_id"
+                "ConditionIdentity requires identity.condition_id, identity.experiment_spec_id, or atomic_run_id"
             )
 
         resolved_exp = (
