@@ -568,6 +568,20 @@ def run_w2v2_analysis(
     def _verify_sig(sig: dict, current_run_ids: list[str]) -> bool:
         if not isinstance(sig, dict):
             return False
+        # Required signature fields
+        for req in (
+            "run_ids",
+            "table_filter",
+            "corpus_filter",
+            "eval_datasets",
+            "evaluation_protocol",
+        ):
+            if req not in sig:
+                return False
+        from .suites.w2v2.analysis import EVALUATION_PROTOCOL
+
+        if sig.get("evaluation_protocol") != EVALUATION_PROTOCOL:
+            return False
         if sig.get("run_ids") != current_run_ids:
             return False
         if sig.get("table_filter") != target_table:
@@ -575,40 +589,27 @@ def run_w2v2_analysis(
         if sig.get("corpus_filter") != target_corpus:
             return False
         eval_ds = sig.get("eval_datasets", {})
+        if not isinstance(eval_ds, dict):
+            return False
         if expected_word_sha is not None:
-            saved_w_sha = eval_ds.get("word", {}).get("sha256")
-            if saved_w_sha and saved_w_sha != expected_word_sha:
+            w_info = eval_ds.get("word")
+            if not isinstance(w_info, dict):
+                return False
+            if w_info.get("status") != "complete":
+                return False
+            saved_w_sha = w_info.get("sha256")
+            if not saved_w_sha or saved_w_sha != expected_word_sha:
                 return False
         if expected_phrase_sha is not None:
-            saved_p_sha = eval_ds.get("phrase", {}).get("sha256")
-            if saved_p_sha and saved_p_sha != expected_phrase_sha:
+            p_info = eval_ds.get("phrase")
+            if not isinstance(p_info, dict):
+                return False
+            if p_info.get("status") != "complete":
+                return False
+            saved_p_sha = p_info.get("sha256")
+            if not saved_p_sha or saved_p_sha != expected_phrase_sha:
                 return False
         return True
-
-    # Fast path when offline or when local cache exists:
-    if not override and summary_file.is_file() and summary_md.is_file():
-        cache_dir = paths.analysis_cache("f2", "w2v2")
-        from .suites.w2v.cache import read_records
-
-        cached_records = read_records(cache_dir)
-        if cached_records:
-            try:
-                cached_payload = json.loads(summary_file.read_text(encoding="utf-8"))
-                sig = cached_payload.get("analysis_signature")
-                if isinstance(sig, dict):
-                    current_run_ids = sorted(
-                        {r.get("run_id") for r in cached_records if r.get("run_id")}
-                    )
-                    if _verify_sig(sig, current_run_ids):
-                        return check_output
-                    else:
-                        raise ValueError(
-                            f"Existing analysis in {check_output} corresponds to different runs/inputs. "
-                            f"Use --override to overwrite previous analysis deliverables."
-                        )
-            except json.JSONDecodeError:
-                pass
-        return check_output
 
     # 2. Query MLflow (or local cache if offline)
     from .suites.w2v.cache import download_results, read_records
@@ -626,7 +627,7 @@ def run_w2v2_analysis(
         )
         result_source = f"MLflow f2.w2v2 ({resolved_uri})"
 
-    # 3. Check existing report validity against newly queried runs
+    # 3. Check existing report validity against actual completed runs and inputs
     current_run_ids = sorted({r.get("run_id") for r in records if r.get("run_id")})
     if not override and summary_file.is_file() and summary_md.is_file():
         try:
@@ -640,6 +641,11 @@ def run_w2v2_analysis(
                         f"Existing analysis in {check_output} corresponds to different runs/inputs. "
                         f"Use --override to overwrite previous analysis deliverables."
                     )
+            else:
+                raise ValueError(
+                    f"Existing analysis in {check_output} lacks required signature. "
+                    f"Use --override to overwrite previous analysis deliverables."
+                )
         except json.JSONDecodeError:
             pass
 

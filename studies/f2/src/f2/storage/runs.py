@@ -84,6 +84,23 @@ class LocalRunStore:
             return [base_dir]
         return []
 
+    def allocate_new_attempt(
+        self,
+        suite_id: str,
+        slot_id: str,
+    ) -> Path:
+        """Atomically allocate a fresh, non-existent indexed attempt directory (run_XX)."""
+        base_dir = self._paths.runs("f2", suite_id, slot_id)
+        base_dir.mkdir(parents=True, exist_ok=True)
+        idx = 1
+        while True:
+            candidate = base_dir / f"run_{idx:02d}"
+            try:
+                candidate.mkdir(parents=False, exist_ok=False)
+                return candidate
+            except FileExistsError:
+                idx += 1
+
     def get_run_root(
         self,
         suite_id: str,
@@ -102,12 +119,7 @@ class LocalRunStore:
 
         # For override, create or resolve a new indexed attempt directory if base exists
         if base_dir.exists() and any(base_dir.iterdir()):
-            idx = 1
-            while (base_dir / f"run_{idx:02d}").exists() and any(
-                (base_dir / f"run_{idx:02d}").iterdir()
-            ):
-                idx += 1
-            return base_dir / f"run_{idx:02d}"
+            return self.allocate_new_attempt(suite_id, slot_id)
 
         return base_dir
 
@@ -124,12 +136,7 @@ class LocalRunStore:
         if not base_dir.exists() or not any(base_dir.iterdir()):
             return base_dir
 
-        idx = 1
-        while (base_dir / f"run_{idx:02d}").exists() and any(
-            (base_dir / f"run_{idx:02d}").iterdir()
-        ):
-            idx += 1
-        return base_dir / f"run_{idx:02d}"
+        return self.allocate_new_attempt(suite_id, slot_id)
 
     def inspect_run(self, run_dir: Path) -> LocalRunStatus:
         """Inspect the current state of a local run directory."""

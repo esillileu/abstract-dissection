@@ -473,10 +473,10 @@ def test_g_analysis_result_reuse_and_override(
     )
 
     # 2. When result exists and override=False:
-    # Neither MLflow query nor generate_report computation must occur!
+    # If offline=True, MLflow query does not occur!
     mock_download = MagicMock(
         side_effect=RuntimeError(
-            "download_results should not be called when result exists!"
+            "download_results should not be called in offline mode!"
         )
     )
     mock_generate = MagicMock(
@@ -493,9 +493,24 @@ def test_g_analysis_result_reuse_and_override(
         word_questions=test_env["word_questions"],
         phrase_questions=test_env["phrase_questions"],
         override=False,
+        offline=True,
     )
     assert out2 == out1
     mock_download.assert_not_called()
+    mock_generate.assert_not_called()
+
+    # In online mode (offline=False), MLflow must be queried to verify latest completed runs
+    monkeypatch.undo()
+    monkeypatch.setattr("f2.suites.w2v2.analysis.generate_report", mock_generate)
+    out2_online = run_w2v2_analysis(
+        paths=paths,
+        tracking_uri=test_env["tracking_uri"],
+        word_questions=test_env["word_questions"],
+        phrase_questions=test_env["phrase_questions"],
+        override=False,
+        offline=False,
+    )
+    assert out2_online == out1
     mock_generate.assert_not_called()
 
     # 3. When override=True:

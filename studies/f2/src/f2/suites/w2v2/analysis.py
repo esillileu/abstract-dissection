@@ -909,6 +909,7 @@ def generate_report(
         "run_ids": sorted({r.get("run_id") for r in records if r.get("run_id")}),
         "table_filter": target_table,
         "corpus_filter": target_corpus,
+        "evaluation_protocol": EVALUATION_PROTOCOL,
         "eval_datasets": {
             k: {
                 "status": v[0].get("status"),

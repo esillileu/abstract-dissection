@@ -190,6 +190,13 @@ class PublicationService:
         lookup_val = artifacts.get("lookup")
         if not lookup_val or not isinstance(lookup_val, str):
             raise ValueError("Cannot publish run: missing lookup in artifacts")
+        checkpoint_val = artifacts.get("checkpoint")
+        if not checkpoint_val or not isinstance(checkpoint_val, str):
+            raise ValueError("Cannot publish run: missing checkpoint in artifacts")
+        metrics_val = artifacts.get("metrics")
+        if not metrics_val or not isinstance(metrics_val, str):
+            raise ValueError("Cannot publish run: missing metrics in artifacts")
+
         final_lookup_path = (run_root / lookup_val).resolve()
         if not final_lookup_path.is_relative_to(run_root.resolve()):
             raise ValueError(
@@ -201,28 +208,38 @@ class PublicationService:
             )
 
         # Validate lookup manifest and arrays
-        if final_lookup_path.is_dir():
-            from f2.suites.common.w2v.artifacts import (
-                CHECKPOINT_FORMAT,
-                LOOKUP_FORMAT,
-                verify_artifact,
+        if not final_lookup_path.is_dir():
+            raise ValueError(
+                f"Cannot publish run: designated lookup is not a directory: {final_lookup_path}"
             )
 
-            fmt = None
-            lookup_manifest = final_lookup_path / "manifest.json"
-            if lookup_manifest.is_file():
-                try:
-                    fmt = json.loads(lookup_manifest.read_text(encoding="utf-8")).get(
-                        "format"
-                    )
-                except Exception:
-                    pass
-            if fmt in (LOOKUP_FORMAT, CHECKPOINT_FORMAT):
-                verify_artifact(final_lookup_path, format_name=fmt)
+        from f2.suites.common.w2v.artifacts import (
+            CHECKPOINT_FORMAT,
+            LOOKUP_FORMAT,
+            verify_artifact,
+        )
 
-        checkpoint_val = artifacts.get("checkpoint")
-        if not checkpoint_val or not isinstance(checkpoint_val, str):
-            raise ValueError("Cannot publish run: missing checkpoint in artifacts")
+        lookup_manifest = final_lookup_path / "manifest.json"
+        if not lookup_manifest.is_file():
+            raise ValueError(
+                f"Cannot publish run: designated lookup directory lacks manifest.json: {final_lookup_path}"
+            )
+        try:
+            lookup_fmt = json.loads(lookup_manifest.read_text(encoding="utf-8")).get(
+                "format"
+            )
+        except Exception as exc:
+            raise ValueError(
+                f"Cannot publish run: failed to parse lookup manifest in {final_lookup_path}: {exc}"
+            ) from exc
+
+        if lookup_fmt not in (LOOKUP_FORMAT, CHECKPOINT_FORMAT):
+            raise ValueError(
+                f"Cannot publish run: unsupported lookup format '{lookup_fmt}' in {final_lookup_path}. "
+                f"Expected one of: {(LOOKUP_FORMAT, CHECKPOINT_FORMAT)}"
+            )
+        verify_artifact(final_lookup_path, format_name=lookup_fmt)
+
         chk_path = (run_root / checkpoint_val).resolve()
         if not chk_path.is_relative_to(run_root.resolve()):
             raise ValueError(
@@ -232,10 +249,34 @@ class PublicationService:
             raise ValueError(
                 f"Cannot publish run: designated checkpoint does not exist: {chk_path}"
             )
+        if not chk_path.is_dir():
+            raise ValueError(
+                f"Cannot publish run: designated checkpoint is not a directory: {chk_path}"
+            )
 
-        metrics_val = artifacts.get("metrics")
-        if not metrics_val or not isinstance(metrics_val, str):
-            raise ValueError("Cannot publish run: missing metrics in artifacts")
+        chk_manifest = chk_path / "manifest.json"
+        if not chk_manifest.is_file():
+            raise ValueError(
+                f"Cannot publish run: designated checkpoint directory lacks manifest.json: {chk_path}"
+            )
+        try:
+            chk_fmt = json.loads(chk_manifest.read_text(encoding="utf-8")).get("format")
+        except Exception as exc:
+            raise ValueError(
+                f"Cannot publish run: failed to parse checkpoint manifest in {chk_path}: {exc}"
+            ) from exc
+
+        from f2.suites.w2v.nnlm_artifacts import (
+            CHECKPOINT_FORMAT as NNLM_CHECKPOINT_FORMAT,
+        )
+
+        if chk_fmt not in (CHECKPOINT_FORMAT, NNLM_CHECKPOINT_FORMAT):
+            raise ValueError(
+                f"Cannot publish run: unsupported checkpoint format '{chk_fmt}' in {chk_path}. "
+                f"Expected one of: {(CHECKPOINT_FORMAT, NNLM_CHECKPOINT_FORMAT)}"
+            )
+        verify_artifact(chk_path, format_name=chk_fmt)
+
         met_path = (run_root / metrics_val).resolve()
         if not met_path.is_relative_to(run_root.resolve()):
             raise ValueError(
@@ -426,6 +467,27 @@ class PublicationService:
                 raise RuntimeError(
                     f"Artifact upload incomplete; missing in remote MLflow run: {missing_remote}"
                 )
+
+            # 4b. Verify content integrity of essential metadata files
+            import tempfile
+
+            from repro_io.checksum import sha256_file
+
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                for verify_rel in ("result.json", "result_manifest.json"):
+                    if verify_rel in remote_files:
+                        dl_path = self.client.download_artifacts(
+                            run_id, verify_rel, tmp_dir
+                        )
+                        local_target = run_root / verify_rel
+                        if local_target.is_file():
+                            remote_hash = sha256_file(Path(dl_path))
+                            local_hash = sha256_file(local_target)
+                            if remote_hash != local_hash:
+                                raise RuntimeError(
+                                    f"Remote artifact integrity mismatch for {verify_rel}: "
+                                    f"local {local_hash} != remote {remote_hash}"
+                                )
 
             # 5. Upload observations as metrics
             metrics_file = run_root / "metrics/observations.csv"

@@ -507,3 +507,148 @@ def test_interruption_preserves_config_and_resumes_without_result_json(tmp_path)
     assert len(resumed_checkpoints) == 1
     assert resumed_checkpoints[0] == run_dir / "checkpoints/generations/epoch-0002"
     coordinator.publication.publish_run.assert_called_once()
+
+
+def test_atomic_attempt_allocation_does_not_reuse_empty_existing_dir(tmp_path):
+    """P1: Attempt allocation atomically creates a new run_XX and never reuses empty directory."""
+    from f2.storage.runs import LocalRunStore
+    from repro_core.context.paths import RuntimePaths
+
+    paths = RuntimePaths.from_environment(tmp_path)
+    store = LocalRunStore(paths)
+
+    slot_dir = paths.runs("f2", "w2v1", "slot_alloc_test")
+    slot_dir.mkdir(parents=True, exist_ok=True)
+    (slot_dir / "base_file.txt").write_text("existing base")
+
+    # Manually create run_01 as an empty directory
+    (slot_dir / "run_01").mkdir()
+
+    # allocate_new_attempt must skip run_01 because it already exists!
+    new_attempt = store.allocate_new_attempt("w2v1", "slot_alloc_test")
+    assert new_attempt.name == "run_02"
+    assert new_attempt.is_dir()
+
+    # Next attempt should be run_03
+    next_attempt = store.allocate_new_attempt("w2v1", "slot_alloc_test")
+    assert next_attempt.name == "run_03"
+    assert next_attempt.is_dir()
+
+
+def test_publication_enforces_artifact_manifest_integrity_and_remote_hashes(tmp_path):
+    """P0: Publication rejects corrupted or unknown manifest formats and detects remote SHA256 mismatch."""
+    import json
+    from unittest.mock import MagicMock
+
+    import pytest
+
+    from f2.storage.publication import PublicationService
+
+    service = PublicationService(tracking_uri="http://fake-mlflow")
+    mock_client = MagicMock()
+    service.client = mock_client
+
+    run_dir = tmp_path / "run_corrupt"
+    run_dir.mkdir()
+
+    condition = ConditionIdentity(
+        suite_id="w2v1",
+        experiment_id="e01",
+        condition_id="cbow",
+        seed=1,
+        config_digest="digest_test",
+        planned_run_slot_id="slot-corrupt",
+    )
+    cfg = {"identity": {"seed": 1}, "atomic_run_id": "cbow"}
+
+    lookup_dir = run_dir / "lookup"
+    lookup_dir.mkdir()
+    chk_dir = run_dir / "checkpoints"
+    chk_dir.mkdir()
+    met_dir = run_dir / "metrics"
+    met_dir.mkdir()
+    (met_dir / "observations.csv").write_text("loss\n0.1\n")
+
+    result_data = {
+        "complete": True,
+        "identity": {
+            "config_digest": "digest_test",
+            "seed": 1,
+            "planned_run_slot_id": "slot-corrupt",
+        },
+        "artifacts": {
+            "lookup": "lookup",
+            "checkpoint": "checkpoints",
+            "metrics": "metrics/observations.csv",
+        },
+    }
+    (run_dir / "result.json").write_text(json.dumps(result_data))
+
+    # 1. Missing manifest in lookup
+    with pytest.raises(
+        ValueError, match=r"designated lookup directory lacks manifest\.json"
+    ):
+        service.publish_run("exp", condition, run_dir, cfg)
+
+    # 2. Unknown format in lookup manifest
+    (lookup_dir / "manifest.json").write_text(json.dumps({"format": "unknown-format"}))
+    with pytest.raises(ValueError, match="unsupported lookup format"):
+        service.publish_run("exp", condition, run_dir, cfg)
+
+    # 3. Valid lookup format but missing manifest in checkpoint
+    # Create valid lookup files matching manifest
+    (lookup_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "format": "f2-w2v-lookup-v1",
+                "format_version": 1,
+                "files": {},
+            }
+        )
+    )
+    with pytest.raises(
+        ValueError, match=r"designated checkpoint directory lacks manifest\.json"
+    ):
+        service.publish_run("exp", condition, run_dir, cfg)
+
+    # 4. Remote content hash mismatch triggers failure and does not mark FINISHED
+    (chk_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "format": "f2-w2v-checkpoint-v1",
+                "format_version": 1,
+                "files": {},
+            }
+        )
+    )
+    mock_run = MagicMock()
+    mock_run.info.run_id = "test-run-123"
+    mock_client.create_run.return_value = mock_run
+
+    # Remote list contains expected files
+    mock_files = [
+        "result.json",
+        "result_manifest.json",
+        "lookup/manifest.json",
+        "checkpoints/manifest.json",
+        "metrics/observations.csv",
+    ]
+
+    def make_mock_art(p):
+        a = MagicMock()
+        a.is_dir = False
+        a.path = p
+        return a
+
+    mock_client.list_artifacts.return_value = [make_mock_art(p) for p in mock_files]
+
+    # Download returns a corrupted file with different hash
+    corrupt_dl = tmp_path / "corrupt_download.json"
+    corrupt_dl.write_text("tampered content")
+    mock_client.download_artifacts.return_value = str(corrupt_dl)
+
+    with pytest.raises(RuntimeError, match="Remote artifact integrity mismatch"):
+        service.publish_run("exp", condition, run_dir, cfg)
+
+    # Must be marked FAILED, never FINISHED
+    mock_client.set_terminated.assert_called_with("test-run-123", status="FAILED")
