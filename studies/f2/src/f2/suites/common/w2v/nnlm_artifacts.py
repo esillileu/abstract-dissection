@@ -5,13 +5,15 @@ from typing import Any
 
 import numpy as np
 
-from f2.suites.common.w2v.artifacts import (
-    _VOCABULARY_ARRAYS,
+from f2.suites.common.w2v.checkpoints import (
     _load_array,
     _read_json,
     _validate_manifest_identity,
     _write_json,
     _write_manifest,
+)
+from f2.suites.common.w2v.formats import (
+    _VOCABULARY_ARRAYS,
     verify_artifact,
 )
 from repro_core.context.checkpoint import CheckpointManager, CheckpointRetentionPolicy
