@@ -109,6 +109,10 @@ class W2V2Executor(Word2VecExecutor):
             )
 
         resolved["corpus"] = {"path": str(phrase.path), "sha256": phrase.corpus_sha256}
+        # Persist finalized resolved config (with materialized phrase binding) so initial publication
+        # and re-publication preserve exact provenance and match local_store
+        local_store.write_config(resolved)
+
         result = super()._run_training(
             resolved,
             context,
