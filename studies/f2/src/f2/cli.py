@@ -436,13 +436,10 @@ def check(
         )
         return
 
-    runs = client.search_runs([exp.experiment_id], max_results=10000)
-    completed_slots = {
-        r.data.tags.get("planned_run_slot_id")
-        or r.data.tags.get("f2.planned_run_slot_id")
-        for r in runs
-        if r.info.status == "FINISHED"
-    }
+    from f2.execution.identity import ConditionIdentity
+    from f2.storage.publication import PublicationService
+
+    publication = PublicationService(tracking_uri=uri)
     completed_count = 0
     missing_count = 0
     for plan in plans:
@@ -450,8 +447,14 @@ def check(
             plan.path, atomic_run_id=plan.atomic_run_id, overrides=overrides
         )
         seeded_spec = spec.with_seed(plan.seed) if plan.seed is not None else spec
-        slot_id = str(seeded_spec.identity.get("planned_run_slot_id", ""))
-        if slot_id in completed_slots:
+        config = seeded_spec.to_executor_config()
+        condition = ConditionIdentity.from_config(config, suite_id=suite)
+        finished_run = publication.find_matching_finished_run(
+            experiment_name,
+            condition,
+            atomic_run_id=plan.atomic_run_id,
+        )
+        if finished_run is not None:
             completed_count += 1
         else:
             missing_count += 1

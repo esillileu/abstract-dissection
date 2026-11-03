@@ -4,10 +4,8 @@ from __future__ import annotations
 
 import importlib
 from pathlib import Path
-from typing import Any
 
 from f2.suites.w2v.executor import W2VRunReceipt, _mapping
-from f2.suites.w2v.tracking import publish_run_to_mlflow
 from repro_core.context import ExperimentContext, RuntimePaths
 
 
@@ -241,29 +239,6 @@ def _materialize_corpus(
         "sha256": materialized.corpus_sha256,
         "lexical_tokens": materialized.lexical_tokens,
     }
-
-
-def _publish(
-    client: Any,
-    run_id: str,
-    root: Path,
-    *,
-    include_checkpoints: bool = False,
-) -> None:
-    # Forward to tracking helper if called directly
-    publish_run_to_mlflow(
-        client,
-        "f2.w2v",
-        {
-            "identity": {
-                "planned_run_slot_id": run_id,
-                "execution_plan_id": "r1",
-                "config_digest": "",
-            }
-        },
-        root,
-        include_checkpoints=include_checkpoints,
-    )
 
 
 __all__ = ["W2VRunReceipt", "run_tracked_yaml"]

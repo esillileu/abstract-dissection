@@ -35,11 +35,13 @@ class ConditionIdentity:
     extra_dimensions: dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        if not self.suite_id.strip():
+        if not self.suite_id or not self.suite_id.strip():
             raise ValueError("suite_id must be non-empty")
-        if not self.condition_id.strip():
+        if not self.experiment_id or not self.experiment_id.strip():
+            raise ValueError("experiment_id must be non-empty")
+        if not self.condition_id or not self.condition_id.strip():
             raise ValueError("condition_id must be non-empty")
-        if not self.config_digest.strip():
+        if not self.config_digest or not self.config_digest.strip():
             raise ValueError("config_digest must be non-empty")
         if self.plan_revision < 1:
             raise ValueError("plan revision must be positive")
@@ -72,7 +74,10 @@ class ConditionIdentity:
 
     @classmethod
     def from_config(
-        cls, config: dict[str, Any], suite_id: str | None = None
+        cls,
+        config: dict[str, Any],
+        suite_id: str | None = None,
+        experiment_id: str | None = None,
     ) -> ConditionIdentity:
         """Create ConditionIdentity directly from an executor/run config dictionary."""
         identity = (
@@ -80,26 +85,57 @@ class ConditionIdentity:
             if isinstance(config.get("identity"), dict)
             else {}
         )
-        slot_id = str(identity.get("planned_run_slot_id", ""))
-        config_digest = str(identity.get("config_digest", ""))
-        seed = int(identity.get("seed", 1))
 
-        resolved_suite = suite_id or str(identity.get("suite_id", ""))
+        resolved_suite = suite_id or str(identity.get("suite_id", "")).strip()
         if not resolved_suite:
             tracking = config.get("tracking")
             if isinstance(tracking, dict) and "experiment" in tracking:
                 exp_str = str(tracking["experiment"])
-                resolved_suite = exp_str.rsplit(".", 1)[-1]
+                resolved_suite = exp_str.rsplit(".", 1)[-1].strip()
         if not resolved_suite:
-            resolved_suite = "w2v"
+            raise ValueError(
+                "ConditionIdentity requires suite_id in config or argument"
+            )
 
-        atomic_run_id = str(config.get("atomic_run_id", ""))
-        if "--" in atomic_run_id:
-            condition_id = atomic_run_id.split("--", 1)[1]
-        elif atomic_run_id:
-            condition_id = atomic_run_id
+        slot_id = str(identity.get("planned_run_slot_id", "")).strip()
+        if not slot_id:
+            raise ValueError("ConditionIdentity requires identity.planned_run_slot_id")
+
+        config_digest = str(identity.get("config_digest", "")).strip()
+        if not config_digest:
+            raise ValueError("ConditionIdentity requires identity.config_digest")
+
+        if "seed" not in identity:
+            raise ValueError("ConditionIdentity requires identity.seed")
+        seed = int(identity["seed"])
+
+        atomic_run_id = str(config.get("atomic_run_id", "")).strip()
+        if atomic_run_id:
+            condition_id = (
+                atomic_run_id.split("--", 1)[1]
+                if "--" in atomic_run_id
+                else atomic_run_id
+            )
         else:
-            condition_id = str(identity.get("experiment_spec_id") or "default")
+            condition_id = str(identity.get("experiment_spec_id", "")).strip()
+        if not condition_id:
+            raise ValueError(
+                "ConditionIdentity requires atomic_run_id or identity.experiment_spec_id"
+            )
+
+        resolved_exp = (
+            experiment_id
+            or str(identity.get("study", "")).strip()
+            or str(identity.get("experiment_id", "")).strip()
+        )
+        if not resolved_exp:
+            plan_id = str(identity.get("execution_plan_id", ""))
+            if plan_id:
+                resolved_exp = plan_id.split("-r", 1)[0]
+        if not resolved_exp:
+            raise ValueError(
+                "ConditionIdentity requires experiment_id, identity.study, or identity.execution_plan_id"
+            )
 
         plan_id = str(identity.get("execution_plan_id", ""))
         plan_rev = 1
@@ -109,13 +145,9 @@ class ConditionIdentity:
             except ValueError:
                 plan_rev = 1
 
-        experiment_id = str(
-            identity.get("study") or identity.get("experiment_id") or "e01"
-        )
-
         return cls(
             suite_id=resolved_suite,
-            experiment_id=experiment_id,
+            experiment_id=resolved_exp,
             condition_id=condition_id,
             seed=seed,
             config_digest=config_digest,

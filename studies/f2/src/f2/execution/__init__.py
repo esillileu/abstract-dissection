@@ -1,4 +1,4 @@
-"""Execution package entrypoint for F2."""
+"""Execution coordination and identity models for F2."""
 
 from f2.execution.coordinator import (
     ExecutionDecision,
@@ -6,13 +6,10 @@ from f2.execution.coordinator import (
     ExecutionReceipt,
     F2ExecutionCoordinator,
 )
-from f2.execution.definitions import (
-    F2SuiteDefinition,
-    get_suite,
-    list_suites,
-    register_suite,
+from f2.execution.identity import (
+    AttemptIdentity,
+    ConditionIdentity,
 )
-from f2.execution.identity import AttemptIdentity, ConditionIdentity, _compute_digest
 
 __all__ = [
     "AttemptIdentity",
@@ -21,9 +18,4 @@ __all__ = [
     "ExecutionDecisionKind",
     "ExecutionReceipt",
     "F2ExecutionCoordinator",
-    "F2SuiteDefinition",
-    "_compute_digest",
-    "get_suite",
-    "list_suites",
-    "register_suite",
 ]

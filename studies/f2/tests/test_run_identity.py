@@ -1,16 +1,20 @@
 import pytest
 
-from f2.run_identity import RunIdentity
+from f2.execution.identity import ConditionIdentity
 
 
 def identity(**overrides):
     values = {
-        "planned_run_slot_id": "w2v1-r1-slot-1",
-        "plan_revision": 1,
+        "suite_id": "w2v1",
+        "experiment_id": "e01",
+        "condition_id": "table2",
+        "seed": 1,
         "config_digest": "config-sha256",
+        "plan_revision": 1,
+        "planned_run_slot_id": "w2v1-r1-slot-1",
     }
     values.update(overrides)
-    return RunIdentity(**values)
+    return ConditionIdentity(**values)
 
 
 def test_tracked_run_requires_complete_immutable_identity():

@@ -37,7 +37,7 @@ class AnalysisCacheManager:
         artifact_path: str = "",
     ) -> Path:
         """Download and cache artifacts for a specific MLflow run."""
-        return self._mlflow_cache.download(run_id, artifact_path=artifact_path)
+        return self._mlflow_cache.get(run_id, artifact_path=artifact_path)
 
     def get_analysis_cache_dir(self, suite_id: str) -> Path:
         """Get intermediate results cache directory."""

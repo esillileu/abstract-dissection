@@ -7,11 +7,14 @@ Implements ref.md section 1, 3.2 & 4.4:
     3. resume: Local checkpoint exists and can be resumed.
     4. new: New attempt created.
 - Never performs numerical calculations directly.
+- Coordinates the entire execution lifecycle (skip -> local publish -> resume -> run -> publish).
 - Delegates storage operations to f2.storage and training to the suite executor.
 """
 
 from __future__ import annotations
 
+import json
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -20,7 +23,9 @@ from typing import Any
 from f2.execution.identity import ConditionIdentity
 from f2.storage.publication import PublicationService
 from f2.storage.runs import LocalRunStore
+from repro_core.context import ExperimentContext
 from repro_core.context.paths import RuntimePaths
+from repro_core.storage.local_store import LocalStore
 
 
 class ExecutionDecisionKind(StrEnum):
@@ -115,6 +120,119 @@ class F2ExecutionCoordinator:
             kind=ExecutionDecisionKind.RUN,
             run_dir=run_dir,
         )
+
+    def execute_condition(
+        self,
+        condition: ConditionIdentity,
+        config: dict[str, Any],
+        context: ExperimentContext,
+        *,
+        experiment_name: str,
+        training_delegate: Callable[..., Any],
+        override: bool = False,
+        progress_reporter: Any | None = None,
+        load_result_delegate: Callable[[Path], Any] | None = None,
+    ) -> ExecutionReceipt:
+        """Own the full execution lifecycle: skip -> publish -> resume -> run -> publish."""
+        atomic_run_id = str(config.get("atomic_run_id", "")) or None
+        decision = self.decide(
+            condition,
+            experiment_name=experiment_name,
+            override=override,
+            atomic_run_id=atomic_run_id,
+        )
+
+        root_override = context.metadata.get("run_root")
+        run_root = Path(root_override) if root_override else decision.run_dir
+        local_store = LocalStore(run_root)
+        local_store.ensure_directories()
+
+        # 1. Skip check: MLflow FINISHED run
+        if decision.kind == ExecutionDecisionKind.SKIP and not override:
+            existing_run_id = decision.existing_run_id
+            if progress_reporter is not None:
+                progress_reporter.write(
+                    f"Skipping {condition.suite_id} slot={condition.planned_run_slot_id}: "
+                    f"finished run {existing_run_id} exists"
+                )
+            return ExecutionReceipt(
+                slot_id=condition.planned_run_slot_id,
+                run_dir=run_root,
+                run_id=existing_run_id,
+                decision=decision.kind,
+                result=None,
+                skipped=True,
+            )
+
+        # 2. Local complete result exists: publish immediately without re-training
+        if decision.kind == ExecutionDecisionKind.PUBLISH and not override:
+            if progress_reporter is not None:
+                progress_reporter.write(
+                    f"Publishing existing local result for slot={condition.planned_run_slot_id}"
+                )
+            run_id = self.publication.publish_run(
+                experiment_name,
+                condition,
+                run_root,
+                config,
+            )
+            result = (
+                load_result_delegate(run_root)
+                if load_result_delegate is not None
+                else self._default_load_result(run_root)
+            )
+            return ExecutionReceipt(
+                slot_id=condition.planned_run_slot_id,
+                run_dir=run_root,
+                run_id=run_id,
+                decision=decision.kind,
+                result=result,
+                skipped=False,
+            )
+
+        # 3. Resume from checkpoint or 4. Fresh run
+        resume_from = None
+        if decision.kind == ExecutionDecisionKind.RESUME and not override:
+            resume_from = decision.resume_checkpoint
+            if progress_reporter is not None:
+                progress_reporter.write(
+                    f"Resuming {condition.suite_id} slot={condition.planned_run_slot_id} "
+                    f"from epoch {decision.resume_epoch} checkpoint"
+                )
+
+        result = training_delegate(
+            config,
+            context,
+            run_root=run_root,
+            local_store=local_store,
+            resume_from=resume_from,
+            progress_reporter=progress_reporter,
+        )
+
+        # 5. Publish to MLflow and finalize
+        run_id = self.publication.publish_run(
+            experiment_name,
+            condition,
+            run_root,
+            config,
+        )
+        return ExecutionReceipt(
+            slot_id=condition.planned_run_slot_id,
+            run_dir=run_root,
+            run_id=run_id,
+            decision=decision.kind,
+            result=result,
+            skipped=False,
+        )
+
+    def _default_load_result(self, run_root: Path) -> Any:
+        res_file = run_root / "result.json"
+        if res_file.is_file():
+            try:
+                return json.loads(res_file.read_text(encoding="utf-8"))
+            except Exception:
+                return None
+        return None
 
 
 __all__ = [

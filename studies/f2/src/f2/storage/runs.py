@@ -81,7 +81,9 @@ class LocalRunStore:
             )
 
         loc = self._locator.locate(run_dir)
-        metrics_file = run_dir / "metrics" / "metrics.json"
+        metrics_file = run_dir / "metrics" / "observations.csv"
+        if not metrics_file.exists():
+            metrics_file = run_dir / "metrics" / "metrics.json"
         if not metrics_file.exists():
             metrics_file = run_dir / "metrics.json"
 
