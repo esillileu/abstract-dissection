@@ -57,8 +57,12 @@ class Word2VecRunSpec:
 
     def resolved_config(self) -> dict[str, object]:
         """Resolve semantic configuration mappings for identity digest computation."""
+        # Sanitize corpus metadata to exclude machine-specific local paths from scientific identity digest
+        cleaned_corpus = {
+            k: v for k, v in self.corpus.items() if k not in ("path", "local_path")
+        }
         resolved: dict[str, object] = {
-            "corpus": self.corpus,
+            "corpus": cleaned_corpus,
             "vocabulary": self.vocabulary,
             "training": self.training,
         }
@@ -71,11 +75,14 @@ class Word2VecRunSpec:
     def to_executor_config(self) -> dict[str, object]:
         """Convert specification to engine executor configuration."""
         resolved = self.resolved_config()
+        # Keep runtime path in corpus for execution engine, while resolved_config excluded it from config_digest
+        executor_corpus = dict(self.corpus)
         return {
             "kind": "word2vec",
             "atomic_run_id": self.atomic_run_id,
             "identity": {**self.identity, "config_digest": _digest(resolved)},
             **resolved,
+            "corpus": executor_corpus,
             "checkpoint": self.checkpoint,
             "tracking": self.tracking,
         }

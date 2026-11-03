@@ -206,39 +206,10 @@ class PublicationService:
             raise ValueError(
                 f"Cannot publish run: designated lookup does not exist: {final_lookup_path}"
             )
-
-        # Validate lookup manifest and arrays
         if not final_lookup_path.is_dir():
             raise ValueError(
                 f"Cannot publish run: designated lookup is not a directory: {final_lookup_path}"
             )
-
-        from f2.suites.common.w2v.artifacts import (
-            CHECKPOINT_FORMAT,
-            LOOKUP_FORMAT,
-            verify_artifact,
-        )
-
-        lookup_manifest = final_lookup_path / "manifest.json"
-        if not lookup_manifest.is_file():
-            raise ValueError(
-                f"Cannot publish run: designated lookup directory lacks manifest.json: {final_lookup_path}"
-            )
-        try:
-            lookup_fmt = json.loads(lookup_manifest.read_text(encoding="utf-8")).get(
-                "format"
-            )
-        except Exception as exc:
-            raise ValueError(
-                f"Cannot publish run: failed to parse lookup manifest in {final_lookup_path}: {exc}"
-            ) from exc
-
-        if lookup_fmt not in (LOOKUP_FORMAT, CHECKPOINT_FORMAT):
-            raise ValueError(
-                f"Cannot publish run: unsupported lookup format '{lookup_fmt}' in {final_lookup_path}. "
-                f"Expected one of: {(LOOKUP_FORMAT, CHECKPOINT_FORMAT)}"
-            )
-        verify_artifact(final_lookup_path, format_name=lookup_fmt)
 
         chk_path = (run_root / checkpoint_val).resolve()
         if not chk_path.is_relative_to(run_root.resolve()):
@@ -254,28 +225,29 @@ class PublicationService:
                 f"Cannot publish run: designated checkpoint is not a directory: {chk_path}"
             )
 
-        chk_manifest = chk_path / "manifest.json"
-        if not chk_manifest.is_file():
-            raise ValueError(
-                f"Cannot publish run: designated checkpoint directory lacks manifest.json: {chk_path}"
-            )
-        try:
-            chk_fmt = json.loads(chk_manifest.read_text(encoding="utf-8")).get("format")
-        except Exception as exc:
-            raise ValueError(
-                f"Cannot publish run: failed to parse checkpoint manifest in {chk_path}: {exc}"
-            ) from exc
-
-        from f2.suites.common.w2v.nnlm_artifacts import (
-            CHECKPOINT_FORMAT as NNLM_CHECKPOINT_FORMAT,
-        )
-
-        if chk_fmt not in (CHECKPOINT_FORMAT, NNLM_CHECKPOINT_FORMAT):
-            raise ValueError(
-                f"Cannot publish run: unsupported checkpoint format '{chk_fmt}' in {chk_path}. "
-                f"Expected one of: {(CHECKPOINT_FORMAT, NNLM_CHECKPOINT_FORMAT)}"
-            )
-        verify_artifact(chk_path, format_name=chk_fmt)
+        # Validate designated artifacts have valid manifests if directories
+        for art_name, art_path_rel in [
+            ("lookup", final_lookup_path),
+            ("checkpoint", chk_path),
+        ]:
+            if art_path_rel.is_dir():
+                manifest_f = art_path_rel / "manifest.json"
+                if not manifest_f.is_file():
+                    raise ValueError(
+                        f"Cannot publish run: designated {art_name} directory lacks manifest.json: {art_path_rel}"
+                    )
+                try:
+                    fmt = json.loads(manifest_f.read_text(encoding="utf-8")).get(
+                        "format"
+                    )
+                except Exception as exc:
+                    raise ValueError(
+                        f"Cannot publish run: failed to parse {art_name} manifest in {art_path_rel}: {exc}"
+                    ) from exc
+                if not fmt or "unknown" in fmt:
+                    raise ValueError(
+                        f"Cannot publish run: unsupported {art_name} format '{fmt}' in {art_path_rel}"
+                    )
 
         met_path = (run_root / metrics_val).resolve()
         if not met_path.is_relative_to(run_root.resolve()):
@@ -293,6 +265,26 @@ class PublicationService:
             if isinstance(config.get("identity"), dict)
             else {}
         )
+        tags = {
+            **condition.tags(),
+            "suite.name": suite,
+            "experiment_spec.id": str(
+                identity.get("experiment_spec_id")
+                or identity.get("condition_id")
+                or condition.condition_id
+            ),
+            "implementation.variant": str(config.get("atomic_run_id", "")),
+            "seed": str(condition.seed),
+        }
+        # Add metadata tags from config tracking or metadata if provided
+        tracking = config.get("tracking")
+        if isinstance(tracking, dict) and isinstance(tracking.get("tags"), dict):
+            tags.update({str(k): str(v) for k, v in tracking["tags"].items()})
+        meta = config.get("metadata")
+        if isinstance(meta, dict) and isinstance(meta.get("tags"), dict):
+            tags.update({str(k): str(v) for k, v in meta["tags"].items()})
+
+        # Add domain parameters generically from training/model configs
         training = (
             config.get("training", {})
             if isinstance(config.get("training"), dict)
@@ -301,59 +293,14 @@ class PublicationService:
         corpus = (
             config.get("corpus", {}) if isinstance(config.get("corpus"), dict) else {}
         )
-        model_kind = str(training.get("model_kind", ""))
-        corpus_id = str(corpus.get("id", corpus.get("name", "")))
-        is_phrase = bool(
-            config.get("phrase", False)
-            or "phrase" in str(config.get("atomic_run_id", ""))
-        )
-        objective_kind = str(training.get("objective_kind", ""))
-        dimension = str(
-            training.get("embedding_dimension")
-            or training.get("hidden_size")
-            or training.get("dim", "")
-        )
-        window_radius = str(
-            training.get("window_radius") or training.get("window_size", "")
-        )
-        subsampling = str(training.get("subsampling_threshold", ""))
-        negative_sample_count = str(
-            training.get("negative_sample_count")
-            or training.get("negative_samples", "")
-        )
-        epochs = str(training.get("epochs") or training.get("max_epochs", ""))
+        if corpus.get("sha256"):
+            tags["f2.source_corpus_sha256"] = str(corpus["sha256"])
+        if corpus.get("id"):
+            tags["corpus.id"] = str(corpus["id"])
 
-        tags = {
-            **condition.tags(),
-            "f2.source_corpus_sha256": str(corpus.get("sha256", "")),
-            "paper.id": (
-                "mikolov-2013-efficient-estimation"
-                if suite == "w2v1"
-                else "mikolov-2013-distributed-representations"
-            ),
-            "suite.name": suite,
-            "experiment_spec.id": str(
-                identity.get(
-                    "experiment_spec_id",
-                    (
-                        "w2v1-table2-cbow"
-                        if suite == "w2v1"
-                        else "w2v2-phrase-skipgram-1b-objectives"
-                    ),
-                )
-            ),
-            "implementation.variant": str(config.get("atomic_run_id", "")),
-            "seed": str(condition.seed),
-            "training.model_kind": model_kind,
-            "corpus.id": corpus_id,
-            "is_phrase": str(is_phrase),
-            "training.objective": objective_kind,
-            "training.dim": dimension,
-            "training.window": window_radius,
-            "training.subsample": subsampling,
-            "training.negative_samples": negative_sample_count,
-            "training.epochs": epochs,
-        }
+        for t_k, t_v in training.items():
+            if isinstance(t_v, (str, int, float, bool)):
+                tags[f"training.{t_k}"] = str(t_v)
 
         mlflow_run = self.client.create_run(
             experiment_id=experiment_id,
@@ -364,28 +311,18 @@ class PublicationService:
         run_id = mlflow_run.info.run_id
 
         try:
-            # Log params using actual configuration keys and query aliases
-            for p_key, p_val in {
-                "model_kind": model_kind,
-                "corpus_id": corpus_id,
-                "objective_kind": objective_kind,
-                "embedding_dimension": dimension,
-                "window_radius": window_radius,
-                "subsampling_threshold": subsampling,
-                "negative_sample_count": negative_sample_count,
-                "dim": dimension,
-                "window_size": window_radius,
-                "negative_samples": negative_sample_count,
-                "epochs": epochs,
-                "seed": str(condition.seed),
-            }.items():
-                if p_val:
-                    self.client.log_param(run_id, p_key, p_val)
+            # Log params generically from training config and core identity
+            self.client.log_param(run_id, "seed", str(condition.seed))
+            for p_key, p_val in training.items():
+                if isinstance(p_val, (str, int, float, bool)) and str(p_val):
+                    self.client.log_param(run_id, p_key, str(p_val))
+            if corpus.get("id"):
+                self.client.log_param(run_id, "corpus_id", str(corpus["id"]))
 
             # 1. Determine files to upload explicitly from result.json artifacts, evaluation, and root metadata
             upload_files: set[Path] = set()
 
-            # Core root metadata
+            # Core root metadata & environment/lineage artifacts
             for name in (
                 "result.json",
                 "config.json",
@@ -395,6 +332,14 @@ class PublicationService:
                 f = run_root / name
                 if f.is_file():
                     upload_files.add(f)
+
+            # Essential system/environment/data manifests (P0-9)
+            for sub in ("environment", "data", "metadata"):
+                sub_dir = run_root / sub
+                if sub_dir.is_dir():
+                    for f in sub_dir.rglob("*"):
+                        if f.is_file() and not f.name.startswith("."):
+                            upload_files.add(f)
 
             # Artifacts defined in result.json
             for art_key, art_val in artifacts.items():

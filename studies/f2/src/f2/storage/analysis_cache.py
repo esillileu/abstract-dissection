@@ -150,34 +150,11 @@ def download_results(
             )
             selected_finished.append(best)
 
-    _w2v2_spec_tables = {
-        "w2v2-word-skipgram-1b-objectives": {"1"},
-        "w2v2-phrase-skipgram-1b-objectives": {"3", "4"},
-        "w2v2-section4-phrase-6b": {"section4.1"},
-        "w2v2-section4-phrase-33b": {"section4.1", "5", "6"},
-    }
-    target_table = str(table).lower() if table is not None else None
     benchmarks = paths.inputs("f2", "benchmarks") if hasattr(paths, "inputs") else None
     if need_evaluation_benchmarks is None:
-        if suite == "w2v2" and benchmarks is not None:
-            has_word = (benchmarks / "questions-words.txt").is_file()
-            has_phrase = (benchmarks / "questions-phrases.txt").is_file()
-            if target_table == "1":
-                need_evaluation_benchmarks = not has_word
-            else:
-                need_evaluation_benchmarks = not (has_word and has_phrase)
-        else:
-            need_evaluation_benchmarks = True
+        need_evaluation_benchmarks = True
 
-    runs_to_process = []
-    for run in selected_finished:
-        tags = dict(run.data.tags)
-        if target_table is not None and suite == "w2v2":
-            spec_id = tags.get("experiment_spec.id", "")
-            allowed = _w2v2_spec_tables.get(spec_id)
-            if allowed is not None and target_table not in allowed:
-                continue
-        runs_to_process.append(run)
+    runs_to_process = list(selected_finished)
 
     from tqdm import tqdm
 

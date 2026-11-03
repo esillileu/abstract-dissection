@@ -197,23 +197,19 @@ def run(
     from repro_core.cli.commands import run_command
 
     suite_def = DEFINITION.get_suite(suite)
-    canonical_w2v = suite in {"w2v1", "w2v2"}
-    if canonical_w2v and not dry_run and not approve_large_run:
-        raise ValueError("canonical W2V training requires --approve-large-run")
-    if canonical_w2v and not dry_run:
+    requires_approval = getattr(suite_def, "large_run_requires_approval", True)
+    if requires_approval and not dry_run and not approve_large_run:
+        raise ValueError(f"canonical {suite} training requires --approve-large-run")
+    if not dry_run:
         from .tracking import resolve_tracking_uri
 
         tracking_uri = resolve_tracking_uri(tracking_uri)
-    run_fn = None
-    if suite in {"w2v1", "w2v2"}:
-        from .suites.w2v.tracked import run_tracked_yaml
 
-        if override:
+    from .suites.w2v.tracked import run_tracked_yaml
 
-            def run_fn(*args, **kwargs):
-                return run_tracked_yaml(*args, override=True, **kwargs)
-        else:
-            run_fn = run_tracked_yaml
+    def run_fn(*args, **kwargs):
+        return run_tracked_yaml(*args, override=override, **kwargs)
+
     run_command(
         suite_def,
         experiments=experiment or [],
