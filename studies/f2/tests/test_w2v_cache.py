@@ -134,7 +134,7 @@ def test_analysis_modules_do_not_import_tracking_clients():
 
     source = Path(__file__).parents[1] / "src/f2/suites"
     modules = list((source / "w2v1/analysis").glob("table*.py"))
-    modules.append(source / "w2v2/analysis.py")
+    modules.extend((source / "w2v2/analysis").glob("*.py"))
     for module in modules:
         for node in ast.walk(ast.parse(module.read_text())):
             names = (
