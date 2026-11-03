@@ -15,7 +15,7 @@ from f2.suites.common.w2v.evaluation import (
     pca_projection,
     select_best_epoch,
 )
-from f2.suites.w2v.analysis import summarize_evaluations, summary_record
+from f2.suites.common.w2v.analysis import summarize_evaluations, summary_record
 
 
 class Lookup:
