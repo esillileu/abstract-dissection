@@ -9,26 +9,20 @@ Implements ref.md section 4.1 & 4.4:
 
 from __future__ import annotations
 
-import csv
-import hashlib
-import json
-import re
+import tempfile
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from mlflow import MlflowClient
-from mlflow.entities import Metric, Run
+from mlflow.entities import Run
+from repro_io.checksum import sha256_file
+
+from .manifest import collect_upload_files, create_result_manifest, read_metric_batches
+from .validation import validate_local_artifacts
 
 if TYPE_CHECKING:
     from f2.execution.identity import ConditionIdentity
-
-
-def _extract_plan_revision(execution_plan_id: str) -> int:
-    match = re.search(r"-r(\d+)$", execution_plan_id)
-    if match is None:
-        return 1
-    return int(match.group(1))
 
 
 class PublicationService:
@@ -100,10 +94,7 @@ class PublicationService:
         atomic_run_id: str | None = None,
         cached_runs: list[Run] | None = None,
     ) -> Run | None:
-        """Find an existing FINISHED run matching the exact condition identity.
-
-        If cached_runs is provided, searches locally without making remote MLflow calls.
-        """
+        """Find an existing FINISHED run matching the exact condition identity."""
         runs = (
             cached_runs
             if cached_runs is not None
@@ -123,12 +114,7 @@ class PublicationService:
         *,
         include_checkpoints: bool | None = None,
     ) -> str:
-        """Publish local execution outputs to MLflow and set FINISHED.
-
-        Marks the run FINISHED only after upload completes successfully.
-        If an upload error occurs, the run is terminated as FAILED and the error is raised.
-        Local files are always preserved.
-        """
+        """Publish local execution outputs to MLflow and set FINISHED."""
         experiment = self.client.get_experiment_by_name(experiment_name)
         if experiment is None:
             experiment_id = self.client.create_experiment(experiment_name)
@@ -141,123 +127,8 @@ class PublicationService:
                 and config["training"].get("model_kind") == "feedforward_nnlm"
             )
 
-        # Pre-publication validation (ref.md P0-2 & instructions):
-        # Validate result.json, complete=True, strict identity match, artifact paths, and contents before creating MLflow run.
-        result_file = run_root / "result.json"
-        if not result_file.is_file():
-            raise ValueError(f"Cannot publish run: missing result.json in {run_root}")
-
-        try:
-            res_data = json.loads(result_file.read_text(encoding="utf-8"))
-        except Exception as exc:
-            raise ValueError(
-                f"Cannot publish run: corrupted result.json: {exc}"
-            ) from exc
-
-        if not res_data.get("complete"):
-            raise ValueError(
-                f"Cannot publish incomplete run: complete={res_data.get('complete')}"
-            )
-
-        res_identity = res_data.get("identity")
-        if not isinstance(res_identity, dict):
-            raise ValueError("Cannot publish run: missing identity in result.json")
-
-        res_digest = res_identity.get("config_digest")
-        if not res_digest or res_digest != condition.config_digest:
-            raise ValueError(
-                f"Cannot publish run: config_digest mismatch ({res_digest} != {condition.config_digest})"
-            )
-        res_seed = res_identity.get("seed")
-        if res_seed is None or int(res_seed) != condition.seed:
-            raise ValueError(
-                f"Cannot publish run: seed mismatch ({res_seed} != {condition.seed})"
-            )
-        res_slot = res_identity.get("planned_run_slot_id")
-        if not res_slot or (
-            condition.planned_run_slot_id and res_slot != condition.planned_run_slot_id
-        ):
-            raise ValueError(
-                f"Cannot publish run: slot_id mismatch ({res_slot} != {condition.planned_run_slot_id})"
-            )
-
-        artifacts = res_data.get("artifacts")
-        if not isinstance(artifacts, dict) or not artifacts:
-            raise ValueError(
-                "Cannot publish run: missing artifacts dictionary in result.json"
-            )
-
-        lookup_val = artifacts.get("lookup")
-        if not lookup_val or not isinstance(lookup_val, str):
-            raise ValueError("Cannot publish run: missing lookup in artifacts")
-        checkpoint_val = artifacts.get("checkpoint")
-        if not checkpoint_val or not isinstance(checkpoint_val, str):
-            raise ValueError("Cannot publish run: missing checkpoint in artifacts")
-        metrics_val = artifacts.get("metrics")
-        if not metrics_val or not isinstance(metrics_val, str):
-            raise ValueError("Cannot publish run: missing metrics in artifacts")
-
-        final_lookup_path = (run_root / lookup_val).resolve()
-        if not final_lookup_path.is_relative_to(run_root.resolve()):
-            raise ValueError(
-                f"Cannot publish run: lookup path escapes run directory: {lookup_val}"
-            )
-        if not final_lookup_path.exists():
-            raise ValueError(
-                f"Cannot publish run: designated lookup does not exist: {final_lookup_path}"
-            )
-        if not final_lookup_path.is_dir():
-            raise ValueError(
-                f"Cannot publish run: designated lookup is not a directory: {final_lookup_path}"
-            )
-
-        chk_path = (run_root / checkpoint_val).resolve()
-        if not chk_path.is_relative_to(run_root.resolve()):
-            raise ValueError(
-                f"Cannot publish run: checkpoint path escapes run directory: {checkpoint_val}"
-            )
-        if not chk_path.exists():
-            raise ValueError(
-                f"Cannot publish run: designated checkpoint does not exist: {chk_path}"
-            )
-        if not chk_path.is_dir():
-            raise ValueError(
-                f"Cannot publish run: designated checkpoint is not a directory: {chk_path}"
-            )
-
-        # Validate designated artifacts have valid manifests if directories
-        for art_name, art_path_rel in [
-            ("lookup", final_lookup_path),
-            ("checkpoint", chk_path),
-        ]:
-            if art_path_rel.is_dir():
-                manifest_f = art_path_rel / "manifest.json"
-                if not manifest_f.is_file():
-                    raise ValueError(
-                        f"Cannot publish run: designated {art_name} directory lacks manifest.json: {art_path_rel}"
-                    )
-                try:
-                    fmt = json.loads(manifest_f.read_text(encoding="utf-8")).get(
-                        "format"
-                    )
-                except Exception as exc:
-                    raise ValueError(
-                        f"Cannot publish run: failed to parse {art_name} manifest in {art_path_rel}: {exc}"
-                    ) from exc
-                if not fmt or "unknown" in fmt:
-                    raise ValueError(
-                        f"Cannot publish run: unsupported {art_name} format '{fmt}' in {art_path_rel}"
-                    )
-
-        met_path = (run_root / metrics_val).resolve()
-        if not met_path.is_relative_to(run_root.resolve()):
-            raise ValueError(
-                f"Cannot publish run: metrics path escapes run directory: {metrics_val}"
-            )
-        if not met_path.exists():
-            raise ValueError(
-                f"Cannot publish run: designated metrics file does not exist: {met_path}"
-            )
+        # 1. Pre-publication validation of local artifacts and manifest
+        res_data, artifacts = validate_local_artifacts(run_root, condition)
 
         suite = condition.suite_id
         identity = (
@@ -276,7 +147,6 @@ class PublicationService:
             "implementation.variant": str(config.get("atomic_run_id", "")),
             "seed": str(condition.seed),
         }
-        # Add metadata tags from config tracking or metadata if provided
         tracking = config.get("tracking")
         if isinstance(tracking, dict) and isinstance(tracking.get("tags"), dict):
             tags.update({str(k): str(v) for k, v in tracking["tags"].items()})
@@ -284,7 +154,6 @@ class PublicationService:
         if isinstance(meta, dict) and isinstance(meta.get("tags"), dict):
             tags.update({str(k): str(v) for k, v in meta["tags"].items()})
 
-        # Add domain parameters generically from training/model configs
         training = (
             config.get("training", {})
             if isinstance(config.get("training"), dict)
@@ -311,7 +180,6 @@ class PublicationService:
         run_id = mlflow_run.info.run_id
 
         try:
-            # Log params generically from training config and core identity
             self.client.log_param(run_id, "seed", str(condition.seed))
             for p_key, p_val in training.items():
                 if isinstance(p_val, (str, int, float, bool)) and str(p_val):
@@ -319,83 +187,16 @@ class PublicationService:
             if corpus.get("id"):
                 self.client.log_param(run_id, "corpus_id", str(corpus["id"]))
 
-            # 1. Determine files to upload explicitly from result.json artifacts, evaluation, and root metadata
-            upload_files: set[Path] = set()
-
-            # Core root metadata & environment/lineage artifacts
-            for name in (
-                "result.json",
-                "config.json",
-                "phrase_lineage.json",
-                "large_scale_lineage.json",
-            ):
-                f = run_root / name
-                if f.is_file():
-                    upload_files.add(f)
-
-            # Essential system/environment/data manifests (P0-9)
-            for sub in ("environment", "data", "metadata"):
-                sub_dir = run_root / sub
-                if sub_dir.is_dir():
-                    for f in sub_dir.rglob("*"):
-                        if f.is_file() and not f.name.startswith("."):
-                            upload_files.add(f)
-
-            # Artifacts defined in result.json
-            for art_key, art_val in artifacts.items():
-                if not art_val:
-                    continue
-                art_path = run_root / str(art_val)
-                if not include_checkpoints and art_key == "checkpoint":
-                    continue
-                if art_path.is_file():
-                    upload_files.add(art_path)
-                elif art_path.is_dir():
-                    for f in art_path.rglob("*"):
-                        if (
-                            f.is_file()
-                            and not f.name.startswith(".")
-                            and not f.name.endswith(".tmp")
-                        ):
-                            upload_files.add(f)
-
-            # Evaluation benchmarks / outputs if present
-            eval_dir = run_root / "evaluation"
-            if eval_dir.is_dir():
-                for f in eval_dir.rglob("*"):
-                    if f.is_file() and not f.name.startswith("."):
-                        upload_files.add(f)
-
-            # Observations / metrics files
-            for pattern in ("observations.csv", "metrics.jsonl", "history.json"):
-                for f in run_root.glob(pattern):
-                    if f.is_file():
-                        upload_files.add(f)
-
-            manifest_path = run_root / "result_manifest.json"
-            manifest_files = []
-            for path in sorted(upload_files):
-                if path == manifest_path:
-                    continue
-                digest = hashlib.sha256()
-                with path.open("rb") as stream:
-                    for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-                        digest.update(chunk)
-                manifest_files.append(
-                    {
-                        "path": path.relative_to(run_root).as_posix(),
-                        "size": path.stat().st_size,
-                        "sha256": digest.hexdigest(),
-                    }
-                )
-            manifest_payload = {"files": manifest_files, "checkpoints": []}
-            manifest_path.write_text(
-                json.dumps(manifest_payload, indent=2, sort_keys=True) + "\n",
-                encoding="utf-8",
+            # 2. Collect and manifest upload files
+            upload_files = collect_upload_files(
+                run_root, artifacts, include_checkpoints=include_checkpoints
+            )
+            manifest_path, manifest_files = create_result_manifest(
+                run_root, upload_files
             )
             upload_files.add(manifest_path)
 
-            # 2. Upload artifacts matching explicit selection
+            # 3. Upload artifacts
             for path in sorted(upload_files):
                 parent = path.parent.relative_to(run_root)
                 self.client.log_artifact(
@@ -424,11 +225,7 @@ class PublicationService:
                     f"Artifact upload incomplete; missing in remote MLflow run: {missing_remote}"
                 )
 
-            # 4b. Verify content integrity of essential metadata files
-            import tempfile
-
-            from repro_io.checksum import sha256_file
-
+            # 5. Verify content integrity of essential metadata files
             with tempfile.TemporaryDirectory() as tmp_dir:
                 for verify_rel in ("result.json", "result_manifest.json"):
                     if verify_rel in remote_files:
@@ -445,46 +242,10 @@ class PublicationService:
                                     f"local {local_hash} != remote {remote_hash}"
                                 )
 
-            # 5. Upload observations as metrics
+            # 6. Upload observations as metrics
             metrics_file = run_root / "metrics/observations.csv"
-            if metrics_file.is_file():
-                batch: list[Metric] = []
-                now_ms = int(time.time() * 1000)
-                with metrics_file.open(encoding="utf-8", newline="") as stream:
-                    for row in csv.DictReader(stream):
-                        step = int(row.get("processed_tokens", 0))
-                        if "objective_loss" in row:
-                            batch.append(
-                                Metric(
-                                    "train/objective_loss",
-                                    float(row["objective_loss"]),
-                                    now_ms,
-                                    step,
-                                )
-                            )
-                        if "learning_rate" in row:
-                            batch.append(
-                                Metric(
-                                    "train/learning_rate",
-                                    float(row["learning_rate"]),
-                                    now_ms,
-                                    step,
-                                )
-                            )
-                        if "tokens_per_second" in row:
-                            batch.append(
-                                Metric(
-                                    "runtime/tokens_per_second",
-                                    float(row["tokens_per_second"]),
-                                    now_ms,
-                                    step,
-                                )
-                            )
-                        if len(batch) >= 750:
-                            self.client.log_batch(run_id, metrics=batch)
-                            batch = []
-                    if batch:
-                        self.client.log_batch(run_id, metrics=batch)
+            for batch in read_metric_batches(metrics_file):
+                self.client.log_batch(run_id, metrics=batch)
 
             # Mark as FINISHED only after complete upload
             self.client.set_terminated(run_id, status="FINISHED")
