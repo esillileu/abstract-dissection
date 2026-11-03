@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from repro_core.cli.commands import run_command
 from repro_core.execution.definition import RunOrder
 
 from ..execution.definitions import DEFINITION
@@ -30,6 +29,8 @@ def run_command_impl(
     override: bool = False,
 ) -> None:
     """Execute F2 suite experiments."""
+    from repro_core.cli.commands import run_command
+
     suite_def = DEFINITION.get_suite(suite)
     requires_approval = getattr(suite_def, "large_run_requires_approval", True)
     if requires_approval and not dry_run and not approve_large_run:
