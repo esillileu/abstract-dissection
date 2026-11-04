@@ -93,16 +93,32 @@ def slice_corpus_file(
     target_path: Path,
     budget: int,
     *,
+    source_sha256: str | None = None,
     scratch_dir: Path | None = None,
 ) -> tuple[int, str]:
-    """Slice exact `budget` tokens from source_path to target_path using _copy_corpus_prefix."""
+    """Slice exact `budget` tokens from source_path to target_path using _copy_corpus_prefix.
+
+    Verifies input identity using source_sha256 if provided, or source file size and mtime,
+    avoiding expensive re-hashing of large source corpora on cache hit.
+    """
     meta_path = target_path.with_suffix(".json")
-    if target_path.is_file() and meta_path.is_file():
+    if target_path.is_file() and meta_path.is_file() and source_path.is_file():
         try:
             meta = json.loads(meta_path.read_text(encoding="utf-8"))
             cached_tokens = meta.get("lexical_tokens")
+            source_stat = source_path.stat()
+            source_matches = True
+            if source_sha256 is not None:
+                source_matches = meta.get("source_sha256") == source_sha256
+            elif "source_size" in meta and "source_mtime_ns" in meta:
+                source_matches = (
+                    meta.get("source_size") == source_stat.st_size
+                    and meta.get("source_mtime_ns") == source_stat.st_mtime_ns
+                )
+
             if (
-                meta.get("lexical_token_budget") == budget
+                source_matches
+                and meta.get("lexical_token_budget") == budget
                 and isinstance(cached_tokens, int)
                 and 0 < cached_tokens <= budget
                 and target_path.stat().st_size == meta.get("byte_size")
@@ -134,8 +150,12 @@ def slice_corpus_file(
 
         sha256 = sha256_file(temp_target)
         temp_target.replace(target_path)
+        source_stat = source_path.stat()
         meta = {
             "source": str(source_path),
+            "source_size": source_stat.st_size,
+            "source_mtime_ns": source_stat.st_mtime_ns,
+            "source_sha256": source_sha256,
             "lexical_token_budget": budget,
             "lexical_tokens": tokens,
             "corpus_sha256": sha256,

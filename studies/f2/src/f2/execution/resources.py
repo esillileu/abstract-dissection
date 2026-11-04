@@ -72,7 +72,13 @@ def resolve_and_prepare_corpus(
             progress_reporter.write(
                 f"materializing {base_name} corpus sliced to {lexical_token_budget:,} tokens"
             )
-        _, digest = slice_corpus_file(source_file, budget_file, lexical_token_budget)
+        source_sha256 = corpus.get("sha256")
+        _, digest = slice_corpus_file(
+            source_file,
+            budget_file,
+            lexical_token_budget,
+            source_sha256=str(source_sha256) if source_sha256 else None,
+        )
         return budget_file, digest
 
     # 1. Configured explicit path
