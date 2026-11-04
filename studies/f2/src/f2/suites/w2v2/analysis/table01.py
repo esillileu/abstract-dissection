@@ -136,24 +136,32 @@ def analyze_table1(
             if eval_cache_file.is_file():
                 try:
                     payload = json.loads(eval_cache_file.read_text(encoding="utf-8"))
-                    metrics = payload.get("result", {}).get("metrics", {})
-                    if "total" in metrics:
-                        cached = {
-                            "total_accuracy_percent": metrics["total"].get(
-                                "accuracy_percent", 0.0
-                            ),
-                            "semantic_accuracy_percent": metrics.get(
-                                "semantic", {}
-                            ).get("accuracy_percent", 0.0),
-                            "syntactic_accuracy_percent": metrics.get(
-                                "syntactic", {}
-                            ).get("accuracy_percent", 0.0),
-                            "included_questions": metrics["total"].get(
-                                "valid_count", 0
-                            ),
-                            "total_questions": metrics["total"].get("total_count", 0),
-                        }
-                        eval_cache.store(run_id, cached)
+                    sig = payload.get("signature") or {}
+                    # Validate questions hash and table/protocol match
+                    if (
+                        sig.get("questions_sha256") == questions_sha256
+                        and sig.get("table") == "1"
+                    ):
+                        metrics = payload.get("result", {}).get("metrics", {})
+                        if "total" in metrics:
+                            cached = {
+                                "total_accuracy_percent": metrics["total"].get(
+                                    "accuracy_percent", 0.0
+                                ),
+                                "semantic_accuracy_percent": metrics.get(
+                                    "semantic", {}
+                                ).get("accuracy_percent", 0.0),
+                                "syntactic_accuracy_percent": metrics.get(
+                                    "syntactic", {}
+                                ).get("accuracy_percent", 0.0),
+                                "included_questions": metrics["total"].get(
+                                    "valid_count", 0
+                                ),
+                                "total_questions": metrics["total"].get(
+                                    "total_count", 0
+                                ),
+                            }
+                            eval_cache.store(run_id, cached)
                 except Exception:
                     pass
 

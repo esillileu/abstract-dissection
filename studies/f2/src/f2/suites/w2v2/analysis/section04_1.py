@@ -112,7 +112,22 @@ def analyze_section04_1(
         seed = int((r.get("tags") or {}).get("seed", 1))
         art_root = Path(r.get("artifact_root", ""))
         lookup_dir = art_root / "lookup"
-        if not lookup_dir.is_dir():
+        res_file = art_root / "result.json"
+        if res_file.is_file():
+            try:
+                res_payload = json.loads(res_file.read_text(encoding="utf-8"))
+                art_map = res_payload.get("artifacts") or {}
+                if "lookup" in art_map:
+                    candidate = art_root / art_map["lookup"]
+                    if candidate.exists():
+                        lookup_dir = candidate
+                elif "checkpoint" in art_map:
+                    candidate = art_root / art_map["checkpoint"]
+                    if candidate.exists():
+                        lookup_dir = candidate
+            except Exception:
+                pass
+        if not lookup_dir.is_dir() and not (lookup_dir / "manifest.json").is_file():
             lookup_dir = art_root
 
         cached = eval_cache.load(run_id)
