@@ -88,7 +88,7 @@ class PublicationService:
         cond_corpus_sha = condition.extra_dimensions.get("source_corpus_sha256")
         if cond_corpus_sha:
             run_corpus_sha = tags.get("f2.source_corpus_sha256")
-            if run_corpus_sha and run_corpus_sha != cond_corpus_sha:
+            if not run_corpus_sha or run_corpus_sha != cond_corpus_sha:
                 return False
 
         return True

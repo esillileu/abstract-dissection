@@ -9,7 +9,6 @@ from typing import Any
 
 from f2.common.paths import get_benchmark_data_dir
 from f2.execution.coordinator import (
-    ExecutionDecisionKind,
     F2ExecutionCoordinator,
 )
 from f2.execution.identity import ConditionIdentity
@@ -206,6 +205,13 @@ def run_w2v_with_coordinator(
     training_step: Any | None = None,
 ) -> W2VRunReceipt:
     """Coordinate the F2 run lifecycle (skip/publish/resume/run/publish) via F2ExecutionCoordinator."""
+    # 1. Resolve and bind verified input corpus identity prior to Condition decision
+    if progress_reporter is not None:
+        progress_reporter.write("materializing verified corpus binding")
+    resolve_and_prepare_corpus(config, paths, progress_reporter=progress_reporter)
+    if progress_reporter is not None:
+        progress_reporter.write("verified corpus binding is ready")
+
     coordinator = F2ExecutionCoordinator(tracking_uri=tracking_uri, paths=paths)
     condition = ConditionIdentity.from_config(config, suite_id=suite_name)
     experiment_name = str(
@@ -218,13 +224,6 @@ def run_w2v_with_coordinator(
         override=override,
         atomic_run_id=str(config.get("atomic_run_id", "")) or None,
     )
-
-    if decision.kind in (ExecutionDecisionKind.RUN, ExecutionDecisionKind.RESUME):
-        if progress_reporter is not None:
-            progress_reporter.write("materializing verified corpus binding")
-        resolve_and_prepare_corpus(config, paths, progress_reporter=progress_reporter)
-        if progress_reporter is not None:
-            progress_reporter.write("verified corpus binding is ready")
 
     context = ExperimentContext(
         paths=paths,
