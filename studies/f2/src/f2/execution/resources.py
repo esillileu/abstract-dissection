@@ -75,7 +75,26 @@ def resolve_and_prepare_corpus(
             if meta_json.is_file():
                 try:
                     meta = json.loads(meta_json.read_text(encoding="utf-8"))
-                    if meta.get("corpus_sha256"):
+                    budget_ok = (
+                        int(meta.get("lexical_token_budget", -1))
+                        == lexical_token_budget
+                    )
+                    size_ok = (
+                        int(meta.get("byte_size", -1)) == source_file.stat().st_size
+                    )
+                    source_ok = True
+                    expected_source_sha = corpus.get("sha256")
+                    if expected_source_sha:
+                        source_ok = (
+                            meta.get("source_sha256") == expected_source_sha
+                            or meta.get("corpus_sha256") == expected_source_sha
+                        )
+                    if (
+                        budget_ok
+                        and size_ok
+                        and source_ok
+                        and meta.get("corpus_sha256")
+                    ):
                         return source_file, str(meta["corpus_sha256"])
                 except Exception:
                     pass
