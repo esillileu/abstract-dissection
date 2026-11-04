@@ -18,11 +18,11 @@ from f2.suites.common.w2v.analysis import (
     write_run_records_csv,
     write_table_summary,
 )
-from f2.suites.common.w2v.artifacts import load_lookup_artifact
 from f2.suites.common.w2v.evaluation import (
     evaluate_msr_sentence_completion,
     parse_msr_sentence_completion_questions,
 )
+from f2.suites.common.w2v.lookup import load_lookup_artifact
 from repro_core.context import RuntimePaths
 
 from ..resources import MSR_ANSWERS_SHA256, MSR_QUESTIONS_SHA256

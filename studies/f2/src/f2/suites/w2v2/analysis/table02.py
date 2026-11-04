@@ -10,7 +10,7 @@ import numpy as np
 
 from f2.storage.analysis_cache import unavailable_report
 from f2.suites.common.w2v.analysis import write_table_summary
-from f2.suites.common.w2v.artifacts import load_lookup_artifact
+from f2.suites.common.w2v.lookup import load_lookup_artifact
 from repro_core.context import RuntimePaths
 
 from .. import paper

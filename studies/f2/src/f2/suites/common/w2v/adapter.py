@@ -14,17 +14,17 @@ from f2.execution.coordinator import (
 )
 from f2.execution.identity import ConditionIdentity
 from f2.execution.resources import resolve_and_prepare_corpus
-from f2.suites.common.w2v.artifacts import (
+from f2.suites.common.w2v.checkpoints import (
     create_checkpoint_manager,
     lookup_from_checkpoint,
-    save_lookup_artifact,
-    vocabulary_cache_path,
 )
 from f2.suites.common.w2v.engine import Word2VecEngine
+from f2.suites.common.w2v.lookup import save_lookup_artifact
 from f2.suites.common.w2v.nnlm_artifacts import (
     create_checkpoint_manager as create_nnlm_checkpoint_manager,
 )
 from f2.suites.common.w2v.observations import DenseObservationWriter
+from f2.suites.common.w2v.preparation import vocabulary_cache_path
 from f2.suites.common.w2v.training import (
     W2VRunReceipt,
     Word2VecResult,

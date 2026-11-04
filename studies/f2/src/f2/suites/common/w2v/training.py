@@ -20,10 +20,8 @@ from w2v import (
     TrainingSession,
 )
 
-from .artifacts import (
-    load_checkpoint,
-    resolve_or_build_vocabulary,
-)
+from .checkpoints import load_checkpoint
+from .preparation import resolve_or_build_vocabulary
 
 
 @dataclass(frozen=True)

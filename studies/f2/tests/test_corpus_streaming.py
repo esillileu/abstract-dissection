@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from f2.suites.common.w2v.corpus import _copy_corpus_prefix
+from f2.suites.common.w2v.corpus_streaming import _copy_corpus_prefix
 
 
 def reference(data, budget):
@@ -83,7 +83,7 @@ def test_row_index_handles_many_queries_without_repeated_scans(tmp_path, monkeyp
     import gc
     import sqlite3
 
-    from f2.suites.common.w2v import artifacts
+    from f2.suites.common.w2v.lookup import LookupEmbeddings
     from repro_core.context import RuntimePaths
 
     monkeypatch.setattr(
@@ -94,7 +94,7 @@ def test_row_index_handles_many_queries_without_repeated_scans(tmp_path, monkeyp
     tokens = [f"word-{i}".encode() for i in range(10000)]
     packed = np.frombuffer(b"".join(tokens), dtype=np.uint8)
     offsets = np.array([0, *np.cumsum([len(t) for t in tokens])], dtype=np.uint64)
-    lookup = artifacts.LookupEmbeddings(
+    lookup = LookupEmbeddings(
         np.ones((len(tokens), 2), dtype=np.float32),
         packed,
         offsets,

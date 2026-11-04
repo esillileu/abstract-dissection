@@ -43,7 +43,7 @@ def resolve_and_prepare_corpus(
         return
 
     from f2.common.paths import get_corpus_data_dir
-    from f2.suites.common.w2v.corpus import slice_corpus_file
+    from f2.suites.common.w2v.corpus_streaming import slice_corpus_file
 
     corpus_dir = get_corpus_data_dir(paths)
 
@@ -179,7 +179,8 @@ def resolve_and_prepare_corpus(
     from f2.corpus.db.session import get_connection
     from f2.corpus.object_store import s3_config_from_environment
     from f2.corpus.sources import SOURCE_BY_KEY
-    from f2.suites.common.w2v.corpus import CorpusBinding, CorpusMaterializer
+    from f2.suites.common.w2v.corpus_materializer import CorpusMaterializer
+    from f2.suites.common.w2v.corpus_types import CorpusBinding
 
     source = SOURCE_BY_KEY.get(corpus_id)
     if source is None:

@@ -18,8 +18,8 @@ from f2.suites.common.w2v.analysis import (
     write_run_records_csv,
     write_table_summary,
 )
-from f2.suites.common.w2v.artifacts import load_lookup_artifact
 from f2.suites.common.w2v.evaluation import evaluate_analogies, parse_analogy_questions
+from f2.suites.common.w2v.lookup import load_lookup_artifact
 from repro_core.context import RuntimePaths
 
 CORPUS_SOURCES = ("wmt", "lm1b", "umbc")

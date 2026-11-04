@@ -9,7 +9,6 @@ from itertools import islice
 from pathlib import Path
 from typing import Any
 
-from .artifacts import LookupEmbeddings, load_lookup_artifact
 from .evaluation import (
     additive_composition,
     evaluate_analogies,
@@ -17,6 +16,7 @@ from .evaluation import (
     parse_analogy_questions,
     pca_projection,
 )
+from .lookup import LookupEmbeddings, load_lookup_artifact
 
 PHRASE_QUESTIONS_SHA256 = (
     "55cfc0894d0fe6cf974d106da3e09b5fb2fa6125b6ddc633d06e298dc5aa7901"
