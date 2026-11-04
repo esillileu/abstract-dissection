@@ -182,7 +182,7 @@ def analyze(
     questions: Annotated[Path | None, typer.Option("--questions")] = None,
     phrase_questions: Annotated[Path | None, typer.Option("--phrase-questions")] = None,
     corpus: Annotated[str | None, typer.Option("--corpus")] = None,
-    table: Annotated[int | None, typer.Option("--table")] = None,
+    table: Annotated[str | None, typer.Option("--table")] = None,
     msr_questions: Annotated[Path | None, typer.Option("--msr-questions")] = None,
     override: Annotated[bool, typer.Option("--override")] = False,
     offline: Annotated[bool, typer.Option("--offline")] = False,

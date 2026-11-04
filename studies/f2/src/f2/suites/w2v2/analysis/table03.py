@@ -11,6 +11,7 @@ from typing import Any
 from f2.storage.analysis_cache import unavailable_report
 from f2.suites.common.w2v.analysis import (
     W2VTableEvaluationCache,
+    format_duration_mean_sd,
     format_mean_sd,
     observed_training_seconds,
     write_run_records_csv,
@@ -60,7 +61,12 @@ def _is_table3_run(record: dict[str, Any], corpus_source: str) -> bool:
 
 def _extract_objective(record: dict[str, Any]) -> str | None:
     tags = record.get("tags") or {}
-    cond = tags.get("condition") or tags.get("variant") or ""
+    cond = (
+        tags.get("implementation.variant")
+        or tags.get("condition")
+        or tags.get("variant")
+        or ""
+    )
     for obj in _OBJECTIVES:
         if obj in cond:
             return obj
@@ -155,6 +161,7 @@ def analyze_table3(
 
     headers = [
         "Objective / Subsampling",
+        "Observed Time",
         "Phrase Accuracy % (Mean ± SD)",
         "Paper Reference (%)",
     ]
@@ -164,10 +171,13 @@ def analyze_table3(
         ref = paper.TABLE3.get(cond, "-")
         ref_str = f"{ref}%" if ref != "-" else "-"
         if not items:
-            rows.append([cond, "N/A", ref_str])
+            rows.append([cond, "N/A", "N/A", ref_str])
             continue
+        time_str = format_duration_mean_sd(
+            [it.observed_training_seconds for it in items]
+        )
         acc_str = format_mean_sd([it.phrase_accuracy_percent for it in items])
-        rows.append([cond, acc_str, ref_str])
+        rows.append([cond, time_str, acc_str, ref_str])
 
     write_table_summary(
         output_dir,
