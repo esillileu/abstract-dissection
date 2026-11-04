@@ -70,7 +70,7 @@ def evaluate(
     ] = "_",
 ) -> None:
     """Evaluate a saved model artifact independently of training."""
-    from .suites.common.w2v.evaluate import (
+    from ..suites.common.w2v.evaluate import (
         evaluate_lookup_artifact,
         write_evaluation_report,
     )
@@ -89,7 +89,7 @@ def evaluate(
 @cli_errors
 def preflight() -> None:
     """Read-only validation of F2 database, corpus store, and MLflow targets."""
-    from .preflight import run_preflight
+    from ..preflight import run_preflight
 
     typer.echo(json.dumps(run_preflight(), indent=2, sort_keys=True))
 
@@ -236,8 +236,8 @@ def phrase_preflight(
     """Inspect Section 4.1 local inputs and resources without acquisition/training."""
     from repro_core.context.paths import RuntimePaths
 
-    from .suites.w2v2.preflight import preflight, resolve_source
-    from .suites.w2v2.spec import parse_run_spec
+    from ..suites.w2v2.preflight import preflight, resolve_source
+    from ..suites.w2v2.spec import parse_run_spec
 
     paths = RuntimePaths.from_environment()
     spec = parse_run_spec(config, atomic_run_id=atomic_run)

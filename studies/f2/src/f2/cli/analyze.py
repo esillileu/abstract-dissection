@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -36,6 +37,7 @@ def analyze_command_impl(
             phrase_questions=phrase_questions,
             table=table,
             corpus=corpus,
+            override=override,
             offline=offline,
         )
         return
@@ -46,6 +48,7 @@ def analyze_command_impl(
             corpus=corpus,
             table=table,
             msr_questions=msr_questions,
+            override=override,
             offline=offline,
         )
         return
@@ -70,6 +73,7 @@ def run_w2v2_analysis(
         phrase_questions=phrase_questions,
         table=table,
         corpus=corpus,
+        override=override,
         offline=offline,
     )
     return (
@@ -86,6 +90,7 @@ def _analyze_w2v2(
     phrase_questions: Path | None = None,
     table: int | str | None = None,
     corpus: str | None = None,
+    override: bool = False,
     offline: bool = False,
 ) -> list[Path]:
     from ..suites.w2v2.analysis import (
@@ -115,6 +120,13 @@ def _analyze_w2v2(
     elif tbl_str in {"6", "table6", "table06"}:
         tbl_str = "6"
 
+    if override:
+        cache = paths.analysis_cache_root / "f2/w2v2/analysis"
+        if tbl_str is None:
+            shutil.rmtree(cache, ignore_errors=True)
+        elif tbl_str in {"1", "3", "section04_1"}:
+            name = f"table{tbl_str}" if tbl_str != "section04_1" else tbl_str
+            shutil.rmtree(cache / name, ignore_errors=True)
     if offline:
         cache_root = paths.analysis_cache("f2", "w2v2")
         if not (cache_root / "runs.json").is_file():
@@ -169,7 +181,15 @@ def _analyze_w2v2(
     return results
 
 
-def _analyze_w2v1(tracking_uri, questions, corpus, table, msr_questions, offline):
+def _analyze_w2v1(
+    tracking_uri,
+    questions,
+    corpus,
+    table,
+    msr_questions,
+    override: bool = False,
+    offline: bool = False,
+):
     from ..suites.w2v1.analysis import analyze_table2_sources
     from ..suites.w2v1.analysis.table03 import analyze_table3_sources
     from ..suites.w2v1.analysis.table04 import analyze_table4_sources
@@ -184,6 +204,11 @@ def _analyze_w2v1(tracking_uri, questions, corpus, table, msr_questions, offline
     if msr_questions is not None and tbl != 3:
         raise ValueError("--msr-questions applies only to Table 3")
 
+    if override:
+        cache = paths.analysis_cache_root / f"f2/w2v1/analysis/table{tbl}"
+        if corpus and tbl in (3, 4, 5):
+            cache /= corpus
+        shutil.rmtree(cache, ignore_errors=True)
     if offline:
         cache_root = paths.analysis_cache("f2", "w2v1")
         if not (cache_root / "runs.json").is_file():
