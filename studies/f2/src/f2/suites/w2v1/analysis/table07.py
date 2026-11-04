@@ -77,8 +77,11 @@ def analyze_table7_sources(
     if questions_path is None:
         benchmarks = paths.inputs("f2", "benchmarks")
         default_q = benchmarks / "Holmes.lm_format.questions.txt"
+        sub_q = benchmarks / "msr_sentence_completion/Holmes.lm_format.questions.txt"
         if default_q.is_file():
             questions_path = default_q
+        elif sub_q.is_file():
+            questions_path = sub_q
         else:
             questions_path = (
                 cache_root
@@ -88,8 +91,11 @@ def analyze_table7_sources(
     if answers_path is None:
         benchmarks = paths.inputs("f2", "benchmarks")
         default_a = benchmarks / "Holmes.lm_format.answers.txt"
+        sub_a = benchmarks / "msr_sentence_completion/Holmes.lm_format.answers.txt"
         if default_a.is_file():
             answers_path = default_a
+        elif sub_a.is_file():
+            answers_path = sub_a
         else:
             answers_path = (
                 cache_root
@@ -110,8 +116,8 @@ def analyze_table7_sources(
     a_digest = hashlib.sha256(a_bytes).hexdigest()
 
     parsed_questions = parse_msr_sentence_completion_questions(
-        q_bytes.decode("utf-8"),
-        a_bytes.decode("utf-8"),
+        q_bytes.splitlines(),
+        a_bytes.splitlines(),
     )
 
     output = paths.analysis_results_root / "f2/w2v1/table07/holmes"

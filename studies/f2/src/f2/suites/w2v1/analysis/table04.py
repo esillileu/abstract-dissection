@@ -111,7 +111,7 @@ def analyze_table4_sources(
 
     q_bytes = Path(questions_path).read_bytes()
     q_digest = hashlib.sha256(q_bytes).hexdigest()
-    questions = parse_analogy_questions(q_bytes.decode("utf-8"))
+    questions = parse_analogy_questions(q_bytes.splitlines())
 
     return tuple(
         _analyze_single_corpus(cache_root, c, questions, q_digest, paths)

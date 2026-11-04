@@ -115,11 +115,11 @@ def analyze_table3_sources(
 
     google_bytes = Path(g_path).read_bytes()
     google_digest = hashlib.sha256(google_bytes).hexdigest()
-    google_questions = parse_analogy_questions(google_bytes.decode("utf-8"))
+    google_questions = parse_analogy_questions(google_bytes.splitlines())
 
     msr_bytes = Path(m_path).read_bytes()
     msr_digest = hashlib.sha256(msr_bytes).hexdigest()
-    msr_questions = parse_analogy_questions(msr_bytes.decode("utf-8"))
+    msr_questions = parse_analogy_questions(msr_bytes.splitlines())
 
     outputs = []
     for corpus in sources:

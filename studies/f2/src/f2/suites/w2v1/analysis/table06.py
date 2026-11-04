@@ -99,7 +99,7 @@ def analyze_table6_sources(
 
     q_bytes = Path(questions_path).read_bytes()
     q_digest = hashlib.sha256(q_bytes).hexdigest()
-    questions = parse_analogy_questions(q_bytes.decode("utf-8"))
+    questions = parse_analogy_questions(q_bytes.splitlines())
 
     output = paths.analysis_results_root / "f2/w2v1/table06/fineweb"
     output.mkdir(parents=True, exist_ok=True)

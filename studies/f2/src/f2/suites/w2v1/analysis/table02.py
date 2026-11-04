@@ -51,14 +51,18 @@ def _complete_conditions(
 ) -> dict[tuple[int, int], dict[int, Any]]:
     grouped: dict[tuple[int, int], dict[int, Any]] = {}
     for run in runs:
-        if run.data.tags.get("repro.experiment_spec_id") != "w2v1-table2-cbow":
+        tags = run.data.tags
+        spec = tags.get("experiment_spec.id") or tags.get("repro.experiment_spec_id")
+        if spec != "w2v1-table2-cbow":
             continue
-        slot = run.data.tags.get("f2.planned_run_slot_id", "")
-        match = _CONDITION.search(slot)
+        variant = tags.get("implementation.variant") or tags.get(
+            "f2.planned_run_slot_id", ""
+        )
+        match = _CONDITION.search(variant)
         if match is None or match.group(1) != corpus_source:
             continue
         try:
-            seed = int(run.data.tags.get("f2.seed", ""))
+            seed = int(tags.get("seed") or tags.get("f2.seed", ""))
         except ValueError:
             continue
         if seed not in _SEEDS:
@@ -93,7 +97,7 @@ def analyze_table2(
 
     questions_bytes = Path(questions_path).read_bytes()
     questions_sha256 = hashlib.sha256(questions_bytes).hexdigest()
-    questions = parse_analogy_questions(questions_bytes.decode("utf-8"))
+    questions = parse_analogy_questions(questions_bytes.splitlines())
     evaluation_cache = W2VTableEvaluationCache(
         paths.analysis_cache_root / "f2/w2v1/analysis/table2",
         protocol=_EVALUATION_PROTOCOL,
