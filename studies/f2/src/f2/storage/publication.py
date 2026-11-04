@@ -84,6 +84,13 @@ class PublicationService:
             if not run_variant or run_variant != atomic_run_id:
                 return False
 
+        # If condition specifies a source corpus identity, verify run has matching source_corpus_sha256
+        cond_corpus_sha = condition.extra_dimensions.get("source_corpus_sha256")
+        if cond_corpus_sha:
+            run_corpus_sha = tags.get("f2.source_corpus_sha256")
+            if run_corpus_sha and run_corpus_sha != cond_corpus_sha:
+                return False
+
         return True
 
     def find_matching_finished_run(

@@ -140,6 +140,13 @@ class ConditionIdentity:
         else:
             plan_rev = 1
 
+        extra_dims = {}
+        corpus_obj = config.get("corpus")
+        if isinstance(corpus_obj, dict):
+            c_sha = corpus_obj.get("sha256")
+            if c_sha:
+                extra_dims["source_corpus_sha256"] = str(c_sha)
+
         return cls(
             suite_id=resolved_suite,
             experiment_id=resolved_exp,
@@ -148,6 +155,7 @@ class ConditionIdentity:
             config_digest=config_digest,
             plan_revision=plan_rev,
             planned_run_slot_id=slot_id,
+            extra_dimensions=extra_dims,
         )
 
 
