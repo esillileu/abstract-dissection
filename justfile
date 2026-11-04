@@ -25,6 +25,10 @@ test *args:
 test-db:
     uv run pytest -q -o addopts="" -m "database and not network"
 
+# Run end-to-end integration pipeline verification
+e2e:
+    uv run pytest -q -o addopts="" -m "e2e"
+
 # Run repro CLI
 repro *args:
     uv run repro {{args}}

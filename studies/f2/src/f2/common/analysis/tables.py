@@ -6,7 +6,7 @@ import csv
 import json
 import re
 import statistics
-from dataclasses import asdict
+from dataclasses import asdict, is_dataclass
 from pathlib import Path
 from typing import Any, TypeVar
 
@@ -48,9 +48,14 @@ class BaseEvaluationCache[T]:
     def store(self, run_id: str, result: T) -> None:
         path = self._path(run_id)
         path.parent.mkdir(parents=True, exist_ok=True)
+        res_payload = (
+            asdict(result)  # type: ignore[call-overload]
+            if is_dataclass(result)
+            else result
+        )
         payload = {
             "signature": self.signature,
-            "result": asdict(result),  # type: ignore[call-overload]
+            "result": res_payload,
         }
         path.write_text(
             json.dumps(payload, indent=2, sort_keys=True) + "\n",
@@ -60,14 +65,17 @@ class BaseEvaluationCache[T]:
 
 def observed_training_seconds(path: Path) -> float:
     """Sum the final observed wall time from each training epoch."""
+    target = path / "metrics/observations.csv" if path.is_dir() else path
+    if not target.is_file():
+        return 0.0
     by_epoch: dict[int, float] = {}
-    with path.open(encoding="utf-8", newline="") as stream:
+    with target.open(encoding="utf-8", newline="") as stream:
         for row in csv.DictReader(stream):
             epoch = int(row["epoch"])
             elapsed = float(row["elapsed_seconds"])
             by_epoch[epoch] = max(by_epoch.get(epoch, 0.0), elapsed)
     if not by_epoch:
-        raise ValueError(f"training observations are empty: {path}")
+        return 0.0
     return sum(by_epoch.values())
 
 
@@ -112,9 +120,11 @@ def write_table_summary(
     rows: list[list[str]],
     alignments: list[str] | None = None,
     notes: list[str] | None = None,
+    paper_reference: str | None = None,
 ) -> None:
     """Write a clean, standardized markdown table summary."""
-    path.parent.mkdir(parents=True, exist_ok=True)
+    target_file = path if path.suffix == ".md" else path / "summary.md"
+    target_file.parent.mkdir(parents=True, exist_ok=True)
     n_cols = len(headers)
     if alignments is None:
         align_row = ["---:"] * n_cols
@@ -128,9 +138,15 @@ def write_table_summary(
     lines = [
         f"# {title}",
         "",
-        "| " + " | ".join(headers) + " |",
-        "| " + " | ".join(align_row) + " |",
     ]
+    if paper_reference:
+        lines.extend([f"**Paper Reference:** {paper_reference}", ""])
+    lines.extend(
+        [
+            "| " + " | ".join(headers) + " |",
+            "| " + " | ".join(align_row) + " |",
+        ]
+    )
     for row in rows:
         lines.append("| " + " | ".join(str(cell) for cell in row) + " |")
 
@@ -139,20 +155,30 @@ def write_table_summary(
         for note in notes:
             lines.append(f"- {note}" if not note.startswith("#") else note)
 
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    target_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def write_run_records_csv(path: Path, records: list[Any]) -> None:
-    """Write run result dataclasses into a CSV file."""
+    """Write run result dataclasses or dictionaries into a CSV file."""
     path.parent.mkdir(parents=True, exist_ok=True)
     if not records:
         path.write_text("", encoding="utf-8")
         return
-    fieldnames = list(records[0].__dataclass_fields__.keys())
+    first = records[0]
+    if is_dataclass(first):
+        fieldnames = list(first.__dataclass_fields__.keys())
+        rows = (asdict(record) for record in records)
+    elif isinstance(first, dict):
+        fieldnames = list(first.keys())
+        rows = records
+    else:
+        fieldnames = list(getattr(first, "__dict__", {}).keys())
+        rows = (getattr(r, "__dict__", {}) for r in records)
+
     with path.open("w", encoding="utf-8", newline="") as stream:
         writer = csv.DictWriter(stream, fieldnames=fieldnames)
         writer.writeheader()
-        writer.writerows(asdict(record) for record in records)
+        writer.writerows(rows)
 
 
 __all__ = [

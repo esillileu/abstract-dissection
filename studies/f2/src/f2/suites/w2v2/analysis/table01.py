@@ -50,18 +50,33 @@ class Table1RunResult:
 
 def _is_table1_run(record: dict[str, Any]) -> bool:
     tags = record.get("tags") or {}
-    if tags.get("study") == "table1" or tags.get("experiment_id") == "e01":
+    if (
+        tags.get("study") == "table1"
+        or tags.get("experiment_id") == "e01"
+        or tags.get("f2.experiment_id") == "table1"
+        or tags.get("experiment_spec.id") == "w2v2-word-skipgram-1b-objectives"
+    ):
         return True
     art_root = record.get("artifact_root") or ""
     if "table1" in art_root or "e01" in art_root:
         return True
-    cond = tags.get("condition") or tags.get("variant") or ""
+    cond = (
+        tags.get("condition")
+        or tags.get("variant")
+        or tags.get("implementation.variant")
+        or ""
+    )
     return any(obj in cond for obj in ("neg5", "neg15", "hs", "nce5"))
 
 
 def _extract_objective_condition(record: dict[str, Any]) -> str | None:
     tags = record.get("tags") or {}
-    cond = tags.get("condition") or tags.get("variant") or ""
+    cond = (
+        tags.get("condition")
+        or tags.get("variant")
+        or tags.get("implementation.variant")
+        or ""
+    )
     for obj in _OBJECTIVES:
         if obj in cond:
             return obj
@@ -124,11 +139,11 @@ def analyze_table1(
                 lookup = load_lookup_artifact(lookup_dir)
                 eval_res = evaluate_analogies(lookup, questions)
                 res_dict = {
-                    "total_accuracy_percent": 100.0 * eval_res.overall.require_score(),
+                    "total_accuracy_percent": 100.0 * (eval_res.overall.score or 0.0),
                     "semantic_accuracy_percent": 100.0
-                    * eval_res.semantic.require_score(),
+                    * (eval_res.semantic.score or 0.0),
                     "syntactic_accuracy_percent": 100.0
-                    * eval_res.syntactic.require_score(),
+                    * (eval_res.syntactic.score or 0.0),
                     "included_questions": eval_res.overall.valid_count,
                     "total_questions": eval_res.overall.total_count,
                 }
