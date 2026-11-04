@@ -43,12 +43,19 @@ class Table3RunResult:
     total_questions: int
 
 
-def _is_table3_run(record: dict[str, Any]) -> bool:
+def _is_table3_run(record: dict[str, Any], corpus_source: str) -> bool:
     tags = record.get("tags") or {}
-    if tags.get("study") == "table3" or tags.get("experiment_id") == "e02":
-        return True
-    art_root = record.get("artifact_root") or ""
-    return "table3" in art_root or "e02" in art_root
+    spec = tags.get("experiment_spec.id")
+    study = tags.get("study") or tags.get("f2.experiment_id")
+    if spec != "w2v2-phrase-skipgram-1b-objectives" and study not in ("table3", "e02"):
+        return False
+    variant = tags.get("implementation.variant") or tags.get("variant") or ""
+    corpus_id = tags.get("corpus.id") or ""
+    if corpus_id:
+        return corpus_id == corpus_source
+    if "--" in variant:
+        return variant.split("--")[0] == corpus_source
+    return False
 
 
 def _extract_objective(record: dict[str, Any]) -> str | None:
@@ -89,7 +96,7 @@ def analyze_table3(
         questions_sha256=questions_sha256,
     )
 
-    matching_runs = [r for r in runs if _is_table3_run(r)]
+    matching_runs = [r for r in runs if _is_table3_run(r, corpus_source)]
     if not matching_runs:
         return unavailable_report(
             output_dir,
@@ -209,17 +216,20 @@ def analyze_table3_sources(
     if not runs_file.is_file():
         return []
     runs = json.loads(runs_file.read_text(encoding="utf-8"))
-    c_source = corpus_source or "news-1b"
-    out = paths.analysis_results_root / f"f2/w2v2/table03/{c_source}"
-    return [
-        analyze_table3(
-            runs,
-            phrase_questions_path,
-            output_dir=out,
-            corpus_source=c_source,
-            paths=paths,
+    sources = [corpus_source] if corpus_source else ["wmt", "lm1b", "umbc"]
+    results = []
+    for c_source in sources:
+        out = paths.analysis_results_root / f"f2/w2v2/table03/{c_source}"
+        results.append(
+            analyze_table3(
+                runs,
+                phrase_questions_path,
+                output_dir=out,
+                corpus_source=c_source,
+                paths=paths,
+            )
         )
-    ]
+    return results
 
 
 __all__ = ["Table3RunResult", "analyze_table3", "analyze_table3_sources"]

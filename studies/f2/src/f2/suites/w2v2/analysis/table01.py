@@ -48,25 +48,19 @@ class Table1RunResult:
     total_questions: int
 
 
-def _is_table1_run(record: dict[str, Any]) -> bool:
+def _is_table1_run(record: dict[str, Any], corpus_source: str) -> bool:
     tags = record.get("tags") or {}
-    if (
-        tags.get("study") == "table1"
-        or tags.get("experiment_id") == "e01"
-        or tags.get("f2.experiment_id") == "table1"
-        or tags.get("experiment_spec.id") == "w2v2-word-skipgram-1b-objectives"
-    ):
-        return True
-    art_root = record.get("artifact_root") or ""
-    if "table1" in art_root or "e01" in art_root:
-        return True
-    cond = (
-        tags.get("condition")
-        or tags.get("variant")
-        or tags.get("implementation.variant")
-        or ""
-    )
-    return any(obj in cond for obj in ("neg5", "neg15", "hs", "nce5"))
+    spec = tags.get("experiment_spec.id")
+    study = tags.get("study") or tags.get("f2.experiment_id")
+    if spec != "w2v2-word-skipgram-1b-objectives" and study not in ("table1", "e01"):
+        return False
+    variant = tags.get("implementation.variant") or tags.get("variant") or ""
+    corpus_id = tags.get("corpus.id") or ""
+    if corpus_id:
+        return corpus_id == corpus_source
+    if "--" in variant:
+        return variant.split("--")[0] == corpus_source
+    return False
 
 
 def _extract_objective_condition(record: dict[str, Any]) -> str | None:
@@ -112,7 +106,7 @@ def analyze_table1(
         questions_sha256=questions_sha256,
     )
 
-    matching_runs = [r for r in runs if _is_table1_run(r)]
+    matching_runs = [r for r in runs if _is_table1_run(r, corpus_source)]
     if not matching_runs:
         return unavailable_report(
             output_dir,
@@ -132,6 +126,37 @@ def analyze_table1(
             lookup_dir = art_root
 
         cached = eval_cache.load(run_id)
+        if cached is None:
+            # Check legacy/existing evaluation cache in paths.analysis_cache("f2", "w2v2") / "eval_cache"
+            eval_cache_file = (
+                paths.analysis_cache("f2", "w2v2")
+                / "eval_cache"
+                / f"eval_1_{run_id}.json"
+            )
+            if eval_cache_file.is_file():
+                try:
+                    payload = json.loads(eval_cache_file.read_text(encoding="utf-8"))
+                    metrics = payload.get("result", {}).get("metrics", {})
+                    if "total" in metrics:
+                        cached = {
+                            "total_accuracy_percent": metrics["total"].get(
+                                "accuracy_percent", 0.0
+                            ),
+                            "semantic_accuracy_percent": metrics.get(
+                                "semantic", {}
+                            ).get("accuracy_percent", 0.0),
+                            "syntactic_accuracy_percent": metrics.get(
+                                "syntactic", {}
+                            ).get("accuracy_percent", 0.0),
+                            "included_questions": metrics["total"].get(
+                                "valid_count", 0
+                            ),
+                            "total_questions": metrics["total"].get("total_count", 0),
+                        }
+                        eval_cache.store(run_id, cached)
+                except Exception:
+                    pass
+
         if cached is not None:
             res_dict = cached
         else:
@@ -247,13 +272,20 @@ def analyze_table1_sources(
     if not runs_file.is_file():
         return []
     runs = json.loads(runs_file.read_text(encoding="utf-8"))
-    c_source = corpus_source or "news-1b"
-    out = paths.analysis_results_root / f"f2/w2v2/table01/{c_source}"
-    return [
-        analyze_table1(
-            runs, questions_path, output_dir=out, corpus_source=c_source, paths=paths
+    sources = [corpus_source] if corpus_source else ["wmt", "lm1b", "umbc"]
+    results = []
+    for c_source in sources:
+        out = paths.analysis_results_root / f"f2/w2v2/table01/{c_source}"
+        results.append(
+            analyze_table1(
+                runs,
+                questions_path,
+                output_dir=out,
+                corpus_source=c_source,
+                paths=paths,
+            )
         )
-    ]
+    return results
 
 
 __all__ = ["Table1RunResult", "analyze_table1", "analyze_table1_sources"]

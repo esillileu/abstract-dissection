@@ -36,15 +36,22 @@ class Section4RunResult:
     total_questions: int
 
 
-def _is_section4_run(record: dict[str, Any]) -> bool:
+def _is_section4_run(record: dict[str, Any], corpus_source: str) -> bool:
     tags = record.get("tags") or {}
-    if tags.get("study") in ("section4", "section4.1") or tags.get("experiment_id") in (
-        "e03",
-        "e04",
-    ):
-        return True
-    art_root = record.get("artifact_root") or ""
-    return "section4" in art_root or "6b" in art_root or "33b" in art_root
+    spec = tags.get("experiment_spec.id")
+    study = tags.get("study") or tags.get("f2.experiment_id")
+    if spec not in (
+        "w2v2-section4-phrase-6b",
+        "w2v2-section4-phrase-33b",
+    ) and study not in ("section4", "section4.1", "e03", "e04"):
+        return False
+    variant = tags.get("implementation.variant") or tags.get("variant") or ""
+    corpus_id = tags.get("corpus.id") or ""
+    if corpus_id:
+        return corpus_id == corpus_source
+    if "--" in variant:
+        return variant.split("--")[0] == corpus_source
+    return False
 
 
 def _extract_condition(record: dict[str, Any]) -> str | None:
@@ -89,7 +96,7 @@ def analyze_section04_1(
         questions_sha256=questions_sha256,
     )
 
-    matching_runs = [r for r in runs if _is_section4_run(r)]
+    matching_runs = [r for r in runs if _is_section4_run(r, corpus_source)]
     if not matching_runs:
         return unavailable_report(
             output_dir,
