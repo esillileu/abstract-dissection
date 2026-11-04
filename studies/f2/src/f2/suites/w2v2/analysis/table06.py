@@ -8,11 +8,11 @@ from typing import Any
 
 from f2.storage.analysis_cache import unavailable_report
 from f2.suites.common.w2v.analysis import write_table_summary
-from f2.suites.common.w2v.artifacts import load_lookup_artifact
 from f2.suites.common.w2v.evaluation import nearest_tokens
 from repro_core.context import RuntimePaths
 
 from .. import paper
+from .table02 import load_phrase_lookup
 
 
 def analyze_table6(
@@ -25,41 +25,10 @@ def analyze_table6(
     output_dir.mkdir(parents=True, exist_ok=True)
     paths = paths or RuntimePaths.from_environment()
 
-    matching_runs = [
-        r
-        for r in runs
-        if (
-            "e02" in (r.get("artifact_root") or "")
-            or "table3" in (r.get("artifact_root") or "")
-            or "section4" in (r.get("artifact_root") or "")
-            or "e03" in (r.get("artifact_root") or "")
-            or "e04" in (r.get("artifact_root") or "")
-        )
-    ]
-    if not matching_runs:
-        return unavailable_report(
-            output_dir,
-            "No phrase-trained models available for Table 6 queries.",
-        )
-
-    lookup = None
-    selected_run_id = None
-    for r in matching_runs:
-        art_root = Path(r.get("artifact_root", ""))
-        lookup_dir = art_root / "lookup"
-        if not lookup_dir.is_dir():
-            lookup_dir = art_root
-        try:
-            lookup = load_lookup_artifact(lookup_dir)
-            selected_run_id = r.get("run_id")
-            break
-        except Exception:
-            continue
-
+    selected_run_id, lookup = load_phrase_lookup(runs, corpus_source)
     if lookup is None:
         return unavailable_report(
-            output_dir,
-            "Could not load lookup artifact from any phrase run.",
+            output_dir, "No loadable phrase-trained model for Table 6."
         )
 
     queries = paper.TABLE6_QUERIES
@@ -118,9 +87,16 @@ def analyze_table6_sources(
     if not runs_file.is_file():
         return []
     runs = json.loads(runs_file.read_text(encoding="utf-8"))
-    c_source = corpus_source or "news-1b"
-    out = paths.analysis_results_root / f"f2/w2v2/table06/{c_source}"
-    return [analyze_table6(runs, output_dir=out, corpus_source=c_source, paths=paths)]
+    sources = [corpus_source] if corpus_source else ["wmt", "lm1b", "umbc"]
+    return [
+        analyze_table6(
+            runs,
+            output_dir=paths.analysis_results_root / f"f2/w2v2/table06/{source}",
+            corpus_source=source,
+            paths=paths,
+        )
+        for source in sources
+    ]
 
 
 __all__ = ["analyze_table6", "analyze_table6_sources"]

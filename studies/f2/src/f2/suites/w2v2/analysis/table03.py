@@ -117,15 +117,17 @@ def analyze_table3(
             continue
         seed = int((r.get("tags") or {}).get("seed", 1))
         art_root = Path(r.get("artifact_root", ""))
-        lookup_dir = art_root / "lookup"
-        if not lookup_dir.is_dir():
-            lookup_dir = art_root
-
         cached = eval_cache.load(run_id)
         if cached is not None:
             res_dict = cached
         else:
             try:
+                lookup_dir = (
+                    art_root
+                    / json.loads((art_root / "result.json").read_text())["artifacts"][
+                        "lookup"
+                    ]
+                )
                 lookup = load_lookup_artifact(lookup_dir)
                 eval_res = evaluate_analogies(lookup, questions)
                 res_dict = {

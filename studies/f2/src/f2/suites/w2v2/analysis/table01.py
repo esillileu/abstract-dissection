@@ -126,52 +126,6 @@ def analyze_table1(
             lookup_dir = art_root
 
         cached = eval_cache.load(run_id)
-        if cached is None:
-            # Check legacy/existing evaluation cache in paths.analysis_cache("f2", "w2v2") / "eval_cache"
-            eval_cache_file = (
-                paths.analysis_cache("f2", "w2v2")
-                / "eval_cache"
-                / f"eval_1_{run_id}.json"
-            )
-            if eval_cache_file.is_file():
-                try:
-                    payload = json.loads(eval_cache_file.read_text(encoding="utf-8"))
-                    sig = payload.get("signature") or {}
-                    # Validate questions hash, table, and evaluation protocol match
-                    protocol = sig.get("evaluation_protocol")
-                    protocol_valid = (
-                        isinstance(protocol, dict)
-                        and "analogy" in protocol
-                        and "query_exclusion" in protocol
-                    ) or (isinstance(protocol, str) and "w2v2-table1" in protocol)
-                    if (
-                        sig.get("questions_sha256") == questions_sha256
-                        and sig.get("table") == "1"
-                        and protocol_valid
-                    ):
-                        metrics = payload.get("result", {}).get("metrics", {})
-                        if "total" in metrics:
-                            cached = {
-                                "total_accuracy_percent": metrics["total"].get(
-                                    "accuracy_percent", 0.0
-                                ),
-                                "semantic_accuracy_percent": metrics.get(
-                                    "semantic", {}
-                                ).get("accuracy_percent", 0.0),
-                                "syntactic_accuracy_percent": metrics.get(
-                                    "syntactic", {}
-                                ).get("accuracy_percent", 0.0),
-                                "included_questions": metrics["total"].get(
-                                    "valid_count", 0
-                                ),
-                                "total_questions": metrics["total"].get(
-                                    "total_count", 0
-                                ),
-                            }
-                            eval_cache.store(run_id, cached)
-                except Exception:
-                    pass
-
         if cached is not None:
             res_dict = cached
         else:

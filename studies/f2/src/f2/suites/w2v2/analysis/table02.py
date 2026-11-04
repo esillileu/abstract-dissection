@@ -16,6 +16,31 @@ from repro_core.context import RuntimePaths
 from .. import paper
 
 
+def load_phrase_lookup(runs: list[Any], corpus_source: str) -> tuple[str | None, Any]:
+    """Select a loadable phrase model for the requested corpus."""
+    for r in runs:
+        tags = r.get("tags") or {}
+        if tags.get("experiment_spec.id") not in {
+            "w2v2-phrase-skipgram-1b-objectives",
+            "w2v2-section4-phrase-6b",
+            "w2v2-section4-phrase-33b",
+        }:
+            continue
+        variant = tags.get("implementation.variant", "")
+        if (tags.get("corpus.id") or variant.split("--", 1)[0]) != corpus_source:
+            continue
+        art_root = Path(r.get("artifact_root", ""))
+        try:
+            result = json.loads((art_root / "result.json").read_text())
+            lookup = (art_root / result["artifacts"]["lookup"]).resolve()
+            if not lookup.is_relative_to(art_root.resolve()):
+                continue
+            return r.get("run_id"), load_lookup_artifact(lookup)
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
+    return None, None
+
+
 def analyze_table2(
     runs: list[Any],
     *,
@@ -26,43 +51,10 @@ def analyze_table2(
     output_dir.mkdir(parents=True, exist_ok=True)
     paths = paths or RuntimePaths.from_environment()
 
-    # Find phrase-capable runs (table3 or section4)
-    matching_runs = [
-        r
-        for r in runs
-        if (
-            "e02" in (r.get("artifact_root") or "")
-            or "table3" in (r.get("artifact_root") or "")
-            or "section4" in (r.get("artifact_root") or "")
-            or "e03" in (r.get("artifact_root") or "")
-            or "e04" in (r.get("artifact_root") or "")
-        )
-    ]
-    if not matching_runs:
-        return unavailable_report(
-            output_dir,
-            "No phrase-trained models available for Table 2 relationship queries.",
-        )
-
-    # Use first available run with valid lookup
-    lookup = None
-    selected_run_id = None
-    for r in matching_runs:
-        art_root = Path(r.get("artifact_root", ""))
-        lookup_dir = art_root / "lookup"
-        if not lookup_dir.is_dir():
-            lookup_dir = art_root
-        try:
-            lookup = load_lookup_artifact(lookup_dir)
-            selected_run_id = r.get("run_id")
-            break
-        except Exception:
-            continue
-
+    selected_run_id, lookup = load_phrase_lookup(runs, corpus_source)
     if lookup is None:
         return unavailable_report(
-            output_dir,
-            "Could not load lookup artifact from any phrase run.",
+            output_dir, "No loadable phrase-trained model for Table 2."
         )
 
     headers = ["Relationship", "a", "b", "c", "Published Target (d)", "Predicted"]
@@ -118,9 +110,16 @@ def analyze_table2_sources(
     if not runs_file.is_file():
         return []
     runs = json.loads(runs_file.read_text(encoding="utf-8"))
-    c_source = corpus_source or "news-1b"
-    out = paths.analysis_results_root / f"f2/w2v2/table02/{c_source}"
-    return [analyze_table2(runs, output_dir=out, corpus_source=c_source, paths=paths)]
+    sources = [corpus_source] if corpus_source else ["wmt", "lm1b", "umbc"]
+    return [
+        analyze_table2(
+            runs,
+            output_dir=paths.analysis_results_root / f"f2/w2v2/table02/{source}",
+            corpus_source=source,
+            paths=paths,
+        )
+        for source in sources
+    ]
 
 
-__all__ = ["analyze_table2", "analyze_table2_sources"]
+__all__ = ["analyze_table2", "analyze_table2_sources", "load_phrase_lookup"]
