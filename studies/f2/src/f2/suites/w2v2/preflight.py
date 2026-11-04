@@ -21,9 +21,7 @@ from .sentences import (
 )
 
 
-def _load_statistics(manifest: Path) -> dict | None:
-    from f2.suites.common.w2v.formats import VOCABULARY_FORMAT, verify_artifact
-
+def _load_statistics(manifest: Path, vocabulary_path: Path) -> dict | None:
     try:
         stored = json.loads(manifest.read_text())
         checksum = stored.pop("statistics_sha256")
@@ -34,8 +32,8 @@ def _load_statistics(manifest: Path) -> dict | None:
             != hashlib.sha256(json.dumps(stored, sort_keys=True).encode()).hexdigest()
         ):
             return None
-        vocabulary_path = Path(stored["vocabulary_path"])
-        verify_artifact(vocabulary_path, format_name=VOCABULARY_FORMAT)
+        if Path(stored["vocabulary_path"]) != vocabulary_path:
+            return None
         return stored
     except (ValueError, KeyError, OSError, TypeError):
         return None
@@ -51,7 +49,7 @@ def preflight(
     staging_root: Path | None = None,
     prepare: bool = False,
 ) -> dict:
-    from w2v import FileCorpus
+    from w2v import Corpus
 
     from f2.suites.common.w2v.formats import (
         VOCABULARY_FORMAT,
@@ -96,7 +94,7 @@ def preflight(
     else:
         result["sentences_cached"] = True
 
-    policy = PhrasePolicy.from_config(config["phrases"])
+    policy = PhrasePolicy.from_config(config["phrase_detection"])
     result["phrase_policy"] = policy.record()
     try:
         phrase_corpus = load_cached_phrase_corpus(cache_root, source_sha256, policy)
@@ -128,7 +126,7 @@ def preflight(
         result["vocabulary_path"] = str(vocabulary_target)
     except (FileNotFoundError, ValueError):
         if prepare and phrase_corpus is not None:
-            corpus = FileCorpus.from_path(phrase_corpus.path, full_tokens=True)
+            corpus = Corpus(phrase_corpus.path, full_tokens=True)
             resolve_or_build_vocabulary(
                 corpus,
                 config["vocabulary"],
@@ -153,7 +151,11 @@ def preflight(
     ).hexdigest()
     stats_manifest = cache_root / "f2/w2v/preflight" / f"{identity_key}.json"
     stats_manifest.parent.mkdir(parents=True, exist_ok=True)
-    measured = _load_statistics(stats_manifest)
+    measured = (
+        _load_statistics(stats_manifest, vocabulary_target)
+        if result["vocabulary_cached"]
+        else None
+    )
 
     if measured is None and phrase_corpus is not None and result["vocabulary_cached"]:
         measured = measure_phrase(
@@ -166,7 +168,6 @@ def preflight(
             phrase_path=str(phrase_corpus.path),
             phrase_sha256=phrase_corpus.corpus_sha256,
             vocabulary_path=str(vocabulary_target),
-            vocabulary_manifest_sha256=sha256_file(vocabulary_target / "manifest.json"),
             **measured,
         )
         payload = json.dumps(stored_record, sort_keys=True)
@@ -199,23 +200,22 @@ def preflight(
             source_bytes=source.stat().st_size,
         )
     else:
-        estimate = resource_estimate(
-            config,
-            measured_tokens=int(config["preflight"]["budget_tokens"]),
-            measured_retained_types=int(config["preflight"]["budget_vocabulary_types"]),
-            source_bytes=source.stat().st_size,
-        )
+        estimate = None
+        result["blockers"].append("resource statistics not prepared")
     result["estimate"] = estimate
 
     ram = available_memory() if available_ram is None else available_ram
     result["available_ram_bytes"] = ram
-    if estimate["predicted_peak_rss_bytes"] > ram:
+    if estimate is not None and estimate["predicted_peak_rss_bytes"] > ram:
         result["blockers"].append("insufficient physical RAM for peak RSS")
     disk = disk_free(cache_root) if available_disk is None else available_disk
     result["available_disk_bytes"] = disk
     staging_free = disk_free(staging) if available_disk is None else available_disk
     result["available_staging_disk_bytes"] = staging_free
-    if estimate["additional_staging_disk_bytes"] > staging_free:
+    if (
+        estimate is not None
+        and estimate["additional_staging_disk_bytes"] > staging_free
+    ):
         result["blockers"].append(
             "insufficient staging disk for checkpoints/remote verification"
         )
