@@ -208,7 +208,6 @@ def load_cached_phrase_corpus(
         digest != _digest(lineage)
         or lineage["source_sha256"] != source_sha256
         or lineage["policy"] != policy.record()
-        or lineage["corpus_sha256"] != _sha256(path)
     ):
         raise ValueError("invalid phrase cache")
     return PhraseCorpus(

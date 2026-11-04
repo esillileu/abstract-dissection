@@ -34,14 +34,7 @@ def _load_statistics(manifest: Path) -> dict | None:
             != hashlib.sha256(json.dumps(stored, sort_keys=True).encode()).hexdigest()
         ):
             return None
-        if sha256_file(Path(stored["phrase_path"])) != stored["phrase_sha256"]:
-            return None
         vocabulary_path = Path(stored["vocabulary_path"])
-        if (
-            sha256_file(vocabulary_path / "manifest.json")
-            != stored["vocabulary_manifest_sha256"]
-        ):
-            return None
         verify_artifact(vocabulary_path, format_name=VOCABULARY_FORMAT)
         return stored
     except (ValueError, KeyError, OSError, TypeError):

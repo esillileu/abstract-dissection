@@ -114,7 +114,6 @@ class CorpusMaterializer:
                     and 0 <= cached_shards <= len(binding.shards)
                     and final.is_file()
                     and final.stat().st_size == cached_size
-                    and sha256_file(final) == cached_sha256
                 ):
                     cached = MaterializedCorpus(
                         final,

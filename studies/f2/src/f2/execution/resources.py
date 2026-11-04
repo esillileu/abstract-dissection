@@ -18,11 +18,6 @@ def mapping(config: dict[str, object], key: str) -> dict[str, Any]:
     return dict(value)
 
 
-def corpus_digest(corpus_config: dict[str, Any], source: Path) -> str:
-    cfg = corpus_config.get("sha256")
-    return str(cfg) if cfg is not None else sha256_file(source)
-
-
 def resolve_and_prepare_corpus(
     config: dict[str, object],
     paths: RuntimePaths,
@@ -64,7 +59,7 @@ def resolve_and_prepare_corpus(
     )
 
     def _resolve_budgeted_corpus(source_file: Path, base_name: str) -> tuple[Path, str]:
-        if "holmes" in str(source_file) or lexical_token_budget <= 0:
+        if corpus_id == "holmes" or lexical_token_budget <= 0:
             digest = corpus.get("sha256") or sha256_file(source_file)
             return source_file, str(digest)
 
@@ -126,7 +121,7 @@ def resolve_and_prepare_corpus(
         else:
             corpus_path = paths.repo_root / p
 
-        if "holmes" in str(corpus_path):
+        if corpus_id == "holmes":
             from f2.suites.w2v1.resources import ensure_holmes_corpus
 
             if progress_reporter is not None:
@@ -158,8 +153,6 @@ def resolve_and_prepare_corpus(
         corpus_dir / corpus_id / "corpus.txt",
         prepared_dir / f"{corpus_id}{budget_suffix}.txt",
         prepared_dir / f"{corpus_id}.txt",
-        paths.repo_root / f"workspace/inputs/f2/corpus/{corpus_id}{budget_suffix}.txt",
-        paths.repo_root / f"workspace/inputs/f2/corpus/{corpus_id}.txt",
     ]
     if corpus_id == "holmes":
         from f2.suites.w2v1.resources import ensure_holmes_corpus
