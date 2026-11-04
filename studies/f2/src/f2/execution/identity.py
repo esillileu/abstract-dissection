@@ -9,16 +9,8 @@ In accordance with ref.md section 4.3:
 
 from __future__ import annotations
 
-import hashlib
-import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
-
-
-def _compute_digest(data: dict[str, Any]) -> str:
-    """Compute deterministic SHA-256 hex digest of JSON-serializable dictionary."""
-    encoded = json.dumps(data, sort_keys=True, separators=(",", ":")).encode("utf-8")
-    return hashlib.sha256(encoded).hexdigest()
 
 
 @dataclass(frozen=True)
@@ -32,7 +24,6 @@ class ConditionIdentity:
     config_digest: str
     plan_revision: int = 1
     planned_run_slot_id: str = ""
-    extra_dimensions: dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not self.suite_id or not self.suite_id.strip():
@@ -68,8 +59,6 @@ class ConditionIdentity:
             "f2.plan_revision": str(self.plan_revision),
             "f2.config_digest": self.config_digest,
         }
-        for k, v in self.extra_dimensions.items():
-            tags[f"f2.{k}"] = str(v)
         return tags
 
     @classmethod
@@ -140,13 +129,6 @@ class ConditionIdentity:
         else:
             plan_rev = 1
 
-        extra_dims = {}
-        corpus_obj = config.get("corpus")
-        if isinstance(corpus_obj, dict):
-            c_sha = corpus_obj.get("sha256")
-            if c_sha:
-                extra_dims["source_corpus_sha256"] = str(c_sha)
-
         return cls(
             suite_id=resolved_suite,
             experiment_id=resolved_exp,
@@ -155,7 +137,6 @@ class ConditionIdentity:
             config_digest=config_digest,
             plan_revision=plan_rev,
             planned_run_slot_id=slot_id,
-            extra_dimensions=extra_dims,
         )
 
 
@@ -179,5 +160,4 @@ class AttemptIdentity:
 __all__ = [
     "AttemptIdentity",
     "ConditionIdentity",
-    "_compute_digest",
 ]

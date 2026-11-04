@@ -22,11 +22,12 @@ def download_results(
     Artifacts are downloaded into workspace/analysis/cache/mlflow/.
     Metadata snapshot is recorded in workspace/analysis/cache/results/f2/<suite>/.
     """
-    from mlflow import MlflowClient
-
     from repro_mlflow.artifact_cache import MlflowArtifactCache
 
-    client = MlflowClient(tracking_uri=tracking_uri)
+    from .publication import PublicationService
+
+    publication = PublicationService(tracking_uri)
+    client = publication.client
     cache_root = getattr(paths, "mlflow_cache_root", paths.cache_root / "mlflow")
     cache = MlflowArtifactCache(client, tracking_uri, root=cache_root)
 
@@ -36,63 +37,7 @@ def download_results(
         else paths.cache_root / "f2" / suite / "results"
     )
     root.mkdir(parents=True, exist_ok=True)
-    experiment = client.get_experiment_by_name(f"f2.{suite}")
-
-    all_runs: list[Any] = []
-    token = None
-    while experiment is not None:
-        page = client.search_runs(
-            [experiment.experiment_id],
-            order_by=["attributes.start_time DESC"],
-            max_results=1000,
-            page_token=token,
-        )
-        all_runs.extend(page)
-        token = getattr(page, "token", None)
-        if not token:
-            break
-
-    # Group finished runs by Condition Identity:
-    # (suite_id, experiment_id, condition_id, planned_run_slot_id, config_digest, seed)
-    # Ref.md 3.3 / P0-2: run, check, and download_results must use the exact same Condition Identity.
-    # We select the latest FINISHED run for each distinct experimental condition and seed.
-    finished_by_slot_seed: dict[tuple[str, str, str], list[Any]] = {}
-    for run in all_runs:
-        if run.info.status != "FINISHED":
-            continue
-        tags = run.data.tags
-        slot = tags.get("f2.planned_run_slot_id") or tags.get("planned_run_slot_id", "")
-        digest = tags.get("f2.config_digest") or tags.get("config_digest", "")
-        seed = str(
-            tags.get("f2.seed") or tags.get("seed") or run.data.params.get("seed", "")
-        )
-        variant = (
-            tags.get("implementation.variant")
-            or tags.get("atomic_run_id")
-            or tags.get("f2.atomic_run_id", "")
-        )
-        # If planned_run_slot_id and config_digest are present, use canonical identity key
-        if slot and digest:
-            key = (slot, digest, seed)
-        else:
-            # Fallback for runs without slot tags
-            spec_id = tags.get("experiment_spec.id", "")
-            key = (f"{spec_id}:{variant}", digest, seed)
-
-        finished_by_slot_seed.setdefault(key, []).append(run)
-
-    selected_finished: list[Any] = []
-    for key in sorted(finished_by_slot_seed, key=str):
-        candidate_runs = finished_by_slot_seed[key]
-        best = max(
-            candidate_runs,
-            key=lambda r: (
-                r.info.end_time or 0,
-                r.info.start_time or 0,
-                r.info.run_id,
-            ),
-        )
-        selected_finished.append(best)
+    selected_finished = publication.get_finished_runs_for_experiment(f"f2.{suite}")
 
     benchmarks = paths.inputs("f2", "benchmarks") if hasattr(paths, "inputs") else None
     if need_evaluation_benchmarks is None:

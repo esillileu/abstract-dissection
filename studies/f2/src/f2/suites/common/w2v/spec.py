@@ -57,6 +57,8 @@ class Word2VecRunSpec:
 
     def resolved_config(self) -> dict[str, object]:
         """Resolve semantic configuration mappings for identity digest computation."""
+        from f2.corpus.sources import SOURCE_BY_KEY
+
         # Sanitize corpus metadata to exclude machine-specific local paths from scientific identity digest
         cleaned_corpus = {
             k: v for k, v in self.corpus.items() if k not in ("path", "local_path")
@@ -66,6 +68,9 @@ class Word2VecRunSpec:
             "vocabulary": self.vocabulary,
             "training": self.training,
         }
+        source = SOURCE_BY_KEY.get(self.atomic_run_id.split("--", 1)[0])
+        if source is not None:
+            resolved["corpus_revision"] = source.normalized_resource_version_id
         if self.distribution is not None:
             resolved["distribution"] = self.distribution
         if self.training.get("objective_kind") == "nce":

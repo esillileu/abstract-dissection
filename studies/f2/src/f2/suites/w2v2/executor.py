@@ -79,12 +79,6 @@ class W2V2Executor:
         resolved = dict(config)
         corpus = mapping(config, "corpus")
         source = Path(str(corpus["path"]))
-        if config.get("large_scale"):
-            from .preflight import resolve_source
-
-            source = resolve_source(config, context.paths)
-        elif not source.is_absolute():
-            source = context.paths.repo_root / source
 
         policy = PhrasePolicy.from_config(mapping(config, "phrase_detection"))
         progress = context.metadata.get("progress_reporter")

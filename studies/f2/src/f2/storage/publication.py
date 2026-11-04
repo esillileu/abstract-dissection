@@ -25,6 +25,16 @@ if TYPE_CHECKING:
     from f2.execution.identity import ConditionIdentity
 
 
+def run_condition_key(run: Any) -> tuple[str, str, str]:
+    """Extract the condition fields used to distinguish published runs."""
+    tags = run.data.tags
+    return (
+        tags.get("f2.planned_run_slot_id", ""),
+        tags.get("f2.config_digest", ""),
+        tags.get("f2.seed", ""),
+    )
+
+
 class PublicationService:
     """Manages publication of verified local run artifacts to MLflow."""
 
@@ -51,7 +61,22 @@ class PublicationService:
             page_token = getattr(page, "token", None)
             if not page_token:
                 break
-        return all_runs
+        selected: dict[tuple[str, str, str], Run] = {}
+        for run in all_runs:
+            key = run_condition_key(run)
+            if not all(key):
+                continue
+            if key not in selected or (
+                run.info.end_time or 0,
+                run.info.start_time or 0,
+                run.info.run_id,
+            ) > (
+                selected[key].info.end_time or 0,
+                selected[key].info.start_time or 0,
+                selected[key].info.run_id,
+            ):
+                selected[key] = run
+        return list(selected.values())
 
     def run_matches_condition(
         self,
@@ -61,37 +86,11 @@ class PublicationService:
         atomic_run_id: str | None = None,
     ) -> bool:
         """Check if a MLflow run strictly matches the condition identity."""
-        tags = run.data.tags
-        digest = tags.get("f2.config_digest") or tags.get("config_digest")
-        run_seed = tags.get("f2.seed") or tags.get("seed")
-
-        if not digest or digest != condition.config_digest:
-            return False
-        if not run_seed or run_seed != str(condition.seed):
-            return False
-
-        if condition.planned_run_slot_id:
-            slot = tags.get("f2.planned_run_slot_id") or tags.get("planned_run_slot_id")
-            if not slot or slot != condition.planned_run_slot_id:
-                return False
-
-        if atomic_run_id:
-            run_variant = (
-                tags.get("implementation.variant")
-                or tags.get("atomic_run_id")
-                or tags.get("f2.atomic_run_id")
-            )
-            if not run_variant or run_variant != atomic_run_id:
-                return False
-
-        # If condition specifies a source corpus identity, verify run has matching source_corpus_sha256
-        cond_corpus_sha = condition.extra_dimensions.get("source_corpus_sha256")
-        if cond_corpus_sha:
-            run_corpus_sha = tags.get("f2.source_corpus_sha256")
-            if not run_corpus_sha or run_corpus_sha != cond_corpus_sha:
-                return False
-
-        return True
+        return run_condition_key(run) == (
+            condition.planned_run_slot_id,
+            condition.config_digest,
+            str(condition.seed),
+        )
 
     def find_matching_finished_run(
         self,
