@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -30,7 +29,6 @@ from ..resources import MSR_ANSWERS_SHA256, MSR_QUESTIONS_SHA256
 
 TABLE7_SPEC = ("skipgram", 640, 50, 1, 48.0)
 _SEEDS = {1, 7, 19}
-_T7_SLOT_PATTERN = re.compile(r"w2v1-table7-holmes-r1-skipgram-d640-w50m-s(\d+)")
 _EVALUATION_PROTOCOL = "table7-v1"
 
 
@@ -53,12 +51,16 @@ class Table7RunResult:
 def collect_table7_runs(runs: list[Any]) -> dict[int, Any]:
     grouped: dict[int, Any] = {}
     for run in runs:
-        slot = run.data.tags.get("f2.planned_run_slot_id", "")
-        match = _T7_SLOT_PATTERN.fullmatch(slot)
-        if match:
-            seed = int(match.group(1))
-            if seed in _SEEDS:
-                grouped[seed] = run
+        tags = run.data.tags
+        variant = tags.get("implementation.variant", "")
+        if variant != "holmes--skipgram-d640-w50m":
+            continue
+        try:
+            seed = int(tags.get("seed", tags.get("f2.seed", "")))
+        except ValueError:
+            continue
+        if seed in _SEEDS:
+            grouped[seed] = run
     return grouped
 
 

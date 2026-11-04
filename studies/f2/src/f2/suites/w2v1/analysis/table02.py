@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import re
 import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -23,7 +22,6 @@ from f2.suites.common.w2v.artifacts import load_lookup_artifact
 from f2.suites.common.w2v.evaluation import evaluate_analogies, parse_analogy_questions
 from repro_core.context import RuntimePaths
 
-_CONDITION = re.compile(r"(wmt|lm1b|umbc)--d(50|100|300|600)-w(24|49|98|196|391|783)m")
 CORPUS_SOURCES = ("wmt", "lm1b", "umbc")
 _DIMENSIONS = (50, 100, 300, 600)
 _TRAINING_WORDS = (24, 49, 98, 196, 391, 783)
@@ -55,11 +53,8 @@ def _complete_conditions(
         spec = tags.get("experiment_spec.id") or tags.get("repro.experiment_spec_id")
         if spec != "w2v1-table2-cbow":
             continue
-        variant = tags.get("implementation.variant") or tags.get(
-            "f2.planned_run_slot_id", ""
-        )
-        match = _CONDITION.search(variant)
-        if match is None or match.group(1) != corpus_source:
+        variant = tags.get("implementation.variant") or ""
+        if not variant.startswith(f"{corpus_source}--"):
             continue
         try:
             seed = int(tags.get("seed") or tags.get("f2.seed", ""))
@@ -67,7 +62,24 @@ def _complete_conditions(
             continue
         if seed not in _SEEDS:
             continue
-        key = (int(match.group(3)), int(match.group(2)))
+        # Extract dimension and training words from variant or tags
+        # variant format: <corpus>--d<dim>-w<words>m
+        cond = variant.split("--", 1)[1]
+        parts = cond.split("-")
+        try:
+            if (
+                len(parts) != 2
+                or not parts[0].startswith("d")
+                or not (parts[1].startswith("w") and parts[1].endswith("m"))
+            ):
+                continue
+            dim = int(parts[0][1:])
+            words = int(parts[1][1:-1])
+        except ValueError:
+            continue
+        if dim not in _DIMENSIONS or words not in _TRAINING_WORDS:
+            continue
+        key = (words, dim)
         seeds = grouped.setdefault(key, {})
         if seed not in seeds:
             seeds[seed] = run

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -67,17 +66,21 @@ _EVALUATION_PROTOCOL = "table3-v1"
 
 
 def complete_conditions(runs: list[Any], corpus: str) -> dict[str, dict[int, Any]]:
-    plan_prefix = _PLANS[corpus]
     grouped: dict[str, dict[int, Any]] = {}
     for run in runs:
-        slot = run.data.tags.get("f2.planned_run_slot_id", "")
+        tags = run.data.tags
+        variant = tags.get("implementation.variant") or ""
+        if not variant.startswith(f"{corpus}--"):
+            continue
+        try:
+            seed = int(tags.get("seed") or tags.get("f2.seed", ""))
+        except ValueError:
+            continue
+        if seed not in _SEEDS:
+            continue
+        cond_slug = variant.split("--", 1)[1]
         for architecture, slug in _CONDITIONS.items():
-            pattern = re.compile(rf"{plan_prefix}-{slug}-s(\d+)")
-            match = pattern.search(slot)
-            if match is None:
-                continue
-            seed = int(match.group(1))
-            if seed in _SEEDS:
+            if cond_slug == slug:
                 grouped.setdefault(architecture, {})[seed] = run
     return {arch: s for arch, s in grouped.items() if set(s) == _SEEDS}
 

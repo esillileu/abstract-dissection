@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -25,8 +24,6 @@ from repro_core.context import RuntimePaths
 
 from .table02 import CORPUS_SOURCES
 
-_CONDITION = re.compile(r"(wmt|lm1b|umbc)--(cbow|skipgram)-d300-w783m")
-_NNLM_CONDITION = re.compile(r"fineweb--nnlm-d(20|50|100)-w6000m")
 TABLE4_CORPUS_SOURCES = (*CORPUS_SOURCES, "fineweb")
 _SEEDS = {1, 7, 19}
 _REFERENCE = {
@@ -69,17 +66,29 @@ def complete_conditions(runs: list[Any], corpus: str) -> dict[str, dict[int, Any
     grouped: dict[str, dict[int, Any]] = {}
     for run in runs:
         tags = run.data.tags
-        slot = tags.get("f2.planned_run_slot_id", "")
+        variant = tags.get("implementation.variant", "")
         if corpus in CORPUS_SOURCES:
-            match = _CONDITION.search(tags.get("implementation.variant", ""))
-            if match is None or match.group(1) != corpus:
+            if not variant.startswith(f"{corpus}--"):
                 continue
-            arch = match.group(2)
+            cond = variant.split("--", 1)[1]
+            if cond == "cbow-d300-w783m":
+                arch = "cbow"
+            elif cond == "skipgram-d300-w783m":
+                arch = "skipgram"
+            else:
+                continue
         elif corpus == "fineweb":
-            match = _NNLM_CONDITION.search(tags.get("implementation.variant", ""))
-            if match is None:
+            if not variant.startswith("fineweb--"):
                 continue
-            arch = f"nnlm-d{match.group(1)}"
+            cond = variant.split("--", 1)[1]
+            if cond == "nnlm-d20-w6000m":
+                arch = "nnlm-d20"
+            elif cond == "nnlm-d50-w6000m":
+                arch = "nnlm-d50"
+            elif cond == "nnlm-d100-w6000m":
+                arch = "nnlm-d100"
+            else:
+                continue
         else:
             continue
 

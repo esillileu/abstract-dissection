@@ -62,12 +62,11 @@ def complete_conditions(runs: list[Any]) -> dict[str, dict[int, Any]]:
                 != f"w2v1-google-news-{architecture}-scale"
             ):
                 continue
-            seed = int(tags.get("seed", "0"))
-            if (
-                seed not in _SEEDS
-                or tags.get("f2.planned_run_slot_id")
-                != f"w2v1-fineweb-reconstruction-r1-{condition}-s{seed}"
-            ):
+            try:
+                seed = int(tags.get("seed", tags.get("f2.seed", "")))
+            except ValueError:
+                continue
+            if seed not in _SEEDS:
                 continue
             grouped.setdefault(architecture, {}).setdefault(seed, run)
     selected = {arch: seeds for arch, seeds in grouped.items() if set(seeds) == _SEEDS}

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -41,12 +40,6 @@ TABLE5_SPEC: tuple[tuple[ConditionKey, float], ...] = (
 )
 
 _SEEDS = {1, 7, 19}
-_T4_SLOT_PATTERN = re.compile(
-    r"w2v1-table4-([a-z0-9]+)-r1-(cbow|skipgram)-d300-w783m-s(\d+)"
-)
-_T5_SLOT_PATTERN = re.compile(
-    r"w2v1-table5-([a-z0-9]+)-r1-(cbow|skipgram)-d(300|600)-w(783|1600)m-ep1-s(\d+)"
-)
 _EVALUATION_PROTOCOL = "table5-v1"
 
 
@@ -72,25 +65,34 @@ def collect_table5_runs(
 ) -> dict[ConditionKey, dict[int, Any]]:
     grouped: dict[ConditionKey, dict[int, Any]] = {}
     for run in runs:
-        slot = run.data.tags.get("f2.planned_run_slot_id", "")
-        match_t4 = _T4_SLOT_PATTERN.fullmatch(slot)
-        if match_t4 and match_t4.group(1) == corpus:
-            seed = int(match_t4.group(3))
-            if seed in _SEEDS:
-                grouped.setdefault((match_t4.group(2), 300, 783, 3), {})[seed] = run
+        tags = run.data.tags
+        variant = tags.get("implementation.variant", "")
+        if not variant.startswith(f"{corpus}--"):
             continue
-
-        match_t5 = _T5_SLOT_PATTERN.fullmatch(slot)
-        if match_t5 and match_t5.group(1) == corpus:
-            seed = int(match_t5.group(5))
-            if seed in _SEEDS:
-                key = (
-                    match_t5.group(2),
-                    int(match_t5.group(3)),
-                    int(match_t5.group(4)),
-                    1,
-                )
-                grouped.setdefault(key, {})[seed] = run
+        try:
+            seed = int(tags.get("seed", tags.get("f2.seed", "")))
+        except ValueError:
+            continue
+        if seed not in _SEEDS:
+            continue
+        # variant: <corpus>--<arch>-d<dim>-w<words>m[-ep1]; unsuffixed means 3 epochs
+        parts = variant.split("--", 1)[1].split("-")
+        if (
+            len(parts) < 3
+            or parts[0] not in ("cbow", "skipgram")
+            or not (parts[1].startswith("d") and parts[2].startswith("w"))
+        ):
+            continue
+        if parts[3:] not in ([], ["ep1"]) or not parts[2].endswith("m"):
+            continue
+        epochs = 1 if parts[3:] else 3
+        try:
+            key = (parts[0], int(parts[1][1:]), int(parts[2][1:-1]), epochs)
+        except ValueError:
+            continue
+        if key not in {condition for condition, _ in TABLE5_SPEC}:
+            continue
+        grouped.setdefault(key, {})[seed] = run
     return {k: s for k, s in grouped.items() if set(s) == _SEEDS}
 
 
