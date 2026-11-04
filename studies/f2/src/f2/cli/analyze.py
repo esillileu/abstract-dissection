@@ -193,19 +193,38 @@ def _analyze_w2v1(tracking_uri, questions, corpus, table, msr_questions, offline
         cache_root = download_results(resolve_tracking_uri(tracking_uri), "w2v1", paths)
 
     if tbl == 7:
-        q_file = (
-            questions
-            or cache_root
-            / "evaluation/msr_sentence_completion/Holmes.lm_format.questions.txt"
+        benchmarks = paths.inputs("f2", "benchmarks")
+        default_q = (
+            benchmarks / "msr_sentence_completion/Holmes.lm_format.questions.txt"
         )
-        outputs = analyze_table7_sources(cache_root, q_file, paths=paths)
+        if not default_q.is_file():
+            default_q = benchmarks / "Holmes.lm_format.questions.txt"
+        if not default_q.is_file():
+            default_q = (
+                cache_root
+                / "evaluation/msr_sentence_completion/Holmes.lm_format.questions.txt"
+            )
+
+        default_a = benchmarks / "msr_sentence_completion/Holmes.lm_format.answers.txt"
+        if not default_a.is_file():
+            default_a = benchmarks / "Holmes.lm_format.answers.txt"
+        if not default_a.is_file():
+            default_a = (
+                cache_root
+                / "evaluation/msr_sentence_completion/Holmes.lm_format.answers.txt"
+            )
+
+        q_file = questions or default_q
+        outputs = analyze_table7_sources(
+            cache_root,
+            q_file,
+            answers_path=default_a,
+            paths=paths,
+        )
     else:
         benchmarks = paths.inputs("f2", "benchmarks")
-        q_file = questions or (
-            benchmarks / "questions-words.txt"
-            if (benchmarks / "questions-words.txt").is_file()
-            else None
-        )
+        default_q = benchmarks / "questions-words.txt"
+        q_file = questions or (default_q if default_q.is_file() else None)
         analyzers = {
             2: analyze_table2_sources,
             4: analyze_table4_sources,

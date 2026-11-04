@@ -132,10 +132,11 @@ def download_results(
             except Exception:
                 pass
             if need_evaluation_benchmarks:
-                try:
-                    cache.get(run.info.run_id, "evaluation")
-                except Exception:
-                    pass
+                if remote_paths is None or "evaluation" in remote_paths:
+                    try:
+                        cache.get(run.info.run_id, "evaluation")
+                    except Exception:
+                        pass
             for name in (
                 "metrics/observations.csv",
                 "environment/system.json",

@@ -166,7 +166,7 @@ def test_f2_w2v2_full_pipeline_e2e(e2e_env: dict[str, object]) -> None:
     outputs = analyze_table1_sources(
         cache_root,
         questions_path=e2e_env["word_questions"],
-        corpus_source="test_corpus",
+        corpus_source="wmt",
         paths=paths,
     )
     assert len(outputs) > 0
