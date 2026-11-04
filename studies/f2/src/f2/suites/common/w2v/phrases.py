@@ -232,11 +232,25 @@ def cached_phrase_corpus(
 ) -> PhraseCorpus:
     """Serialize builders and publish a complete, verified immutable directory."""
     source = Path(source)
+    root = _phrase_root(cache_root)
+    root.mkdir(parents=True, exist_ok=True)
+
+    if source_sha256 is not None:
+        key = _digest({"source_sha256": source_sha256, "policy": policy.record()})
+        entry = root / key
+        with (root / f"{key}.lock").open("a+b") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            for abandoned in root.glob(f".{key}-*"):
+                shutil.rmtree(abandoned)
+            if entry.exists():
+                try:
+                    return load_cached_phrase_corpus(cache_root, source_sha256, policy)
+                except (ValueError, KeyError, OSError, TypeError):
+                    shutil.rmtree(entry)
+
     source_sha = _sha256(source)
     if source_sha256 is not None and source_sha256 != source_sha:
         raise ValueError("phrase source checksum mismatch")
-    root = _phrase_root(cache_root)
-    root.mkdir(parents=True, exist_ok=True)
     key = _digest({"source_sha256": source_sha, "policy": policy.record()})
     entry = root / key
     with (root / f"{key}.lock").open("a+b") as lock:

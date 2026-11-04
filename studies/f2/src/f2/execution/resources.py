@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -64,6 +65,20 @@ def resolve_and_prepare_corpus(
 
     def _resolve_budgeted_corpus(source_file: Path, base_name: str) -> tuple[Path, str]:
         if "holmes" in str(source_file) or lexical_token_budget <= 0:
+            digest = corpus.get("sha256") or sha256_file(source_file)
+            return source_file, str(digest)
+
+        # Check if source_file is already sliced to the requested budget
+        expected_suffix = f"-tokens-{lexical_token_budget}.txt"
+        if source_file.name.endswith(expected_suffix):
+            meta_json = source_file.with_suffix(".json")
+            if meta_json.is_file():
+                try:
+                    meta = json.loads(meta_json.read_text(encoding="utf-8"))
+                    if meta.get("corpus_sha256"):
+                        return source_file, str(meta["corpus_sha256"])
+                except Exception:
+                    pass
             digest = corpus.get("sha256") or sha256_file(source_file)
             return source_file, str(digest)
 
