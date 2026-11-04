@@ -82,8 +82,6 @@ class PublicationService:
         self,
         run: Run,
         condition: ConditionIdentity,
-        *,
-        atomic_run_id: str | None = None,
     ) -> bool:
         """Check if a MLflow run strictly matches the condition identity."""
         return run_condition_key(run) == (
@@ -97,7 +95,6 @@ class PublicationService:
         experiment_name: str,
         condition: ConditionIdentity,
         *,
-        atomic_run_id: str | None = None,
         cached_runs: list[Run] | None = None,
     ) -> Run | None:
         """Find an existing FINISHED run matching the exact condition identity."""
@@ -107,7 +104,7 @@ class PublicationService:
             else self.get_finished_runs_for_experiment(experiment_name)
         )
         for run in runs:
-            if self.run_matches_condition(run, condition, atomic_run_id=atomic_run_id):
+            if self.run_matches_condition(run, condition):
                 return run
         return None
 

@@ -33,6 +33,7 @@ def resolve_and_prepare_corpus(
 
         resolved = resolve_source(config, paths)
         config["corpus"] = {
+            **corpus,
             "path": str(resolved),
             "sha256": corpus.get("sha256") or sha256_file(resolved),
             "lexical_tokens": (
@@ -133,6 +134,7 @@ def resolve_and_prepare_corpus(
                 corpus_path, corpus_path.stem
             )
             config["corpus"] = {
+                **corpus,
                 "path": str(resolved_path),
                 "sha256": digest,
                 "lexical_tokens": lexical_token_budget,
@@ -163,6 +165,7 @@ def resolve_and_prepare_corpus(
         if candidate.is_file():
             resolved_path, digest = _resolve_budgeted_corpus(candidate, corpus_id)
             config["corpus"] = {
+                **corpus,
                 "path": str(resolved_path),
                 "sha256": digest,
                 "lexical_tokens": lexical_token_budget,
@@ -207,6 +210,7 @@ def resolve_and_prepare_corpus(
         ),
     )
     config["corpus"] = {
+        **corpus,
         "path": str(materialized.path),
         "sha256": materialized.corpus_sha256,
         "lexical_tokens": materialized.lexical_tokens,

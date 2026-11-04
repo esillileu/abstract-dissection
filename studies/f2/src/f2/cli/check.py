@@ -65,7 +65,6 @@ def check_command_impl(
         finished_run = publication.find_matching_finished_run(
             experiment_name,
             condition,
-            atomic_run_id=p.atomic_run_id,
             cached_runs=all_finished_runs,
         )
         if finished_run is not None:

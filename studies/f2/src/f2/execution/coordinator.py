@@ -73,7 +73,6 @@ class F2ExecutionCoordinator:
         *,
         experiment_name: str,
         override: bool = False,
-        atomic_run_id: str | None = None,
     ) -> ExecutionDecision:
         """Determine lifecycle action according to ref.md 4.4."""
         # 1. Skip on existing FINISHED run (unless overridden)
@@ -81,7 +80,6 @@ class F2ExecutionCoordinator:
             finished = self.publication.find_matching_finished_run(
                 experiment_name,
                 condition,
-                atomic_run_id=atomic_run_id,
             )
             if finished is not None:
                 run_dir = self.run_store.get_run_root(
@@ -156,12 +154,10 @@ class F2ExecutionCoordinator:
     ) -> ExecutionReceipt:
         """Own the full execution lifecycle: skip -> publish -> resume -> run -> publish."""
         if decision is None:
-            atomic_run_id = str(config.get("atomic_run_id", "")) or None
             decision = self.decide(
                 condition,
                 experiment_name=experiment_name,
                 override=override,
-                atomic_run_id=atomic_run_id,
             )
 
         root_override = context.metadata.get("run_root")

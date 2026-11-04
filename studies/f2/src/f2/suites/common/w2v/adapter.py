@@ -216,7 +216,6 @@ def run_w2v_with_coordinator(
         condition,
         experiment_name=experiment_name,
         override=override,
-        atomic_run_id=str(config.get("atomic_run_id", "")) or None,
     )
 
     if decision.kind in (ExecutionDecisionKind.RUN, ExecutionDecisionKind.RESUME):

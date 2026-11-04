@@ -144,7 +144,6 @@ def test_f2_w2v2_full_pipeline_e2e(e2e_env: dict[str, object]) -> None:
         condition,
         experiment_name="f2.w2v2",
         override=False,
-        atomic_run_id=str(config.get("atomic_run_id", "")),
     )
     assert decision.kind == ExecutionDecisionKind.SKIP
     assert decision.existing_run_id == receipt.run_id
