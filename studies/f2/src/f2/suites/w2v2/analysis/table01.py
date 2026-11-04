@@ -137,10 +137,17 @@ def analyze_table1(
                 try:
                     payload = json.loads(eval_cache_file.read_text(encoding="utf-8"))
                     sig = payload.get("signature") or {}
-                    # Validate questions hash and table/protocol match
+                    # Validate questions hash, table, and evaluation protocol match
+                    protocol = sig.get("evaluation_protocol")
+                    protocol_valid = (
+                        isinstance(protocol, dict)
+                        and "analogy" in protocol
+                        and "query_exclusion" in protocol
+                    ) or (isinstance(protocol, str) and "w2v2-table1" in protocol)
                     if (
                         sig.get("questions_sha256") == questions_sha256
                         and sig.get("table") == "1"
+                        and protocol_valid
                     ):
                         metrics = payload.get("result", {}).get("metrics", {})
                         if "total" in metrics:
